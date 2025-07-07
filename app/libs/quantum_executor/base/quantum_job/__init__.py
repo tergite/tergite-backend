@@ -15,12 +15,13 @@
 
 import re
 from pathlib import Path
-from typing import Any, Callable, List, Literal, Match, Type, TypeVar, Union
+from typing import Any, Callable, List, Literal, Match, Type, TypeVar, Union, Sequence
+from collections import namedtuple
 
 import h5py
 import numpy as np
 from numpy import typing as npt
-from qiskit.qobj import PulseQobjConfig
+from qiskit.qobj import PulseQobjConfig, PulseQobjInstruction, PulseQobj
 from quantify_scheduler.enums import BinMode
 
 from ...utils.general import search_nested
@@ -45,7 +46,11 @@ from .typing import (
     RepetitionsByAcquisitionsMatrix,
 )
 
+
 T = TypeVar("T")
+HexMatrix = List[List[str]]
+AcqParams = namedtuple("AcqParams", "qubits memory_slots")
+
 
 _KEY_DELIMITER = "~"
 _HDF5_JOB_RESULTS_PATH_REGEX = re.compile(
@@ -84,6 +89,7 @@ def read_job_from_hdf5(file: Path) -> QuantumJob:
         meas_return = MeasRet(hdf5_file.attrs["meas_return"])
         meas_level = MeasLvl(hdf5_file.attrs["meas_level"])
         meas_return_cols = hdf5_file.attrs["meas_return_cols"]
+        n_qubits = hdf5_file.attrs["n_qubits"]
         job_id = hdf5_file.attrs.get("job_id")
         local = hdf5_file.attrs.get("local")
         raw_results = _extract_results_from_hdf5(hdf5_file)
@@ -101,6 +107,7 @@ def read_job_from_hdf5(file: Path) -> QuantumJob:
         local=local,
         meas_level=meas_level,
         meas_return_cols=meas_return_cols,
+        n_qubits=n_qubits,
         raw_results=raw_results,
         qobj_data=qobj_data,
         metadata=metadata,
@@ -121,6 +128,7 @@ def save_job_in_hdf5(job: QuantumJob, file: Path):
         hdf5_file.attrs["meas_return"] = job.meas_return.value
         hdf5_file.attrs["meas_level"] = job.meas_level.value
         hdf5_file.attrs["meas_return_cols"] = job.meas_return_cols
+        hdf5_file.attrs["n_qubits"] = job.n_qubits
         hdf5_file.attrs["memory_slot_size"] = job.memory_slot_size
         hdf5_file.attrs["job_id"] = job.job_id
         hdf5_file.attrs["local"] = job.local
@@ -132,6 +140,113 @@ def save_job_in_hdf5(job: QuantumJob, file: Path):
         _save_results_to_hdf5(hdf5_file, job.raw_results)
 
 
+def _collect_from_obj(acq_instrs: Sequence["PulseQobjInstruction"]) -> AcqParams:
+    """Gather qubits / memory_slots from a sequence of `object` instructions."""
+    qubits: List[int] = []
+    memory_slots: List[int] = []
+
+    for inst in acq_instrs:
+        if not hasattr(inst, "qubits") or not hasattr(inst, "memory_slot"):
+            raise ValueError(
+                f"Acquire instruction @t0={getattr(inst, 't0', '-')} "
+                "is missing 'qubits' or 'memory_slot'."
+            )
+
+        if len(inst.qubits) != len(inst.memory_slot):
+            raise ValueError(
+                f"Acquire instruction @t0={getattr(inst, 't0', '-')} "
+                "has mismatched list lengths "
+                f"(qubits={len(inst.qubits)}, memory_slot={len(inst.memory_slot)})."
+            )
+
+        qubits.extend(inst.qubits)
+        memory_slots.extend(inst.memory_slot)
+
+    return AcqParams(qubits=qubits, memory_slots=memory_slots)
+
+
+def _collect_from_dict(acq_instrs: Sequence[dict]) -> AcqParams:
+    """Gather qubits / memory_slots from a sequence of `dict` instructions."""
+    qubits: List[int] = []
+    memory_slots: List[int] = []
+
+    for inst in acq_instrs:
+        try:
+            q_list = inst["qubits"]
+            m_list = inst["memory_slot"]
+        except KeyError as err:
+            raise ValueError(f"Acquire instruction dict is missing {err!s}") from None
+
+        if len(q_list) != len(m_list):
+            raise ValueError(
+                "Acquire instruction dict has mismatched list lengths "
+                f"(qubits={len(q_list)}, memory_slot={len(m_list)})."
+            )
+
+        qubits.extend(q_list)
+        memory_slots.extend(m_list)
+
+    return AcqParams(qubits=qubits, memory_slots=memory_slots)
+
+
+def get_acquisition_parameters_from_experiment(
+    exp_index: int,
+    qobj: "PulseQobj",
+    *,
+    mode: Literal["object", "dict"] = "object",
+) -> AcqParams:
+    """
+    Extract the qubit indices and memory-slot indices used by *acquire*
+    instructions in a Pulse experiment.
+
+    Args:
+        exp_index: index of the experiment in `qobj.experiments`.
+        qobj: a :class:`PulseQobj` containing the experiments.
+        mode: `object` (default) - parse the instructions objects directly;
+              `dict` - parse after converting the qobj to a dict.
+    Returns:
+        AcqParams: named tuple of `(qubits, memory_slots)`.
+    Raises:
+        IndexError: if `exp_index` is out of range.
+        ValueError: if no acquire instruction is found
+    """
+
+    # index sanity-check
+    try:
+        experiment_obj = qobj.experiments[exp_index]
+    except IndexError:
+        raise IndexError(
+            f"Experiment index {exp_index} out of range (0 ... {len(qobj.experiments) - 1})."
+        )
+
+    # check mode and parse appropriately
+    if mode == "object":
+        acq_instrs = [
+            inst for inst in experiment_obj.instructions if inst.name == "acquire"
+        ]
+        if not acq_instrs:
+            raise ValueError(
+                f"Experiment {exp_index} contains no 'acquire' instruction."
+            )
+        return _collect_from_obj(acq_instrs)
+
+    elif mode == "dict":
+        qobj_dict = qobj.to_dict()
+        experiment_dict = qobj_dict["experiments"][exp_index]
+        acq_instrs = [
+            inst
+            for inst in experiment_dict["instructions"]
+            if inst["name"] == "acquire"
+        ]
+        if not acq_instrs:
+            raise ValueError(
+                f"Experiment {exp_index} contains no 'acquire' instruction."
+            )
+        return _collect_from_dict(acq_instrs)
+
+    return AcqParams(qubits=qubits, memory_slot=memory_slot)
+
+
 def discriminate_results(
     job: QuantumJob,
     discriminator: Callable[[int, npt.NDArray[np.complexfloating]], int],
@@ -139,13 +254,15 @@ def discriminate_results(
     num_of_states: Union[Literal[2], Literal[3]] = 2,
     byteorder: ByteOrder = ByteOrder.LITTLE_ENDIAN,
     **kwargs,
-) -> List[List[str]]:
+) -> HexMatrix:
     """
-    Interpret measurement data from experiments as bitstrings.
+    Convert raw IQ data in `job.raw_results` into hexadecimal read-outs.
 
-    The returned hex values corresponds to how the classical slot register
-    is read "from right to left" in binary if Little endian and vice versa if big-endian.
-    This binary value is returned in base 16 (or hex).
+    Steps:
+    1. Extract `acquire` mappings (qubit -> classical slot once per experiment)
+    2. For every acquisition channel, run the supplied `discriminator` to obtain discriminated 0/1/2 int per shot
+    3. Pack the values into a register-shaped array (`full_register-length` x `shots`), respecting qubit->slot map
+    4. Convert each register state (row) to a hex string
 
     Args:
         job: quantum job whose results are to be discriminated
@@ -155,41 +272,67 @@ def discriminate_results(
         byteorder: the byte order of the acquisition channel list; default=ByteOrder.LITTLE_ENDIAN
 
     Returns:
+        HexMatrix `results[experiments][shot]` -> hex string
         Nested list of the hex (base 16) representations of the states e.g. 0, 1.
         Each inner list corresponds to one experiment.
         Each item in the inner list corresponds to a shot number
     """
-    assert callable(discriminator)
-    discriminated_results_in_hex: List[List[str]] = []
+    if not callable(discriminator):
+        raise ValueError("'discriminator' must be callable")
 
-    for expt_dataset in job.raw_results.values():
-        # Get all channel indices from the dataset keys
-        channel_indices = [int(ch) for ch in expt_dataset.keys()]
-        max_channel = max(channel_indices) if channel_indices else 0
-        no_of_repetitions = expt_dataset.sizes["repetition"]
-        # Create an array large enough to index by the maximum channel number.
-        expt_discriminated_results = np.zeros(
-            (max_channel + 1, no_of_repetitions), dtype=np.int8
-        )
+    qobj = job.qobj
+    full_register_length: int = job.n_qubits
+    out: HexMatrix = []
 
-        for acquisition_channel, acquisitions in expt_dataset.items():
-            _, no_of_acquisitions = acquisitions.shape
-            assert (
-                no_of_acquisitions == 1
-            ), "Max one acquisition per channel for word readout."
-            idx = int(acquisition_channel)
-            acquisition_data = acquisitions.data[:, 0]
-            expt_discriminated_results[idx] = discriminator(idx, acquisition_data)
+    # loop over experiments, where each experiment is produced by one circuit
+    for exp_index, expt_dataset in enumerate(job.raw_results.values()):
+
+        # map qubit -> classical slot
+        # get acquisition instruction params
+        acq = get_acquisition_parameters_from_experiment(exp_index=exp_index, qobj=qobj)
+        meas_map = dict(zip(acq.qubits, acq.memory_slots))
+
+        no_of_repetitions: int = expt_dataset.sizes["repetition"]
+        register = np.zeros((full_register_length, no_of_repetitions), dtype=np.int8)
+
+        # process each acquisition
+        for channel, acquisitions in expt_dataset.items():
+            # there shouldn't be more than one measurement data per channel
+            if acquisitions.shape[1] != 1:
+                raise ValueError(
+                    f"Experiment data contain more than one measurement per channel."
+                    f"Instead {acquisitions.shape[1]} measurements found for qubit channel {channel}"
+                )
+            qubit_idx = int(channel)
+
+            # check if acquisition index is in acq_qubits
+            # ignore unused channels
+            if qubit_idx not in meas_map:
+                continue
+
+            iq_values: npt.NDArray[np.complexfloating] = acquisitions.data[:, 0]
+            disc_res = discriminator(qubit_idx, iq_values)
+
+            # support scalar and vector output
+            if np.isscalar(disc_res):
+                register[meas_map[qubit_idx], :] = disc_res
+            else:
+                if len(disc_res) != no_of_repetitions:
+                    raise ValueError(
+                        f"Discriminator for qubit {qubit_idx} "
+                        f"returned {len(disc_res)} values, expected {no_of_repetitions}"
+                    )
+                register[meas_map[qubit_idx], :] = disc_res
 
         # convert to hex per repetition
-        bitarrays_per_rep = expt_discriminated_results.transpose()
+        bitarrays_per_rep = register.transpose()
         base_10_per_rep = _bitarrays_to_decimal(
             bitarrays_per_rep, base=num_of_states, byteorder=byteorder
         )
         hex_per_rep = _dec_to_hex(base_10_per_rep)
-        discriminated_results_in_hex.append(hex_per_rep.tolist())
+        out.append(hex_per_rep.tolist())
 
-    return discriminated_results_in_hex
+    return out
 
 
 def to_native_qobj_config(config: PulseQobjConfig) -> "NativeQobjConfig":
@@ -203,6 +346,7 @@ def to_native_qobj_config(config: PulseQobjConfig) -> "NativeQobjConfig":
     """
     bin_mode = _get_bin_mode(config)
     protocol = _get_meas_protocol(config)
+    n_qubits = config.n_qubits
     meas_level = MeasLvl(config.meas_level)
 
     if bin_mode is BinMode.AVERAGE and protocol is MeasProtocol.SSB_INTEGRATION_COMPLEX:
@@ -213,6 +357,7 @@ def to_native_qobj_config(config: PulseQobjConfig) -> "NativeQobjConfig":
             meas_level=meas_level,
             meas_return=MeasRet.AVERAGED,
             meas_return_cols=1,
+            n_qubits=n_qubits,
             shots=config.shots,
         )
 
@@ -224,6 +369,7 @@ def to_native_qobj_config(config: PulseQobjConfig) -> "NativeQobjConfig":
             meas_level=meas_level,
             meas_return=MeasRet.AVERAGED,
             meas_return_cols=16384,  # length of a trace
+            n_qubits=n_qubits,
             shots=config.shots,
         )
 
@@ -235,6 +381,7 @@ def to_native_qobj_config(config: PulseQobjConfig) -> "NativeQobjConfig":
             meas_level=meas_level,
             meas_return=MeasRet.APPENDED,
             meas_return_cols=config.shots,
+            n_qubits=n_qubits,
             shots=config.shots,
         )
 
