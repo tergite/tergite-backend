@@ -150,6 +150,7 @@ class QuantumExecutor(abc.ABC):
                 meas_return=native_config.meas_return,
                 meas_return_cols=native_config.meas_return_cols,
                 meas_level=native_config.meas_level,
+                n_qubits=native_config.n_qubits,
                 memory_slot_size=qobj.config.memory_slot_size,
                 qobj=qobj,
                 raw_results=experiment_results,

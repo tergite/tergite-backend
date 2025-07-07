@@ -23,6 +23,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+
+- Use memory slot size from qobj in discriminate_results in quantum_job
 - Changed source of lda parameters to backend's redis store. Originally they were retrieved from MSS.
 - Added proper HTTP status codes for failed REST API requests
   - InvalidJobIdInUploadedFileError results in a 400 HTTP response (originally was 200)
@@ -36,6 +38,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Moved from requirements.txt to pyproject.toml setup
 - Bumped up the version of fastapi to the latest (>=0.115.12)
 - Added validation of job files when uploading jobs to `/jobs`
+
 
 ## [2025.03.2] - 2025-03-19
 

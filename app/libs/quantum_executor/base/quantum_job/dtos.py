@@ -14,9 +14,9 @@
 """Data Transfer objects for the Quantum job"""
 import enum
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Optional, Type, Union
+from typing import Any, Optional, Type, Union, List
 
 import numpy as np
 from pydantic import BaseModel, Extra
@@ -55,6 +55,7 @@ class NativeQobjConfig:
     meas_level: MeasLvl
     meas_return: MeasRet
     meas_return_cols: int
+    n_qubits: int
     shots: int
 
 
@@ -130,6 +131,7 @@ class QuantumJob:
     meas_return: MeasRet
     meas_level: MeasLvl
     meas_return_cols: int
+    n_qubits: int
     job_id: Optional[str] = None
     memory_slot_size: int = 100
     local: bool = True
