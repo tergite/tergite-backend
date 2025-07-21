@@ -90,6 +90,7 @@ dev = [
     "freezegun~=1.5.1",
     "pytest-freezegun>=0.4.2",
     "pytest-lazy-fixtures>=1.1.2",
+    "pre-commit~=4.2.0",
     # deps of deps
     # -----------
     # Adding these here to constrain their versions to

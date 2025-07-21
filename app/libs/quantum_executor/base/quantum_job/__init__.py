@@ -15,11 +15,24 @@
 
 import re
 from pathlib import Path
-from typing import Any, Callable, List, Literal, Match, Type, TypeVar, Union, Sequence
+from typing import (
+    Any,
+    Callable,
+    List,
+    Literal,
+    Match,
+    Type,
+    TypeVar,
+    Union,
+    TypeAlias,
+    Tuple,
+    Sequence,
+)
 from collections import namedtuple
 
 import h5py
 import numpy as np
+import xarray as xr
 from numpy import typing as npt
 from qiskit.qobj import PulseQobjConfig, PulseQobjInstruction, PulseQobj
 from quantify_scheduler.enums import BinMode
@@ -48,6 +61,9 @@ from .typing import (
 
 
 T = TypeVar("T")
+
+IQPoint: TypeAlias = Tuple[float, float]  # [re, im]  (len = 2)
+IQMemory: TypeAlias = List[List[List[IQPoint]]]  # exp → shot → IQ points
 HexMatrix = List[List[str]]
 AcqParams = namedtuple("AcqParams", "qubits memory_slots")
 
@@ -333,6 +349,71 @@ def discriminate_results(
         out.append(hex_per_rep.tolist())
 
     return out
+
+
+def xarray_to_list(job: QuantumJob) -> IQMemory:
+    """
+    Convert `job.raw_results` into the nested-list structure expected by `JobResult(memory=...)`
+    for measurement-level-1 (INTEGRATED) data.
+
+    The returned structure:
+
+        memory  ->  List[                       # experiments
+                        List[                    # repetitions / shots
+                            List[complex, ...]   # channel (and acquisition) results
+                        ]
+                    ]
+
+    NumPy complex scalars are converted to float tuple.
+    """
+    if job.raw_results is None:
+        raise ValueError(
+            "xarray_to_list: Can't find Quantum job experiment results `job.raw_results`."
+        )
+
+    experiments_mem: IQMemory = []
+
+    # sort experiments by name
+    for _, dataset in sorted(job.raw_results.items(), key=lambda kv: kv[0]):
+        if not isinstance(dataset, xr.Dataset):
+            raise TypeError(
+                "xarray_to_list: expected an xarray.Dataset in raw_results values"
+            )
+
+        # Sort acquisition-channel keys numerically
+        channel_keys = sorted(dataset.data_vars.keys(), key=lambda k: int(k))
+
+        # Number of shots / repetitions (may be 1 for averaged data)
+        number_of_repeatitions = dataset.sizes.get("repetition", 1)
+
+        exp_mem: List[List[IQPoint]] = []
+        for rep_idx in range(number_of_repeatitions):
+            repeatition_vals: List[IQPoint] = []
+            for channel in channel_keys:
+                # get numpy view
+                arr = dataset[channel].data
+                # slice the repetition dimension
+                # (repetition, acq_index_N)
+                if arr.ndim == 2:
+                    row = arr[rep_idx, ...]
+                # averaged data, no repetition dim
+                elif arr.ndim == 1:
+                    row = arr
+                else:
+                    raise ValueError(
+                        f"xarray_to_list: unexpected ndarray shape {arr.shape}"
+                    )
+
+                # Flatten any remaining acquisition-index dimensions
+                for val in np.ravel(row):
+                    c = complex(val.item())  # ensure Python complex
+                    repeatition_vals.append((float(c.real), float(c.imag)))
+
+            exp_mem.append(repeatition_vals)
+
+        experiments_mem.append(exp_mem)
+
+    return experiments_mem
 
 
 def to_native_qobj_config(config: PulseQobjConfig) -> "NativeQobjConfig":

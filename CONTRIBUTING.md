@@ -113,6 +113,12 @@ redis-server --port 6378
 black --check app
 ```
 
+- Optionally enable pre-commit hook to run black 
+
+```shell
+pre-commit install
+```
+
 - Run the tests by running the command below at the root of the project. 
 
 ```shell
