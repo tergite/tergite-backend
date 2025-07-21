@@ -13,7 +13,7 @@
 """Data Transfer Objects for the jobs service"""
 import json
 from enum import Enum, unique
-from typing import Any, Callable, Dict, List, Literal, Optional
+from typing import Any, Callable, Dict, List, Literal, Optional, Union, TypeAlias, Tuple
 
 from pydantic import (
     BaseModel,
@@ -38,6 +38,12 @@ StageName = Literal[
     "final",
 ]
 TimestampLabel = Literal["started", "finished"]
+HexMemory: TypeAlias = List[List[str]]
+# IQ point = tuple(re, im) or list[re, im]  →  use Sequence[float] for both.
+IQPoint: TypeAlias = Tuple[float, float] | List[float]
+IQMemory: TypeAlias = List[List[List[IQPoint]]]
+
+Memory: TypeAlias = Union[HexMemory, IQMemory]
 
 
 @unique
@@ -120,11 +126,8 @@ class Timestamps(BaseModel):
 class JobResult(BaseModel):
     """The results of the job"""
 
-    model_config = ConfigDict(
-        extra="allow",
-    )
-
-    memory: List[List[str]] = []
+    model_config = ConfigDict(extra="allow")
+    memory: Memory = Field(default_factory=list)
 
 
 class Job(Schema):

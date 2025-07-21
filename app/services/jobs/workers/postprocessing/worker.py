@@ -38,6 +38,7 @@ from app.libs.quantum_executor.base.quantum_job import (
     QuantumJob,
     discriminate_results,
     read_job_from_hdf5,
+    xarray_to_list,
 )
 from app.services.jobs.dtos import Job, JobStatus, Stage
 from app.services.jobs.utils import (
@@ -140,7 +141,10 @@ def postprocess_storage_file(
                 memory = discriminate_results(job, discriminator=discriminator)
                 job = update_job_results(jobs_db, job_id=job_id, data=memory)
                 update_job_in_mss(mss_client, job_id=job_id, payload=job)
-
+            elif job.meas_level == MeasLvl.INTEGRATED:
+                memory = xarray_to_list(job)
+                job = update_job_results(jobs_db, job_id=job_id, data=memory)
+                update_job_in_mss(mss_client, job_id=job_id, payload=job)
             else:
                 raise NotImplementedError(
                     f"meas_level {job.meas_level} is not supported"

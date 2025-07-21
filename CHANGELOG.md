@@ -7,6 +7,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+- Install a pre-commit hook to run black
+- Add a support for measurement level 1 for simulator for both single and avg modes
+- Add a support for measurement level 1 for real backend for both single and avg modes
+
 ## [2025.06.2] - 2025-06-17
 
 - No change
