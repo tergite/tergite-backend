@@ -10,6 +10,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Install a pre-commit hook to run black
 - Add a support for measurement level 1 for simulator for both single and avg modes
 - Add a support for measurement level 1 for real backend for both single and avg modes
+- Added and adapted SpiDAC class from autocalibration package for coupler biasing
+- Modify Quantify quantum executor by calling SpiDAC to bring up currents before running a schedule
+- Add a placeholder Wacqt-two-qubit-gate function for Qobj to QuantifySchedule mapper with a flux port reference 
+- Add safety features to SpiDAC to limit current values and bring-up/down speed
 
 ## [2025.06.2] - 2025-06-17
 
