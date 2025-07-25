@@ -62,7 +62,6 @@ _INSTRUCTION_PULSE_MAP: Dict[Tuple[str, Optional[str]], Type[BaseInstruction]] =
 class QuantifyExperiment(NativeExperiment):
     channel_registry: QuantifyChannelRegistry
     buffer_time: float = 0.0
-
     # the interval between grid lines in the time grid used by Q1ASM
     timegrid_interval: float = QBLOX_TIMEGRID_INTERVAL
 
@@ -110,6 +109,10 @@ class QuantifyExperiment(NativeExperiment):
         return _get_absolute_timed_schedule(
             schedule=raw_schedule, channel_registry=self.channel_registry
         )
+
+    @property
+    def duration(self) -> float:
+        return self.schedule.duration
 
     @classmethod
     def from_qobj_expt(

@@ -16,7 +16,7 @@ import enum
 import json
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Optional, Type, Union, List
+from typing import Any, List, Optional, Type, Union
 
 import numpy as np
 from pydantic import BaseModel, Extra

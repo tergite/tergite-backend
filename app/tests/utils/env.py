@@ -14,6 +14,9 @@ from os import environ
 
 from app.tests.utils.fixtures import get_fixture_path
 
+_TESTS_FOLDER = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_PATH_TO_TEST_SQL_DB = os.path.join(_TESTS_FOLDER, "test_booking.db")
+
 TEST_DEFAULT_PREFIX = "system_test"
 TEST_STORAGE_ROOT = "/tmp/jobs"
 
@@ -49,9 +52,19 @@ TEST_QUANTIFY_SEED_FILE = get_fixture_path("dummy_quantify.seed.toml")
 TEST_QISKIT_1Q_SEED_FILE = get_fixture_path("qiskit_pulse_1q.seed.toml")
 TEST_QISKIT_2Q_SEED_FILE = get_fixture_path("qiskit_pulse_2q.seed.toml")
 
-TEST_REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-TEST_REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
-TEST_REDIS_DB = int(os.getenv("REDIS_DB", "2"))
+
+TEST_MAX_TIME_SLOT_LENGTH = 3600
+TEST_MIN_TIME_SLOT_LENGTH = 2
+TEST_MAX_IDLE_TIME = 1
+TEST_MAX_SLOTS_PER_DAY = 2
+TEST_IS_ASYNC = "True"
+TEST_QUEUE_PREFIX = "test_booking"
+TEST_BOOKING_DB_URL = f"sqlite:///{_PATH_TO_TEST_SQL_DB}"
+TEST_JWT_SECRET = "78e79946910251b0db6237d5eb38ece76225cf613da22b79ff4fe76d534c14fc"
+TEST_JWT_TTL = 120
+
+TEST_RQ_REDIS_URL = os.getenv("RQ_REDIS_URL", "redis://localhost:6379/2")
+TEST_JOBS_REDIS_URL = TEST_RQ_REDIS_URL
 
 
 def setup_test_env():
@@ -84,6 +97,15 @@ def setup_test_env():
     environ["QUANTIFY_CONFIG_FILE"] = TEST_QUANTIFY_CONFIG_FILE
     environ["IS_AUTH_ENABLED"] = "True"
 
-    environ["REDIS_HOST"] = TEST_REDIS_HOST
-    environ["REDIS_PORT"] = f"{TEST_REDIS_PORT}"
-    environ["REDIS_DB"] = f"{TEST_REDIS_DB}"
+    environ["MAX_TIME_SLOT_LENGTH"] = f"{TEST_MAX_TIME_SLOT_LENGTH}"
+    environ["MIN_TIME_SLOT_LENGTH"] = f"{TEST_MIN_TIME_SLOT_LENGTH}"
+    environ["MAX_SLOTS_PER_DAY"] = f"{TEST_MAX_SLOTS_PER_DAY}"
+    environ["MAX_IDLE_TIME"] = f"{TEST_MAX_IDLE_TIME}"
+    environ["IS_ASYNC"] = f"{TEST_IS_ASYNC}"
+    environ["QUEUE_PREFIX"] = f"{TEST_QUEUE_PREFIX}"
+    environ["BOOKING_DB_URL"] = f"{TEST_BOOKING_DB_URL}"
+    environ["JWT_SECRET"] = f"{TEST_JWT_SECRET}"
+    environ["JWT_TTL"] = f"{TEST_JWT_TTL}"
+    environ["JOBS_REDIS_URL"] = f"{TEST_JOBS_REDIS_URL}"
+    environ["RQ_REDIS_URL"] = f"{TEST_RQ_REDIS_URL}"
+    environ["QUEUE_CONFIG_FILE_PATH"] = f"{TEST_QUEUE_CONFIG_FILE_PATH}"

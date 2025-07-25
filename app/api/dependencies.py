@@ -11,19 +11,29 @@
 # that they have been altered from the originals.
 """Dependencies useful for the FastAPI API"""
 import json
-from typing import Optional
+from typing import Annotated, Optional, Tuple
 
 from fastapi import Depends, HTTPException, UploadFile, status
 from fastapi.requests import Request
+from fastapi.security import OAuth2PasswordBearer
 from pydantic import ValidationError
 from redis import Redis
 
 import settings
 
-from ..services import auth as auth_service
+from ..services import booking
+from ..services.booking.models import MSSLoginDetails, User
+from ..services.booking.service import get_user_job_id_pair_from_token
+from ..services.booking.store import get_bookings_sql_engine
 from ..services.jobs.dtos import JobFile, JobStatus
-from ..utils.uuid import validate_uuid4_str
+from ..services.scheduler import get_job
+from ..utils.exc import ItemNotFoundError, NotAuthenticatedError, UnauthorizedError
+from ..utils.queues.dtos import Job
+from ..utils.strings import validate_uuid4_str
 from .exc import InvalidJobIdInUploadedFileError, IpNotAllowedError
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+DB_ENGINE = get_bookings_sql_engine(settings.BOOKING_DB_URL)
 
 
 def get_redis_connection():
@@ -107,52 +117,63 @@ def get_whitelisted_ip(request: Request) -> str:
 
 
 def get_valid_credentials_dep(
-    expected_status: Optional[JobStatus] = None,
+    job_exists: bool = True,
     job_id_field: str = "job_id",
 ):
-    """Returns a dependency injector that gets a valid credentials with the expected job status.
+    """Gets a dependency injector that gets the pair (user_id, job_id) for the given request.
 
-    It extracts the app_token from the headers and the job_id from the parameters
+    It extracts the JWT token from the headers and the job_id from the parameters
+    or from the file body.
     The dependency injector raises authentication or authorization errors if no
-    valid app_token and job_id pair is found.
+    valid token and job_id pair is found.
+
+    The dependency injector returns the MSSLoginDetails and may raise the following errors:
+        NotAuthenticatedError: job {job_id} does not exist for current user
+        UnauthorizedError: job {job_id} is already {auth_log.status}
+        UnauthorizedError: unexpected job id {job_id}
+        InvalidJobIdInUploadedFileError: The job does not have a valid UUID4 {job_id_field}
 
     Args:
-        expected_status: the status that the job should be at. If None, status does not matter
+        job_exists: whether the job is expected to exist already or not
         job_id_field: the name of the parameter or field that contains the job_id. Default is 'job_id'
+
     """
 
     def dependency_injector(
-        redis_connection: Redis = Depends(get_redis_connection),
         job_id: str = Depends(get_job_id_dependency(job_id_field=job_id_field)),
-        app_token: Optional[str] = Depends(get_bearer_token),
-    ) -> auth_service.Credentials:
-        """Gets a valid app_token-job_id pair with the expected job status.
+        token_user_job_id_pair: Tuple[str, str] = Depends(
+            get_user_job_id_pair_from_token
+        ),
+    ) -> MSSLoginDetails:
+        """Gets a valid user_id-job_id pair.
 
         Args:
             job_id: the job_id as got from the parameters or from the uploaded file
-            redis_connection: the connection to the redis database
-            app_token: the app_token as got from the FastAPI request
+            token_user_job_id_pair: the user_id, job_id pair got from the token
+
+        Returns:
+            the MSSLoginDetails of the user_id and the job_id
 
         Raises:
-            HTTPException: status_code=401, detail=job {credentials.job_id} does not exist for current user
-            HTTPException: status_code=403, detail=job {credentials.job_id} is already {auth_log.status}
-            InvalidJobIdInUploadedFileError: f"The job does not have a valid UUID4 {job_id_field}"
+            NotAuthenticatedError: job {job_id} does not exist for current user
+            UnauthorizedError: job {job_id} is already {auth_log.status}
+            UnauthorizedError: unexpected job id {job_id}
+            InvalidJobIdInUploadedFileError: The job does not have a valid UUID4 {job_id_field}
         """
-        credentials = auth_service.Credentials(job_id=job_id, app_token=f"{app_token}")
-        try:
-            auth_service.authenticate(
-                redis_connection,
-                credentials=credentials,
-                expected_status=expected_status,
-            )
-        except auth_service.AuthenticationError as exp:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail=f"{exp}"
-            )
-        except auth_service.AuthorizationError as exp:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"{exp}")
+        user_id, token_job_id = token_user_job_id_pair
+        if job_id != token_job_id:
+            raise UnauthorizedError(f"unexpected job id {job_id}")
 
-        return credentials
+        try:
+            get_job(job_id=job_id, user_id=user_id)
+            if not job_exists:
+                raise UnauthorizedError(f"job {job_id} already exists")
+            return MSSLoginDetails(user_id=user_id, job_id=job_id)
+        except NotAuthenticatedError:
+            raise NotAuthenticatedError(f"job {job_id} does not exist for current user")
+        except ItemNotFoundError:
+            if job_exists:
+                raise UnauthorizedError(f"job {job_id} does not exist")
 
     return dependency_injector
 
@@ -205,3 +226,36 @@ async def validate_job_file(upload_file: UploadFile) -> UploadFile:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid file: {exp}"
         )
+
+
+async def get_user_id_from_token(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
+    """Returns the user id for the given token
+
+    Args:
+        token: the user token that is to be authenticated
+
+    Returns:
+        the user id for associated with the given token
+
+    Raises:
+        NotAuthenticatedError: not authenticated
+    """
+    return booking.get_current_user_id(token, secret_key=settings.JWT_SECRET)
+
+
+async def validate_admin_token(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
+    """Returns the user id if the user is admin for the given token
+
+    Args:
+        token: the user token that is to be authorized
+
+    Returns:
+        the user id for associated with the given token
+
+    Raises:
+        UnauthorizedError: unauthorized
+        NotAuthenticatedError: not authenticated
+    """
+    user_id = booking.get_current_user_id(token, secret_key=settings.JWT_SECRET)
+    user = booking.get_admin_user(DB_ENGINE, User.id == user_id)
+    return user.id

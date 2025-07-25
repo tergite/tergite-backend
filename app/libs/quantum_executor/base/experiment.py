@@ -30,6 +30,12 @@ class NativeExperiment(abc.ABC):
     def schedule(self):
         pass
 
+    @property
+    @abc.abstractmethod
+    def duration(self) -> float:
+        """the duration of this experiment"""
+        pass
+
 
 def copy_expt_header_with(header: QobjExperimentHeader, **kwargs):
     """Copies a new header from the old header with new kwargs set

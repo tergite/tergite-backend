@@ -31,9 +31,9 @@ BCC_PORT=8000
 # This is to configure port and URL for the frontend machine.
 # Running it locally:
 MSS_MACHINE_ROOT_URL=http://host:port
-# Or a remote VM:
-# MSS_MACHINE_ROOT_URL=http://host:port
-MSS_PORT=8002
+# the public RSA key pem file for the MSS server, preferably used internally only for the stack
+# this is required if you are to use MSS so uncomment it
+# MSS_PUBLIC_KEY_PATH=
 
 # (5) Instrument interfacing and simulators
 # This is to configure the hardware or simulated measurement instruments.
@@ -87,20 +87,66 @@ APP_SETTINGS=production
 # Default is false. Setting this to true when MSS is not running will raise connection errors
 IS_STANDALONE=False
 
-# (8) Redis storage
-# If you do not want to configure a custom redis instance, you can also not set (i.e. delete all the variables of
-# this section in the .env file), because the defaults will assume a default redis installation.
-# Set the host on which redis is running
-# Default is "localhost"
-REDIS_HOST="localhost"
-# Set the port on which redis is running
-# Default is 6379
-REDIS_PORT=6379
+# Maximum time in seconds a booking is allowed to have
+# Negative values not allowed. Negative values are automatically changed to 0
+# default: 21600 i.e 6 hours
+MAX_TIME_SLOT_LENGTH=21600
 
-# Redis authentication:
-# For more information, please read in the redis documentation: https://redis.io/topics/acl
-# Set the user on which to connect to redis
-# REDIS_USER=""
-# Set the password, which to use when connecting to redis
-# REDIS_PASSWORD=""
+# Minimum time in seconds a booking is allowed to have
+# Negative values not allowed. Negative values are automatically changed to 0
+# default: 120 i.e 2 minutes
+MIN_TIME_SLOT_LENGTH=120
 
+# Maximum number of bookings per day that a user can have
+# Negative values not allowed. Negative values are automatically changed to 0
+# default: 1
+MAX_SLOTS_PER_DAY=1
+
+# Maximum time in seconds that a booking can lie idle without a running job
+# Note that this must be an integer
+# Negative values not allowed. Negative values are automatically changed to 0
+# default: 900 i.e. 15 minutes
+MAX_IDLE_TIME=900
+
+# Whether the jobs should be run in the same main process (synchronously) or on workers (asynchronously)
+# this is useful for testing rq
+# default: True
+IS_ASYNC=True
+
+# The prefix of the queues usually to help distinguish them from other instances of
+# this app even if the same redis server were to be used for multiple instances
+# default: "booking"
+QUEUE_PREFIX=booking
+
+# The SQL database URL of format `dialect+driver://username:password@host:port/database`
+# See: https://docs.sqlalchemy.org/en/20/core/engines.html
+# default: sqlite:///booking_db.db
+BOOKING_DB_URL="sqlite:///booking_db.db"
+
+# The redis database URL of format `redis[s]://[[username][:password]@][host][:port][/db-number]`
+# where jobs data is to be stored
+# default: "redis://localhost:6379/0"
+JOBS_REDIS_URL="redis://localhost:6379/0"
+
+# The redis database URL of format `redis[s]://[[username][:password]@][host][:port][/db-number]`
+# where jobs data is to be stored
+# default: "redis://localhost:6379/0"
+RQ_REDIS_URL="redis://localhost:6379/0"
+
+# The secret key for use when signing the JWT
+JWT_SECRET="some-JWT-secret-probably-generated-with-openssl"
+
+# The time to live for the JWT token
+# Negative values not allowed. Negative values are automatically changed to 0
+# default: 900
+JWT_TTL=900
+
+# the HTTP port to serve the RESTful API on
+# default: 5000
+REST_API_PORT=5000
+
+# the comma separated list of URLs where
+# Javascript can access this API without raising CORS errors
+# See https://fastapi.tiangolo.com/tutorial/cors/?h=cors#use-corsmiddleware
+# default: ""
+CORS_ORIGINS=""

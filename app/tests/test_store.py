@@ -13,14 +13,41 @@
 """Module containing tests for the store library"""
 from datetime import datetime, timezone
 from typing import Dict, List, Tuple, Type, Union
+from uuid import uuid4
 
 import pytest
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 from redis import Redis
 
-from app.services.auth.dtos import AuthLog, PartialAuthLog
+from app.services.jobs.dtos import JobStatus
+from app.tests.utils.datetime import get_current_timestamp_str
 from app.tests.utils.records import with_current_timestamps
-from app.utils.store import Collection, ItemNotFoundError, Schema
+from app.utils.model import create_partial_schema
+from app.utils.redis_store import Collection, ItemNotFoundError, Schema
+
+
+class Credentials(Schema):
+    """The model used for authenticating jobs"""
+
+    __primary_key_fields__ = ("job_id", "app_token")
+
+    job_id: str
+    app_token: str
+
+
+class AuthLog(Credentials):
+
+    __index_fields__ = ("status",)
+    status: JobStatus
+    created_at: str = Field(default_factory=get_current_timestamp_str)
+    updated_at: str = Field(default_factory=get_current_timestamp_str)
+
+
+# derived models
+PartialAuthLog = create_partial_schema(
+    "PartialAuthLog", original=AuthLog, exclude=("created_at",)
+)
+
 
 _AUTH_LOG_LIST = [
     {"job_id": "foo", "app_token": "bar"},
@@ -35,18 +62,22 @@ _DELETE_SLICES = [
     (2, 3),
 ]
 
+_INDEX_PREFIXES = {
+    "job_id": f"__index__tests.test_redis_store.authlog_::job_id::",
+    "app_token": f"__index__tests.test_redis_store.authlog_::app_token::",
+    "status": f"__index__tests.test_redis_store.authlog_::status::",
+}
+
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_update_by_single_key(real_redis_client, payload, freezer):
+def test_update_by_single_key(redis_client, payload, freezer):
     """Calling update() with a raw redis key updates the item if it exists already"""
-    auth_logs = Collection(
-        real_redis_client, schema=AuthLog, partial_schema=PartialAuthLog
-    )
+    auth_logs = Collection(redis_client, schema=AuthLog, partial_schema=PartialAuthLog)
     payload = with_current_timestamps([payload], fields=["updated_at", "created_at"])[0]
 
     original_item = AuthLog(**{"status": "pending", **payload})
-    _insert_into_redis(real_redis_client, [original_item])
-    original_item_in_db = _get_redis_value(real_redis_client, original_item)
+    _insert_into_redis(redis_client, [original_item])
+    original_item_in_db = _get_redis_value(redis_client, original_item)
     key = _get_redis_key(original_item)
 
     new_update = {
@@ -55,7 +86,7 @@ def test_update_by_single_key(real_redis_client, payload, freezer):
         "app_token": payload["app_token"],
     }
     new_item = auth_logs.update(key, PartialAuthLog(**new_update))
-    new_item_in_db = _get_redis_value(real_redis_client, original_item)
+    new_item_in_db = _get_redis_value(redis_client, original_item)
 
     assert original_item_in_db == original_item.model_dump_json()
     assert new_item_in_db == new_item.model_dump_json()
@@ -66,14 +97,14 @@ def test_update_by_single_key(real_redis_client, payload, freezer):
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_dict_update_by_single_key(real_redis_client, payload, freezer):
+def test_dict_update_by_single_key(redis_client, payload, freezer):
     """Calling update() with a raw redis key, and dict updates, changes the item if it exists already"""
-    auth_logs = Collection(real_redis_client, schema=AuthLog)
+    auth_logs = Collection(redis_client, schema=AuthLog)
     payload = with_current_timestamps([payload], fields=["updated_at", "created_at"])[0]
 
     original_item = AuthLog(**{"status": "pending", **payload})
-    _insert_into_redis(real_redis_client, [original_item])
-    original_item_in_db = _get_redis_value(real_redis_client, original_item)
+    _insert_into_redis(redis_client, [original_item])
+    original_item_in_db = _get_redis_value(redis_client, original_item)
     key = _get_redis_key(original_item)
 
     new_update = {
@@ -82,7 +113,7 @@ def test_dict_update_by_single_key(real_redis_client, payload, freezer):
         "app_token": payload["app_token"],
     }
     new_item = auth_logs.update(key, new_update)
-    new_item_in_db = _get_redis_value(real_redis_client, original_item)
+    new_item_in_db = _get_redis_value(redis_client, original_item)
 
     assert original_item_in_db == original_item.model_dump_json()
     assert new_item_in_db == new_item.model_dump_json()
@@ -93,16 +124,14 @@ def test_dict_update_by_single_key(real_redis_client, payload, freezer):
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_update_by_tuple_key(real_redis_client, payload, freezer):
+def test_update_by_tuple_key(redis_client, payload, freezer):
     """Calling update() with a tuple of keys updates the item if it exists already"""
-    auth_logs = Collection(
-        real_redis_client, schema=AuthLog, partial_schema=PartialAuthLog
-    )
+    auth_logs = Collection(redis_client, schema=AuthLog, partial_schema=PartialAuthLog)
     payload = with_current_timestamps([payload], fields=["updated_at", "created_at"])[0]
 
     original_item = AuthLog(**{"status": "pending", **payload})
-    _insert_into_redis(real_redis_client, [original_item])
-    original_item_in_db = _get_redis_value(real_redis_client, original_item)
+    _insert_into_redis(redis_client, [original_item])
+    original_item_in_db = _get_redis_value(redis_client, original_item)
     key = (payload["job_id"], payload["app_token"])
 
     new_update = {
@@ -111,7 +140,7 @@ def test_update_by_tuple_key(real_redis_client, payload, freezer):
         "app_token": payload["app_token"],
     }
     new_item = auth_logs.update(key, PartialAuthLog(**new_update))
-    new_item_in_db = _get_redis_value(real_redis_client, original_item)
+    new_item_in_db = _get_redis_value(redis_client, original_item)
 
     assert original_item_in_db == original_item.model_dump_json()
     assert new_item_in_db == new_item.model_dump_json()
@@ -122,14 +151,14 @@ def test_update_by_tuple_key(real_redis_client, payload, freezer):
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_dict_update_by_tuple_key(real_redis_client, payload, freezer):
+def test_dict_update_by_tuple_key(redis_client, payload, freezer):
     """Calling update() with a tuple of keys, and dict updates, changes the item if it exists already"""
-    auth_logs = Collection(real_redis_client, schema=AuthLog)
+    auth_logs = Collection(redis_client, schema=AuthLog)
     payload = with_current_timestamps([payload], fields=["updated_at", "created_at"])[0]
 
     original_item = AuthLog(**{"status": "pending", **payload})
-    _insert_into_redis(real_redis_client, [original_item])
-    original_item_in_db = _get_redis_value(real_redis_client, original_item)
+    _insert_into_redis(redis_client, [original_item])
+    original_item_in_db = _get_redis_value(redis_client, original_item)
     key = (payload["job_id"], payload["app_token"])
 
     new_update = {
@@ -138,7 +167,7 @@ def test_dict_update_by_tuple_key(real_redis_client, payload, freezer):
         "app_token": payload["app_token"],
     }
     new_item = auth_logs.update(key, new_update)
-    new_item_in_db = _get_redis_value(real_redis_client, original_item)
+    new_item_in_db = _get_redis_value(redis_client, original_item)
 
     assert original_item_in_db == original_item.model_dump_json()
     assert new_item_in_db == new_item.model_dump_json()
@@ -149,16 +178,14 @@ def test_dict_update_by_tuple_key(real_redis_client, payload, freezer):
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_update_by_dict_key(real_redis_client, payload, freezer):
+def test_update_by_dict_key(redis_client, payload, freezer):
     """Calling update() with a primary key in dict form updates the item if it exists already"""
-    auth_logs = Collection(
-        real_redis_client, schema=AuthLog, partial_schema=PartialAuthLog
-    )
+    auth_logs = Collection(redis_client, schema=AuthLog, partial_schema=PartialAuthLog)
     payload = with_current_timestamps([payload], fields=["updated_at", "created_at"])[0]
 
     original_item = AuthLog(**{"status": "pending", **payload})
-    _insert_into_redis(real_redis_client, [original_item])
-    original_item_in_db = _get_redis_value(real_redis_client, original_item)
+    _insert_into_redis(redis_client, [original_item])
+    original_item_in_db = _get_redis_value(redis_client, original_item)
     key = {
         "job_id": payload["job_id"],
         "app_token": payload["app_token"],
@@ -166,7 +193,7 @@ def test_update_by_dict_key(real_redis_client, payload, freezer):
 
     new_update = {"status": "successful", **key}
     new_item = auth_logs.update(key, PartialAuthLog(**new_update))
-    new_item_in_db = _get_redis_value(real_redis_client, original_item)
+    new_item_in_db = _get_redis_value(redis_client, original_item)
 
     assert original_item_in_db == original_item.model_dump_json()
     assert new_item_in_db == new_item.model_dump_json()
@@ -177,14 +204,14 @@ def test_update_by_dict_key(real_redis_client, payload, freezer):
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_dict_update_by_dict_key(real_redis_client, payload, freezer):
+def test_dict_update_by_dict_key(redis_client, payload, freezer):
     """Calling update() with a primary key in dict form, and update dict, changes the item if it exists already"""
-    auth_logs = Collection(real_redis_client, schema=AuthLog)
+    auth_logs = Collection(redis_client, schema=AuthLog)
     payload = with_current_timestamps([payload], fields=["updated_at", "created_at"])[0]
 
     original_item = AuthLog(**{"status": "pending", **payload})
-    _insert_into_redis(real_redis_client, [original_item])
-    original_item_in_db = _get_redis_value(real_redis_client, original_item)
+    _insert_into_redis(redis_client, [original_item])
+    original_item_in_db = _get_redis_value(redis_client, original_item)
     key = {
         "job_id": payload["job_id"],
         "app_token": payload["app_token"],
@@ -192,7 +219,7 @@ def test_dict_update_by_dict_key(real_redis_client, payload, freezer):
 
     new_update = {"status": "successful", **key}
     new_item = auth_logs.update(key, new_update)
-    new_item_in_db = _get_redis_value(real_redis_client, original_item)
+    new_item_in_db = _get_redis_value(redis_client, original_item)
 
     assert original_item_in_db == original_item.model_dump_json()
     assert new_item_in_db == new_item.model_dump_json()
@@ -203,11 +230,9 @@ def test_dict_update_by_dict_key(real_redis_client, payload, freezer):
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_update_not_found(real_redis_client, payload, freezer):
+def test_update_not_found(redis_client, payload, freezer):
     """Calling update() fails if the item does not exist"""
-    auth_logs = Collection(
-        real_redis_client, schema=AuthLog, partial_schema=PartialAuthLog
-    )
+    auth_logs = Collection(redis_client, schema=AuthLog, partial_schema=PartialAuthLog)
 
     key_tuple = (payload["job_id"], payload["app_token"])
     single_key = "@@@".join(key_tuple)
@@ -233,18 +258,18 @@ def test_update_not_found(real_redis_client, payload, freezer):
     with pytest.raises(ItemNotFoundError, match=r"not found"):
         auth_logs.update(key_dict, new_update)
 
-    hmap = _get_redis_hmap(real_redis_client, schema=AuthLog)
+    hmap = _get_redis_hmap(redis_client, schema=AuthLog)
     assert hmap == {}
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_update_invalid_schema(real_redis_client, payload, freezer):
-    """update() fails if the update payload does not satisfy the schema"""
-    auth_logs = Collection(real_redis_client, schema=AuthLog)
+def test_update_invalid_model(redis_client, payload, freezer):
+    """update() fails if the update payload does not satisfy the model"""
+    auth_logs = Collection(redis_client, schema=AuthLog)
 
     original_item = AuthLog(**{"status": "pending", **payload})
-    _insert_into_redis(real_redis_client, [original_item])
-    original_item_in_db = _get_redis_value(real_redis_client, original_item)
+    _insert_into_redis(redis_client, [original_item])
+    original_item_in_db = _get_redis_value(redis_client, original_item)
 
     key_tuple = (payload["job_id"], payload["app_token"])
     single_key = _get_redis_key(original_item)
@@ -269,52 +294,120 @@ def test_update_invalid_schema(real_redis_client, payload, freezer):
     with pytest.raises(ValidationError, match=r"validation error for PartialAuthLog"):
         auth_logs.update(key_dict, update.model_dump())
 
-    item_in_db = _get_redis_value(real_redis_client, original_item)
+    item_in_db = _get_redis_value(redis_client, original_item)
     assert item_in_db == original_item_in_db
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_insert(real_redis_client, payload, freezer):
+def test_update_indexes(redis_client, payload, freezer):
+    """Calling update() updates the redis index keys"""
+    auth_logs = Collection(redis_client, schema=AuthLog)
+
+    first_item = AuthLog(**{"status": "pending", **payload})
+    second_item = AuthLog(**{"status": "pending", **payload, "job_id": f"{uuid4()}"})
+
+    auth_logs.insert(first_item)
+    auth_logs.insert(second_item)
+    first_redis_key = _get_redis_key(first_item)
+    second_redis_key = _get_redis_key(second_item)
+    first_key_bytes = first_redis_key.encode()
+    second_key_bytes = second_redis_key.encode()
+
+    new_update = {
+        "status": "successful",
+        "job_id": f'{payload["job_id"]}_{uuid4()}',
+        "app_token": payload["app_token"],
+    }
+    new_first_item: AuthLog = auth_logs.update(first_redis_key, new_update)
+
+    status_idx_prefix = _INDEX_PREFIXES["status"]
+    job_id_idx_prefix = _INDEX_PREFIXES["job_id"]
+    app_token_idx_prefix = _INDEX_PREFIXES["app_token"]
+
+    # status changed
+    new_first_status_idx_key = f"{status_idx_prefix}{new_first_item.status}"
+    second_status_idx_key = f"{status_idx_prefix}{second_item.status}"
+
+    assert redis_client.smembers(new_first_status_idx_key) == {first_key_bytes}
+    assert redis_client.smembers(second_status_idx_key) == {second_key_bytes}
+
+    # job_id changed
+    new_first_job_id_idx_key = f"{job_id_idx_prefix}{new_first_item.job_id}"
+    old_first_job_id_idx_key = f"{job_id_idx_prefix}{first_item.job_id}"
+    second_job_id_idx_key = f"{job_id_idx_prefix}{second_item.job_id}"
+
+    assert redis_client.smembers(new_first_job_id_idx_key) == {first_key_bytes}
+    assert redis_client.smembers(second_job_id_idx_key) == {second_key_bytes}
+    assert redis_client.smembers(old_first_job_id_idx_key) == set()
+
+    # app_token did not change, and was same in both
+    app_token_idx_key = f"{app_token_idx_prefix}{new_first_item.app_token}"
+    assert redis_client.smembers(app_token_idx_key) == {
+        first_key_bytes,
+        second_key_bytes,
+    }
+
+
+@pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
+def test_insert(redis_client, payload, freezer):
     """Calling insert() replaces the entire item with a new one"""
-    auth_logs = Collection(real_redis_client, schema=AuthLog)
+    auth_logs = Collection(redis_client, schema=AuthLog)
 
     original_item = AuthLog(**{"status": "pending", **payload})
-    _insert_into_redis(real_redis_client, [original_item])
-    original_item_in_db = _get_redis_value(real_redis_client, original_item)
+    _insert_into_redis(redis_client, [original_item])
+    original_item_in_db = _get_redis_value(redis_client, original_item)
 
     new_item = AuthLog(**{**payload, "status": "successful", "created_at": "belle"})
     auth_logs.insert(new_item)
-    new_item_in_db = _get_redis_value(real_redis_client, original_item)
+    new_item_in_db = _get_redis_value(redis_client, original_item)
 
     assert original_item_in_db == original_item.model_dump_json()
     assert new_item_in_db == new_item.model_dump_json()
 
 
+def test_insert_index(redis_client, freezer):
+    """Calling insert() inserts some indexes"""
+    auth_logs = Collection(redis_client, schema=AuthLog)
+    items = [AuthLog(**{"status": "pending", **payload}) for payload in _AUTH_LOG_LIST]
+
+    expected_indexes = {}
+    for item in items:
+        auth_logs.insert(item)
+        redis_item_key = _get_redis_key(item).encode()
+        idx_keys = _get_redis_index_keys(item)
+        for idx_key in idx_keys:
+            original = expected_indexes.setdefault(idx_key, set())
+            original.add(redis_item_key)
+
+    for idx_key, expected in expected_indexes.items():
+        assert redis_client.smembers(idx_key) == expected
+
+
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_insert_invalid_schema(real_redis_client, payload, freezer):
-    """insert() fails if the payload passed does not satisfy the schema"""
-    auth_logs = Collection(real_redis_client, schema=AuthLog)
+def test_insert_invalid_model(redis_client, payload, freezer):
+    """insert() fails if the payload passed does not satisfy the model"""
+    auth_logs = Collection(redis_client, schema=AuthLog)
 
     original_item = AuthLog(**{"status": "pending", **payload})
-    _insert_into_redis(real_redis_client, [original_item])
-    original_item_in_db = _get_redis_value(real_redis_client, original_item)
+    _insert_into_redis(redis_client, [original_item])
+    original_item_in_db = _get_redis_value(redis_client, original_item)
 
     update = WrongAuthLog(**{**payload, "status": 9})
     with pytest.raises(ValidationError, match=r"validation error for AuthLog"):
         auth_logs.insert(update)
 
-    item_in_db = _get_redis_value(real_redis_client, original_item)
+    item_in_db = _get_redis_value(redis_client, original_item)
     assert item_in_db == original_item_in_db
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_get_one(real_redis_client, payload, freezer):
+def test_get_one(redis_client, payload, freezer):
     """Calling get_one() gets the item identified by the given key"""
-    auth_logs = Collection(real_redis_client, schema=AuthLog)
+    auth_logs = Collection(redis_client, schema=AuthLog)
 
     item = AuthLog(**{"status": "pending", **payload})
-    _insert_into_redis(real_redis_client, [item])
-    item_in_db = _get_redis_value(real_redis_client, item)
+    _insert_into_redis(redis_client, [item])
+    item_in_db = _get_redis_value(redis_client, item)
 
     single_key = _get_redis_key(item)
     key_tuple = (payload["job_id"], payload["app_token"])
@@ -331,9 +424,9 @@ def test_get_one(real_redis_client, payload, freezer):
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_get_one_not_found(real_redis_client, payload, freezer):
+def test_get_one_not_found(redis_client, payload, freezer):
     """Calling get_one() raises ItemNotFoundError if item is nonexistent"""
-    auth_logs = Collection(real_redis_client, schema=AuthLog)
+    auth_logs = Collection(redis_client, schema=AuthLog)
 
     item = AuthLog(**{"status": "pending", **payload})
 
@@ -352,97 +445,259 @@ def test_get_one_not_found(real_redis_client, payload, freezer):
 
 
 @pytest.mark.parametrize("desc", [True, False])
-def test_get_all(real_redis_client, desc, freezer):
+def test_get_all(redis_client, desc, freezer):
     """Calling get_all() gets the items in the collection sorted by key"""
     items = [AuthLog(**{"status": "pending", **payload}) for payload in _AUTH_LOG_LIST]
-    auth_logs = Collection(real_redis_client, schema=AuthLog)
+    auth_logs = Collection(redis_client, schema=AuthLog)
     sorted_items = _sort_by_key(items, desc=desc)
 
-    _insert_into_redis(real_redis_client, items)
+    _insert_into_redis(redis_client, items)
 
     got = auth_logs.get_all(desc=desc)
-    hmap = _get_redis_hmap(real_redis_client, schema=AuthLog)
+    hmap = _get_redis_hmap(redis_client, schema=AuthLog)
     expected_hmap = {_get_redis_key(v): v.model_dump_json() for v in sorted_items}
 
     assert got == sorted_items
     assert hmap == expected_hmap
 
 
+def test_find_by_keys(redis_client, freezer):
+    """Calling find_by_keys() gets the items with the given keys"""
+    items = [AuthLog(**{"status": "pending", **payload}) for payload in _AUTH_LOG_LIST]
+    auth_logs = Collection(redis_client, schema=AuthLog)
+
+    for item in items:
+        auth_logs.insert(item)
+
+    single_keys = [_get_redis_key(v) for v in items]
+    key_tuples = [(v.job_id, v.app_token) for v in items]
+    key_dicts = [{"app_token": v.app_token, "job_id": v.job_id} for v in items]
+
+    items_by_single_key = auth_logs.find_by_keys(*single_keys[1:], "non-existent")
+    items_by_key_tuple = auth_logs.find_by_keys(*key_tuples)
+    items_by_key_dict = auth_logs.find_by_keys(*key_dicts[:-1], "some-random")
+
+    assert items_by_single_key == items[1:]
+    assert items_by_key_tuple == items
+    assert items_by_key_dict == items[:-1]
+
+
+def test_find_by_index(redis_client, freezer):
+    """Calling find_by_index() gets the items by searching in its index"""
+    items = [AuthLog(**{"status": "pending", **payload}) for payload in _AUTH_LOG_LIST]
+    _Partial = PartialAuthLog
+    db = Collection(redis_client, schema=AuthLog, partial_schema=_Partial)
+
+    for item in items:
+        db.insert(item)
+
+    def sort(data: List[AuthLog]) -> List[AuthLog]:
+        """Sorts by job_id"""
+        return sorted(data, key=lambda v: v.job_id)
+
+    pending = JobStatus.PENDING
+    executing = JobStatus.EXECUTING
+    failed = JobStatus.EXECUTING
+
+    pending_items = sort([v for v in items if v.status == pending])
+    executing_items = sort([v for v in items if v.status == executing])
+    failed_items = sort([v for v in items if v.status == failed])
+    feet_items = sort([v for v in items if v.job_id == "feet"])
+    bar_items = sort([v for v in items if v.app_token == "bar"])
+    bar_pending_items = sort(
+        [v for v in items if v.app_token == "bar" and v.status == pending]
+    )
+    bar_executing_items = sort(
+        [v for v in items if v.app_token == "bar" and v.status == executing]
+    )
+
+    assert sort(db.find_by_index({"status": pending})) == pending_items
+    assert sort(db.find_by_index({"status": executing})) == executing_items
+    assert sort(db.find_by_index({"status": failed})) == failed_items
+    assert sort(db.find_by_index({"job_id": "feet"})) == feet_items
+    assert sort(db.find_by_index({"app_token": "bar"})) == bar_items
+    assert (
+        sort(db.find_by_index({"app_token": "bar", "status": pending}))
+        == bar_pending_items
+    )
+    assert (
+        sort(db.find_by_index({"app_token": "bar", "status": executing}))
+        == bar_executing_items
+    )
+
+    assert sort(db.find_by_index(_Partial(status=pending))) == pending_items
+    assert sort(db.find_by_index(_Partial(status=executing))) == executing_items
+    assert sort(db.find_by_index(_Partial(status=failed))) == failed_items
+    assert sort(db.find_by_index(_Partial(job_id="feet"))) == feet_items
+    assert sort(db.find_by_index(_Partial(app_token="bar"))) == bar_items
+    assert (
+        sort(db.find_by_index(_Partial(app_token="bar", status=pending)))
+        == bar_pending_items
+    )
+    assert (
+        sort(db.find_by_index(_Partial(app_token="bar", status=executing)))
+        == bar_executing_items
+    )
+
+
 @pytest.mark.parametrize("bounds", _DELETE_SLICES)
-def test_delete_many_by_single_keys(
-    real_redis_client, bounds: Tuple[int, int], freezer
-):
+def test_delete_many_by_single_keys(redis_client, bounds: Tuple[int, int], freezer):
     """Calling delete_many() removes items with matching single key strings in the collection"""
     items = [AuthLog(**{"status": "pending", **payload}) for payload in _AUTH_LOG_LIST]
-    auth_logs = Collection(real_redis_client, schema=AuthLog)
+    auth_logs = Collection(redis_client, schema=AuthLog)
     keys_to_delete = [_get_redis_key(item) for item in items[bounds[0] : bounds[1]]]
     expected_items = items[: bounds[0]] + items[bounds[1] :]
 
-    _insert_into_redis(real_redis_client, items)
+    _insert_into_redis(redis_client, items)
 
     auth_logs.delete_many(keys_to_delete)
-    hmap = _get_redis_hmap(real_redis_client, schema=AuthLog)
+    hmap = _get_redis_hmap(redis_client, schema=AuthLog)
     expected_hmap = {_get_redis_key(v): v.model_dump_json() for v in expected_items}
 
     assert hmap == expected_hmap
 
 
 @pytest.mark.parametrize("bounds", _DELETE_SLICES)
-def test_delete_many_by_key_tuples(real_redis_client, bounds: Tuple[int, int], freezer):
+def test_delete_many_by_key_tuples(redis_client, bounds: Tuple[int, int], freezer):
     """Calling delete_many() removes items with matching key tuples in the collection"""
     items = [AuthLog(**{"status": "pending", **payload}) for payload in _AUTH_LOG_LIST]
-    auth_logs = Collection(real_redis_client, schema=AuthLog)
+    auth_logs = Collection(redis_client, schema=AuthLog)
     keys_to_delete = [
         (item.job_id, item.app_token) for item in items[bounds[0] : bounds[1]]
     ]
     expected_items = items[: bounds[0]] + items[bounds[1] :]
 
-    _insert_into_redis(real_redis_client, items)
+    _insert_into_redis(redis_client, items)
 
     auth_logs.delete_many(keys_to_delete)
-    hmap = _get_redis_hmap(real_redis_client, schema=AuthLog)
+    hmap = _get_redis_hmap(redis_client, schema=AuthLog)
     expected_hmap = {_get_redis_key(v): v.model_dump_json() for v in expected_items}
 
     assert hmap == expected_hmap
 
 
 @pytest.mark.parametrize("bounds", _DELETE_SLICES)
-def test_delete_many_by_key_dicts(real_redis_client, bounds: Tuple[int, int], freezer):
+def test_delete_many_by_key_dicts(redis_client, bounds: Tuple[int, int], freezer):
     """Calling delete_many() removes items with matching key dictionaries in the collection"""
     items = [AuthLog(**{"status": "pending", **payload}) for payload in _AUTH_LOG_LIST]
-    auth_logs = Collection(real_redis_client, schema=AuthLog)
+    auth_logs = Collection(redis_client, schema=AuthLog)
     keys_to_delete = [
         {"job_id": item.job_id, "app_token": item.app_token}
         for item in items[bounds[0] : bounds[1]]
     ]
     expected_items = items[: bounds[0]] + items[bounds[1] :]
 
-    _insert_into_redis(real_redis_client, items)
+    _insert_into_redis(redis_client, items)
 
     auth_logs.delete_many(keys_to_delete)
-    hmap = _get_redis_hmap(real_redis_client, schema=AuthLog)
+    hmap = _get_redis_hmap(redis_client, schema=AuthLog)
     expected_hmap = {_get_redis_key(v): v.model_dump_json() for v in expected_items}
 
     assert hmap == expected_hmap
 
 
-def test_clear(real_redis_client, freezer):
+@pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
+def test_delete_indexes(redis_client, payload, freezer):
+    """Calling delete() updates the redis index keys"""
+    auth_logs = Collection(redis_client, schema=AuthLog)
+
+    first_item = AuthLog(
+        **{
+            **payload,
+            "status": "successful",
+        }
+    )
+    second_item = AuthLog(**{**payload, "status": "pending", "job_id": f"{uuid4()}"})
+
+    auth_logs.insert(first_item)
+    auth_logs.insert(second_item)
+    first_redis_key = _get_redis_key(first_item)
+    second_redis_key = _get_redis_key(second_item)
+    second_key_bytes = second_redis_key.encode()
+
+    auth_logs.delete_many([first_redis_key])
+
+    status_idx_prefix = _INDEX_PREFIXES["status"]
+    job_id_idx_prefix = _INDEX_PREFIXES["job_id"]
+    app_token_idx_prefix = _INDEX_PREFIXES["app_token"]
+
+    # status changed
+    first_status_idx_key = f"{status_idx_prefix}{first_item.status}"
+    second_status_idx_key = f"{status_idx_prefix}{second_item.status}"
+
+    assert redis_client.smembers(first_status_idx_key) == set()
+    assert redis_client.smembers(second_status_idx_key) == {second_key_bytes}
+
+    # job_id changed
+    first_job_id_idx_key = f"{job_id_idx_prefix}{first_item.job_id}"
+    second_job_id_idx_key = f"{job_id_idx_prefix}{second_item.job_id}"
+
+    assert redis_client.smembers(first_job_id_idx_key) == set()
+    assert redis_client.smembers(second_job_id_idx_key) == {second_key_bytes}
+
+    # app_token was same in both
+    app_token_idx_key = f"{app_token_idx_prefix}{first_item.app_token}"
+    assert redis_client.smembers(app_token_idx_key) == {second_key_bytes}
+
+
+def test_clear(redis_client, freezer):
     """Calling clear() removes all items in hashmap"""
     items = [AuthLog(**{"status": "pending", **payload}) for payload in _AUTH_LOG_LIST]
-    auth_logs = Collection(real_redis_client, schema=AuthLog)
+    auth_logs = Collection(redis_client, schema=AuthLog)
 
-    _insert_into_redis(real_redis_client, items)
+    _insert_into_redis(redis_client, items)
 
     auth_logs.clear()
-    items_in_db = _get_redis_hmap(real_redis_client, schema=AuthLog)
+    items_in_db = _get_redis_hmap(redis_client, schema=AuthLog)
 
     assert items_in_db == {}
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_exists(real_redis_client, payload, freezer):
+def test_clear_indexes(redis_client, payload, freezer):
+    """Calling clear() removes all the redis index keys"""
+    auth_logs = Collection(redis_client, schema=AuthLog)
+
+    first_item = AuthLog(
+        **{
+            **payload,
+            "status": "successful",
+        }
+    )
+    second_item = AuthLog(**{**payload, "status": "pending", "job_id": f"{uuid4()}"})
+
+    auth_logs.insert(first_item)
+    auth_logs.insert(second_item)
+
+    auth_logs.clear()
+
+    status_idx_prefix = _INDEX_PREFIXES["status"]
+    job_id_idx_prefix = _INDEX_PREFIXES["job_id"]
+    app_token_idx_prefix = _INDEX_PREFIXES["app_token"]
+
+    # status changed
+    first_status_idx_key = f"{status_idx_prefix}{first_item.status}"
+    second_status_idx_key = f"{status_idx_prefix}{second_item.status}"
+
+    assert redis_client.smembers(first_status_idx_key) == set()
+    assert redis_client.smembers(second_status_idx_key) == set()
+
+    # job_id changed
+    first_job_id_idx_key = f"{job_id_idx_prefix}{first_item.job_id}"
+    second_job_id_idx_key = f"{job_id_idx_prefix}{second_item.job_id}"
+
+    assert redis_client.smembers(first_job_id_idx_key) == set()
+    assert redis_client.smembers(second_job_id_idx_key) == set()
+
+    # app_token was same in both
+    app_token_idx_key = f"{app_token_idx_prefix}{first_item.app_token}"
+    assert redis_client.smembers(app_token_idx_key) == set()
+
+
+@pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
+def test_exists(redis_client, payload, freezer):
     """Calling exists() checks that key exists"""
-    auth_logs = Collection(real_redis_client, schema=AuthLog)
+    auth_logs = Collection(redis_client, schema=AuthLog)
 
     item = AuthLog(**{"status": "pending", **payload})
 
@@ -454,7 +709,7 @@ def test_exists(real_redis_client, payload, freezer):
     assert not auth_logs.exists(key_tuple)
     assert not auth_logs.exists(key_dict)
 
-    _insert_into_redis(real_redis_client, [item])
+    _insert_into_redis(redis_client, [item])
 
     assert auth_logs.exists(single_key)
     assert auth_logs.exists(key_tuple)
@@ -485,17 +740,36 @@ def _get_redis_value(redis: Redis, item: Schema) -> Union[str, None]:
     return value
 
 
-def _get_redis_hmap(redis: Redis, schema: Type[Schema]) -> Dict[str, str]:
-    """Get the full hashmap for the given schema in redis sorted by key
+def _get_redis_indexes(redis: Redis, item: Schema) -> Union[str, None]:
+    """Get the value of the indexes for the item in redis
 
     Args:
         redis: the redis connection
-        schema: the schema whose collection is to be queried
+        item: the item that might have been stored in the redis
 
     Returns:
-        the dictionary of keys and values in the redis hashmap of the schema
+        the indexes of value saved in redis for the given item or None if they don't exist
     """
-    hashmap_name = _get_redis_hashmap_name(schema)
+    hashmap_name = _get_redis_hashmap_name(item.__class__)
+    redis_key = _get_redis_key(item)
+    value: Union[bytes, None] = redis.hget(hashmap_name, redis_key)
+    if isinstance(value, bytes):
+        return value.decode()
+
+    return value
+
+
+def _get_redis_hmap(redis: Redis, model: Type[Schema]) -> Dict[str, str]:
+    """Get the full hashmap for the given model in redis sorted by key
+
+    Args:
+        redis: the redis connection
+        model: the model whose collection is to be queried
+
+    Returns:
+        the dictionary of keys and values in the redis hashmap of the model
+    """
+    hashmap_name = _get_redis_hashmap_name(model)
     raw_value: Dict[bytes, bytes] = redis.hgetall(hashmap_name)
     return {k.decode(): v.decode() for k, v in raw_value.items()}
 
@@ -516,16 +790,16 @@ def _insert_into_redis(redis: Redis, items: List[Schema]):
     redis.hset(hashmap_name, mapping=redis_items)
 
 
-def _get_redis_hashmap_name(schema: Type[Schema]) -> Union[str, None]:
-    """Get the name of the hashmap for the given schema
+def _get_redis_hashmap_name(model: Type[Schema]) -> Union[str, None]:
+    """Get the name of the hashmap for the given model
 
     Args:
-        schema: the schema under consideration
+        model: the model under consideration
 
     Returns:
         the name of the hashmap where the item is stored
     """
-    return f"{schema.__module__}.{schema.__qualname__}".lower()
+    return f"{model.__module__}.{model.__qualname__}".lower()
 
 
 def _get_redis_key(item: Schema) -> Union[str, None]:
@@ -541,6 +815,20 @@ def _get_redis_key(item: Schema) -> Union[str, None]:
         getattr(item, field) for field in item.__class__.__primary_key_fields__
     )
     return "@@@".join(keys)
+
+
+def _get_redis_index_keys(item: Schema) -> List[str]:
+    """Get the keys of the indexes of the item in redis
+
+    Args:
+        item: the item under consideration
+
+    Returns:
+        the keys of the indexes for the given item
+    """
+    return [
+        f"{prefix}{getattr(item, prop)}" for prop, prefix in _INDEX_PREFIXES.items()
+    ]
 
 
 def _sort_by_key(items: List[Schema], desc: bool = False) -> List[Schema]:

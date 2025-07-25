@@ -1,6 +1,6 @@
 # This code is part of Tergite
 #
-# (C) Martin Ahindura 2023
+# (C) Chalmers Next Labs 2025
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -9,15 +9,13 @@
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
-"""Exceptions for postprocessing"""
+#
 
-
-class PostProcessingError(Exception):
-    """Exception raised when something unexpected happens during postprocessing"""
-
-    def __init__(self, exp: Exception, job_id: str):
-        self.exp = exp
-        self.job_id = job_id
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}<job_id: {self.job_id}, {repr(self.exp)}>"
+from .service import (
+    cancel_booking,
+    cancel_job,
+    delete_user_profile,
+    get_job,
+    submit_booking,
+    submit_job_file,
+)

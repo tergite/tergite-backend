@@ -175,3 +175,9 @@ backend_config.**.toml
 
 # redis
 **.rdb
+
+# sql databases
+*.db
+
+# queue configs
+queue-config.yml

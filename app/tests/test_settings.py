@@ -56,7 +56,7 @@ def test_is_standalone(async_standalone_backend_client):
         assert response.status_code == 200
 
 
-def test_redis_connection(real_redis_client):
+def test_redis_connection(redis_client):
     """The global redis client as be found in settings"""
     from settings import REDIS_CONNECTION
 
@@ -64,9 +64,9 @@ def test_redis_connection(real_redis_client):
     expected = "123"
     REDIS_CONNECTION.set("abc", expected)
     # Read it from the test client
-    got = real_redis_client.get("abc").decode()
+    got = redis_client.get("abc").decode()
     assert expected == got
-    real_redis_client.flushall()
+    redis_client.flushall()
 
 
 def test_no_mss_connected():

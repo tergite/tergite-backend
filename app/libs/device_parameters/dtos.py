@@ -20,7 +20,7 @@ import toml
 from pydantic import BaseModel, Extra, model_validator
 
 from app.utils.datetime import utc_now_str
-from app.utils.store import Schema
+from app.utils.redis_store import Schema
 
 from .utils import attach_units_many
 

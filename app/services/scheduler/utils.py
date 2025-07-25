@@ -1,7 +1,7 @@
 # This code is part of Tergite
 #
 # (C) Nicklas Botö, Fabian Forslund 2022
-# (C) Martin Ahindura 2023
+# (C) Copyright Martin Ahindura 2023, 2024
 # (C) Chalmers Next Labs 2025
 #
 # This code is licensed under the Apache License, Version 2.0. You may
@@ -12,28 +12,21 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 #
-# Modified:
-#
-# - Martin Ahindura, 2023, 2025
+"""Utility functions for the scheduler service"""
+
+from datetime import datetime
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Dict, List, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
+import numpy as np
 import requests
+from numpy import typing as npt
 from pydantic import BaseModel
+from redis import Redis
+from sklearn.utils.extmath import safe_sparse_dot
 
-from app.services.jobs.dtos import (
-    Job,
-    JobResult,
-    JobStatus,
-    LogLevel,
-    Stage,
-    StageName,
-    TimestampLabel,
-    Timestamps,
-)
-from app.utils.datetime import utc_now_str
-from app.utils.store import Collection
+import settings
 from settings import (
     BCC_MACHINE_ROOT_URL,
     JOB_SUPERVISOR_LOG,
@@ -42,20 +35,57 @@ from settings import (
     STORAGE_ROOT,
 )
 
+from ...libs.device_parameters import (
+    DeviceCalibration,
+    get_backend_config,
+    initialize_backend,
+)
+from ...libs.quantum_executor.base.executor import QuantumExecutor
+from ...libs.quantum_executor.qiskit.executor import QiskitDynamicsExecutor
+from ...libs.quantum_executor.quantify.executor import QuantifyExecutor
+from ...libs.quantum_executor.utils.serialization import iqx_rld
+from ...utils.api import get_mss_client
+from ...utils.datetime import get_utc_now, utc_now_str
+from ...utils.queues.dtos import (
+    Job,
+    JobResult,
+    JobStatus,
+    LogLevel,
+    QueueContext,
+    Stage,
+    StageName,
+    TimestampLabel,
+    TimestampPair,
+    Timestamps,
+)
+from ...utils.redis_store import Collection
+
+_JobStage = Literal["execution", "pre_processing", "post_processing"]
+_JobEvent = Literal["started", "finished"]
+_JOB_EVENT_STATUS_CHANGE_MAP: Dict[Tuple[_JobStage, _JobEvent], JobStatus] = {
+    ("execution", "started"): JobStatus.EXECUTING,
+    ("execution", "finished"): JobStatus.SUCCESSFUL,
+}
+"""A map for job status changes as a result of an event at a given job stage"""
+
+
 _STAGE_TIMESTAMPS_MAP: Dict[Stage, Tuple[Tuple[StageName, TimestampLabel], ...]] = {
     Stage.REG_Q: (),
     Stage.REG_W: (("registration", "started"),),
-    Stage.EXEC_Q: (("registration", "finished"),),
+    Stage.PRE_PROC_Q: (("registration", "finished"),),
+    Stage.PRE_PROC_W: (("pre_processing", "started"),),
+    Stage.EXEC_Q: (("pre_processing", "finished"),),
     Stage.EXEC_W: (("execution", "started"),),
     Stage.PST_PROC_Q: (("execution", "finished"),),
     Stage.PST_PROC_W: (("post_processing", "started"),),
     Stage.FINAL_Q: (("post_processing", "finished"), ("final", "started")),
     Stage.FINAL_W: (("final", "finished"),),
 }
-
 _STAGE_STATUS_MAP: Dict[Stage, JobStatus] = {
     Stage.REG_Q: JobStatus.PENDING,
     Stage.REG_W: JobStatus.PENDING,
+    Stage.PRE_PROC_Q: JobStatus.PENDING,
+    Stage.PRE_PROC_W: JobStatus.EXECUTING,
     Stage.EXEC_Q: JobStatus.PENDING,
     Stage.EXEC_W: JobStatus.EXECUTING,
     Stage.PST_PROC_Q: JobStatus.EXECUTING,
@@ -63,6 +93,91 @@ _STAGE_STATUS_MAP: Dict[Stage, JobStatus] = {
     Stage.FINAL_Q: JobStatus.EXECUTING,
     Stage.FINAL_W: JobStatus.SUCCESSFUL,
 }
+_EXECUTOR: Optional[QuantumExecutor] = None
+
+
+def get_queue_context(force_normal_queue: bool = False, **kwargs) -> QueueContext:
+    """Generates a queue context from the given settings
+
+    Args:
+        force_normal_queue: the flag for whether to force the usage of the normal queue
+
+    Returns:
+        the queue context
+    """
+    post_processing_folder = (
+        settings.STORAGE_ROOT
+        / settings.STORAGE_PREFIX_DIRNAME
+        / settings.LOGFILE_DOWNLOAD_POOL_DIRNAME
+    )
+    return {
+        "queue_prefix": settings.QUEUE_PREFIX,
+        "booking_db_url": settings.BOOKING_DB_URL,
+        "jobs_store_url": settings.JOBS_REDIS_URL,
+        "force_normal_queue": force_normal_queue,
+        "max_idle_time": settings.MAX_IDLE_TIME,
+        "is_async": settings.IS_ASYNC,
+        "post_processing_folder": f"{post_processing_folder}",
+        **kwargs,
+    }
+
+
+def get_executor(
+    redis: Redis = settings.REDIS_CONNECTION,
+    executor_type: str = settings.EXECUTOR_TYPE,
+    quantify_config_file: str = settings.QUANTIFY_CONFIG_FILE,
+    quantify_metadata_file: str = settings.QUANTIFY_METADATA_FILE,
+    mss_url: str = settings.MSS_MACHINE_ROOT_URL,
+) -> QuantumExecutor:
+    """Gets the executor for running jobs
+
+    It also initializes the backend before returning the executor
+
+    Args:
+        redis: the connection to the redis database
+        executor_type: the executor type to return
+        quantify_config_file: the path to the configuration file of the executor
+        quantify_metadata_file: the path to the metadata file of the executor
+        mss_url: the URL to MSS
+
+    Returns:
+        An initialized quantum executor
+    """
+    global _EXECUTOR
+    if _EXECUTOR is None:
+        backend_config = get_backend_config()
+
+        if executor_type == "quantify":
+            _EXECUTOR: QuantifyExecutor = QuantifyExecutor(
+                quantify_config_file=quantify_config_file,
+                quantify_metadata_file=quantify_metadata_file,
+                backend_config=backend_config,
+            )
+
+        if executor_type == "qiskit_pulse_1q":
+            _EXECUTOR: QiskitDynamicsExecutor = QiskitDynamicsExecutor.new_one_qubit(
+                backend_config=backend_config
+            )
+            backend_config.calibration_config.discriminators = (
+                _EXECUTOR.backend.train_discriminator()
+            )
+
+        if executor_type == "qiskit_pulse_2q":
+            _EXECUTOR: QiskitDynamicsExecutor = QiskitDynamicsExecutor.new_two_qubit(
+                backend_config=backend_config
+            )
+            backend_config.calibration_config.discriminators = (
+                _EXECUTOR.backend.train_discriminator()
+            )
+
+        initialize_backend(
+            redis,
+            mss_client=get_mss_client(),
+            mss_url=mss_url,
+            backend_config=backend_config,
+        )
+
+    return _EXECUTOR
 
 
 def log_job_msg(message: str, level: LogLevel = LogLevel.INFO) -> None:
@@ -140,7 +255,7 @@ def update_job_stage(jobs_db: Collection[Job], job_id: str, stage: Stage) -> Job
     job: Job = jobs_db.get_one(key)
 
     current_timestamp = utc_now_str()
-    timestamps = _get_next_job_timestamps(
+    timestamps = _get_next_timestamps(
         job, next_stage=stage, current_time=current_timestamp
     )
     status = _get_next_status(job, next_stage=stage)
@@ -246,6 +361,67 @@ def update_job_in_mss(
     return resp
 
 
+def apply_linear_discriminator(
+    device_calibration: DeviceCalibration,
+    qubit_idx: int,
+    iq_points: npt.NDArray[np.complex128],
+) -> npt.NDArray[np.int_]:
+    """
+    Fetches the linear discriminator from the backend definition
+
+    Args:
+        device_calibration: calibration data of the device
+        qubit_idx: ID of the qubit to discriminate
+        iq_points: IQ points from the measurement
+
+    Returns:
+        Discriminated 0 and 1 states as numpy array
+
+    """
+    discriminator_ = device_calibration.discriminators["lda"]
+    # TODO: We are having two "qubit_id" (e.g. q12 = 0, q13 = 1)
+    #  and we should have some more meaningful representation
+    qubit_id_ = f"q{qubit_idx}"
+
+    coefficients = np.array(
+        [
+            discriminator_[qubit_id_]["coef_0"],
+            discriminator_[qubit_id_]["coef_1"],
+        ]
+    )
+    intercept = np.array(discriminator_[qubit_id_]["intercept"])
+
+    data = np.zeros((iq_points.shape[0], 2))
+    data[:, 0] = iq_points.real
+    data[:, 1] = iq_points.imag
+
+    scores = safe_sparse_dot(data, coefficients.T, dense_output=True) + intercept
+
+    return (scores.ravel() > 0).astype(np.int_)
+
+
+def decompress_qobj(qobj_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Reverses the compression done on the qobj at the SDK level
+
+    Before submission, the qobj dict was compressed to ease
+    transportation. This compression is reversed here.
+
+    Note that this decompression is done in-place
+
+    Args:
+        qobj_dict: the dict of the PulseQobj to decompress
+
+    Returns:
+        A QObject dict that is decompressed
+    """
+    # --- In-place RLD pulse library
+    # [([a,b], 2),...] -> [[a,b],[a,b],...]
+    for pulse in qobj_dict["config"]["pulse_library"]:
+        pulse["samples"] = iqx_rld(pulse["samples"])
+
+    return qobj_dict
+
+
 def _get_next_status(job: Job, next_stage: Stage) -> JobStatus:
     """Gets the next status given a job and the next stage
 
@@ -262,9 +438,7 @@ def _get_next_status(job: Job, next_stage: Stage) -> JobStatus:
     return status
 
 
-def _get_next_job_timestamps(
-    job: Job, next_stage: Stage, current_time: str
-) -> Timestamps:
+def _get_next_timestamps(job: Job, next_stage: Stage, current_time: str) -> Timestamps:
     """Gets the next timestamps for the given job and the next stage
 
     Args:

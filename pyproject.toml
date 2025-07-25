@@ -45,13 +45,15 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "fastapi>=0.115.12",
-    "redis>=3.5.3",
-    "rq>=1.10.0",
-    "uvicorn>=0.34.1",
+    "rq~=2.4.0",
+    "sqlmodel~=0.0.24",
+    "hiredis~=3.2.1",
+    "passlib[bcrypt]~=1.7.4",
+    "pyjwt~=2.9.0",
+    "pyyaml~=6.0.2",
+    "fastapi[standard]~=0.116.1",
     "h5py>=3.12.1",
     "toml>=0.10.2",
-    "python_multipart>=0.0.6",
     "qiskit~=0.45.0",
     "qiskit-ibm-provider>=0.9.0",
     "quantify-core>=0.8.1",
@@ -63,6 +65,7 @@ dependencies = [
     "ruamel.yaml~=0.18.10",
     "jax>=0.5.1",
     "qiskit-dynamics>=0.5.1",
+    "cryptography~=45.0.2",
     # deps of deps
     # ------------
     # Just adding these libraries and versions to avoid resolution-too-deep errors
@@ -76,7 +79,6 @@ dependencies = [
     "pandas~=2.2.1",
     "annotated-types~=0.7.0",
     "anyio~=4.8.0",
-    "starlette~=0.46.1",
     "dill~=0.3.9"
 ]
 
@@ -84,13 +86,17 @@ dependencies = [
 dev = [
     "pytest>=8.3.5",
     "httpx~=0.28.0",
-    "pytest-mock>=3.12.0",
     "black~=25.1.0",
     "isort~=6.0.0",
     "freezegun~=1.5.1",
     "pytest-freezegun>=0.4.2",
     "pytest-lazy-fixtures>=1.1.2",
     "pre-commit~=4.2.0",
+    "rq-dashboard~=0.8.3.2",
+    "requests-mock>=1.11.0",
+    "pytest-mock~=3.14.1",
+    "pytest-timeout~=2.4.0",
+    "setuptools~=75.9.1",
     # deps of deps
     # -----------
     # Adding these here to constrain their versions to

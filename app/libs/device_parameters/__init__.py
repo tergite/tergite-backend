@@ -27,7 +27,7 @@ from requests import Session
 
 import settings
 
-from ...utils.store import Collection
+from ...utils.redis_store import Collection
 from .dtos import (
     BackendConfig,
     Device,

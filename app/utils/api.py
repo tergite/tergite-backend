@@ -15,13 +15,94 @@
 import logging
 import shutil
 from pathlib import Path
-from typing import Awaitable, Callable, Optional, Union
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Generic,
+    List,
+    Literal,
+    NotRequired,
+    Optional,
+    TypedDict,
+    TypeVar,
+    Union,
+)
 
 import requests
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from fastapi import HTTPException, Request, Response, UploadFile
 from fastapi.exception_handlers import http_exception_handler
+from pydantic import BaseModel
 
 import settings
+
+from .model import IncEx
+
+ITEM = TypeVar("ITEM", bound=BaseModel)
+
+_MSS_PUBLIC_KEY: Optional[RSAPublicKey] = None
+
+
+class GeneralMessage(TypedDict):
+    """A general message object sent on the API"""
+
+    status: Literal["success", "error", "cancelled", "failed"]
+    detail: NotRequired[str]
+
+
+class TokenResponse(TypedDict):
+    """A token response sent on the API"""
+
+    access_token: str
+    token_type: Literal["bearer",]
+
+
+class PaginatedListResponse(BaseModel, Generic[ITEM]):
+    """The response when sending paginated data"""
+
+    skip: int = 0
+    limit: Optional[int] = None
+    data: List[ITEM] = []
+
+    def model_dump(
+        self,
+        *,
+        mode: Literal["json", "python"] | str = "python",
+        include: IncEx | None = None,
+        exclude: IncEx | None = None,
+        context: Any | None = None,
+        by_alias: bool | None = None,
+        exclude_unset: bool = False,
+        exclude_defaults: bool = False,
+        exclude_data_none_fields: bool = True,
+        round_trip: bool = False,
+        warnings: bool | Literal["none", "warn", "error"] = True,
+        serialize_as_any: bool = False,
+        **kwargs,
+    ) -> dict[str, Any]:
+        return {
+            "skip": self.skip,
+            "limit": self.limit,
+            "data": [
+                item.model_dump(
+                    mode=mode,
+                    include=include,
+                    exclude=exclude,
+                    context=context,
+                    by_alias=by_alias,
+                    exclude_unset=exclude_unset,
+                    exclude_defaults=exclude_defaults,
+                    exclude_none=exclude_data_none_fields,
+                    round_trip=round_trip,
+                    warnings=warnings,
+                    serialize_as_any=serialize_as_any,
+                )
+                for item in self.data
+            ],
+        }
 
 
 def get_mss_client(app_token: str = settings.MSS_APP_TOKEN) -> requests.Session:
@@ -83,3 +164,46 @@ def to_http_error(
         return await http_exception_handler(request, http_exp)
 
     return handler
+
+
+def encrypt_mss_jwt_token(
+    token: str, key_path: Path = settings.MSS_PUBLIC_KEY_PATH
+) -> str:
+    """Encrypts the token passed so that it is only readable by the right MSS instance
+
+    Args:
+        token: the raw token to encrypt
+        key_path: the file path to the RSA public key PEM file
+
+    Returns:
+        the encrypted token
+    """
+    mss_pub_key = _get_mss_public_key(key_path=key_path)
+    cipher_bytes = mss_pub_key.encrypt(
+        token.encode(),
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None,
+        ),
+    )
+    return cipher_bytes.decode()
+
+
+def _get_mss_public_key(key_path: Path = settings.MSS_PUBLIC_KEY_PATH):
+    """Loads the public key for MSS given the path to the key file
+
+    Args:
+        key_path: the file path to the RSA public key PEM file
+
+    Returns:
+        the public key of the MSS
+    """
+    global _MSS_PUBLIC_KEY
+
+    if not _MSS_PUBLIC_KEY:
+        with open(key_path, "rb") as key_file:
+            data = key_file.read()
+            _MSS_PUBLIC_KEY = serialization.load_pem_public_key(data)
+
+    return _MSS_PUBLIC_KEY

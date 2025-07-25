@@ -26,6 +26,7 @@ from app.libs.quantum_executor.base.experiment import (
     copy_expt_header_with,
 )
 
+from ...device_parameters import get_backend_config
 from .instruction import (
     Acquire,
     Delay,
@@ -61,6 +62,12 @@ class QiskitDynamicsExperiment(NativeExperiment):
     @cached_property
     def schedule(self) -> "Schedule":
         return self.raw_schedule
+
+    @cached_property
+    def duration(self) -> float:
+        backend_conf = get_backend_config()
+        time_step_len = backend_conf.general_config.dt
+        return self.raw_schedule.duration * time_step_len
 
     @classmethod
     def from_qobj_expt(
