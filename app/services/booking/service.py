@@ -11,7 +11,7 @@
 # that they have been altered from the originals.
 #
 """Module containing the service methods"""
-
+import logging
 from datetime import datetime, timedelta
 from typing import Any, List, Optional
 
@@ -31,20 +31,18 @@ from ...utils.exc import (
     ConflictError,
     ItemNotFoundError,
     MaxBookingsError,
-    NotAllowedError,
     NotAuthenticatedError,
     UnauthorizedError,
 )
 from ...utils.strings import get_random_name, uuid_str
 from .models import (
     Booking,
-    LoginDetails,
     NewBookingInfo,
     NewUserInfo,
     User,
     UserProfile,
 )
-from .utils import hash_password, verify_password
+from .utils import hash_password
 
 _Filter = _ColumnExpressionArgument[bool] | bool
 
@@ -195,28 +193,6 @@ def get_next_booking(db_engine: Engine) -> Optional[Booking]:
         return booking
 
 
-def create_root_user(db_engine: Engine, data: NewUserInfo) -> User:
-    """Creates a root user only if not exists and returns them
-
-    Args:
-        db_engine: the SQL engine to save new job in
-        data: the user info
-
-    Returns:
-        the created user
-
-    Raises:
-        ConflictError: booking conflicts with another user
-        NotAllowedError: root user already exists
-    """
-    admin_user = get_user(db_engine, User.is_admin == True)
-    if isinstance(admin_user, User):
-        raise NotAllowedError("root user already exists")
-
-    data.is_admin = True
-    return create_user(db_engine, data)
-
-
 def create_random_user(db_engine: Engine, user_id: str) -> User:
     """Creates a new random user for the given user id and returns it
 
@@ -275,22 +251,6 @@ def delete_users(db_engine: Engine, *filters: _Filter):
         session.commit()
 
 
-def authenticate_user(db_engine: Engine, data: LoginDetails) -> Optional[User]:
-    """Authenticates the user given the login information
-
-    Args:
-        db_engine: the SQL engine to query from
-        data: the login information for the given user
-
-    Returns:
-          the authenticated user or None if the user is non-existent or password is wrong
-    """
-    user = get_user(db_engine, User.email == data.email)
-    if user and verify_password(data.password, password_hash=user.password):
-        return user
-    return None
-
-
 def get_user_profile(db_engine: Engine, user_id: str) -> UserProfile:
     """Returns the user profile of the user of the given user ID
 
@@ -330,27 +290,6 @@ def get_user(db_engine: Engine, *filters: _Filter) -> Optional[User]:
         user = results.first()
         session.expunge_all()
         return user
-
-
-def get_admin_user(db_engine: Engine, *filters: _Filter) -> User:
-    """Gets the admin user who matches the filters or raises an UnauthorizedError
-
-    Args:
-        db_engine: the SQL engine from which to query
-        filters: the filters that the user should match
-
-    Returns:
-        the user
-
-    Raises:
-        UnauthorizedError: unauthorized
-        NotAuthenticatedError: not authenticated
-    """
-
-    user = get_user(db_engine, User.is_admin == True, *filters)
-    if user is None:
-        raise UnauthorizedError("unauthorized")
-    return user
 
 
 def get_many_user_profiles(
@@ -405,62 +344,9 @@ def create_mss_jwt_token(
     Returns:
         the JWT token
     """
-    return create_jwt_token(
-        user, secret_key=secret_key, ttl=ttl, algorithm=algorithm, job=job_id
-    )
-
-
-def create_jwt_token(
-    user: "User",
-    secret_key: str = settings.JWT_SECRET,
-    ttl: float = settings.JWT_TTL,
-    algorithm: str = "HS256",
-    **extra_claims: Any,
-) -> str:
-    """Creates a JWT token containing the data passed
-
-    Note that extra claims `exp` and `sub` get overridden
-    so don't set them directly
-
-    Args:
-        user: the user for whom the token is to be created
-        secret_key: the key to use to sign the token
-        ttl: the time to live for the token in seconds
-        algorithm: the algorithm to use to sign the JWT
-        extra_claims: more claims to add to the token
-
-    Returns:
-        the JWT token
-    """
     exp = get_utc_now() + timedelta(seconds=ttl)
-    payload = dict(**extra_claims, exp=exp, sub=user.id)
+    payload = dict(job=job_id, exp=exp, sub=user.id)
     return jwt.encode(payload, secret_key, algorithm=algorithm)
-
-
-def get_current_user_id(
-    token: str,
-    secret_key: str = settings.JWT_SECRET,
-    algorithm: str = "HS256",
-) -> str:
-    """Gets the id of the current user given the JWT token
-
-    Args:
-        token: the JWT token of the user
-        secret_key: the secret key for the JWT encoding/decoding
-        algorithm: the algorithm used to encode the JWT
-
-    Returns:
-        the ID of the current user
-
-    Raises:
-        NotAuthenticatedError: not authenticated
-    """
-    result = _get_claims_from_token(
-        token, claims=("sub",), secret_key=secret_key, algorithm=algorithm
-    )
-    if result[0] is None:
-        raise NotAuthenticatedError("not authenticated")
-    return result[0]
 
 
 def get_user_job_id_pair_from_token(
@@ -481,40 +367,15 @@ def get_user_job_id_pair_from_token(
     Raises:
         NotAuthenticatedError: not authenticated
     """
-    user_id, job_id = _get_claims_from_token(
-        token, claims=("sub", "job"), secret_key=secret_key, algorithm=algorithm
-    )
-    if user_id is None:
-        raise NotAuthenticatedError("not authenticated")
-    return user_id, job_id
-
-
-def _get_claims_from_token(
-    token: str,
-    claims: tuple[str, ...],
-    secret_key: str = settings.JWT_SECRET,
-    algorithm: str = "HS256",
-) -> tuple[Any, ...]:
-    """Gets the named claims of the current user given the JWT token
-
-    Args:
-        token: the JWT token of the user
-        claims: the tuple of names of the claims to return
-        secret_key: the secret key for the JWT encoding/decoding
-        algorithm: the algorithm used to encode the JWT
-
-    Returns:
-        the tuple of claims got
-
-    Raises:
-        NotAuthenticatedError: not authenticated
-    """
     try:
         payload = jwt.decode(token, secret_key, algorithms=[algorithm])
-        return tuple(payload[k] for k in claims)
-    except InvalidTokenError:
-        raise NotAuthenticatedError("not authenticated")
-    except KeyError:
+        user_id, job_id = payload["sub"], payload["job"]
+        if user_id is None:
+            raise ValueError("user_id is None")
+
+        return user_id, job_id
+    except (InvalidTokenError, KeyError, ValueError) as exp:
+        logging.error(exp)
         raise NotAuthenticatedError("not authenticated")
 
 

@@ -39,7 +39,7 @@ from ...utils.exc import (
 from ...utils.queues.dtos import Job, JobStatus, Stage, StorageID
 from ...utils.rq import cancel_rq_job
 from ..booking import get_many_bookings
-from ..booking.models import Booking, MSSLoginDetails, NewBookingInfo, User
+from ..booking.models import Booking, MSSTokenClaims, NewBookingInfo, User
 from ..booking.service import (
     create_booking,
     delete_bookings,
@@ -165,7 +165,7 @@ def submit_job_file(
     queues: QueuePool,
     upload_file: UploadFile,
     upload_folder: Path,
-    credentials: MSSLoginDetails,
+    credentials: MSSTokenClaims,
     force_normal_queue: bool = False,
 ) -> Job:
     """Submits the job for processing
@@ -209,7 +209,6 @@ def submit_job_file(
     # It would be harder to pass the job payload itself across each worker because it would have
     # to be pickled.
     store = get_jobs_store(url=jobs_store_url)
-    redis_connection = store._connection
 
     job_id = credentials.job_id
     user_id = credentials.user_id
@@ -222,9 +221,7 @@ def submit_job_file(
 
     # save job in database
     backend_config = get_backend_config()
-    calibration_info = get_device_calibration_info(
-        redis_connection, backend_config=backend_config
-    )
+    calibration_info = get_device_calibration_info(backend_config)
     job = Job(
         job_id=job_id,
         device=backend_config.general_config.name,

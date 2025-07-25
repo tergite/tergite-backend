@@ -305,7 +305,6 @@ def postprocess(
 
     job_id = job.job_id
     working_folder = Path(context["post_processing_folder"])
-    connection = get_current_job().connection
 
     jobs_store = get_jobs_store(url=context["jobs_store_url"])
     new_file = move_file(results_file, new_folder=working_folder, ext=".hdf5")
@@ -320,10 +319,7 @@ def postprocess(
     try:
         with get_mss_client() as mss_client:
             if quantum_job.meas_level == MeasLvl.DISCRIMINATED:
-                backend_config = get_backend_config()
-                calibration = get_device_calibration_info(
-                    connection, backend_config=backend_config
-                )
+                calibration = get_device_calibration_info()
                 discriminator = functools.partial(
                     apply_linear_discriminator, calibration
                 )

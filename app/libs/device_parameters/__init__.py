@@ -35,6 +35,8 @@ from .dtos import (
 )
 
 _BACKEND_CONFIG: Optional[BackendConfig] = None
+_DEVICES_STORE: Optional[Collection[Device]] = None
+_CALIB_STORE: Optional[Collection[DeviceCalibration]] = None
 
 
 def get_backend_config() -> BackendConfig:
@@ -97,13 +99,11 @@ def initialize_backend(
 
 
 def get_device_info(
-    redis: Redis,
     backend_config: Optional[BackendConfig] = None,
 ) -> Device:
     """Retrieves this device's info in Device format
 
     Args:
-        redis: the connection to redis database
         backend_config: the BackendConfig instance for this device
 
     Returns:
@@ -112,22 +112,24 @@ def get_device_info(
     Raises:
         ItemNotFoundError: '{backend_config.general_config.name}' not found
     """
+    global _DEVICES_STORE
     if backend_config is None:
         backend_config = get_backend_config()
 
+    if _DEVICES_STORE is None:
+        connection = Redis.from_url(settings.RQ_REDIS_URL)
+        _DEVICES_STORE = Collection[Device](connection, schema=Device)
+
     device_name = backend_config.general_config.name
-    devices_db = Collection[Device](redis, schema=Device)
-    return devices_db.get_one(device_name)
+    return _DEVICES_STORE.get_one(device_name)
 
 
 def get_device_calibration_info(
-    redis: Redis,
     backend_config: Optional[BackendConfig] = None,
 ) -> DeviceCalibration:
     """Retrieves this device's calibration info in DeviceCalibration format
 
     Args:
-        redis: the connection to redis
         backend_config: the BackendConfig instance for this device
 
     Returns:
@@ -136,12 +138,18 @@ def get_device_calibration_info(
     Raises:
         ItemNotFoundError: '{backend_config.general_config.name}' not found
     """
+    global _CALIB_STORE
     if backend_config is None:
         backend_config = get_backend_config()
 
+    if _CALIB_STORE is None:
+        connection = Redis.from_url(settings.RQ_REDIS_URL)
+        _CALIB_STORE = Collection[DeviceCalibration](
+            connection, schema=DeviceCalibration
+        )
+
     device_name = backend_config.general_config.name
-    calib_db = Collection[DeviceCalibration](redis, schema=DeviceCalibration)
-    return calib_db.get_one(device_name)
+    return _CALIB_STORE.get_one(device_name)
 
 
 def send_backend_info_to_mss(

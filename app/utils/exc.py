@@ -76,19 +76,9 @@ class PostProcessingError(Exception):
         return f"{self.__class__.__name__}<job_id: {self.job_id}, {repr(self.exp)}>"
 
 
-# class JobNotFound(Exception):
-#     """A job was not found on redis"""
-#
-#     def __init__(self, job_id) -> None:
-#         self.job_id = job_id
-#
-#     def __str__(self):
-#         return f"Job {self.job_id} not found"
-
-
-# class MalformedJob(BaseBccException):
-#     """Exception when Job file is malformed"""
-
-
 class JobAlreadyCancelled(BaseBccException):
     """Exception when Job is already cancelled"""
+
+
+class InvalidJobIdInUploadedFileError(BaseBccException):
+    pass

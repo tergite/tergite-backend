@@ -18,7 +18,7 @@ from ...utils.queues.dtos import Job
 from ...utils.redis_store import Collection
 
 
-def get_jobs_store(url: str) -> Collection:
+def get_jobs_store(url: str) -> Collection[Job]:
     """Gets the store for the given url for the jobs
 
     Args:

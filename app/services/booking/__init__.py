@@ -11,19 +11,14 @@
 # that they have been altered from the originals.
 #
 from .service import (
-    authenticate_user,
     create_booking,
-    create_jwt_token,
     create_mss_jwt_token,
     create_random_user,
-    create_root_user,
     create_user,
     delete_bookings,
     delete_users,
     get_active_booking,
-    get_admin_user,
     get_booking,
-    get_current_user_id,
     get_many_bookings,
     get_many_user_profiles,
     get_next_booking,

@@ -35,15 +35,54 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from fastapi import HTTPException, Request, Response, UploadFile
 from fastapi.exception_handlers import http_exception_handler
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
+from redis import Redis
 
 import settings
 
+from .datetime import utc_now_str
 from .model import IncEx
+from .redis_store import Collection, Schema
 
 ITEM = TypeVar("ITEM", bound=BaseModel)
 
 _MSS_PUBLIC_KEY: Optional[RSAPublicKey] = None
+_REQUEST_LOGS_STORE: Optional[Collection["RequestLog"]] = None
+
+
+class RequestLog(Schema):
+    """Schema for tracking requests"""
+
+    __primary_key_fields__ = ("request_id",)
+    __index_fields__ = (
+        "user_id",
+        "ip_address",
+    )
+    model_config = ConfigDict(extra="allow")
+
+    request_id: str
+    user_id: Optional[str] = None
+    ip_address: Optional[str] = None
+    created_at: Optional[str] = Field(default_factory=utc_now_str)
+    updated_at: Optional[str] = Field(default_factory=utc_now_str)
+
+    @classmethod
+    def from_request(cls, request: Request) -> "RequestLog":
+        """Generates a request log object from the request
+
+        Args:
+            request: the received HTTP request
+
+        Returns:
+            the request log object
+        """
+        user_id = request.headers.get("x-mss-user-id")
+        request_id = request.state.request_id
+        return cls(
+            request_id=request_id,
+            user_id=user_id,
+            ip_address=f"{request.client.host}",
+        )
 
 
 class GeneralMessage(TypedDict):
@@ -166,6 +205,20 @@ def to_http_error(
     return handler
 
 
+def get_request_logs_store() -> Collection[RequestLog]:
+    """Gets the store for the given url for the request logs
+
+    Returns:
+        the RedisCollection containing the jobs
+    """
+    global _REQUEST_LOGS_STORE
+    if _REQUEST_LOGS_STORE is None:
+        connection = Redis.from_url(url=settings.RQ_REDIS_URL)
+        _REQUEST_LOGS_STORE = Collection(connection=connection, schema=RequestLog)
+
+    return _REQUEST_LOGS_STORE
+
+
 def encrypt_mss_jwt_token(
     token: str, key_path: Path = settings.MSS_PUBLIC_KEY_PATH
 ) -> str:
@@ -188,6 +241,30 @@ def encrypt_mss_jwt_token(
         ),
     )
     return cipher_bytes.decode()
+
+
+def verify_mss_signature(
+    signature: str, message: str, key_path: Path = settings.MSS_PUBLIC_KEY_PATH
+) -> None:
+    """Verifies that the given message is from MSS, given the signature
+
+    Args:
+        signature: the signature of the message signed by MSS
+        message: the message from MSS
+        key_path: the file path to the RSA public key PEM file
+
+    Raises:
+        InvalidSignature: if signature does not match with what would be expected from MSS
+    """
+    mss_pub_key = _get_mss_public_key(key_path=key_path)
+    mss_pub_key.verify(
+        signature.encode(),
+        message.encode(),
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH
+        ),
+        hashes.SHA256(),
+    )
 
 
 def _get_mss_public_key(key_path: Path = settings.MSS_PUBLIC_KEY_PATH):

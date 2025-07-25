@@ -23,20 +23,13 @@ from app.utils.datetime import get_relative_time, get_utc_now, to_utc
 from app.utils.strings import uuid_str
 
 
-class MSSLoginDetails(BaseModel):
-    """The model used for login via MSS"""
+class MSSTokenClaims(BaseModel):
+    """The model of the claims stored in special MSS JWT token given to users"""
 
     __primary_key_fields__ = ("job_id", "user_id")
 
     job_id: str
     user_id: str
-
-
-class LoginDetails(BaseModel):
-    """Schema for logging in"""
-
-    email: str
-    password: str
 
 
 class UserProfile(BaseModel):

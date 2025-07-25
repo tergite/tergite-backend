@@ -11,34 +11,34 @@
 # that they have been altered from the originals.
 """Dependencies useful for the FastAPI API"""
 import json
-from typing import Annotated, Optional, Tuple
+import logging
+import time
+from typing import Optional, Tuple
 
+from cryptography.exceptions import InvalidSignature
 from fastapi import Depends, HTTPException, UploadFile, status
 from fastapi.requests import Request
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import ValidationError
-from redis import Redis
 
 import settings
 
-from ..services import booking
-from ..services.booking.models import MSSLoginDetails, User
+from ..services.booking.models import MSSTokenClaims
 from ..services.booking.service import get_user_job_id_pair_from_token
 from ..services.booking.store import get_bookings_sql_engine
-from ..services.jobs.dtos import JobFile, JobStatus
 from ..services.scheduler import get_job
-from ..utils.exc import ItemNotFoundError, NotAuthenticatedError, UnauthorizedError
-from ..utils.queues.dtos import Job
+from ..utils.api import get_request_logs_store, verify_mss_signature
+from ..utils.exc import (
+    InvalidJobIdInUploadedFileError,
+    ItemNotFoundError,
+    NotAuthenticatedError,
+    UnauthorizedError,
+)
+from ..utils.queues.dtos import JobFile
 from ..utils.strings import validate_uuid4_str
-from .exc import InvalidJobIdInUploadedFileError, IpNotAllowedError
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 DB_ENGINE = get_bookings_sql_engine(settings.BOOKING_DB_URL)
-
-
-def get_redis_connection():
-    """Returns a redis connection"""
-    return settings.REDIS_CONNECTION
 
 
 def get_job_id_dependency(job_id_field: str):
@@ -101,33 +101,86 @@ async def get_job_id_from_uploaded_file(
     raise InvalidJobIdInUploadedFileError(error_message)
 
 
-def get_whitelisted_ip(request: Request) -> str:
-    """Returns the whitelisted IP if exists or raises a IpNotAllowedError
+def get_verified_mss_admin_user_id(request: Request) -> str:
+    """Returns the user_id if user is admin in MSS as got from MSS passed through special headers
+
+    We are choosing to trust MSS and so whenever a request comes from
+    MSS. The `x-mss-is-admin` header shows whether this is user is admin in MSS or not
 
     Args:
         request: the current FastAPI request
 
     Returns:
-        the whitelisted IP
+        the user_id as got from MSS
+    """
+    user_id = get_verified_mss_user_id(request)
+    try:
+        is_admin = request.headers["x-mss-is-admin"]
+        if is_admin.lower().strip() != "true":
+            raise ValueError(f"{is_admin} is not true")
+    except (KeyError, ValueError) as exp:
+        logging.error(exp)
+        raise UnauthorizedError("Forbidden")
+
+    return user_id
+
+
+def get_verified_mss_user_id(request: Request) -> str:
+    """Returns the user_id as got from MSS passed through special headers
+
+    We are choosing to trust MSS and so whenever a request comes from
+    MSS, there will be an `x-mss-user-id` and `x-mss-signature` header.
+    We will get the `x-mss-user-id` and return it only if the `x-mss-user-id-signature`
+    is verified by MSS public key.
+
+    For better security against replay attacks, we also use the `x-mss-request-id` and
+    `x-mss-timestamp` headers
+
+    Note that the user can be "" i.e. no user especially where there is no user expected
+
+    Args:
+        request: the current FastAPI request
+
+    Returns:
+        the user_id as got from MSS
     """
     try:
-        return request.state.whitelisted_ip
-    except AttributeError:
-        raise IpNotAllowedError()
+        user_id = request.headers["x-mss-user-id"]
+        nonce = request.headers["x-mss-request-id"]
+        timestamp = request.headers["x-mss-timestamp"]
+        signature = request.headers["x-mss-signature"]
+
+        message = f"{user_id}-{nonce}-{timestamp}"
+        verify_mss_signature(signature=signature, message=message)
+
+        now = time.time()
+        if abs(now - float(timestamp)) > settings.MSS_NONCE_TTL:
+            raise ValueError(
+                f"nonce of timestamp {timestamp} is older than {settings.MSS_NONCE_TTL} seconds"
+            )
+
+        requests_store = get_request_logs_store()
+        if requests_store.exists(nonce):
+            raise ValueError(f"duplicate request nonce: '{nonce}'")
+
+        return user_id
+    except (KeyError, InvalidSignature, ValueError) as exp:
+        logging.error(exp)
+        raise NotAuthenticatedError("user not authenticated")
 
 
-def get_valid_credentials_dep(
+def get_user_job_id_pair_dep(
     job_exists: bool = True,
     job_id_field: str = "job_id",
 ):
-    """Gets a dependency injector that gets the pair (user_id, job_id) for the given request.
+    """Gets a dependency injector that gets the pair (user_id, job_id) from the request to allow job submission.
 
     It extracts the JWT token from the headers and the job_id from the parameters
     or from the file body.
     The dependency injector raises authentication or authorization errors if no
     valid token and job_id pair is found.
 
-    The dependency injector returns the MSSLoginDetails and may raise the following errors:
+    The dependency injector returns the MSSTokenClaims and may raise the following errors:
         NotAuthenticatedError: job {job_id} does not exist for current user
         UnauthorizedError: job {job_id} is already {auth_log.status}
         UnauthorizedError: unexpected job id {job_id}
@@ -144,7 +197,7 @@ def get_valid_credentials_dep(
         token_user_job_id_pair: Tuple[str, str] = Depends(
             get_user_job_id_pair_from_token
         ),
-    ) -> MSSLoginDetails:
+    ) -> MSSTokenClaims:
         """Gets a valid user_id-job_id pair.
 
         Args:
@@ -152,7 +205,7 @@ def get_valid_credentials_dep(
             token_user_job_id_pair: the user_id, job_id pair got from the token
 
         Returns:
-            the MSSLoginDetails of the user_id and the job_id
+            the MSSTokenClaims of the user_id and the job_id
 
         Raises:
             NotAuthenticatedError: job {job_id} does not exist for current user
@@ -168,7 +221,7 @@ def get_valid_credentials_dep(
             get_job(job_id=job_id, user_id=user_id)
             if not job_exists:
                 raise UnauthorizedError(f"job {job_id} already exists")
-            return MSSLoginDetails(user_id=user_id, job_id=job_id)
+            return MSSTokenClaims(user_id=user_id, job_id=job_id)
         except NotAuthenticatedError:
             raise NotAuthenticatedError(f"job {job_id} does not exist for current user")
         except ItemNotFoundError:
@@ -176,32 +229,6 @@ def get_valid_credentials_dep(
                 raise UnauthorizedError(f"job {job_id} does not exist")
 
     return dependency_injector
-
-
-def get_bearer_token(
-    request: Request, raise_if_error: bool = settings.IS_AUTH_ENABLED
-) -> Optional[str]:
-    """Extracts the bearer token from the request.
-
-    It throws a 401 exception if not exist and `raise_if_error` is False
-
-    Args:
-        request: the request object from FastAPI
-        raise_if_error: whether an error should be raised if it occurs.
-            defaults to settings.IS_AUTH_ENABLED
-
-    Raises:
-        HTTPException: Unauthorized
-
-    Returns:
-        the bearer token as a string or None if it does not exist and `raise_if_error` is False
-    """
-    try:
-        authorization_header = request.headers["Authorization"]
-        return authorization_header.split("Bearer ")[1].strip()
-    except (KeyError, IndexError):
-        if raise_if_error:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
 
 
 async def validate_job_file(upload_file: UploadFile) -> UploadFile:
@@ -226,36 +253,3 @@ async def validate_job_file(upload_file: UploadFile) -> UploadFile:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid file: {exp}"
         )
-
-
-async def get_user_id_from_token(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
-    """Returns the user id for the given token
-
-    Args:
-        token: the user token that is to be authenticated
-
-    Returns:
-        the user id for associated with the given token
-
-    Raises:
-        NotAuthenticatedError: not authenticated
-    """
-    return booking.get_current_user_id(token, secret_key=settings.JWT_SECRET)
-
-
-async def validate_admin_token(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
-    """Returns the user id if the user is admin for the given token
-
-    Args:
-        token: the user token that is to be authorized
-
-    Returns:
-        the user id for associated with the given token
-
-    Raises:
-        UnauthorizedError: unauthorized
-        NotAuthenticatedError: not authenticated
-    """
-    user_id = booking.get_current_user_id(token, secret_key=settings.JWT_SECRET)
-    user = booking.get_admin_user(DB_ENGINE, User.id == user_id)
-    return user.id

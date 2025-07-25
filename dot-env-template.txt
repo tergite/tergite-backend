@@ -31,9 +31,16 @@ BCC_PORT=8000
 # This is to configure port and URL for the frontend machine.
 # Running it locally:
 MSS_MACHINE_ROOT_URL=http://host:port
-# the public RSA key pem file for the MSS server, preferably used internally only for the stack
+#
+# The public RSA key pem file for the MSS server, preferably used internally only for the stack
 # this is required if you are to use MSS so uncomment it
 # MSS_PUBLIC_KEY_PATH=
+#
+# The maximum time in seconds that a nonce from MSS can be valid when its timestamp is
+# compared to current time.
+# Note that this may have issues if any of the system clocks of BCC or MSS are not at the correct time
+# default: 500
+MSS_NONCE_TTL=500
 
 # (5) Instrument interfacing and simulators
 # This is to configure the hardware or simulated measurement instruments.

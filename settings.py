@@ -100,20 +100,11 @@ BCC_PORT = config("BCC_PORT", cast=int, default=8000)
 # Authentication
 
 MSS_APP_TOKEN = config("MSS_APP_TOKEN", cast=str, default="")
-# MSS public key for encrypting messages for MSS only
+# MSS public key for encrypting/verifying messages for/from MSS only
 MSS_PUBLIC_KEY_PATH = config("MSS_PUBLIC_KEY_PATH", cast=Path)
+# time-to-live for the nonce; defaults to 5 minutes
+MSS_NONCE_TTL = config("MSS_NONCE_TTL", cast=float, default=300)
 
-# BCC should be hidden from the internet except for a few endpoints, and IPs
-# WhiteLIST is actually a dict to ensure O(1) lookup time everytime
-CLIENT_IP_WHITELIST = {
-    socket.gethostbyname(v.hostname): True
-    for v in [
-        MSS_MACHINE_ROOT_URL,
-    ]
-}
-# allow test client to access api when BLACKLISTED is not set
-if APP_SETTINGS == "test" and not os.environ.get("BLACKLISTED"):
-    CLIENT_IP_WHITELIST["testclient"] = True
 
 # -----------------------
 # Hardware configurations
