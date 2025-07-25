@@ -177,84 +177,9 @@ async def log_requests(request: Request, call_next):
 
 
 # routing
-
-
-# # FIXME: Change this
-# @app.get("/jobs", dependencies=[Depends(get_whitelisted_ip)])
-# async def fetch_all_jobs(
-#     redis_connection: RedisDep,
-# ):
-#     """Returns all available jobs
-#
-#     Args:
-#         redis_connection: the connection to the redis database
-#     """
-#     jobs_db = Collection(redis_connection, schema=Job)
-#     data = jobs_db.get_all()
-#     # TODO: Paginate these in future
-#     return [item.model_dump(mode="json") for item in data]
-
-
-# # FIXME: Change this
-# @app.get("/jobs/{job_id}", dependencies=[Depends(get_user_job_id_pair_dep())])
-# async def fetch_job(redis_connection: RedisDep, job_id: str):
-#     """Returns a job of the given job_id"""
-#     jobs_db = Collection(redis_connection, schema=Job)
-#     job = jobs_db.get_one((job_id,))
-#     # TODO: Standardize the return schema here
-#     return {"message": job.model_dump(mode="json")}
-
-
-# # FIXME: Change this
-# @app.get("/jobs/{job_id}/status", dependencies=[Depends(get_user_job_id_pair_dep())])
-# async def fetch_job_status(redis_connection: RedisDep, job_id: str):
-#     """Returns the status of the given job of the given job_id
-#
-#     Args:
-#         redis_connection: the connection to the redis database
-#         job_id: the unique identifier of the job
-#     """
-#     jobs_db = Collection(redis_connection, schema=Job)
-#     job: Job = jobs_db.get_one((job_id,))
-#     # TODO: Standardize the return schema here
-#     return {"message": job.status}
-
-
-# # FIXME: Change this
-# @app.get("/jobs/{job_id}/result", dependencies=[Depends(get_user_job_id_pair_dep())])
-# async def fetch_job_result(redis_connection: RedisDep, job_id: str):
-#     """Retrieves the result of the job if exists
-#
-#     Args:
-#         redis_connection: the connection to the redis database
-#         job_id: the unique identifier of the job
-#     """
-#     jobs_db = Collection(redis_connection, schema=Job)
-#     job: Job = jobs_db.get_one((job_id,))
-#     if job.result is not None:
-#         # TODO: Standardize the return schema here
-#         return {"message": job.result.model_dump(mode="json")}
-#
-#     # FIXME: this does not communicate well when the job has failed
-#     return {"message": "job has not finished"}
-
-
-# # FIXME: Change this
-# @app.delete("/jobs/{job_id}", dependencies=[Depends(get_user_job_id_pair_dep())])
-# async def remove_job(job_id: str):
-#     """Deletes the job of the given job_id
-#
-#     Args:
-#         job_id: the unique identifier of the job
-#     """
-#     try:
-#         jobs_service.cancel_job(redis_connection, job_id=job_id, reason="deleting job")
-#     except JobAlreadyCancelled:
-#         pass
-#
-#     jobs_db = Collection(redis_connection, schema=Job)
-#     jobs_db.delete_many([(job_id,)])
-#     return {"message": f"job {job_id} not found"}
+@app.get("/", dependencies=[Depends(get_verified_mss_user_id)])
+async def root():
+    return {"message": "Welcome to BCC machine"}
 
 
 @app.get(
@@ -283,11 +208,6 @@ async def get_static_properties():
 async def get_dynamic_properties():
     """Retrieves the device properties that are changing with time i.e. calibration data"""
     return props_lib.get_device_calibration_info()
-
-
-@app.get("/", dependencies=[Depends(get_verified_mss_user_id)])
-async def root():
-    return {"message": "Welcome to BCC machine"}
 
 
 @app.get("/me")
@@ -325,11 +245,11 @@ async def delete_profile(
     return GeneralMessage(status="success", detail="Profile deleted")
 
 
-@app.post("/mss-login")
-async def mss_login(
+@app.post("/token")
+async def get_mss_token(
     body: MSSTokenClaims, mss_user_id: str = Depends(get_verified_mss_user_id)
 ) -> TokenResponse:
-    """Logs in a user via MSS.
+    """Get a token specific to the associated MSS instance for the provided token claims.
 
     This is a special route as it can only be used through the associated MSS instance.
     On top of that MSS being whitelisted, the public key of that MSS will be used to encrypt
@@ -352,6 +272,7 @@ async def mss_login(
     job_id = body.job_id
 
     if user_id != mss_user_id:
+        # just some house-keeping to ensure the two user ids are the same
         raise UnauthorizedError("Forbidden")
 
     user = get_user(DB_ENGINE, User.id == user_id)

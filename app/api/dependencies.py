@@ -37,7 +37,7 @@ from ..utils.exc import (
 from ..utils.queues.dtos import JobFile
 from ..utils.strings import validate_uuid4_str
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 DB_ENGINE = get_bookings_sql_engine(settings.BOOKING_DB_URL)
 
 
