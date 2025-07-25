@@ -17,7 +17,7 @@ import time
 from typing import TYPE_CHECKING, Tuple
 
 if TYPE_CHECKING:
-    from tergite_scheduler.utils.queues.dtos import Job, QueueContext
+    from app.libs.queues.dtos import Job, QueueContext
 
 
 def preprocess(job: "Job", context: "QueueContext") -> Tuple[float, "QueueContext"]:

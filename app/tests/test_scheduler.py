@@ -33,6 +33,7 @@ from pydantic import ValidationError
 from pytest_mock import MockerFixture
 from redis import Redis
 
+from app.libs.queues.dtos import Job, JobStatus
 from app.services.booking.models import Booking
 from app.tests.conftest import (
     INVALID_CREATE_BOOKINGS_PARAMS,
@@ -46,7 +47,6 @@ from app.tests.conftest import (
     _PaginationInfo,
 )
 from app.tests.utils.env import TEST_MAX_SLOTS_PER_DAY
-from app.utils.queues.dtos import Job, JobStatus
 
 if TYPE_CHECKING:
     from httpx import Response

@@ -38,10 +38,7 @@ from ...libs.quantum_executor.base.quantum_job import (
     xarray_to_list,
 )
 from ...libs.quantum_executor.utils.connections import get_executor_lock
-from ...utils.api import get_mss_client
-from ...utils.datetime import get_utc_now
-from ...utils.exc import JobAlreadyCancelled, PostProcessingError
-from ...utils.queues.dtos import (
+from ...libs.queues.dtos import (
     Job,
     JobFile,
     JobStatus,
@@ -49,6 +46,9 @@ from ...utils.queues.dtos import (
     Stage,
     StorageID,
 )
+from ...utils.api import get_mss_client
+from ...utils.datetime import get_utc_now
+from ...utils.exc import JobAlreadyCancelled, PostProcessingError
 from ...utils.redis_store import Collection
 from ...utils.rq import cancel_rq_job
 from ..booking.models import Booking

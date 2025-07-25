@@ -39,9 +39,9 @@ from sqlalchemy import create_engine
 from sqlmodel import SQLModel
 
 from ..libs.device_parameters import DeviceCalibration
+from ..libs.queues.dtos import Job
 from ..services.booking.models import Booking, User
 from ..services.scheduler.queues import QueuePool
-from ..utils.queues.dtos import Job
 from .utils.analysis import MockLinearDiscriminantAnalysis
 from .utils.fixtures import load_fixture
 from .utils.http import MockHttpResponse, MockHttpSession

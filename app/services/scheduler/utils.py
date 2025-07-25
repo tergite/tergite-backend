@@ -44,9 +44,7 @@ from ...libs.quantum_executor.base.executor import QuantumExecutor
 from ...libs.quantum_executor.qiskit.executor import QiskitDynamicsExecutor
 from ...libs.quantum_executor.quantify.executor import QuantifyExecutor
 from ...libs.quantum_executor.utils.serialization import iqx_rld
-from ...utils.api import get_mss_client
-from ...utils.datetime import get_utc_now, utc_now_str
-from ...utils.queues.dtos import (
+from ...libs.queues.dtos import (
     Job,
     JobResult,
     JobStatus,
@@ -58,6 +56,8 @@ from ...utils.queues.dtos import (
     TimestampPair,
     Timestamps,
 )
+from ...utils.api import get_mss_client
+from ...utils.datetime import utc_now_str
 from ...utils.redis_store import Collection
 
 _JobStage = Literal["execution", "pre_processing", "post_processing"]

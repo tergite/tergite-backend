@@ -14,7 +14,7 @@
 
 from redis import Redis
 
-from ...utils.queues.dtos import Job
+from ...libs.queues.dtos import Job
 from ...utils.redis_store import Collection
 
 

@@ -23,6 +23,7 @@ from pydantic import ValidationError
 
 import settings
 
+from ..libs.queues.dtos import JobFile
 from ..services.booking.models import MSSTokenClaims
 from ..services.booking.service import get_user_job_id_pair_from_token
 from ..services.booking.store import get_bookings_sql_engine
@@ -34,7 +35,6 @@ from ..utils.exc import (
     NotAuthenticatedError,
     UnauthorizedError,
 )
-from ..utils.queues.dtos import JobFile
 from ..utils.strings import validate_uuid4_str
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")

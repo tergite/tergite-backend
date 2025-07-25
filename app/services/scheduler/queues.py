@@ -20,7 +20,7 @@ from rq import Queue as RqQueue
 
 import settings
 
-from ...utils.queues.types import RunnerQueue, StaticQueue
+from ...libs.queues.types import RunnerQueue, StaticQueue
 from .tasks import (
     postprocess,
     postprocessing_failure_callback,

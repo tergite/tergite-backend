@@ -25,9 +25,9 @@ from rq.results import Result as RqResult
 from rq.serializers import Serializer
 from rq.timeouts import BaseDeathPenalty, UnixSignalDeathPenalty
 
-from ..funcs import get_function_import_path, import_func, noop
-from ..rq import cancel_rq_job
+from ...utils.rq import cancel_rq_job
 from .dtos import Job, StorageID
+from .utils import get_function_import_path, import_func, noop
 
 
 class StaticQueue:

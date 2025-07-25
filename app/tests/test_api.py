@@ -8,8 +8,7 @@ from typing import Any, Dict, List
 
 import pytest
 
-from app.services.auth import AuthLog
-from app.services.jobs.dtos import Job
+from app.libs.queues.dtos import Job
 from app.tests.conftest import (
     BLACKLISTED_CLIENT_AND_RQ_WORKER_TUPLES,
     BLACKLISTED_CLIENTS,

@@ -19,7 +19,7 @@ import pytest
 from pydantic import Field, ValidationError
 from redis import Redis
 
-from app.services.jobs.dtos import JobStatus
+from app.libs.queues.dtos import JobStatus
 from app.tests.utils.datetime import get_current_timestamp_str
 from app.tests.utils.records import with_current_timestamps
 from app.utils.model import create_partial_schema

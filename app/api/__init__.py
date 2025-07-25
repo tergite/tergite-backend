@@ -63,6 +63,7 @@ from settings import (
 )
 
 from ..libs import device_parameters as props_lib
+from ..libs.queues.dtos import Job
 from ..services.booking import get_user
 from ..services.scheduler.queues import QueuePool
 from ..utils.api import (
@@ -74,7 +75,6 @@ from ..utils.api import (
     get_request_logs_store,
     to_http_error,
 )
-from ..utils.queues.dtos import Job
 from ..utils.redis_store import ItemNotFoundError
 from ..utils.strings import uuid_str
 from .dependencies import (
