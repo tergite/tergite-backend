@@ -19,6 +19,7 @@ from app.tests.conftest import (
     MOCK_NOW,
     TEST_APP_TOKEN_STRING,
 )
+from app.tests.utils.api import create_invalid_mss_headers, create_mss_headers
 from app.tests.utils.fixtures import load_fixture
 from app.tests.utils.http import get_headers
 from app.tests.utils.records import (
@@ -47,7 +48,6 @@ _INVALID_JOBS_FOR_UPLOAD = load_fixture("invalid_jobs_to_upload.json")
 _JOB_ID_FIELD = "job_id"
 _JOB_IDS = [item[_JOB_ID_FIELD] for item in _JOBS_LIST]
 _JOBS_HASH_NAME = f"{Job.__module__}.{Job.__qualname__}".lower()
-_AUTH_HASH_NAME = f"{AuthLog.__module__}.{AuthLog.__qualname__}".lower()
 _DUMMY_JSON = {
     "foo": "bar",
     "os": "system",
@@ -120,24 +120,30 @@ _STATIC_PROPERTIES_PARAMS = [
 _DYNAMIC_PROPERTIES_PARAMS = [
     (client, resp) for client, resp in zip(FASTAPI_CLIENTS, _DYNAMIC_PROPERTIES)
 ]
+_ROOT_PARAMS = [
+    (client, headers)
+    for client in FASTAPI_CLIENTS
+    for headers in create_invalid_mss_headers()
+]
 
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
 def test_root(client):
     """GET / returns "message": "Welcome to BCC machine"""
     with client as client:
-        response = client.get("/")
+        headers = create_mss_headers()
+        response = client.get("/", headers=headers)
         assert response.status_code == 200
         assert response.json() == {"message": "Welcome to BCC machine"}
 
 
-@pytest.mark.parametrize("client", BLACKLISTED_FASTAPI_CLIENTS)
-def test_blacklisted_ip_root(client):
-    """GET / returns 404"""
+@pytest.mark.parametrize("client,headers", _ROOT_PARAMS)
+def test_root_invalid_headers(client, headers):
+    """GET / fails with 401 unauthorized when accessed with invalid MSS headers"""
     with client as client:
-        response = client.get("/")
-        assert response.status_code == 404
-        assert response.content == b""
+        response = client.get("/", headers=headers)
+        assert response.status_code == 401
+        assert response.json() == {"detail": "user not authenticated"}
 
 
 @pytest.mark.parametrize("client, redis_client", CLIENTS)
@@ -162,25 +168,6 @@ def test_fetch_all_jobs(redis_client, client):
         assert got == expected
 
 
-@pytest.mark.parametrize("client, redis_client", BLACKLISTED_CLIENTS)
-def test_blacklisted_fetch_all_jobs(redis_client, client):
-    """Get to /jobs returns 404 and no content"""
-    raw_jobs = _get_raw_jobs()
-
-    insert_in_hash(
-        client=redis_client,
-        hash_name=_JOBS_HASH_NAME,
-        data=raw_jobs,
-        id_fields=(_JOB_ID_FIELD,),
-    )
-
-    # using context manager to ensure on_startup runs
-    with client as client:
-        response = client.get("/jobs")
-        assert response.status_code == 404
-        assert response.content == b""
-
-
 @pytest.mark.parametrize("client, redis_client, job_id", _FETCH_JOB_PARAMS)
 def test_fetch_job(redis_client, client, job_id: str, app_token_header):
     """Get to /jobs/{job_id} returns the job for the given job_id"""
@@ -191,12 +178,6 @@ def test_fetch_job(redis_client, client, job_id: str, app_token_header):
         hash_name=_JOBS_HASH_NAME,
         data=raw_jobs,
         id_fields=(_JOB_ID_FIELD,),
-    )
-    register_app_token_job_id(
-        client=redis_client,
-        hash_name=_AUTH_HASH_NAME,
-        job_id=job_id,
-        app_token=TEST_APP_TOKEN_STRING,
     )
 
     # using context manager to ensure on_startup runs
@@ -251,12 +232,6 @@ def test_fetch_job_result(redis_client, client, job_id: str, app_token_header):
         hash_name=_JOBS_HASH_NAME,
         data=raw_jobs,
         id_fields=(_JOB_ID_FIELD,),
-    )
-    register_app_token_job_id(
-        client=redis_client,
-        hash_name=_AUTH_HASH_NAME,
-        job_id=job_id,
-        app_token=TEST_APP_TOKEN_STRING,
     )
 
     # using context manager to ensure on_startup runs
@@ -315,12 +290,6 @@ def test_fetch_job_status(redis_client, client, job_id: str, app_token_header):
         hash_name=_JOBS_HASH_NAME,
         data=raw_jobs,
         id_fields=(_JOB_ID_FIELD,),
-    )
-    register_app_token_job_id(
-        client=redis_client,
-        hash_name=_AUTH_HASH_NAME,
-        job_id=job_id,
-        app_token=TEST_APP_TOKEN_STRING,
     )
 
     # using context manager to ensure on_startup runs
@@ -389,12 +358,6 @@ def test_upload_job(
     job_id = job[_JOB_ID_FIELD]
     job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
     timestamp = MOCK_NOW.replace("+00:00", "Z")
-    register_app_token_job_id(
-        client=redis_client,
-        hash_name=_AUTH_HASH_NAME,
-        job_id=job_id,
-        app_token=TEST_APP_TOKEN_STRING,
-    )
 
     # using context manager to ensure on_startup runs
     with client as client:
@@ -462,12 +425,6 @@ def test_upload_invalid_job(
     """POSTing an invalid structure of a job to '/jobs' fails"""
     job_id = job.get(_JOB_ID_FIELD, "dummy")
     job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
-    register_app_token_job_id(
-        client=redis_client,
-        hash_name=_AUTH_HASH_NAME,
-        job_id=job_id,
-        app_token=TEST_APP_TOKEN_STRING,
-    )
 
     # using context manager to ensure on_startup runs
     with client as client:
@@ -496,12 +453,6 @@ def test_unauthenticated_upload_job(
     """POST to '/jobs' uploads a new job"""
     job_id = job[_JOB_ID_FIELD]
     job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
-    register_app_token_job_id(
-        client=redis_client,
-        hash_name=_AUTH_HASH_NAME,
-        job_id=job_id,
-        app_token=TEST_APP_TOKEN_STRING,
-    )
 
     # using context manager to ensure on_startup runs
     with client as client:
@@ -531,12 +482,6 @@ def test_duplicate_job_upload(
 ):
     job_id = job[_JOB_ID_FIELD]
     job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
-    register_app_token_job_id(
-        client=redis_client,
-        hash_name=_AUTH_HASH_NAME,
-        job_id=job_id,
-        app_token=TEST_APP_TOKEN_STRING,
-    )
 
     with client as client:
         with open(job_file_path, "rb") as file:
@@ -563,12 +508,6 @@ def test_remove_job(
     """DELETE to '/jobs/{job_id}' deletes the given job"""
     job_id = job[_JOB_ID_FIELD]
     job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
-    register_app_token_job_id(
-        client=redis_client,
-        hash_name=_AUTH_HASH_NAME,
-        job_id=job_id,
-        app_token=TEST_APP_TOKEN_STRING,
-    )
 
     # using context manager to ensure on_startup runs
     with client as client:
@@ -607,12 +546,6 @@ def test_unauthenticated_remove_job(
     """Delete to /jobs/{job_id} returns 401 error when no valid app token is passed"""
     job_id = job[_JOB_ID_FIELD]
     job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
-    register_app_token_job_id(
-        client=redis_client,
-        hash_name=_AUTH_HASH_NAME,
-        job_id=job_id,
-        app_token=TEST_APP_TOKEN_STRING,
-    )
 
     # using context manager to ensure on_startup runs
     with client as client:
@@ -652,12 +585,6 @@ def test_cancel_job(
     job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
     cancellation_reason = "just testing"
     timestamp = MOCK_NOW.replace("+00:00", "Z")
-    register_app_token_job_id(
-        client=redis_client,
-        hash_name=_AUTH_HASH_NAME,
-        job_id=job_id,
-        app_token=TEST_APP_TOKEN_STRING,
-    )
 
     # using context manager to ensure on_startup runs
     with client as client:
@@ -726,12 +653,6 @@ def test_unauthenticated_cancel_job(
     job_id = job[_JOB_ID_FIELD]
     job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
     cancellation_reason = "just testing"
-    register_app_token_job_id(
-        client=redis_client,
-        hash_name=_AUTH_HASH_NAME,
-        job_id=job_id,
-        app_token=TEST_APP_TOKEN_STRING,
-    )
 
     # using context manager to ensure on_startup runs
     with client as client:
@@ -773,12 +694,6 @@ def test_download_logfile(
     """GET to '/logfiles/{logfile_id}' downloads the given logfile"""
     job_id = job[_JOB_ID_FIELD]
     _save_job_file(folder=logfile_download_folder, job=job, ext=".hdf5")
-    register_app_token_job_id(
-        client=redis_client,
-        hash_name=_AUTH_HASH_NAME,
-        job_id=job_id,
-        app_token=TEST_APP_TOKEN_STRING,
-    )
 
     # using context manager to ensure on_startup runs
     with client as client:
@@ -798,12 +713,6 @@ def test_unauthenticated_download_logfile(
     """Unauthenticated GET to '/logfiles/{logfile_id}' raises 401 error"""
     job_id = job[_JOB_ID_FIELD]
     _save_job_file(folder=logfile_download_folder, job=job, ext=".hdf5")
-    register_app_token_job_id(
-        client=redis_client,
-        hash_name=_AUTH_HASH_NAME,
-        job_id=job_id,
-        app_token=TEST_APP_TOKEN_STRING,
-    )
 
     # using context manager to ensure on_startup runs
     with client as client:
@@ -840,26 +749,6 @@ def test_get_dynamic_properties(client, expected):
         got = response.json()
         assert response.status_code == 200
         assert _remove_dates(got) == expected
-
-
-@pytest.mark.parametrize("client", BLACKLISTED_FASTAPI_CLIENTS)
-def test_blacklisted_get_static_properties(client):
-    """Blacklisted Get to '/static-properties' returns 404 with no content"""
-    # using context manager to ensure on_startup runs
-    with client as client:
-        response = client.get("/static-properties")
-        assert response.status_code == 404
-        assert response.content == b""
-
-
-@pytest.mark.parametrize("client", BLACKLISTED_FASTAPI_CLIENTS)
-def test_blacklisted_get_dynamic_properties(client):
-    """Blacklisted Get to '/dynamic-properties' returns 404 with no content"""
-    # using context manager to ensure on_startup runs
-    with client as client:
-        response = client.get("/dynamic-properties")
-        assert response.status_code == 404
-        assert response.content == b""
 
 
 def _save_job_file(folder: Path, job: Dict[str, Any], ext: str = ".json") -> Path:

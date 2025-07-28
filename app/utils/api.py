@@ -12,6 +12,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Utilities to do with HTTP APIs"""
+import base64
 import logging
 import shutil
 from pathlib import Path
@@ -258,7 +259,7 @@ def verify_mss_signature(
     """
     mss_pub_key = _get_mss_public_key(key_path=key_path)
     mss_pub_key.verify(
-        signature.encode(),
+        base64.b64decode(signature),
         message.encode(),
         padding.PSS(
             mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH

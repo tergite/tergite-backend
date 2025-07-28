@@ -1,6 +1,7 @@
 # This code is part of Tergite
 #
 # (C) Copyright Martin Ahindura 2024
+# (C) Copyright Chalmers Next Labs AB 2025
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -51,7 +52,8 @@ TEST_QUANTIFY_SEED_FILE = get_fixture_path("dummy_quantify.seed.toml")
 
 TEST_QISKIT_1Q_SEED_FILE = get_fixture_path("qiskit_pulse_1q.seed.toml")
 TEST_QISKIT_2Q_SEED_FILE = get_fixture_path("qiskit_pulse_2q.seed.toml")
-
+TEST_MSS_PUBLIC_KEY_PATH = get_fixture_path("mss_public_key.pem")
+TEST_MSS_PRIVATE_KEY_PATH = get_fixture_path("mss_private_key.pem")
 
 TEST_MAX_TIME_SLOT_LENGTH = 3600
 TEST_MIN_TIME_SLOT_LENGTH = 2
@@ -62,6 +64,8 @@ TEST_QUEUE_PREFIX = "test_booking"
 TEST_BOOKING_DB_URL = f"sqlite:///{_PATH_TO_TEST_SQL_DB}"
 TEST_JWT_SECRET = "78e79946910251b0db6237d5eb38ece76225cf613da22b79ff4fe76d534c14fc"
 TEST_JWT_TTL = 120
+TEST_MSS_NONCE_TTL = 200
+TEST_CORS_ORIGINS = "testclient,localhost,127.0.0.1"
 
 TEST_RQ_REDIS_URL = os.getenv("RQ_REDIS_URL", "redis://localhost:6379/2")
 TEST_JOBS_REDIS_URL = TEST_RQ_REDIS_URL
@@ -108,4 +112,6 @@ def setup_test_env():
     environ["JWT_TTL"] = f"{TEST_JWT_TTL}"
     environ["JOBS_REDIS_URL"] = f"{TEST_JOBS_REDIS_URL}"
     environ["RQ_REDIS_URL"] = f"{TEST_RQ_REDIS_URL}"
-    environ["QUEUE_CONFIG_FILE_PATH"] = f"{TEST_QUEUE_CONFIG_FILE_PATH}"
+    environ["MSS_PUBLIC_KEY_PATH"] = f"{TEST_MSS_PUBLIC_KEY_PATH}"
+    environ["MSS_NONCE_TTL"] = f"{TEST_MSS_NONCE_TTL}"
+    environ["CORS_ORIGINS"] = f"{TEST_CORS_ORIGINS}"

@@ -32,7 +32,6 @@ from ...utils.exc import (
     ItemNotFoundError,
     MaxBookingsError,
     NotAuthenticatedError,
-    UnauthorizedError,
 )
 from ...utils.strings import get_random_name, uuid_str
 from .models import (

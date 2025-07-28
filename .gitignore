@@ -139,6 +139,7 @@ config.ini
 
 # ssh keys
 *.pem
+!app/tests/fixtures/*.pem
 
 Labber/
 

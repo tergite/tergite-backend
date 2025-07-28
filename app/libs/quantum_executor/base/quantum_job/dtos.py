@@ -19,7 +19,7 @@ from enum import Enum
 from typing import Any, List, Optional, Type, Union
 
 import numpy as np
-from pydantic import BaseModel, Extra
+from pydantic import BaseModel, ConfigDict, Extra
 from qiskit.qobj import PulseQobj
 from quantify_scheduler.enums import BinMode
 
@@ -161,8 +161,10 @@ class QuantumJob:
         return asdict(self)
 
 
-class QobjHeaderMetadata(BaseModel, extra=Extra.ignore):
+class QobjHeaderMetadata(BaseModel):
     """The metadata on the QobjHeader"""
+
+    model_config = ConfigDict(extra="ignore")
 
     backend_name: Optional[str] = None
 
@@ -179,8 +181,10 @@ class QobjHeaderMetadata(BaseModel, extra=Extra.ignore):
         return cls(**qobj_header_dict)
 
 
-class QobjSweepData(BaseModel, extra=Extra.allow):
+class QobjSweepData(BaseModel):
     """The metadata on the sweep data in the QobjHeader"""
+
+    model_config = ConfigDict(extra="ignore")
 
     dataset_name: Optional[str] = None
     serial_order: Optional[Any] = None
@@ -215,8 +219,10 @@ class QobjSweepData(BaseModel, extra=Extra.allow):
         }
 
 
-class SweepParamMetadata(BaseModel, extra=Extra.ignore):
+class SweepParamMetadata(BaseModel):
     """The sweep param as obtained from the qobj header"""
+
+    model_config = ConfigDict(extra="ignore")
 
     long_name: str
     unit: str

@@ -191,6 +191,9 @@ async def download_logfile(logfile_id: UUID):
 
     Args:
         logfile_id: the id of the logfile usually the job id
+
+    Raises:
+        ItemNotFoundError: logfile {logfile_id} not found
     """
     file = (_LOG_FILE_POOL / str(logfile_id)).with_suffix(".hdf5")
     if file.exists():

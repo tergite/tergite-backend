@@ -54,7 +54,6 @@ from ...utils.rq import cancel_rq_job
 from ..booking.models import Booking
 from ..booking.service import get_booking, get_next_booking
 from ..booking.store import get_bookings_sql_engine
-from .queues import get_postprocessing_queue
 from .store import get_jobs_store
 from .utils import (
     apply_linear_discriminator,
@@ -243,6 +242,8 @@ def execute(
     Returns:
         the tuple of the updated job's job ID and the context and the results file path
     """
+    from .queues import get_postprocessing_queue
+
     job_id = job.job_id
     connection = get_current_job().connection
     queue_prefix = context["queue_prefix"]

@@ -148,14 +148,14 @@ def get_executor(
         backend_config = get_backend_config()
 
         if executor_type == "quantify":
-            _EXECUTOR: QuantifyExecutor = QuantifyExecutor(
+            _EXECUTOR = QuantifyExecutor(
                 quantify_config_file=quantify_config_file,
                 quantify_metadata_file=quantify_metadata_file,
                 backend_config=backend_config,
             )
 
         if executor_type == "qiskit_pulse_1q":
-            _EXECUTOR: QiskitDynamicsExecutor = QiskitDynamicsExecutor.new_one_qubit(
+            _EXECUTOR = QiskitDynamicsExecutor.new_one_qubit(
                 backend_config=backend_config
             )
             backend_config.calibration_config.discriminators = (
@@ -163,7 +163,7 @@ def get_executor(
             )
 
         if executor_type == "qiskit_pulse_2q":
-            _EXECUTOR: QiskitDynamicsExecutor = QiskitDynamicsExecutor.new_two_qubit(
+            _EXECUTOR = QiskitDynamicsExecutor.new_two_qubit(
                 backend_config=backend_config
             )
             backend_config.calibration_config.discriminators = (

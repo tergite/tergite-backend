@@ -40,13 +40,13 @@ from sqlmodel import SQLModel
 
 from ..libs.device_parameters import DeviceCalibration
 from ..libs.queues.dtos import Job
-from ..services.booking.models import Booking, User
 from ..services.scheduler.queues import QueuePool
 from .utils.analysis import MockLinearDiscriminantAnalysis
+from .utils.api import create_invalid_mss_headers
 from .utils.fixtures import load_fixture
 from .utils.http import MockHttpResponse, MockHttpSession
 from .utils.modules import remove_modules
-from .utils.rq import get_rq_pool_worker, get_rq_worker
+from .utils.rq import get_rq_pool_worker
 
 _redis_connection = redis.Redis.from_url(TEST_RQ_REDIS_URL)
 _async_queue_pool = QueuePool(
@@ -57,74 +57,36 @@ MOCK_NOW = "2023-11-27T12:46:48.851656+00:00"
 TEST_APP_TOKEN_STRING = "eecbf107ad103f70187923f49c1a1141219da95f1ab3906f"
 
 FASTAPI_CLIENTS = [
-    lazy_fixture("async_fastapi_client"),
-    lazy_fixture("async_fastapi_client_with_qiskit_simulator"),
-    lazy_fixture("async_fastapi_client_with_qiskit_simulator_2_qubit"),
-]
-BLACKLISTED_FASTAPI_CLIENTS = [
-    lazy_fixture("blacklisted_async_fastapi_client"),
-    lazy_fixture("blacklisted_async_fastapi_client_with_qiskit_simulator"),
-    lazy_fixture("blacklisted_async_fastapi_client_with_qiskit_simulator_2_qubit"),
+    lazy_fixture("rest_client"),
+    lazy_fixture("rest_client_with_qiskit_simulator"),
+    lazy_fixture("rest_client_with_qiskit_simulator_2_qubit"),
 ]
 
 CLIENTS = [
-    (lazy_fixture("async_fastapi_client"), lazy_fixture("redis_client")),
+    (lazy_fixture("rest_client"), lazy_fixture("redis_client")),
     (
-        lazy_fixture("async_fastapi_client_with_qiskit_simulator"),
+        lazy_fixture("rest_client_with_qiskit_simulator"),
         lazy_fixture("redis_client"),
     ),
     (
-        lazy_fixture("async_fastapi_client_with_qiskit_simulator_2_qubit"),
-        lazy_fixture("redis_client"),
-    ),
-]
-
-BLACKLISTED_CLIENTS = [
-    (
-        lazy_fixture("blacklisted_async_fastapi_client"),
-        lazy_fixture("redis_client"),
-    ),
-    (
-        lazy_fixture("blacklisted_async_fastapi_client_with_qiskit_simulator"),
-        lazy_fixture("redis_client"),
-    ),
-    (
-        lazy_fixture("blacklisted_async_fastapi_client_with_qiskit_simulator_2_qubit"),
+        lazy_fixture("rest_client_with_qiskit_simulator_2_qubit"),
         lazy_fixture("redis_client"),
     ),
 ]
 
 CLIENT_AND_RQ_WORKER_TUPLES = [
     (
-        lazy_fixture("async_fastapi_client"),
+        lazy_fixture("rest_client"),
         lazy_fixture("redis_client"),
         lazy_fixture("rq_worker"),
     ),
     (
-        lazy_fixture("async_fastapi_client_with_qiskit_simulator"),
+        lazy_fixture("rest_client_with_qiskit_simulator"),
         lazy_fixture("redis_client"),
         lazy_fixture("rq_worker"),
     ),
     (
-        lazy_fixture("async_fastapi_client_with_qiskit_simulator_2_qubit"),
-        lazy_fixture("redis_client"),
-        lazy_fixture("rq_worker"),
-    ),
-]
-
-BLACKLISTED_CLIENT_AND_RQ_WORKER_TUPLES = [
-    (
-        lazy_fixture("blacklisted_async_fastapi_client"),
-        lazy_fixture("redis_client"),
-        lazy_fixture("rq_worker"),
-    ),
-    (
-        lazy_fixture("blacklisted_async_fastapi_client_with_qiskit_simulator"),
-        lazy_fixture("redis_client"),
-        lazy_fixture("rq_worker"),
-    ),
-    (
-        lazy_fixture("blacklisted_async_fastapi_client_with_qiskit_simulator_2_qubit"),
+        lazy_fixture("rest_client_with_qiskit_simulator_2_qubit"),
         lazy_fixture("redis_client"),
         lazy_fixture("rq_worker"),
     ),
@@ -166,38 +128,16 @@ INVALID_CREATE_BOOKINGS_PARAMS = [
 
 
 @pytest.fixture
-def sqlite_db(redis_client):
-    """The SQL database engine containing the test bookings"""
-    tables = [v.__table__ for v in [User, Booking]]
-    db = create_engine(TEST_BOOKING_DB_URL)
-
-    SQLModel.metadata.create_all(db, tables=tables)
-    yield db
-    SQLModel.metadata.drop_all(db, tables=tables)
-
-
-@pytest.fixture
-def cli_runner(sqlite_db):
-    """The CLI runner for testing"""
-    from typer.testing import CliRunner
-
-    yield CliRunner()
+def redis_client() -> Redis:
+    """A mock redis client"""
+    yield _redis_connection
+    _redis_connection.flushall()
 
 
 @pytest.fixture
 def rq_worker() -> SimpleWorker:
     """Get the rq worker for running async tasks asynchronously"""
     yield get_rq_pool_worker(_async_queue_pool)
-
-
-@pytest.fixture
-def rest_client(sqlite_db):
-    """A test client for the REST API"""
-    from fastapi.testclient import TestClient
-
-    from app.api import app
-
-    yield TestClient(app)
 
 
 def mock_post_requests(url: str, **kwargs):
@@ -237,16 +177,10 @@ def mock_mss_post_requests(url: str, **kwargs):
 
 
 @pytest.fixture
-def redis_client() -> Redis:
-    """A mock redis client"""
-    yield _redis_connection
-    _redis_connection.flushall()
-
-
-@pytest.fixture
-def async_fastapi_client(mocker) -> TestClient:
+def rest_client(mocker, redis_client) -> TestClient:
     """A test client for fast api when rq is running asynchronously"""
     remove_modules(["app", "settings"])
+    SQLModel.metadata.clear()
     _patch_async_client(mocker)
     os.environ["EXECUTOR_TYPE"] = "quantify"
     os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX
@@ -257,12 +191,14 @@ def async_fastapi_client(mocker) -> TestClient:
 
     with freeze_time(MOCK_NOW):
         yield TestClient(app)
+    _clear_test_db(TEST_BOOKING_DB_URL)
 
 
 @pytest.fixture
-def async_fastapi_client_with_qiskit_simulator(mocker) -> TestClient:
+def rest_client_with_qiskit_simulator(mocker) -> TestClient:
     """A test client for fast api when rq is running asynchronously"""
     remove_modules(["app", "settings"])
+    SQLModel.metadata.clear()
     _patch_async_client(mocker)
     os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_1q"
     os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_1Q
@@ -273,12 +209,15 @@ def async_fastapi_client_with_qiskit_simulator(mocker) -> TestClient:
 
     with freeze_time(MOCK_NOW):
         yield TestClient(app)
+    _clear_test_db(TEST_BOOKING_DB_URL)
+    _redis_connection.flushall()
 
 
 @pytest.fixture
-def async_fastapi_client_with_qiskit_simulator_2_qubit(mocker) -> TestClient:
+def rest_client_with_qiskit_simulator_2_qubit(mocker) -> TestClient:
     """A test client for fast api when rq is running asynchronously"""
     remove_modules(["app", "settings"])
+    SQLModel.metadata.clear()
     _patch_async_client_sim2q(mocker)
     os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_2q"
     os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_2Q
@@ -289,14 +228,15 @@ def async_fastapi_client_with_qiskit_simulator_2_qubit(mocker) -> TestClient:
 
     with freeze_time(MOCK_NOW):
         yield TestClient(app)
+    _clear_test_db(TEST_BOOKING_DB_URL)
+    _redis_connection.flushall()
 
 
 @pytest.fixture
 def async_standalone_backend_client(mocker) -> TestClient:
     """A test client for fast api when rq is running asynchronously and backend is standalone"""
     remove_modules(["app", "settings"])
-
-    mocker.patch("redis.Redis", return_value=_redis_connection)
+    SQLModel.metadata.clear()
     mocker.patch(
         "app.services.scheduler.queues.QueuePool", return_value=_async_queue_pool
     )
@@ -310,58 +250,8 @@ def async_standalone_backend_client(mocker) -> TestClient:
 
     with freeze_time(MOCK_NOW):
         yield TestClient(app)
-
-
-@pytest.fixture
-def blacklisted_async_fastapi_client(mocker) -> TestClient:
-    """A test client with black listed ip for fast api when rq is running asynchronously"""
-    remove_modules(["app", "settings"])
-    _patch_async_client(mocker)
-    os.environ["BLACKLISTED"] = "True"
-    os.environ["EXECUTOR_TYPE"] = "quantify"
-    os.environ["BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
-    os.environ["CALIBRATION_SEED"] = TEST_QUANTIFY_SEED_FILE
-
-    from app.api import app
-
-    with freeze_time(MOCK_NOW):
-        yield TestClient(app)
-
-
-@pytest.fixture
-def blacklisted_async_fastapi_client_with_qiskit_simulator(mocker) -> TestClient:
-    """A test client with black listed ip for fast api when rq is running asynchronously
-    when qiskit dynamics is executor"""
-    remove_modules(["app", "settings"])
-    _patch_async_client(mocker)
-    os.environ["BLACKLISTED"] = "True"
-    os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_1q"
-    os.environ["BACKEND_SETTINGS"] = TEST_SIMQ1_BACKEND_SETTINGS_FILE
-    os.environ["CALIBRATION_SEED"] = TEST_QISKIT_1Q_SEED_FILE
-
-    from app.api import app
-
-    with freeze_time(MOCK_NOW):
-        yield TestClient(app)
-
-
-@pytest.fixture
-def blacklisted_async_fastapi_client_with_qiskit_simulator_2_qubit(
-    mocker,
-) -> TestClient:
-    """A test client with black listed ip for fast api when rq is running asynchronously
-    when qiskit dynamics is executor"""
-    remove_modules(["app", "settings"])
-    _patch_async_client(mocker)
-    os.environ["BLACKLISTED"] = "True"
-    os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_2q"
-    os.environ["BACKEND_SETTINGS"] = TEST_SIMQ2_BACKEND_SETTINGS_FILE
-    os.environ["CALIBRATION_SEED"] = TEST_QISKIT_2Q_SEED_FILE
-
-    from app.api import app
-
-    with freeze_time(MOCK_NOW):
-        yield TestClient(app)
+    _clear_test_db(TEST_BOOKING_DB_URL)
+    _redis_connection.flushall()
 
 
 @pytest.fixture
@@ -404,6 +294,12 @@ def app_token_header() -> Dict[str, str]:
     yield {"Authorization": f"Bearer {TEST_APP_TOKEN_STRING}"}
 
 
+@pytest.fixture
+def invalid_mss_headers() -> Dict[str, str]:
+    """The headers from MSS that are wrongly formatted or something"""
+    yield create_invalid_mss_headers()
+
+
 def _patch_async_client(mocker):
     """Patches the async client"""
     mss_client = MockHttpSession(
@@ -411,7 +307,6 @@ def _patch_async_client(mocker):
         post=mock_mss_post_requests,
     )
 
-    mocker.patch("redis.Redis", return_value=_redis_connection)
     mocker.patch(
         "app.services.scheduler.queues.QueuePool", return_value=_async_queue_pool
     )
@@ -431,7 +326,6 @@ def _patch_async_client_sim2q(mocker):
         post=mock_mss_post_requests,
     )
 
-    mocker.patch("redis.Redis", return_value=_redis_connection)
     mocker.patch(
         "app.services.scheduler.queues.QueuePool", return_value=_async_queue_pool
     )
@@ -442,6 +336,16 @@ def _patch_async_client_sim2q(mocker):
         return_value=_mock_linear_discriminant_analysis_sim2q,
     )
     os.environ["BLACKLISTED"] = ""
+
+
+def _clear_test_db(url: str = TEST_BOOKING_DB_URL):
+    """Clears the test database
+
+    Args:
+        url: the database URL for the database
+    """
+    db = create_engine(url)
+    SQLModel.metadata.drop_all(db)
 
 
 class _BasicBookingInfo(TypedDict):

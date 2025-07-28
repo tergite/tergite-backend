@@ -13,6 +13,7 @@
 import json
 import logging
 import time
+from datetime import datetime
 from typing import Optional, Tuple
 
 from cryptography.exceptions import InvalidSignature
@@ -130,7 +131,7 @@ def get_verified_mss_user_id(request: Request) -> str:
 
     We are choosing to trust MSS and so whenever a request comes from
     MSS, there will be an `x-mss-user-id` and `x-mss-signature` header.
-    We will get the `x-mss-user-id` and return it only if the `x-mss-user-id-signature`
+    We will get the `x-mss-user-id` and return it only if the `x-mss-signature`
     is verified by MSS public key.
 
     For better security against replay attacks, we also use the `x-mss-request-id` and
@@ -153,11 +154,15 @@ def get_verified_mss_user_id(request: Request) -> str:
         message = f"{user_id}-{nonce}-{timestamp}"
         verify_mss_signature(signature=signature, message=message)
 
-        now = time.time()
-        if abs(now - float(timestamp)) > settings.MSS_NONCE_TTL:
+        current_timestamp = datetime.now().timestamp()
+        timestamp_float = float(timestamp)
+        time_difference = current_timestamp - timestamp_float
+        if time_difference > settings.MSS_NONCE_TTL:
             raise ValueError(
-                f"nonce of timestamp {timestamp} is older than {settings.MSS_NONCE_TTL} seconds"
+                f"nonce of timestamp {timestamp} is {time_difference}s older than {settings.MSS_NONCE_TTL} seconds"
             )
+        elif time_difference < 0:
+            raise ValueError(f"timestamp {timestamp} is in the future")
 
         requests_store = get_request_logs_store()
         if requests_store.exists(nonce):
