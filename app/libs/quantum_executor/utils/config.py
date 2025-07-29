@@ -13,7 +13,7 @@
 import json
 import re
 from os import PathLike
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Mapping
 
 import qblox_instruments
 import yaml
@@ -25,6 +25,7 @@ ALLOWED_TOP_LEVEL_INSTRUMENTS = {
     "LocalOscillator",
     "IQMixer",
     "OpticalModulator",
+    "SPI-Rack",
 }
 ALLOWED_MODULE_TYPES = {"QCM", "QRM", "QCM_RF", "QRM_RF", "QTM"}
 _QBLOX_CLUSTER_TYPE_MAP: Dict[str, qblox_instruments.ClusterType] = {
@@ -36,6 +37,11 @@ _QBLOX_CLUSTER_TYPE_MAP: Dict[str, qblox_instruments.ClusterType] = {
 
 # Regex pattern for cluster names
 CLUSTER_NAME_REGEX = re.compile(r"^cluster[A-Za-z0-9]+$", re.IGNORECASE)
+
+
+class CouplerMapEntry(BaseModel):
+    spi_module_number: int
+    dac_name: str
 
 
 class ModuleConfig(BaseModel):
@@ -72,6 +78,8 @@ class InstrumentConfig(BaseModel):
     is_dummy: Optional[bool] = Field(
         None, description="Indicates if the cluster is a dummy cluster."
     )
+    port: Optional[str] = None
+    coupler_spi_mapping: Optional[Dict[str, CouplerMapEntry]] = None
 
     class Config:
         extra = "allow"

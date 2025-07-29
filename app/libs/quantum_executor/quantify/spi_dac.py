@@ -31,90 +31,133 @@
 import sys
 import time
 from pathlib import Path
+import logging
+import os
 
 import numpy as np
 from qblox_instruments import SpiRack
 from qcodes import validators
 from rich.progress import Progress
+from typing import Tuple, Dict, Any
 
-from tergite_autocalibration.config.globals import ENV
-from tergite_autocalibration.config.globals import REDIS_CONNECTION
-from tergite_autocalibration.config.legacy import dh
-from tergite_autocalibration.tools.cli.config.helpers import get_os, OperatingSystem
-from tergite_autocalibration.utils.dto.enums import MeasurementMode
-from tergite_autocalibration.utils.logging import logger
 
-# TODO: 1. Import spi serial port into app/libs/quantum_executor/quantify/spi-dac.py
+import settings
+
+from app.libs.quantum_executor.utils.config import QuantifyMetadata
+from ..utils.config import CouplerMapEntry
+
 # TODO: 2. Set up REDIS_CONNECTION and plan for it's use for storing/fetching parking currents
-# TODO: 3. Adapt SPI module number and dac name for this package - plan for SPI_coupler_mapping retrieval from configs
-# TODO: 4. Change get_os logic for tergite_backend or add OperatingSystem enum
-# TODO: 5. Adapt Measurement Mode logic
-# TODO: 6. Consider if Experiment logger or root logger appropriate here
+# TODO: 8. Make safety ranges configurable
+
+logger = logging.getLogger(__name__)
+REDIS_CONNECTION = settings.REDIS_CONNECTION
 
 
-def _find_and_validate_spi_port():
+def _find_and_validate_spi_port(port: str | None) -> str | None:
     """
-    Check whether the SPI port given in the .env file exists
+    Verify that port is reachable on the current machine.
+
+    * On Windows we just return the value the user gave us
+    * On POSIX we only check that the device node exists under ``/dev``.
+
+    Parameters:
+    port
+        Serial port taken from *metadata.yml*, e.g. ``/dev/ttyACM0`` or
+        ``COM3``.  If ``None`` the function logs a warning and returns *None*.
 
     Returns:
-        SPI port as string e.g. /dev/ttyACM0
-
+    str | None
+        The validated port string, or *None* if the check fails.
     """
+    if port is None:
+        logger.warning("No SPI port configured.")
 
-    # We validate on unix based systems whether the port is actually taken
-    if get_os() == OperatingSystem.LINUX or get_os() == OperatingSystem.MAC:
+    if os.name == "nt":
+        # assume user running on windows and set up port properly
+        return port
 
-        # Path to serial devices
-        path = Path("/dev/")
-
-        # Iterate over all devices and return if the address defined in the .env file is found
-        for file in path.iterdir():
-            if str(file.absolute()) == ENV.spi_serial_port:
-                return ENV.spi_serial_port
-
-    # For Windows and any other system, we assume that the user knows that the port exists
-    else:
-        return ENV.spi_serial_port
+    # otherwiese POSIX
+    dev_path = Path(port)
+    if dev_path.exists():
+        return port
 
     # For the default base case, return None
     logger.warning(
         "Couldn't find the serial port of the SPI rack. "
-        "Please check the connection or update the value for SPI_SERIAL_PORT in the .env file."
+        "Please check cable or fix the entry in metadata.yml",
+        port,
     )
     return None
 
 
+def _get_spi_metadata(
+    metadata_path: str | Path,
+) -> Tuple[str | None, bool, Dict[str, CouplerMapEntry]]:
+    """
+    Extract (port, is_dummy, coupler_map) from the first `SPI-Rack`
+    instrument found in *metadata_path*.
+
+    If the rack is missing, returns (None, False, {}).
+    """
+    meta = QuantifyMetadata.from_yaml(metadata_path)
+
+    for conf in meta.root.values():
+        if conf.instrument_type.lower().replace("_", "-") == "spi-rack":
+            port = getattr(conf, "port", None)
+            is_dummy = bool(getattr(conf, "is_dummy", False))
+            mapping = getattr(conf, "coupler_spi_mapping", {}) or {}
+            return port, is_dummy, mapping
+
+    return None, False, {}
+
+
 class SpiDAC:
-    def __init__(self, couplers: list[str], measurement_mode: MeasurementMode):
-        self.port = _find_and_validate_spi_port()
-        self.is_dummy = (
-            measurement_mode == MeasurementMode.dummy
-            or measurement_mode == MeasurementMode.re_analyse
+    def __init__(
+        self,
+        couplers: list[str],
+        metadata_path: str | Path = settings.QUANTIFY_METADATAFILE,
+    ):
+        # grab spi metadata
+        raw_port, self.is_dummy, self._coupler_map = _get_spi_metadata(metadata_path)
+
+        # validate port unless running dummy
+        self.port = (
+            _find_and_validate_spi_port(raw_port) if not self.is_dummy else raw_port
         )
-        if self.port is not None:
-            self.spi = SpiRack("loki_rack", self.port, is_dummy=self.is_dummy)
-        elif measurement_mode == MeasurementMode.re_analyse:
-            self.spi = SpiRack("loki_rack", self.port, is_dummy=self.is_dummy)
-        else:
-            raise ValueError("No serial port for the SPI")
-        self.dacs_dictionary = {}
-        for coupler in couplers:
-            self.dacs_dictionary[coupler] = self.create_spi_dac(coupler)
+
+        if self.port is None and not self.is_dummy:
+            raise ValueError(
+                "SPI rack port not found and 'is_dummy' is false - "
+                "fix the entry in metadata.yml."
+            )
+
+        # connect or build dummy
+        self.spi = SpiRack(settings.DEFAULT_PREFIX, self.port, is_dummy=self.is_dummy)
+
+        # build DAC handles
+        self.dacs_dictionary: Dict[str, Any] = {
+            coupler: self._create_spi_dac(coupler) for coupler in couplers
+        }
 
     def create_spi_dac(self, coupler: str):
-        spi_mod_number, dac_name = (
-            dh.get_legacy("coupler_spi_mapping")[coupler]["spi_module_number"],
-            dh.get_legacy("coupler_spi_mapping")[coupler]["dac_name"],
-        )
+
+        try:
+            entry = self._coupler_map[coupler]
+        except KeyError:
+            raise KeyError(
+                f"Coupler '{coupler}' missing in metadata.yml under 'coupler_spi_mapping'."
+            )
+
+        spi_mod_number = entry.spi_module_number
+        dac_name = entry.dac_name
         spi_mod_name = f"module{spi_mod_number}"
 
         if self.is_dummy:
             return f"Dummy_DAC_for_{spi_mod_name}_{dac_name}"
 
-        dc_current_step = 1e-6
-
         if spi_mod_name not in self.spi.instrument_modules:
             self.spi.add_spi_module(spi_mod_number, "S4g")
+
         this_dac = self.spi.instrument_modules[spi_mod_name].instrument_modules[
             dac_name
         ]
@@ -126,10 +169,9 @@ class SpiDAC:
         this_dac.span("range_min_bi")
 
         this_dac.current.vals = validators.Numbers(min_value=-3.1e-3, max_value=3.1e-3)
-
         this_dac.ramping_enabled(True)
         this_dac.ramp_rate(40e-6)
-        this_dac.ramp_max_step(dc_current_step)
+        this_dac.ramp_max_step(1e-6)
         return this_dac
 
     def set_dacs_zero(self) -> None:
