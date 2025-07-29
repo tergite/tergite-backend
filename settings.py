@@ -15,7 +15,6 @@
 #
 
 import os
-import socket
 from pathlib import Path
 from typing import List
 
@@ -50,30 +49,38 @@ STORAGE_PREFIX_DIRNAME = config(
     "STORAGE_PREFIX_DIRNAME", cast=str, default=DEFAULT_PREFIX
 )
 
-LOGFILE_DOWNLOAD_POOL_DIRNAME = config(
+_LOGFILE_DOWNLOAD_POOL_DIRNAME = config(
     "LOGFILE_DOWNLOAD_POOL_DIRNAME", cast=str, default="logfile_download_pool"
 )
-LOGFILE_UPLOAD_POOL_DIRNAME = config(
-    "LOGFILE_UPLOAD_POOL_DIRNAME", cast=str, default="logfile_upload_pool"
-)
-JOB_UPLOAD_POOL_DIRNAME = config(
+_JOB_UPLOAD_POOL_DIRNAME = config(
     "JOB_UPLOAD_POOL_DIRNAME", cast=str, default="job_upload_pool"
 )
-JOB_PRE_PROC_POOL_DIRNAME = config(
+_JOB_PRE_PROC_POOL_DIRNAME = config(
     "JOB_PRE_PROC_POOL_DIRNAME", cast=str, default="job_preproc_pool"
 )
-JOB_EXECUTION_POOL_DIRNAME = config(
+_JOB_EXECUTION_POOL_DIRNAME = config(
     "JOB_EXECUTION_POOL_DIRNAME", cast=str, default="job_execution_pool"
 )
-JOB_SUPERVISOR_LOG = config(
+_JOB_SUPERVISOR_LOG = config(
     "JOB_SUPERVISOR_LOG", cast=str, default="job_supervisor.log"
 )
-EXECUTOR_DATA_DIRNAME = config(
+_EXECUTOR_DATA_DIRNAME = config(
     "EXECUTOR_DATA_DIRNAME", cast=str, default="executor_data"
 )
 
-EXECUTOR_DATA_DIR = STORAGE_ROOT / DEFAULT_PREFIX / EXECUTOR_DATA_DIRNAME
+EXECUTOR_DATA_DIR = STORAGE_ROOT / DEFAULT_PREFIX / _EXECUTOR_DATA_DIRNAME
 EXECUTOR_DATA_DIR.mkdir(exist_ok=True, parents=True)
+
+PREPROCESSED_JOB_POOL = STORAGE_ROOT / DEFAULT_PREFIX / _JOB_PRE_PROC_POOL_DIRNAME
+PREPROCESSED_JOB_POOL.mkdir(exist_ok=True, parents=True)
+
+JOB_UPLOAD_POOL = STORAGE_ROOT / STORAGE_PREFIX_DIRNAME / _JOB_UPLOAD_POOL_DIRNAME
+JOB_UPLOAD_POOL.mkdir(exist_ok=True, parents=True)
+
+LOG_FILE_POOL = STORAGE_ROOT / STORAGE_PREFIX_DIRNAME / _LOGFILE_DOWNLOAD_POOL_DIRNAME
+LOG_FILE_POOL.mkdir(exist_ok=True, parents=True)
+
+JOB_SUPERVISOR_LOG = STORAGE_ROOT / STORAGE_PREFIX_DIRNAME / _JOB_SUPERVISOR_LOG
 
 # Definition of backend property names
 BACKEND_SETTINGS = config(
@@ -154,14 +161,8 @@ MAX_IDLE_TIME = max(0, config("MAX_IDLE_TIME", cast=int, default=900))
 # default: True
 IS_ASYNC = config("IS_ASYNC", cast=bool, default="True")
 
-# default: booking
-QUEUE_PREFIX = config("QUEUE_PREFIX", default="booking")
-
 # default: "sqlite:///booking_db.db"
 BOOKING_DB_URL = config("BOOKING_DB_URL", default="sqlite:///booking_db.db")
-
-# default: "redis://localhost:6379"
-JOBS_REDIS_URL = config("JOBS_REDIS_URL", default="redis://localhost:6379/0")
 
 # default: "redis://localhost:6379"
 RQ_REDIS_URL = config("RQ_REDIS_URL", default="redis://localhost:6379/0")

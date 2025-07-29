@@ -179,6 +179,3 @@ backend_config.**.toml
 
 # sql databases
 *.db
-
-# queue configs
-queue-config.yml

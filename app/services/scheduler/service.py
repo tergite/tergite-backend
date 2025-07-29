@@ -19,7 +19,7 @@
 
 from contextlib import suppress
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from fastapi import UploadFile
 from pydantic import ValidationError
@@ -164,7 +164,6 @@ def cancel_booking(queues: QueuePool, user_id: str, booking_id: str):
 def submit_job_file(
     queues: QueuePool,
     upload_file: UploadFile,
-    upload_folder: Path,
     credentials: MSSTokenClaims,
     force_normal_queue: bool = False,
 ) -> Job:
@@ -193,7 +192,6 @@ def submit_job_file(
     Args:
         queues: the collection of queues that are to run the job.
         upload_file: the job file containing the job to submit for the next steps of processing
-        upload_folder: the path to the folder where the job is to be uploaded
         credentials: MSS login details as got from the headers and the parameters or body
         force_normal_queue: the flag for whether to force the usage of the normal queue
 
@@ -203,6 +201,7 @@ def submit_job_file(
     context = get_queue_context(force_normal_queue=force_normal_queue)
     jobs_store_url = context["jobs_store_url"]
     booking_db_url = context["booking_db_url"]
+    upload_folder = Path(context["job_upload_folder"])
 
     # We save the job first in the jobs store before we put it on the queue
     # because it will be picked from the jobs store when the worker is running.
@@ -325,6 +324,36 @@ def get_job(job_id: str, user_id: str) -> Job:
         return job
 
     raise ItemNotFoundError(f"Job {job_id} not found")
+
+
+def get_many_jobs(
+    user_id: Optional[str] = None,
+    status: Optional[JobStatus] = None,
+    skip: int = 0,
+    limit: int | None = None,
+) -> List[Job]:
+    """Get the job of a given job_id if it belongs to the user or the user is admin
+
+    Args:
+        user_id: the user_id associated with the jobs; defaults to None i.e. all jobs are returned
+        status: the status of the jobs; defaults to None i.e. all jobs are returned
+        skip: number of records to ignore at the top of the returned results; default is 0
+        limit: maximum number of records to return; default is None.
+
+    Returns:
+        the list of job
+    """
+    context = get_queue_context()
+    jobs_store_url = context["jobs_store_url"]
+
+    job_store = get_jobs_store(url=jobs_store_url)
+    filters = {}
+    if status:
+        filters["status"] = status
+    if user_id:
+        filters["user_id"] = user_id
+
+    return job_store.find_by_index(filters, skip=skip, limit=limit)
 
 
 def delete_user_profile(queues: QueuePool, user_id: str):

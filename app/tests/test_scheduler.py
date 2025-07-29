@@ -11,10 +11,11 @@
 # that they have been altered from the originals.
 #
 """Tests for the scheduler that handles queueing of user's jobs"""
-
+import json
 import time
 from datetime import datetime, timedelta, timezone
 from itertools import islice
+from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -36,6 +37,7 @@ from redis import Redis
 from app.libs.queues.dtos import Job, JobStatus
 from app.services.booking.models import Booking
 from app.tests.conftest import (
+    CLIENT_AND_RQ_WORKER_TUPLES,
     INVALID_CREATE_BOOKINGS_PARAMS,
     JOBS,
     JOBS_HASH_NAME,
@@ -46,13 +48,48 @@ from app.tests.conftest import (
     _BasicBookingInfo,
     _PaginationInfo,
 )
+from app.tests.utils.api import create_mss_headers
 from app.tests.utils.env import TEST_MAX_SLOTS_PER_DAY
+from app.tests.utils.fixtures import load_fixture
 
 if TYPE_CHECKING:
     from httpx import Response
     from starlette.testclient import TestClient
 
 T = TypeVar("T")
+
+_SIMULATOR_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload_simulator.json")
+_SIMULATOR_JOBS_FOR_UPLOAD_2Q = load_fixture("jobs_to_upload_simulator_2q.json")
+_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload.json")
+_INVALID_JOBS_FOR_UPLOAD = load_fixture("invalid_jobs_to_upload.json")
+
+# FIXME: Add device and calibration_date to the job being uploaded
+# params
+_UPLOAD_JOB_PARAMS = [
+    (*CLIENT_AND_RQ_WORKER_TUPLES[0], job) for job in _JOBS_FOR_UPLOAD
+]
+
+_SIMULATOR_UPLOAD_JOB_PARAMS = [
+    (*CLIENT_AND_RQ_WORKER_TUPLES[1], job) for job in _SIMULATOR_JOBS_FOR_UPLOAD
+]
+
+_SIMULATOR_UPLOAD_JOB_PARAMS_2Q = [
+    (*CLIENT_AND_RQ_WORKER_TUPLES[2], job) for job in _SIMULATOR_JOBS_FOR_UPLOAD_2Q
+]
+
+
+_ALL_UPLOAD_JOB_PARAMS = (
+    [(*args, {"0x0": 750}) for args in _UPLOAD_JOB_PARAMS]
+    + [(*args, {"0x0": 750}) for args in _SIMULATOR_UPLOAD_JOB_PARAMS]
+    + [(*args, {"0x0": 400, "0x3": 400}) for args in _SIMULATOR_UPLOAD_JOB_PARAMS_2Q]
+    # the bell state of 00 and 11 == ~512
+)
+
+_ALL_INVALID_UPLOAD_JOB_PARAMS = [
+    (client, redis, rq_worker, job)
+    for job in _INVALID_JOBS_FOR_UPLOAD
+    for client, redis, rq_worker in CLIENT_AND_RQ_WORKER_TUPLES
+]
 
 
 @pytest.mark.parametrize("user", USERS)
@@ -89,7 +126,7 @@ def test_view_profile(rest_client, user, mocker: MockerFixture):
     """
     with rest_client as client:
         user_id, _ = _create_user(client, user=user)
-        token, _ = _login_user(client, mocker=mocker, user=user)
+        token, _ = _get_token(client, mocker=mocker, data=user)
 
         response = _view_own_profile(client, token=token)
         profile = response.json()
@@ -149,7 +186,7 @@ def test_admin_view_users(
         # create admin user and token
         admin_user_data, *other_user_data = USERS
         admin_user_id, _ = _create_root_user(client, user=admin_user_data)
-        admin_token, _ = _login_user(client, mocker=mocker, user=admin_user_data)
+        admin_token, _ = _get_token(client, mocker=mocker, data=admin_user_data)
 
         # create many users and their tokens
         user_id_token_map = _create_user_token_map(
@@ -263,7 +300,7 @@ def test_admin_remove_user(rest_client, rq_worker, redis_client, mocker: MockerF
         # create admin user and token
         admin_user_data, *other_user_data = USERS
         admin_user_id, _ = _create_root_user(client, user=admin_user_data)
-        admin_token, _ = _login_user(client, mocker=mocker, user=admin_user_data)
+        admin_token, _ = _get_token(client, mocker=mocker, data=admin_user_data)
 
         # create many users and their tokens
         user_id_token_map = _create_user_token_map(
@@ -372,7 +409,7 @@ def test_login(rest_client, user, mocker: MockerFixture):
     """
     with rest_client as client:
         _create_user(client, user=user)
-        token, response = _login_user(client, mocker=mocker, user=user)
+        token, response = _get_token(client, mocker=mocker, data=user)
 
         assert response.status_code == 200
         assert response.json() == {"access_token": token, "token_type": "bearer"}
@@ -394,7 +431,7 @@ def test_create_booking(
     """
     with rest_client as client:
         user_id, _ = _create_user(client, user=user)
-        token, _ = _login_user(client, mocker=mocker, user=user)
+        token, _ = _get_token(client, mocker=mocker, data=user)
 
         # create booking
         actual_booking_info, response = _create_booking(
@@ -420,7 +457,7 @@ def test_create_invalid_booking(
     """
     with rest_client as client:
         user_id, _ = _create_user(client, user=user)
-        token, _ = _login_user(client, mocker=mocker, user=user)
+        token, _ = _get_token(client, mocker=mocker, data=user)
         data = _to_booking_payload(booking)
 
         # create booking
@@ -439,7 +476,7 @@ def test_create_conflicting_booking(
     """Should return an error message when creating a booking overlapping with another"""
     with rest_client as client:
         user_id, _ = _create_user(client, user=user)
-        token, _ = _login_user(client, mocker=mocker, user=user)
+        token, _ = _get_token(client, mocker=mocker, data=user)
 
         # create booking
         _, response = _create_booking(client, token=token, booking=booking)
@@ -468,7 +505,7 @@ def test_create_too_many_booking(rest_client, user, mocker: MockerFixture):
     """Returns error message when creating a booking when number of bookings in a period for user are maxed out."""
     with rest_client as client:
         user_id, _ = _create_user(client, user=user)
-        token, _ = _login_user(client, mocker=mocker, user=user)
+        token, _ = _get_token(client, mocker=mocker, data=user)
 
         max_safe_idx = TEST_MAX_SLOTS_PER_DAY - 1
 
@@ -953,7 +990,7 @@ def test_admin_cancel_future_booking(rest_client, mocker: MockerFixture):
         # create admin user and token
         admin_user_data, *other_user_data = USERS
         admin_user_id, _ = _create_root_user(client, user=admin_user_data)
-        admin_token, _ = _login_user(client, mocker=mocker, user=admin_user_data)
+        admin_token, _ = _get_token(client, mocker=mocker, data=admin_user_data)
 
         # create many users and their tokens
         user_id_token_map = _create_user_token_map(
@@ -1070,29 +1107,100 @@ def test_cancel_completed_booking(
         assert got == expected
 
 
-@pytest.mark.parametrize("user", USERS)
-def test_view_job(rest_client, user, rq_worker, redis_client, mocker: MockerFixture):
+@pytest.mark.parametrize(
+    "client, _redis_client, _rq_worker, job, expected_counts",
+    _ALL_UPLOAD_JOB_PARAMS,
+)
+def test_view_job(
+    client,
+    _redis_client,
+    client_jobs_folder,
+    _rq_worker,
+    job,
+    expected_counts,
+    mocker: MockerFixture,
+):
     """GET '/jobs/{job_id}' by a user can show the job for the job_id if job belongs to them"""
-    with rest_client as client:
+    job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
+    user = USERS[1]
+
+    with client as client:
         user_id, _ = _create_user(client, user=user)
-        token, _ = _login_user(client, mocker=mocker, user=user)
-        job_info = JOBS[0]
-        job_id = job_info["job_id"]
+        job_id = job["job_id"]
+        token, _ = _get_token(
+            client, mocker, data={"user_id": user_id, "job_id": job_id}
+        )
 
         # submit job
-        headers = _get_headers(token)
-        response = client.post("/jobs", headers=headers, json=job_info)
+        headers = create_mss_headers(user_id=user_id)
+        headers["Authorization"] = f"Bearer {token}"
+
+        with open(job_file_path, "rb") as file:
+            response = client.post(
+                "/jobs", files={"upload_file": file}, headers=headers
+            )
+
         expected_job = Job.model_validate(response.json())
 
-        pending_job, _ = _view_job(client, token=token, job_id=job_id)
+        pending_job, _ = _view_job(client, user_id=user_id, job_id=job_id)
         assert pending_job == expected_job
+
+        # Run the queue to run the job and see that it is updated
+        _rq_worker.work(burst=True)
+
+        complete_job, _ = _view_job(client, user_id=user_id, job_id=job_id)
+        assert complete_job.status == JobStatus.SUCCESSFUL
+        assert complete_job.actual_duration is not None
+
+
+# TODO: Add test for view_jobs by status
+@pytest.mark.parametrize("user", USERS)
+def test_view_jobs(rest_client, user, rq_worker, redis_client, mocker: MockerFixture):
+    """GET '/jobs' by a user can show the paginated list of jobs that belong to them"""
+    with rest_client as client:
+        # create many users and their tokens
+        user_id_token_map = _create_user_token_map(client, mocker=mocker)
+        num_of_users = len(user_id_token_map)
+
+        # current user
+        user_id = next(islice(user_id_token_map, 0, 1))
+        token = user_id_token_map[user_id]
+
+        durations = [0.4, 3, 4, 1.1, 2.9, 0.3, 0.1]
+        raw_jobs = [
+            {"type": "test", "test_duration": duration, "job_id": f"{uuid4()}"}
+            for duration in durations
+        ]
+
+        # submit many jobs from many users when booking starts
+        _submit_multiple_jobs(
+            client,
+            user_id_token_map=user_id_token_map,
+            is_job_id_specified=True,
+            raw_jobs=raw_jobs,
+        )
+
+        # get jobs
+        headers = _get_headers(token)
+        response = client.get("/jobs", headers=headers)
+        pending_jobs_resp = response.json()
+        expected_jobs = [
+            Job(**v).model_dump(mode="json")
+            for idx, v in enumerate(raw_jobs)
+            if idx % num_of_users == 0
+        ]
+        assert pending_jobs_resp == _paginate(expected_jobs)
 
         # Run the queue to run the job and see that it is updated
         rq_worker.work(burst=True)
 
-        complete_job, _ = _view_job(client, token=token, job_id=job_id)
-        assert complete_job.status == JobStatus.SUCCESSFUL
-        assert complete_job.actual_duration is not None
+        response = client.get("/jobs", headers=headers)
+        completed_jobs_resp = response.json()
+        expected_jobs = [
+            Job(**v, status=JobStatus.SUCCESSFUL).model_dump(mode="json")
+            for v in expected_jobs
+        ]
+        assert completed_jobs_resp == _paginate(expected_jobs)
 
 
 @pytest.mark.parametrize("user", USERS)
@@ -1100,7 +1208,7 @@ def test_cancel_job(rest_client, user, rq_worker, redis_client, mocker: MockerFi
     """A user POST to '/jobs/{id}/cancel' cancels the job of the job_id if the job belongs to them"""
     with rest_client as client:
         user_id, _ = _create_user(client, user=user)
-        token, _ = _login_user(client, mocker=mocker, user=user)
+        token, _ = _get_token(client, mocker=mocker, data=user)
         job_info = JOBS[0]
         job_id = job_info["job_id"]
 
@@ -1163,19 +1271,19 @@ def _cancel_booking(client: "TestClient", token: str, booking_id: str) -> "Respo
 
 
 def _view_job(
-    client: "TestClient", token: str, job_id: str
+    client: "TestClient", user_id: str, job_id: str
 ) -> Tuple[Optional[Job], "Response"]:
     """Gets the job as viewed on the REST API
 
     Args:
         client: the TestClient for the running tests in
-        token: the user token for authentication
+        user_id: the unique identifier of the user associated with this job
         job_id: the unique identifier of the job
 
     Returns:
         the tuple of the job or None if no job and the httpx.Response from endpoint
     """
-    headers = _get_headers(token)
+    headers = create_mss_headers(user_id)
     response = client.get(f"/jobs/{job_id}", headers=headers)
     try:
         job = Job.model_validate(response.json())
@@ -1421,7 +1529,7 @@ def _create_user_token_map(
     user_id_token_map: Dict[str, str] = {}
     for user in raw_users:
         user_id, _ = _create_user(client, user=user)
-        token, _ = _login_user(client, mocker=mocker, user=user)
+        token, _ = _get_token(client, mocker=mocker, data=user)
         user_id_token_map[user_id] = token
     return user_id_token_map
 
@@ -1494,20 +1602,21 @@ def _create_user(client: "TestClient", user: dict) -> Tuple[str, "Response"]:
     Returns:
         the tuple of id of the user and the result
     """
-    response = client.post("/users", json=user)
+    headers = create_mss_headers(is_admin=True)
+    response = client.post("/users", json=user, headers=headers)
     json_response = response.json()
     return json_response["id"], response
 
 
-def _login_user(
-    client: "TestClient", mocker: MockerFixture, user: dict
+def _get_token(
+    client: "TestClient", mocker: MockerFixture, data: "_LoginDetails"
 ) -> Tuple[str, "Response"]:
-    """Logs in the user and returns the user's JWT token and the httpx.Response
+    """Mimics logging in via MSS and returns the user's JWT token and the httpx.Response
 
     Args:
         client: the fastapi TestClient for testing the app
         mocker: the pytest mocker fixture for spying on functions
-        user: the user info for signing in
+        data: the info for signing in
 
     Returns:
         the tuple of the JWT of the user and the httpx.Response
@@ -1516,11 +1625,33 @@ def _login_user(
 
     jwt_encode_spy = mocker.spy(jwt, "encode")
 
-    response = client.post("/login", json=user)
+    headers = create_mss_headers(user_id=data["user_id"])
+    response = client.post("/token", json=data, headers=headers)
     expected_token = jwt_encode_spy.spy_return
     mocker.stop(jwt_encode_spy)
 
     return expected_token, response
+
+
+def _save_job_file(folder: Path, job: Dict[str, Any], ext: str = ".json") -> Path:
+    """Saves the given job to a file and returns the Path
+
+    It uses 'dummy' as a default job id
+
+    Args:
+        folder: the folder to save the job in
+        job: the job to save
+
+    Returns:
+        the path where the job was saved
+    """
+    job_id = job.get("job_id", "dummy")
+    file_path = folder / f"{job_id}{ext}"
+
+    with open(file_path, "w") as file:
+        json.dump(job, file)
+
+    return file_path
 
 
 class _PaginatedList(TypedDict, Generic[T]):
@@ -1536,3 +1667,10 @@ class _BookingPayload(TypedDict):
 
     start_utc: str
     end_utc: str
+
+
+class _LoginDetails(TypedDict):
+    """Details used to log in"""
+
+    user_id: str
+    job_id: str

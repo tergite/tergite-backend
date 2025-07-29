@@ -12,12 +12,13 @@
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
+import io
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from functools import cached_property
 from typing import Dict, List, Optional, Tuple, Type
 
+import qiskit.qpy as qpy
 from qiskit.pulse.schedule import Schedule
 from qiskit.qobj import PulseQobjConfig, PulseQobjExperiment, PulseQobjInstruction
 
@@ -55,19 +56,7 @@ _INSTRUCTION_PULSE_MAP: Dict[
 
 
 @dataclass(frozen=True)
-class QiskitDynamicsExperiment(NativeExperiment):
-    instructions: List[QiskitDynamicsInstruction]
-    raw_schedule: Schedule = None
-
-    @cached_property
-    def schedule(self) -> "Schedule":
-        return self.raw_schedule
-
-    @cached_property
-    def duration(self) -> float:
-        backend_conf = get_backend_config()
-        time_step_len = backend_conf.general_config.dt
-        return self.raw_schedule.duration * time_step_len
+class QiskitDynamicsExperiment(NativeExperiment[Schedule]):
 
     @classmethod
     def from_qobj_expt(
@@ -88,25 +77,30 @@ class QiskitDynamicsExperiment(NativeExperiment):
         """
         header = copy_expt_header_with(expt.header, name=name)
         timestamp: str = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-        raw_schedule = Schedule(name=f"open-pulse-generated-{timestamp}")
+        schedule = Schedule(name=f"open-pulse-generated-{timestamp}")
 
-        native_instructions: List[QiskitDynamicsInstruction] = []
+        # native_instructions: List[QiskitDynamicsInstruction] = []
         qobj_instructions: List[PulseQobjInstruction] = expt.instructions
 
         for inst in qobj_instructions:
             try:
                 native_inst = _to_native_instruction(inst)
-                native_instructions.append(native_inst)
-                raw_schedule = raw_schedule.insert(inst.t0, native_inst)
+                # native_instructions.append(native_inst)
+                schedule = schedule.insert(inst.t0, native_inst)
             except NotImplementedError as exp:
                 # FIXME: For now ignore all missing pulse shapes
                 logging.error(f"NotImplementError for expt: {name}: {exp}")
 
+        # compute estimated duration
+        backend_conf = get_backend_config()
+        time_step_len = backend_conf.general_config.dt
+        duration = schedule.duration * time_step_len
+
         return cls(
             header=header,
-            instructions=native_instructions,
             config=qobj_config,
-            raw_schedule=raw_schedule,
+            schedule=schedule,
+            duration=duration,
         )
 
 
@@ -131,3 +125,31 @@ def _to_native_instruction(
         raise NotImplementedError(
             f"No mapping for PulseQobjInstruction {qobj_inst}.\n {exp}"
         )
+
+
+def _schedule_to_bytes(schedule: Schedule) -> bytes:
+    """Converts the schedule into a list of bytes that can be pickled
+
+    Args:
+        schedule: the schedule to serialize
+
+    Returns:
+        bytes got from serializing the schedule
+    """
+    buf = io.BytesIO()
+    qpy.dump([schedule], buf)
+    return buf.getvalue()
+
+
+def _bytes_to_schedule(value: bytes) -> Schedule:
+    """Converts the bytes into a schedule
+
+    Args:
+        value: the bytes to parse
+
+    Returns:
+        the schedule got after serialization
+    """
+    buf = io.BytesIO(value)
+    [schedule] = qpy.load(buf)
+    return schedule

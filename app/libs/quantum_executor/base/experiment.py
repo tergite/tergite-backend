@@ -16,25 +16,28 @@
 import abc
 import copy
 from dataclasses import dataclass
+from typing import Generic, TypeVar
 
 from qiskit.qobj import PulseQobjConfig, QobjExperimentHeader
 
+T = TypeVar("T")
+
 
 @dataclass(frozen=True)
-class NativeExperiment(abc.ABC):
+class NativeExperiment(abc.ABC, Generic[T]):
+    """The schema representing a single compiled experiment
+
+    Attributes:
+        header: the header to the Qobject for this experiment
+        config: the Qobject config for this experiment
+        schedule: the compiled schedule for this experiment
+        duration: the duration of this experiment in seconds
+    """
+
     header: QobjExperimentHeader
     config: PulseQobjConfig
-
-    @property
-    @abc.abstractmethod
-    def schedule(self):
-        pass
-
-    @property
-    @abc.abstractmethod
-    def duration(self) -> float:
-        """the duration of this experiment"""
-        pass
+    schedule: T
+    duration: float
 
 
 def copy_expt_header_with(header: QobjExperimentHeader, **kwargs):

@@ -22,6 +22,7 @@ import settings
 
 from ...libs.queues.types import RunnerQueue, StaticQueue
 from .tasks import (
+    execute,
     postprocess,
     postprocessing_failure_callback,
     postprocessing_success_callback,
@@ -74,7 +75,7 @@ class QueuePool:
     def from_settings(cls) -> Self:
         """Constructs a queue pool from the settings"""
         return cls(
-            prefix=settings.QUEUE_PREFIX,
+            prefix=settings.DEFAULT_PREFIX,
             connection=Redis.from_url(settings.RQ_REDIS_URL),
             is_async=settings.IS_ASYNC,
         )
@@ -145,7 +146,7 @@ def get_normal_execution_queue(
     Returns:
         a RunnerQueue instance to be used in normal execution
     """
-    kwargs["job_executor_func"] = postprocess
+    kwargs["job_executor_func"] = execute
     return RunnerQueue(
         f"{prefix}_normal_execution", connection, is_async=is_async, **kwargs
     )
@@ -174,7 +175,7 @@ def get_booked_execution_queue(
     Returns:
         a RunnerQueue instance to be used in booked execution
     """
-    kwargs["job_executor_func"] = postprocess
+    kwargs["job_executor_func"] = execute
     return RunnerQueue(
         f"{prefix}_booked_execution", connection, is_async=is_async, **kwargs
     )

@@ -33,7 +33,7 @@ from redis import Redis
 from redis.client import Pipeline
 from typing_extensions import Literal
 
-from app.utils.exc import BaseBccException
+from app.utils.exc import ItemNotFoundError
 from app.utils.model import create_partial_schema
 
 IncEx = Union[Set[str], Set[int], Dict[int, Any], Dict[str, Any], None]
@@ -108,6 +108,7 @@ class Schema(BaseModel):
 
 
 T = TypeVar("T", bound=Schema)
+_AnyT = TypeVar("_AnyT")
 
 
 class Collection(Generic[T]):
@@ -234,11 +235,18 @@ class Collection(Generic[T]):
             if item is not None
         ]
 
-    def find_by_index(self, filters: Union[Dict[str, Any], T]) -> List[T]:
+    def find_by_index(
+        self,
+        filters: Union[Dict[str, Any], T],
+        skip: int = 0,
+        limit: int | None = None,
+    ) -> List[T]:
         """Get the items with the given values in the given indexed fields
 
         Args:
             filters: the dict of key and value that should be matched
+            skip: number of records to ignore at the top of the returned results; default is 0
+            limit: maximum number of records to return; default is None.
 
         Returns:
             the list of items that match
@@ -258,6 +266,7 @@ class Collection(Generic[T]):
         index_keys = self._get_index_keys_from_dict(filters)
 
         matched_keys = self._connection.sinter(index_keys)
+        matched_keys = _paginate(matched_keys, skip=skip, limit=limit)
         if len(matched_keys) == 0:
             return []
 
@@ -470,10 +479,6 @@ class Collection(Generic[T]):
         return index_keys
 
 
-class ItemNotFoundError(BaseBccException):
-    """Exception when item is not found"""
-
-
 def _get_redis_key(schema: Type[Schema], item: Any) -> str:
     """Gets the redis key for this item
 
@@ -507,3 +512,21 @@ def _get_index_prop(index_key: str) -> str:
         the part of the key excluding the property value
     """
     return index_key.rsplit(_IDX_SEPARATOR, 1)[0]
+
+
+def _paginate(
+    data: List[_AnyT], skip: int = 0, limit: Optional[int] = None
+) -> List[_AnyT]:
+    """Paginates the data basing on the skip and the limit params
+
+    Args:
+        skip: the number of records to skip
+        limit: the maximum number of records to return
+
+    Returns:
+        list of the data sliced according to the pagination info
+    """
+    slice_limit = limit
+    if isinstance(slice_limit, int):
+        slice_limit += skip
+    return data[skip:slice_limit]

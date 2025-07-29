@@ -45,6 +45,18 @@ class MeasProtocol(str, enum.Enum):
     TRACE = "trace"
 
 
+class AcqReturnType(int, enum.Enum):
+    COMPLEX = 1
+    ND_ARRAY = 2
+
+    def to_type(self) -> Union[Type]:
+        """Retrieves the type associated with this enum"""
+        if self == AcqReturnType.COMPLEX:
+            return complex
+        elif self == AcqReturnType.ND_ARRAY:
+            return np.ndarray
+
+
 @dataclass(frozen=True)
 class NativeQobjConfig:
     """Settings for running native experiments"""
@@ -57,6 +69,29 @@ class NativeQobjConfig:
     meas_return_cols: int
     n_qubits: int
     shots: int
+
+    def to_dict(self) -> dict:
+        """Converts this config into a JSON serializable dictionary"""
+        raw_dict = asdict(self)
+        if self.acq_return_type == complex:
+            raw_dict["acq_return_type"] = AcqReturnType.COMPLEX
+        elif self.acq_return_type == np.ndarray:
+            raw_dict["acq_return_type"] = AcqReturnType.ND_ARRAY
+        return raw_dict
+
+    @classmethod
+    def from_dict(cls, value: dict) -> "NativeQobjConfig":
+        """Converts a dict into a NativeQobjConfig object
+
+        Args:
+            value: the dictionary to convert
+
+        Returns:
+            the NativeQobjConfig object
+        """
+        acq_return_type = value["acq_return_type"].to_type()
+        value = {**value, "acq_return_type": acq_return_type}
+        return cls(**value)
 
 
 class ByteOrder(str, enum.Enum):

@@ -12,7 +12,6 @@ DEFAULT_PREFIX=qiskit_pulse_1q
 # It contains definitions for the temporary directories and file names.
 STORAGE_ROOT=/tmp
 LOGFILE_DOWNLOAD_POOL_DIRNAME=logfile_download_pool
-LOGFILE_UPLOAD_POOL_DIRNAME=logfile_upload_pool
 JOB_UPLOAD_POOL_DIRNAME=job_upload_pool
 JOB_PRE_PROC_POOL_DIRNAME=job_preproc_pool
 JOB_EXECUTION_POOL_DIRNAME=job_execution_pool
@@ -120,20 +119,10 @@ MAX_IDLE_TIME=900
 # default: True
 IS_ASYNC=True
 
-# The prefix of the queues usually to help distinguish them from other instances of
-# this app even if the same redis server were to be used for multiple instances
-# default: "booking"
-QUEUE_PREFIX=booking
-
 # The SQL database URL of format `dialect+driver://username:password@host:port/database`
 # See: https://docs.sqlalchemy.org/en/20/core/engines.html
 # default: sqlite:///booking_db.db
 BOOKING_DB_URL="sqlite:///booking_db.db"
-
-# The redis database URL of format `redis[s]://[[username][:password]@][host][:port][/db-number]`
-# where jobs data is to be stored
-# default: "redis://localhost:6379/0"
-JOBS_REDIS_URL="redis://localhost:6379/0"
 
 # The redis database URL of format `redis[s]://[[username][:password]@][host][:port][/db-number]`
 # where jobs data is to be stored

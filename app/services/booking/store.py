@@ -12,14 +12,10 @@
 #
 """Module the store"""
 
-from typing import Dict
-
 from sqlalchemy import Engine
 
 from ...utils.sql_db import get_sql_engine
 from .models import Booking, User
-
-_BOOKINGS_DB_ENGINES: Dict[str, Engine] = {}
 
 
 def get_bookings_sql_engine(url: str) -> Engine:
@@ -28,11 +24,4 @@ def get_bookings_sql_engine(url: str) -> Engine:
     Args:
         url: the database URL for the database
     """
-    global _BOOKINGS_DB_ENGINES
-    try:
-        return _BOOKINGS_DB_ENGINES[url]
-    except KeyError:
-        _BOOKINGS_DB_ENGINES[url] = engine = get_sql_engine(
-            url=url, models=[Booking, User]
-        )
-        return engine
+    return get_sql_engine(url=url, models=[Booking, User])

@@ -12,11 +12,13 @@
 # that they have been altered from the originals.
 
 import abc
+import json
 import pickle
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from traceback import format_exc
-from typing import Dict, List, Optional, Tuple, TypedDict
+from typing import Dict, List, Optional, Tuple, Type
 
 import numpy as np
 from qiskit.qobj import PulseQobj
@@ -33,6 +35,7 @@ from app.libs.quantum_executor.base.quantum_job import (
 from app.libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig, QuantumJob
 from app.libs.quantum_executor.base.quantum_job.typing import QExperimentResult
 from app.libs.quantum_executor.utils.logger import ExperimentLogger
+from settings import PREPROCESSED_JOB_POOL
 
 
 class QuantumExecutor(abc.ABC):
@@ -103,12 +106,15 @@ class QuantumExecutor(abc.ABC):
         """
         pass
 
-    def preprocess(self, qobj: PulseQobj, job_id: str = None) -> Tuple[float, Path]:
+    def preprocess(
+        self, qobj: PulseQobj, job_id: str, results_folder: Path = PREPROCESSED_JOB_POOL
+    ) -> Tuple[float, str]:
         """Prepares a given qobj for execution but does not execute it yet
 
         Args:
             qobj: the Quantum object that is to be preprocessed
             job_id: the ID of the job
+            results_folder: the folder to store the experiment resulting files
 
         Returns:
             tuple of the duration and the path to the pickle file containing the native experiments metadata
@@ -116,7 +122,8 @@ class QuantumExecutor(abc.ABC):
         tuid = gen_tuid()
         qobj_header = qobj.header.to_dict()
         qobj_tag = qobj_header.get("tag", "")
-        experiment_folder = Path(create_exp_folder(tuid=tuid, name=qobj_tag))
+        # create the logger folder where to log messages etc.
+        create_exp_folder(tuid=tuid, name=qobj_tag)
         logger = ExperimentLogger(tuid)
         logger.info(f"Preprocessing job for tuid: {tuid} (not the same as job_id)")
 
@@ -131,55 +138,60 @@ class QuantumExecutor(abc.ABC):
             native_config = to_native_qobj_config(qobj.config)
             native_expts = self._to_native_experiments(qobj, native_config)
             total_duration = sum([expt.duration for expt in native_expts])
-            # TODO: get total_duration from the native experiments
 
-            filename = (
-                "expt-metadata.pkl" if job_id is None else f"{job_id}-expt-metadata.pkl"
+            data = NativeExptMetadata(
+                native_config=native_config,
+                tuid=tuid,
+                qobj=qobj,
+                qobj_tag=qobj_tag,
             )
-            results_file_path = experiment_folder / filename
 
-            data: NativeExperimentMetadata = {
-                "native_experiments": native_expts,
-                "native_config": native_config,
-                "tuid": tuid,
-                "duration": total_duration,
-                "qobj": qobj,
-            }
+            results_file_path = _get_preprocessed_expt_file(
+                job_id, folder=results_folder
+            )
             with open(results_file_path, "wb") as file:
-                pickle.dump(data, file, protocol=5)
+                pickle.dump(data.to_dict(), file)
 
             logger.info(f"Translated to {len(native_expts)} native experiments.")
-            return total_duration, results_file_path
+            return total_duration, str(results_file_path)
         except Exception as e:
             # log exceptions
             logger.error(f"\nFailed job: {job_id}, tuid: {tuid}\n{format_exc()}")
             raise e
 
-    def run(self, native_expt_file: Path, job_id: str = None) -> Path:
+    def run(self, job_id: str, inputs_folder: Path = PREPROCESSED_JOB_POOL) -> Path:
         """Runs the experiments and returns the results file path
 
         Args:
-            native_expt_file: the path to the pickle file containing the experiment data
             job_id: the ID of the job
+            inputs_folder: the path to the folder where the input files for this run can be found
 
         Returns:
             the path to the results obtained after measurement
         """
         logger: Optional[ExperimentLogger] = None
         try:
-            with open(native_expt_file, "rb") as file:
-                expt_metadata: NativeExperimentMetadata = pickle.load(file)
+            preprocessed_file = _get_preprocessed_expt_file(
+                job_id, folder=inputs_folder
+            )
+            with open(preprocessed_file, "rb") as file:
+                expt_metadata_dict = pickle.load(file)
+                expt_metadata = NativeExptMetadata.from_dict(expt_metadata_dict)
 
-            tuid = expt_metadata["tuid"]
-            native_config = expt_metadata["native_config"]
-            native_expts = expt_metadata["native_experiments"]
-            qobj = expt_metadata["qobj"]
+            tuid = expt_metadata.tuid
+            qobj = expt_metadata.qobj
+            native_config = expt_metadata.native_config
+            qobj_tag = expt_metadata.qobj_tag
 
-            experiment_folder = native_expt_file.parent
+            experiment_folder = Path(create_exp_folder(tuid=tuid, name=qobj_tag))
             logger = ExperimentLogger(tuid)
             logger.info(f"Starting job: {tuid}")
 
             logger.info(f"Running experiments for job id: {job_id}")
+
+            # we recompile these because pickling them seems to break the schedules
+            # FIXME: If compilation is expensive, removing this duplication is a good place to start
+            native_expts = self._to_native_experiments(qobj, native_config)
             experiment_results = {
                 expt.header.name: self._run_native(
                     expt, native_config=native_config, logger=logger
@@ -199,12 +211,11 @@ class QuantumExecutor(abc.ABC):
                 raw_results=experiment_results,
             )
 
-            filename = "measurement.hdf5" if job_id is None else f"{job_id}.hdf5"
-            results_file_path = experiment_folder / filename
+            results_file_path = experiment_folder / f"{job_id}.hdf5"
             save_job_in_hdf5(job, results_file_path)
 
             # cleanup
-            native_expt_file.unlink(missing_ok=True)
+            preprocessed_file.unlink(missing_ok=True)
 
             logger.info(f"Stored measurement data at {results_file_path}")
             logger.info(
@@ -213,7 +224,7 @@ class QuantumExecutor(abc.ABC):
         except Exception as e:
             if logger:
                 # record exceptions
-                logger.error(f"\nFailed job: {job_id}, tuid: {tuid}\n{format_exc()}")
+                logger.error(f"\nFailed job: {job_id}\n{format_exc()}")
             raise e
 
         return results_file_path
@@ -229,14 +240,55 @@ class QuantumExecutor(abc.ABC):
         self.close()
 
 
-class NativeExperimentMetadata(TypedDict):
+@dataclass(frozen=True)
+class NativeExptMetadata:
     """Metadata on the experiments
 
     This is passed between processes doing preprocessing and those doing execution
     """
 
-    native_experiments: List[NativeExperiment]
     native_config: NativeQobjConfig
     tuid: TUID
-    duration: float
     qobj: PulseQobj
+    qobj_tag: str
+
+    def to_dict(self) -> dict:
+        """Converts this experiment metadata to JSON serializable dict"""
+        return {
+            "tuid": self.tuid,
+            "qobj": self.qobj.to_dict(),
+            "native_config": self.native_config.to_dict(),
+            "qobj_tag": self.qobj_tag,
+        }
+
+    @classmethod
+    def from_dict(cls, value: dict) -> "NativeExptMetadata":
+        """Gets an instance of this class from a dict
+
+        Args:
+            value: the dict to be converted
+
+        Returns:
+            the instance of this class
+        """
+        kwargs = {
+            **value,
+            "qobj": PulseQobj.from_dict(value["qobj"]),
+            "native_config": NativeQobjConfig.from_dict(value["native_config"]),
+        }
+        return cls(**kwargs)
+
+
+def _get_preprocessed_expt_file(
+    job_id: str, folder: Path = PREPROCESSED_JOB_POOL
+) -> Path:
+    """Gets the path to the file containing the preprocessed experiments
+
+    Args:
+        job_id: the unique identifier of the job
+        folder: the folder containing the preprocessed experiment files
+
+    Returns:
+        the path to the file
+    """
+    return folder / f"{job_id}-expt-metadata.json"

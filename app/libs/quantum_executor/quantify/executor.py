@@ -108,7 +108,6 @@ class QuantifyExecutor(QuantumExecutor):
         # Stop any running sequences.
         self._coordinator.stop()
         t1 = datetime.now()
-        schedule_to_compile = copy.deepcopy(experiment.schedule)
 
         quantum_device = QuantumDevice("DUT")
         clean_config = self.quantify_config
@@ -116,7 +115,7 @@ class QuantifyExecutor(QuantumExecutor):
 
         compiler = SerialCompiler(name="compiler")
         compiled_schedule = compiler.compile(
-            schedule=schedule_to_compile,
+            schedule=experiment.schedule,
             config=quantum_device.generate_compilation_config(),
         )
         t2 = datetime.now()

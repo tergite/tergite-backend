@@ -12,15 +12,16 @@
 """Dependencies useful for the FastAPI API"""
 import json
 import logging
-import time
+from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Optional, Tuple
+from typing import Optional
 
 from cryptography.exceptions import InvalidSignature
-from fastapi import Depends, HTTPException, UploadFile, status
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, status
 from fastapi.requests import Request
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import ValidationError
+from sqlalchemy import Engine
 
 import settings
 
@@ -29,6 +30,8 @@ from ..services.booking.models import MSSTokenClaims
 from ..services.booking.service import get_user_job_id_pair_from_token
 from ..services.booking.store import get_bookings_sql_engine
 from ..services.scheduler import get_job
+from ..services.scheduler.queues import QueuePool
+from ..services.scheduler.utils import get_executor, reset_cached_executor
 from ..utils.api import get_request_logs_store, verify_mss_signature
 from ..utils.exc import (
     InvalidJobIdInUploadedFileError,
@@ -40,6 +43,37 @@ from ..utils.strings import validate_uuid4_str
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 DB_ENGINE = get_bookings_sql_engine(settings.BOOKING_DB_URL)
+QUEUE_POOL = QueuePool.from_settings()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Handles functions to run before and after the application"""
+    global DB_ENGINE, QUEUE_POOL
+
+    DB_ENGINE = get_bookings_sql_engine(settings.BOOKING_DB_URL)
+    QUEUE_POOL = QueuePool.from_settings()
+    get_executor(
+        redis=settings.REDIS_CONNECTION,
+        executor_type=settings.EXECUTOR_TYPE,
+        quantify_config_file=settings.QUANTIFY_CONFIG_FILE,
+        quantify_metadata_file=settings.QUANTIFY_METADATA_FILE,
+        mss_url=settings.MSS_MACHINE_ROOT_URL,
+    )
+    yield
+
+    DB_ENGINE = None
+    reset_cached_executor()
+
+
+def get_queue_pool() -> QueuePool:
+    """Dependency injector to retrieve the latest queue pool"""
+    return QUEUE_POOL
+
+
+def get_db_engine() -> Engine:
+    """Dependency injector to retrieve the latest sql db engine"""
+    return DB_ENGINE
 
 
 def get_job_id_dependency(job_id_field: str):
@@ -199,15 +233,13 @@ def get_user_job_id_pair_dep(
 
     def dependency_injector(
         job_id: str = Depends(get_job_id_dependency(job_id_field=job_id_field)),
-        token_user_job_id_pair: Tuple[str, str] = Depends(
-            get_user_job_id_pair_from_token
-        ),
+        token: Optional[str] = Depends(get_bearer_token),
     ) -> MSSTokenClaims:
         """Gets a valid user_id-job_id pair.
 
         Args:
             job_id: the job_id as got from the parameters or from the uploaded file
-            token_user_job_id_pair: the user_id, job_id pair got from the token
+            token: the bearer token in the authorization header
 
         Returns:
             the MSSTokenClaims of the user_id and the job_id
@@ -218,7 +250,7 @@ def get_user_job_id_pair_dep(
             UnauthorizedError: unexpected job id {job_id}
             InvalidJobIdInUploadedFileError: The job does not have a valid UUID4 {job_id_field}
         """
-        user_id, token_job_id = token_user_job_id_pair
+        user_id, token_job_id = get_user_job_id_pair_from_token(token)
         if job_id != token_job_id:
             raise UnauthorizedError(f"unexpected job id {job_id}")
 
@@ -226,12 +258,13 @@ def get_user_job_id_pair_dep(
             get_job(job_id=job_id, user_id=user_id)
             if not job_exists:
                 raise UnauthorizedError(f"job {job_id} already exists")
-            return MSSTokenClaims(user_id=user_id, job_id=job_id)
         except NotAuthenticatedError:
             raise NotAuthenticatedError(f"job {job_id} does not exist for current user")
         except ItemNotFoundError:
             if job_exists:
                 raise UnauthorizedError(f"job {job_id} does not exist")
+
+        return MSSTokenClaims(user_id=user_id, job_id=job_id)
 
     return dependency_injector
 
@@ -258,3 +291,29 @@ async def validate_job_file(upload_file: UploadFile) -> UploadFile:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid file: {exp}"
         )
+
+
+def get_bearer_token(
+    request: Request, raise_if_error: bool = settings.IS_AUTH_ENABLED
+) -> Optional[str]:
+    """Extracts the bearer token from the request.
+
+    It throws a 401 exception if not exist and `raise_if_error` is False
+
+    Args:
+        request: the request object from FastAPI
+        raise_if_error: whether an error should be raised if it occurs.
+            defaults to settings.IS_AUTH_ENABLED
+
+    Raises:
+        HTTPException: Unauthorized
+
+    Returns:
+        the bearer token as a string or None if it does not exist and `raise_if_error` is False
+    """
+    try:
+        authorization_header = request.headers["Authorization"]
+        return authorization_header.split("Bearer ")[1].strip()
+    except (KeyError, IndexError):
+        if raise_if_error:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)

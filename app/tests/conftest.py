@@ -1,3 +1,5 @@
+import importlib
+
 from .utils.env import (
     TEST_BACKEND_SETTINGS_FILE,
     TEST_BOOKING_DB_URL,
@@ -45,13 +47,12 @@ from .utils.analysis import MockLinearDiscriminantAnalysis
 from .utils.api import create_invalid_mss_headers
 from .utils.fixtures import load_fixture
 from .utils.http import MockHttpResponse, MockHttpSession
-from .utils.modules import remove_modules
 from .utils.rq import get_rq_pool_worker
 
 _redis_connection = redis.Redis.from_url(TEST_RQ_REDIS_URL)
-_async_queue_pool = QueuePool(
-    prefix=TEST_DEFAULT_PREFIX, connection=_redis_connection, is_async=True
-)
+# _async_queue_pool = QueuePool(
+#     prefix=TEST_DEFAULT_PREFIX, connection=_redis_connection, is_async=True
+# )
 
 MOCK_NOW = "2023-11-27T12:46:48.851656+00:00"
 TEST_APP_TOKEN_STRING = "eecbf107ad103f70187923f49c1a1141219da95f1ab3906f"
@@ -83,12 +84,12 @@ CLIENT_AND_RQ_WORKER_TUPLES = [
     (
         lazy_fixture("rest_client_with_qiskit_simulator"),
         lazy_fixture("redis_client"),
-        lazy_fixture("rq_worker"),
+        lazy_fixture("rq_worker_for_simulator_1q"),
     ),
     (
         lazy_fixture("rest_client_with_qiskit_simulator_2_qubit"),
         lazy_fixture("redis_client"),
-        lazy_fixture("rq_worker"),
+        lazy_fixture("rq_worker_for_simulator_2q"),
     ),
 ]
 
@@ -114,7 +115,7 @@ _mock_linear_discriminant_analysis_sim2q = MockLinearDiscriminantAnalysis(
 USERS: List[Dict[str, Any]] = load_fixture("users.json")
 VALID_BOOKINGS: List["_BasicBookingInfo"] = load_fixture("valid_bookings.json")
 INVALID_BOOKINGS: List["_BasicBookingInfo"] = load_fixture("invalid_bookings.json")
-JOBS: List[Dict[str, Any]] = load_fixture("jobs.json")
+JOBS: List[Dict[str, Any]] = load_fixture("job_list.json")
 PAGINATION: List["_PaginationInfo"] = load_fixture("pagination.json")
 
 JOBS_HASH_NAME = f"{Job.__module__}.{Job.__qualname__}".lower()
@@ -135,9 +136,30 @@ def redis_client() -> Redis:
 
 
 @pytest.fixture
-def rq_worker() -> SimpleWorker:
-    """Get the rq worker for running async tasks asynchronously"""
-    yield get_rq_pool_worker(_async_queue_pool)
+def rq_worker(redis_client) -> SimpleWorker:
+    """Get the rq worker for running async tasks asynchronously for the default backend"""
+    queue_pool = QueuePool(
+        prefix=TEST_DEFAULT_PREFIX, connection=redis_client, is_async=True
+    )
+    yield get_rq_pool_worker(queue_pool)
+
+
+@pytest.fixture
+def rq_worker_for_simulator_1q(redis_client) -> SimpleWorker:
+    """Get the rq worker for running async tasks asynchronously for the 1 qubit simulator"""
+    queue_pool = QueuePool(
+        prefix=TEST_DEFAULT_PREFIX_SIM_1Q, connection=redis_client, is_async=True
+    )
+    yield get_rq_pool_worker(queue_pool)
+
+
+@pytest.fixture
+def rq_worker_for_simulator_2q(redis_client) -> SimpleWorker:
+    """Get the rq worker for running async tasks asynchronously for the 2 qubit simulator"""
+    queue_pool = QueuePool(
+        prefix=TEST_DEFAULT_PREFIX_SIM_2Q, connection=redis_client, is_async=True
+    )
+    yield get_rq_pool_worker(queue_pool)
 
 
 def mock_post_requests(url: str, **kwargs):
@@ -179,36 +201,41 @@ def mock_mss_post_requests(url: str, **kwargs):
 @pytest.fixture
 def rest_client(mocker, redis_client) -> TestClient:
     """A test client for fast api when rq is running asynchronously"""
-    remove_modules(["app", "settings"])
-    SQLModel.metadata.clear()
     _patch_async_client(mocker)
     os.environ["EXECUTOR_TYPE"] = "quantify"
     os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX
     os.environ["BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
     os.environ["CALIBRATION_SEED"] = TEST_QUANTIFY_SEED_FILE
 
-    from app.api import app
+    import app
+    import settings
 
-    with freeze_time(MOCK_NOW):
-        yield TestClient(app)
+    importlib.reload(settings)
+    importlib.reload(app)
+    from app import api
+
+    # with freeze_time(MOCK_NOW):
+    yield TestClient(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
 
 
 @pytest.fixture
 def rest_client_with_qiskit_simulator(mocker) -> TestClient:
     """A test client for fast api when rq is running asynchronously"""
-    remove_modules(["app", "settings"])
-    SQLModel.metadata.clear()
     _patch_async_client(mocker)
     os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_1q"
     os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_1Q
     os.environ["BACKEND_SETTINGS"] = TEST_SIMQ1_BACKEND_SETTINGS_FILE
     os.environ["CALIBRATION_SEED"] = TEST_QISKIT_1Q_SEED_FILE
 
-    from app.api import app
+    import app
+    import settings
 
-    with freeze_time(MOCK_NOW):
-        yield TestClient(app)
+    importlib.reload(settings)
+    importlib.reload(app)
+    from app import api
+
+    yield TestClient(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
     _redis_connection.flushall()
 
@@ -216,18 +243,20 @@ def rest_client_with_qiskit_simulator(mocker) -> TestClient:
 @pytest.fixture
 def rest_client_with_qiskit_simulator_2_qubit(mocker) -> TestClient:
     """A test client for fast api when rq is running asynchronously"""
-    remove_modules(["app", "settings"])
-    SQLModel.metadata.clear()
     _patch_async_client_sim2q(mocker)
     os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_2q"
     os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_2Q
     os.environ["BACKEND_SETTINGS"] = TEST_SIMQ2_BACKEND_SETTINGS_FILE
     os.environ["CALIBRATION_SEED"] = TEST_QISKIT_2Q_SEED_FILE
 
-    from app.api import app
+    import app
+    import settings
 
-    with freeze_time(MOCK_NOW):
-        yield TestClient(app)
+    importlib.reload(settings)
+    importlib.reload(app)
+    from app import api
+
+    yield TestClient(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
     _redis_connection.flushall()
 
@@ -235,21 +264,21 @@ def rest_client_with_qiskit_simulator_2_qubit(mocker) -> TestClient:
 @pytest.fixture
 def async_standalone_backend_client(mocker) -> TestClient:
     """A test client for fast api when rq is running asynchronously and backend is standalone"""
-    remove_modules(["app", "settings"])
-    SQLModel.metadata.clear()
-    mocker.patch(
-        "app.services.scheduler.queues.QueuePool", return_value=_async_queue_pool
-    )
 
     os.environ["EXECUTOR_TYPE"] = "quantify"
     os.environ["BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
     os.environ["IS_STANDALONE"] = "True"
     os.environ["CALIBRATION_SEED"] = TEST_QUANTIFY_SEED_FILE
 
-    from app.api import app
+    import app
+    import settings
 
-    with freeze_time(MOCK_NOW):
-        yield TestClient(app)
+    importlib.reload(settings)
+    importlib.reload(app)
+    from app import api
+
+    # with freeze_time(MOCK_NOW):
+    yield TestClient(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
     _redis_connection.flushall()
 
@@ -307,9 +336,6 @@ def _patch_async_client(mocker):
         post=mock_mss_post_requests,
     )
 
-    mocker.patch(
-        "app.services.scheduler.queues.QueuePool", return_value=_async_queue_pool
-    )
     mocker.patch("requests.post", side_effect=mock_post_requests)
     mocker.patch("requests.Session", return_value=mss_client)
     mocker.patch(
@@ -326,9 +352,6 @@ def _patch_async_client_sim2q(mocker):
         post=mock_mss_post_requests,
     )
 
-    mocker.patch(
-        "app.services.scheduler.queues.QueuePool", return_value=_async_queue_pool
-    )
     mocker.patch("requests.post", side_effect=mock_post_requests)
     mocker.patch("requests.Session", return_value=mss_client)
     mocker.patch(

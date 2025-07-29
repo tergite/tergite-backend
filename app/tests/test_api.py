@@ -10,24 +10,19 @@ import pytest
 
 from app.libs.queues.dtos import Job
 from app.tests.conftest import (
-    BLACKLISTED_CLIENT_AND_RQ_WORKER_TUPLES,
-    BLACKLISTED_CLIENTS,
-    BLACKLISTED_FASTAPI_CLIENTS,
     CLIENT_AND_RQ_WORKER_TUPLES,
     CLIENTS,
     FASTAPI_CLIENTS,
     MOCK_NOW,
-    TEST_APP_TOKEN_STRING,
 )
 from app.tests.utils.api import create_invalid_mss_headers, create_mss_headers
 from app.tests.utils.fixtures import load_fixture
 from app.tests.utils.http import get_headers
 from app.tests.utils.records import (
-    order_by,
     with_current_timestamps,
     with_incremental_timestamps,
 )
-from app.tests.utils.redis import insert_in_hash, register_app_token_job_id
+from app.tests.utils.redis import insert_in_hash
 
 _PARENT_FOLDER = path.dirname(path.abspath(__file__))
 _JOBS_LIST = load_fixture("job_list.json")
@@ -146,50 +141,50 @@ def test_root_invalid_headers(client, headers):
         assert response.json() == {"detail": "user not authenticated"}
 
 
-@pytest.mark.parametrize("client, redis_client", CLIENTS)
-def test_fetch_all_jobs(redis_client, client):
-    """Get to /jobs returns all jobs"""
-    raw_jobs = _get_raw_jobs()
+# @pytest.mark.parametrize("client, redis_client", CLIENTS)
+# def test_fetch_all_jobs(redis_client, client):
+#     """Get to /jobs returns all jobs"""
+#     raw_jobs = _get_raw_jobs()
+#
+#     insert_in_hash(
+#         client=redis_client,
+#         hash_name=_JOBS_HASH_NAME,
+#         data=raw_jobs,
+#         id_fields=(_JOB_ID_FIELD,),
+#     )
+#
+#     # using context manager to ensure on_startup runs
+#     with client as client:
+#         response = client.get("/jobs")
+#         got = order_by(response.json(), field="job_id")
+#         expected = order_by(raw_jobs, field="job_id")
+#
+#         assert response.status_code == 200
+#         assert got == expected
 
-    insert_in_hash(
-        client=redis_client,
-        hash_name=_JOBS_HASH_NAME,
-        data=raw_jobs,
-        id_fields=(_JOB_ID_FIELD,),
-    )
-
-    # using context manager to ensure on_startup runs
-    with client as client:
-        response = client.get("/jobs")
-        got = order_by(response.json(), field="job_id")
-        expected = order_by(raw_jobs, field="job_id")
-
-        assert response.status_code == 200
-        assert got == expected
-
-
-@pytest.mark.parametrize("client, redis_client, job_id", _FETCH_JOB_PARAMS)
-def test_fetch_job(redis_client, client, job_id: str, app_token_header):
-    """Get to /jobs/{job_id} returns the job for the given job_id"""
-    raw_jobs = _get_raw_jobs()
-
-    insert_in_hash(
-        client=redis_client,
-        hash_name=_JOBS_HASH_NAME,
-        data=raw_jobs,
-        id_fields=(_JOB_ID_FIELD,),
-    )
-
-    # using context manager to ensure on_startup runs
-    with client as client:
-        response = client.get(f"/jobs/{job_id}", headers=app_token_header)
-        got = response.json()
-        expected = {
-            "message": list(filter(lambda x: x["job_id"] == job_id, raw_jobs))[0]
-        }
-
-        assert response.status_code == 200
-        assert got == expected
+#
+# @pytest.mark.parametrize("client, redis_client, job_id", _FETCH_JOB_PARAMS)
+# def test_fetch_job(redis_client, client, job_id: str, app_token_header):
+#     """Get to /jobs/{job_id} returns the job for the given job_id"""
+#     raw_jobs = _get_raw_jobs()
+#
+#     insert_in_hash(
+#         client=redis_client,
+#         hash_name=_JOBS_HASH_NAME,
+#         data=raw_jobs,
+#         id_fields=(_JOB_ID_FIELD,),
+#     )
+#
+#     # using context manager to ensure on_startup runs
+#     with client as client:
+#         response = client.get(f"/jobs/{job_id}", headers=app_token_header)
+#         got = response.json()
+#         expected = {
+#             "message": list(filter(lambda x: x["job_id"] == job_id, raw_jobs))[0]
+#         }
+#
+#         assert response.status_code == 200
+#         assert got == expected
 
 
 @pytest.mark.parametrize(

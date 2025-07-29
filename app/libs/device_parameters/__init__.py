@@ -34,7 +34,7 @@ from .dtos import (
     DeviceCalibration,
 )
 
-_BACKEND_CONFIG: Optional[BackendConfig] = None
+# _BACKEND_CONFIG: Optional[BackendConfig] = None
 _DEVICES_STORE: Optional[Collection[Device]] = None
 _CALIB_STORE: Optional[Collection[DeviceCalibration]] = None
 
@@ -46,14 +46,18 @@ def get_backend_config() -> BackendConfig:
     merges it with seed data (from either qiskit_pulse or quantify seed file)
     validated via Pydantic.
     """
-    global _BACKEND_CONFIG
-    if _BACKEND_CONFIG is None:
-        # Load static configuration from the main backend_config.toml
-        _BACKEND_CONFIG = BackendConfig.from_toml(
-            settings.BACKEND_SETTINGS,
-            seed_file=settings.CALIBRATION_SEED,
-        )
-    return _BACKEND_CONFIG
+    return BackendConfig.from_toml(
+        settings.BACKEND_SETTINGS,
+        seed_file=settings.CALIBRATION_SEED,
+    )
+    # global _BACKEND_CONFIG
+    # if _BACKEND_CONFIG is None:
+    #     # Load static configuration from the main backend_config.toml
+    #     _BACKEND_CONFIG = BackendConfig.from_toml(
+    #         settings.BACKEND_SETTINGS,
+    #         seed_file=settings.CALIBRATION_SEED,
+    #     )
+    # return _BACKEND_CONFIG
 
 
 def initialize_backend(

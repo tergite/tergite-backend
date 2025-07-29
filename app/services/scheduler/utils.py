@@ -14,10 +14,9 @@
 #
 """Utility functions for the scheduler service"""
 
-from datetime import datetime
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import requests
@@ -29,10 +28,7 @@ from sklearn.utils.extmath import safe_sparse_dot
 import settings
 from settings import (
     BCC_MACHINE_ROOT_URL,
-    JOB_SUPERVISOR_LOG,
     MSS_MACHINE_ROOT_URL,
-    STORAGE_PREFIX_DIRNAME,
-    STORAGE_ROOT,
 )
 
 from ...libs.device_parameters import (
@@ -46,30 +42,20 @@ from ...libs.quantum_executor.quantify.executor import QuantifyExecutor
 from ...libs.quantum_executor.utils.serialization import iqx_rld
 from ...libs.queues.dtos import (
     Job,
+    JobEvent,
     JobResult,
+    JobStage,
     JobStatus,
     LogLevel,
     QueueContext,
     Stage,
-    StageName,
-    TimestampLabel,
-    TimestampPair,
     Timestamps,
 )
 from ...utils.api import get_mss_client
 from ...utils.datetime import utc_now_str
 from ...utils.redis_store import Collection
 
-_JobStage = Literal["execution", "pre_processing", "post_processing"]
-_JobEvent = Literal["started", "finished"]
-_JOB_EVENT_STATUS_CHANGE_MAP: Dict[Tuple[_JobStage, _JobEvent], JobStatus] = {
-    ("execution", "started"): JobStatus.EXECUTING,
-    ("execution", "finished"): JobStatus.SUCCESSFUL,
-}
-"""A map for job status changes as a result of an event at a given job stage"""
-
-
-_STAGE_TIMESTAMPS_MAP: Dict[Stage, Tuple[Tuple[StageName, TimestampLabel], ...]] = {
+_STAGE_TIMESTAMPS_MAP: Dict[Stage, Tuple[Tuple[JobStage, JobEvent], ...]] = {
     Stage.REG_Q: (),
     Stage.REG_W: (("registration", "started"),),
     Stage.PRE_PROC_Q: (("registration", "finished"),),
@@ -105,19 +91,16 @@ def get_queue_context(force_normal_queue: bool = False, **kwargs) -> QueueContex
     Returns:
         the queue context
     """
-    post_processing_folder = (
-        settings.STORAGE_ROOT
-        / settings.STORAGE_PREFIX_DIRNAME
-        / settings.LOGFILE_DOWNLOAD_POOL_DIRNAME
-    )
     return {
-        "queue_prefix": settings.QUEUE_PREFIX,
+        "queue_prefix": settings.DEFAULT_PREFIX,
         "booking_db_url": settings.BOOKING_DB_URL,
-        "jobs_store_url": settings.JOBS_REDIS_URL,
+        "jobs_store_url": settings.RQ_REDIS_URL,
         "force_normal_queue": force_normal_queue,
         "max_idle_time": settings.MAX_IDLE_TIME,
         "is_async": settings.IS_ASYNC,
-        "post_processing_folder": f"{post_processing_folder}",
+        "postprocessing_folder": f"{settings.LOG_FILE_POOL}",
+        "preprocessing_folder": f"{settings.PREPROCESSED_JOB_POOL}",
+        "job_upload_folder": f"{settings.JOB_UPLOAD_POOL}",
         **kwargs,
     }
 
@@ -180,6 +163,14 @@ def get_executor(
     return _EXECUTOR
 
 
+def reset_cached_executor():
+    """Clears the cached executor resetting it to None"""
+    global _EXECUTOR
+    if _EXECUTOR:
+        _EXECUTOR.close()
+    _EXECUTOR = None
+
+
 def log_job_msg(message: str, level: LogLevel = LogLevel.INFO) -> None:
     """Save message to job supervisor log file.
 
@@ -200,11 +191,7 @@ def log_job_msg(message: str, level: LogLevel = LogLevel.INFO) -> None:
         f"{color[level.value]}[{formatted_time}] {level.name}: {message}{color[0]}\n"
     )
 
-    file_path = STORAGE_ROOT / STORAGE_PREFIX_DIRNAME
-    file_path.mkdir(parents=True, exist_ok=True)
-    store_file = file_path / JOB_SUPERVISOR_LOG
-
-    with store_file.open("a") as destination:
+    with settings.JOB_SUPERVISOR_LOG.open("a") as destination:
         destination.write(logstring)
 
 

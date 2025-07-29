@@ -93,6 +93,7 @@ def preprocess(
     """
     job_id = job.job_id
     jobs_store = get_jobs_store(url=context["jobs_store_url"])
+    results_folder = Path(context["preprocessing_folder"])
 
     try:
         with job_file.open() as file:
@@ -108,8 +109,8 @@ def preprocess(
         # [[a,b],[c,d],...] -> [a + ib,c + id,...]
         json_decoder.decode_pulse_qobj(qobj)
         executor = get_executor()
-        duration, expt_file = executor.preprocess(
-            PulseQobj.from_dict(qobj), job_id=job_id
+        duration, _ = executor.preprocess(
+            PulseQobj.from_dict(qobj), job_id=job_id, results_folder=results_folder
         )
         job = jobs_store.update(job.job_id, {"estimated_duration": duration})
 
@@ -230,14 +231,12 @@ def reset_idleness_timer(
 def execute(
     job: Job,
     context: QueueContext,
-    compiled_expts_file: Path,
 ) -> Tuple[str, QueueContext, Path]:
     """Runs the job given the file containing compiled experiments
 
     Args:
         job: the job that is to be run
         context: the context required when running a job on a queue
-        compiled_expts_file: the path to the file containing the compiled experiments
 
     Returns:
         the tuple of the updated job's job ID and the context and the results file path
@@ -249,6 +248,7 @@ def execute(
     queue_prefix = context["queue_prefix"]
     is_async = context["is_async"]
     jobs_store = get_jobs_store(url=context["jobs_store_url"])
+    preprocessing_dir = Path(context["preprocessing_folder"])
 
     try:
         update_job_stage(jobs_store, job_id=job_id, stage=Stage.EXEC_W)
@@ -256,7 +256,7 @@ def execute(
         # Just a locking mechanism to ensure jobs don't interfere with each other
         with get_executor_lock():
             executor = get_executor()
-            results_file = executor.run(compiled_expts_file, job_id=job_id)
+            results_file = executor.run(job_id, inputs_folder=preprocessing_dir)
 
         job: Job = jobs_store.get_one((job_id,))
         if job.status == JobStatus.CANCELLED:
@@ -274,7 +274,6 @@ def execute(
         )
 
         # clean up
-        compiled_expts_file.unlink(missing_ok=True)
         logging.info("Job executed successfully")
         return job.job_id, context, results_file
     except JobAlreadyCancelled as exp:
@@ -305,7 +304,7 @@ def postprocess(
     logging.info(f"Postprocessing logfile {str(results_file)}")
 
     job_id = job.job_id
-    working_folder = Path(context["post_processing_folder"])
+    working_folder = Path(context["postprocessing_folder"])
 
     jobs_store = get_jobs_store(url=context["jobs_store_url"])
     new_file = move_file(results_file, new_folder=working_folder, ext=".hdf5")

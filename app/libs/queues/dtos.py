@@ -56,8 +56,8 @@ HexMemory: TypeAlias = List[List[str]]
 IQPoint: TypeAlias = Tuple[float, float] | List[float]
 IQMemory: TypeAlias = List[List[List[IQPoint]]]
 Memory: TypeAlias = Union[HexMemory, IQMemory]
-TimestampLabel: TypeAlias = Literal["started", "finished"]
-StageName: TypeAlias = Literal[
+JobEvent: TypeAlias = Literal["started", "finished"]
+JobStage: TypeAlias = Literal[
     "registration",
     "pre_processing",
     "execution",
@@ -163,6 +163,11 @@ class TimestampPair(BaseModel):
 
         return self._start_timestamp
 
+    @start_timestamp.setter
+    def set_start_timestamp(self, value: Optional[datetime]):
+        """Sets the start timestamp of the pair"""
+        self._start_timestamp = value
+
     @computed_field
     @property
     def finish_timestamp(self) -> Optional[datetime]:
@@ -175,13 +180,48 @@ class TimestampPair(BaseModel):
 
         return self._finish_timestamp
 
+    @finish_timestamp.setter
+    def set_start_timestamp(self, value: Optional[datetime]):
+        """Sets the start timestamp of the pair"""
+        self._finish_timestamp = value
+
 
 class Timestamps(BaseModel):
     """Timestamps for the job"""
 
+    registration: Optional[TimestampPair] = None
     pre_processing: Optional[TimestampPair] = None
     execution: Optional[TimestampPair] = None
     post_processing: Optional[TimestampPair] = None
+    final: Optional[TimestampPair] = None
+
+    def with_updates(self, updates: Dict[JobStage, Dict[JobEvent, str]]):
+        """Generates a new timestamp instance with the new partial updates
+
+        Args:
+            updates: dict of partial updates to incorporate into the new timestamp
+
+        Returns:
+            a new timestamp with the given updates
+        """
+        parsed_updates = self.model_validate(updates)
+        updates_dict = parsed_updates.model_dump(
+            exclude_unset=True, exclude_defaults=True
+        )
+
+        model_copy = self.model_copy()
+
+        for name, new_pair in updates_dict.items():  # type: str, dict
+            original_pair = getattr(model_copy, name)
+
+            for label, timestamp in new_pair.items():
+                if original_pair is None:
+                    original_pair = TimestampPair()
+                    setattr(model_copy, name, original_pair)
+
+                setattr(original_pair, label, timestamp)
+
+        return model_copy
 
     @property
     def resource_usage(self) -> Optional[float]:
@@ -413,7 +453,9 @@ class QueueContext(TypedDict):
     booking_db_url: str
     jobs_store_url: str
     force_normal_queue: NotRequired[bool]
-    post_processing_folder: str
+    postprocessing_folder: str
+    preprocessing_folder: str
+    job_upload_folder: str
     max_idle_time: int
     is_async: bool
 
