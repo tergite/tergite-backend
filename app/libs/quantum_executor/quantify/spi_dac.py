@@ -181,6 +181,7 @@ class SpiDAC:
     def set_parking_currents(self, couplers: list[str]) -> None:
 
         parking_currents = {}
+        # TODO: Change message about zero currents in device_config.toml - tergite-backend has backend_config.toml instead
         for coupler in couplers:
             if REDIS_CONNECTION.hexists(f"couplers:{coupler}", "parking_current"):
                 parking_current = float(
