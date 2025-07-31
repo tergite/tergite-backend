@@ -115,7 +115,7 @@ class SpiDAC:
     def __init__(
         self,
         couplers: list[str],
-        metadata_path: str | Path = settings.QUANTIFY_METADATAFILE,
+        metadata_path: str | Path = settings.QUANTIFY_METADATA_FILE,
     ):
         # grab spi metadata
         raw_port, self.is_dummy, self._coupler_map = _get_spi_metadata(metadata_path)
