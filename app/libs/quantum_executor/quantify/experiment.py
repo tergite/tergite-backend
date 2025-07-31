@@ -43,6 +43,7 @@ from .instruction import (
     ShiftFreqInstruction,
     ShiftPhaseInstruction,
     SquarePulseInstruction,
+    WacqtCZPulseInstruction,
 )
 
 # Map (name, pulse_shape) => Quantify Instruction class
@@ -55,6 +56,7 @@ _INSTRUCTION_PULSE_MAP: Dict[Tuple[str, Optional[str]], Type[BaseInstruction]] =
     ("acquire", None): AcquireInstruction,
     ("parametric_pulse", "gaussian"): GaussPulseInstruction,
     ("parametric_pulse", "constant"): SquarePulseInstruction,
+    ("parametric_pulse", "wacqt_cz"): WacqtCZPulseInstruction,
 }
 
 

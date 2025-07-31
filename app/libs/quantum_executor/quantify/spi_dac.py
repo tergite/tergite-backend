@@ -190,7 +190,7 @@ class SpiDAC:
             else:
                 message = (
                     "parking current is not present on redis."
-                    "If you intend to operate at zero DC current, set a zero value at your device_config.toml"
+                    "If you intend to operate at zero DC current, set a zero value at your backend_config.toml"
                 )
                 logger.warning(f"{message}")
                 raise ValueError(message)

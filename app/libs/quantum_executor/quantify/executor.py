@@ -43,6 +43,8 @@ from app.libs.quantum_executor.utils.config import (
 )
 from app.libs.quantum_executor.utils.logger import ExperimentLogger
 from app.libs.quantum_executor.utils.portclock import generate_hardware_map
+from .spi_dac import SpiDAC
+from settings import REDIS_CONNECTION
 
 
 class QuantifyExecutor(QuantumExecutor):
@@ -98,6 +100,16 @@ class QuantifyExecutor(QuantumExecutor):
         ]
         return native_experiments
 
+    def _baseline_couplers(self, spi_dac: SpiDAC) -> None:
+        zero_currents = {cplr: 0e-6 for cplr in self._couplers}
+        spi_dac.set_dac_current(zero_currents)
+
+        # Persist the parking current (0 A) in Redis for each coupler
+        # TODO: couplers ref names would be different than expected here
+        # debug and parse properly
+        for cplr in self._couplers:
+            REDIS_CONNECTION.hset(f"couplers:{cplr}", "parking_current", 0e-6)
+
     def _run_native(
         self,
         experiment: QuantifyExperiment,
@@ -125,6 +137,13 @@ class QuantifyExecutor(QuantumExecutor):
         logger.log_Q1ASM_programs(compiled_schedule)
         logger.log_schedule(compiled_schedule)
 
+        spi_dac = SpiDAC(couplers=self._couplers)
+        self._baseline_couplers(spi_dac)
+
+        bias_currents = self._extract_bias(experiment)
+        if bias_currents:
+            spi_dac.set_dac_current(bias_currents)
+
         self._coordinator.prepare(compiled_schedule)
         t3 = datetime.now()
         self._coordinator.start()
@@ -133,7 +152,27 @@ class QuantifyExecutor(QuantumExecutor):
         print(f"{results=}")
         t4 = datetime.now()
         print(t4 - t3, "DURATION OF MEASURING")
+
+        spi_dac.set_parking_currents(self._couplers)
+        spi_dac.close_spi_rack()
+
         return QExperimentResult.from_xarray(results)
+
+    def _extract_bias(self, expt: QuantifyExperiment) -> dict[str, float]:
+        """
+        Return {port_name: current[A]} for every WACQT-CZ instruction.
+        """
+        bias: dict[str, float] = {}
+        for ch in expt.channel_registry.values():
+            for inst in ch.instructions:
+                if inst.name == "wacqt_cz" and "dc_bias" in inst.parameters:
+                    # TODO: port name would be different than expected
+                    # debug and parse properly
+                    port = inst.port
+                    cur = float(inst.parameters["dc_bias"])
+                    if port not in bias or abs(cur) > abs(bias[port]):
+                        bias[port] = cur
+        return bias
 
     @classmethod
     def close(cls):
