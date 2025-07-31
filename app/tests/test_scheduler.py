@@ -11,6 +11,7 @@
 # that they have been altered from the originals.
 #
 """Tests for the scheduler that handles queueing of user's jobs"""
+
 import json
 import time
 from datetime import datetime, timedelta, timezone
@@ -34,7 +35,7 @@ from pydantic import ValidationError
 from pytest_mock import MockerFixture
 from redis import Redis
 
-from app.libs.queues.dtos import Job, JobStatus
+from app.libs.queues.dtos import Job, JobStatus, Stage
 from app.services.booking.models import Booking
 from app.tests.conftest import (
     CLIENT_AND_RQ_WORKER_TUPLES,
@@ -51,6 +52,7 @@ from app.tests.conftest import (
 from app.tests.utils.api import create_mss_headers
 from app.tests.utils.env import TEST_MAX_SLOTS_PER_DAY
 from app.tests.utils.fixtures import load_fixture
+from app.tests.utils.records import order_by
 
 if TYPE_CHECKING:
     from httpx import Response
@@ -58,31 +60,41 @@ if TYPE_CHECKING:
 
 T = TypeVar("T")
 
-_SIMULATOR_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload_simulator.json")
-_SIMULATOR_JOBS_FOR_UPLOAD_2Q = load_fixture("jobs_to_upload_simulator_2q.json")
+_SIM_1Q_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload_simulator_1q.json")
+_SIM_2Q_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload_simulator_2q.json")
 _JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload.json")
 _INVALID_JOBS_FOR_UPLOAD = load_fixture("invalid_jobs_to_upload.json")
 
-# FIXME: Add device and calibration_date to the job being uploaded
 # params
-_UPLOAD_JOB_PARAMS = [
+_QUANTIFY_UPLOAD_JOB_PARAMS = [
     (*CLIENT_AND_RQ_WORKER_TUPLES[0], job) for job in _JOBS_FOR_UPLOAD
 ]
 
-_SIMULATOR_UPLOAD_JOB_PARAMS = [
-    (*CLIENT_AND_RQ_WORKER_TUPLES[1], job) for job in _SIMULATOR_JOBS_FOR_UPLOAD
+_SIM_1Q_UPLOAD_JOB_PARAMS = [
+    (*CLIENT_AND_RQ_WORKER_TUPLES[1], job) for job in _SIM_1Q_JOBS_FOR_UPLOAD
 ]
 
-_SIMULATOR_UPLOAD_JOB_PARAMS_2Q = [
-    (*CLIENT_AND_RQ_WORKER_TUPLES[2], job) for job in _SIMULATOR_JOBS_FOR_UPLOAD_2Q
+_SIM_2Q_UPLOAD_JOB_PARAMS = [
+    (*CLIENT_AND_RQ_WORKER_TUPLES[2], job) for job in _SIM_2Q_JOBS_FOR_UPLOAD
 ]
 
 
 _ALL_UPLOAD_JOB_PARAMS = (
-    [(*args, {"0x0": 750}) for args in _UPLOAD_JOB_PARAMS]
-    + [(*args, {"0x0": 750}) for args in _SIMULATOR_UPLOAD_JOB_PARAMS]
-    + [(*args, {"0x0": 400, "0x3": 400}) for args in _SIMULATOR_UPLOAD_JOB_PARAMS_2Q]
+    [(*args, {"0x0": 750}) for args in _QUANTIFY_UPLOAD_JOB_PARAMS]
+    + [(*args, {"0x0": 750}) for args in _SIM_1Q_UPLOAD_JOB_PARAMS]
+    + [(*args, {"0x0": 400, "0x3": 400}) for args in _SIM_2Q_UPLOAD_JOB_PARAMS]
     # the bell state of 00 and 11 == ~512
+)
+_VIEW_JOB_PARAMS = [
+    (client, worker, job, user)
+    for (client, _, worker, job, _) in _ALL_UPLOAD_JOB_PARAMS
+    for user in USERS[:2]
+]
+# client, worker, job, device_name
+_VIEW_JOBS_PARAMS = (
+    [(*args, "system_test") for args in _QUANTIFY_UPLOAD_JOB_PARAMS]
+    + [(*args, "qiskit_pulse_1q") for args in _SIM_1Q_UPLOAD_JOB_PARAMS]
+    + [(*args, "qiskit_pulse_2q") for args in _SIM_2Q_UPLOAD_JOB_PARAMS]
 )
 
 _ALL_INVALID_UPLOAD_JOB_PARAMS = [
@@ -259,9 +271,7 @@ def test_delete_profile(rest_client, rq_worker, redis_client, mocker: MockerFixt
 
         # wait for the first booking to start
         _submit_multiple_jobs(
-            client,
-            user_id_token_map=user_id_token_map,
-            is_job_id_specified=False,
+            client, user_id_token_map=user_id_token_map, is_job_id_specified=False
         )
 
         # This should also cancel any bookings and any jobs belonging to user
@@ -373,9 +383,7 @@ def test_non_admin_remove_user(
 
         # wait for the first booking to start
         _submit_multiple_jobs(
-            client,
-            user_id_token_map=user_id_token_map,
-            is_job_id_specified=False,
+            client, user_id_token_map=user_id_token_map, is_job_id_specified=False
         )
 
         # Non-admins fail
@@ -619,9 +627,7 @@ def test_submit_jobs_no_booking(
 
         # submit many jobs from many users
         job_ids_in_fifo = _submit_multiple_jobs(
-            client,
-            user_id_token_map=user_id_token_map,
-            is_job_id_specified=True,
+            client, user_id_token_map=user_id_token_map, is_job_id_specified=True
         )
 
         # Run the queue
@@ -644,9 +650,7 @@ def test_submit_jobs_no_booking_no_job_id(
 
         # submit many jobs from many users
         job_ids_in_fifo = _submit_multiple_jobs(
-            client,
-            user_id_token_map=user_id_token_map,
-            is_job_id_specified=False,
+            client, user_id_token_map=user_id_token_map, is_job_id_specified=False
         )
 
         # Run the queue
@@ -679,9 +683,7 @@ def test_submit_jobs_in_active_booking(
 
         # submit many jobs from many users when booking starts
         _submit_multiple_jobs(
-            client,
-            user_id_token_map=user_id_token_map,
-            is_job_id_specified=False,
+            client, user_id_token_map=user_id_token_map, is_job_id_specified=False
         )
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
@@ -734,9 +736,7 @@ def test_submit_jobs_in_idle_booking(
 
         # submit many jobs from many users when booking starts
         _submit_multiple_jobs(
-            client,
-            user_id_token_map=user_id_token_map,
-            is_job_id_specified=False,
+            client, user_id_token_map=user_id_token_map, is_job_id_specified=False
         )
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
@@ -967,9 +967,7 @@ def test_cancel_future_booking(
         # Booking does not exist or work
         # submit many jobs from many users when booking starts
         expected_job_ids = _submit_multiple_jobs(
-            client,
-            user_id_token_map=user_id_token_map,
-            is_job_id_specified=False,
+            client, user_id_token_map=user_id_token_map, is_job_id_specified=False
         )
 
         # Run the queue
@@ -1052,9 +1050,7 @@ def test_cancel_active_booking(
         # It still works
         # submit many jobs from many users when booking starts
         _submit_multiple_jobs(
-            client,
-            user_id_token_map=user_id_token_map,
-            is_job_id_specified=False,
+            client, user_id_token_map=user_id_token_map, is_job_id_specified=False
         )
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
@@ -1107,22 +1103,10 @@ def test_cancel_completed_booking(
         assert got == expected
 
 
-@pytest.mark.parametrize(
-    "client, _redis_client, _rq_worker, job, expected_counts",
-    _ALL_UPLOAD_JOB_PARAMS,
-)
-def test_view_job(
-    client,
-    _redis_client,
-    client_jobs_folder,
-    _rq_worker,
-    job,
-    expected_counts,
-    mocker: MockerFixture,
-):
+@pytest.mark.parametrize("client, worker, job, user", _VIEW_JOB_PARAMS)
+def test_view_job(client, worker, job, user, client_jobs_folder, mocker: MockerFixture):
     """GET '/jobs/{job_id}' by a user can show the job for the job_id if job belongs to them"""
     job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
-    user = USERS[1]
 
     with client as client:
         user_id, _ = _create_user(client, user=user)
@@ -1132,8 +1116,7 @@ def test_view_job(
         )
 
         # submit job
-        headers = create_mss_headers(user_id=user_id)
-        headers["Authorization"] = f"Bearer {token}"
+        headers = _get_headers(token)
 
         with open(job_file_path, "rb") as file:
             response = client.post(
@@ -1146,7 +1129,7 @@ def test_view_job(
         assert pending_job == expected_job
 
         # Run the queue to run the job and see that it is updated
-        _rq_worker.work(burst=True)
+        worker.work(burst=True)
 
         complete_job, _ = _view_job(client, user_id=user_id, job_id=job_id)
         assert complete_job.status == JobStatus.SUCCESSFUL
@@ -1154,52 +1137,91 @@ def test_view_job(
 
 
 # TODO: Add test for view_jobs by status
-@pytest.mark.parametrize("user", USERS)
-def test_view_jobs(rest_client, user, rq_worker, redis_client, mocker: MockerFixture):
+@pytest.mark.parametrize("client, _redis, worker, job, device", _VIEW_JOBS_PARAMS)
+def test_view_jobs(
+    client, _redis, worker, job, device, client_jobs_folder, mocker: MockerFixture
+):
     """GET '/jobs' by a user can show the paginated list of jobs that belong to them"""
-    with rest_client as client:
+    with client as client:
         # create many users and their tokens
-        user_id_token_map = _create_user_token_map(client, mocker=mocker)
-        num_of_users = len(user_id_token_map)
+        users = _create_many_users(client)
+        user_count = len(users)
 
         # current user
-        user_id = next(islice(user_id_token_map, 0, 1))
-        token = user_id_token_map[user_id]
+        curr_user = users[0]
+        user_id = curr_user["id"]
 
         durations = [0.4, 3, 4, 1.1, 2.9, 0.3, 0.1]
-        raw_jobs = [
-            {"type": "test", "test_duration": duration, "job_id": f"{uuid4()}"}
-            for duration in durations
-        ]
+        raw_jobs = []
+        for duration in durations:
+            new_job = {**job, "job_id": f"{uuid4()}"}
+            new_job["params"]["qobj"]["header"]["test_duration"] = duration
+            raw_jobs.append(new_job)
 
         # submit many jobs from many users when booking starts
-        _submit_multiple_jobs(
+        job_ids = _submit_multiple_jobs_v2(
             client,
-            user_id_token_map=user_id_token_map,
-            is_job_id_specified=True,
+            users=users,
+            mocker=mocker,
             raw_jobs=raw_jobs,
+            jobs_folder=client_jobs_folder,
         )
 
         # get jobs
-        headers = _get_headers(token)
+        headers = create_mss_headers(user_id)
         response = client.get("/jobs", headers=headers)
         pending_jobs_resp = response.json()
+        jobs_in_resp = {v["job_id"]: v for v in pending_jobs_resp["data"]}
+
         expected_jobs = [
-            Job(**v).model_dump(mode="json")
-            for idx, v in enumerate(raw_jobs)
-            if idx % num_of_users == 0
+            Job(
+                job_id=job_id,
+                device=device,
+                calibration_date=jobs_in_resp[job_id]["calibration_date"],
+                updated_at=jobs_in_resp[job_id]["updated_at"],
+                created_at=jobs_in_resp[job_id]["created_at"],
+                user_id=user_id,
+                stage=Stage.PRE_PROC_Q,
+                status=JobStatus.PENDING,
+            ).model_dump(mode="json")
+            for idx, job_id in enumerate(job_ids)
+            if idx % user_count == 0
         ]
+
+        # ensure ordering is the same
+        pending_jobs_resp["data"] = order_by(pending_jobs_resp["data"], field="job_id")
+        expected_jobs = order_by(expected_jobs, field="job_id")
+
         assert pending_jobs_resp == _paginate(expected_jobs)
 
         # Run the queue to run the job and see that it is updated
-        rq_worker.work(burst=True)
+        worker.work(burst=True)
 
+        # refresh the headers
+        headers = create_mss_headers(user_id)
         response = client.get("/jobs", headers=headers)
         completed_jobs_resp = response.json()
+        jobs_in_resp = {v["job_id"]: v for v in completed_jobs_resp["data"]}
+
         expected_jobs = [
-            Job(**v, status=JobStatus.SUCCESSFUL).model_dump(mode="json")
-            for v in expected_jobs
+            {
+                **v,
+                "status": JobStatus.SUCCESSFUL.value,
+                "stage": Stage.FINAL_W.value,
+                "updated_at": jobs_in_resp[v["job_id"]]["updated_at"],
+                "result": jobs_in_resp[v["job_id"]]["result"],
+                "timestamps": jobs_in_resp[v["job_id"]]["timestamps"],
+                "estimated_duration": jobs_in_resp[v["job_id"]]["estimated_duration"],
+                "actual_duration": jobs_in_resp[v["job_id"]]["actual_duration"],
+                "download_url": jobs_in_resp[v["job_id"]]["download_url"],
+            }
+            for idx, v in enumerate(expected_jobs)
         ]
+
+        # ensure ordering is the same
+        completed_jobs_resp["data"] = order_by(
+            completed_jobs_resp["data"], field="job_id"
+        )
         assert completed_jobs_resp == _paginate(expected_jobs)
 
 
@@ -1460,6 +1482,58 @@ def _get_jobs_in_redis(redis_client: Redis) -> List[Job]:
     return [Job.model_validate_json(item) for item in raw_jobs_in_redis.values()]
 
 
+def _submit_multiple_jobs_v2(
+    client: "TestClient",
+    users: List[Dict[str, Any]],
+    mocker: MockerFixture,
+    jobs_folder: Path,
+    raw_jobs: List[Dict[str, Any]] = tuple(JOBS),
+) -> List[str]:
+    """Submits multiple jobs one or more per user in the list of users.
+
+    It attempts to spread the jobs evenly across the users, while
+    maintaining the order i.e. the first user is matched with the first job,
+    the second with the second etc. until all the users are used up then the cycle
+    is restarted from the first user.
+
+    Args:
+        client: the fastapi TestClient for testing
+        users: the list of dicts of user details
+        mocker: the mocker fixture for capturing the tokens
+        jobs_folder: the folder where to upload the job files from
+        raw_jobs: the list of raw job data; default = JOBS
+
+    Returns:
+        the list of job_ids of the created jobs
+    """
+    job_ids_in_fifo = []
+    num_of_users = len(users)
+
+    for idx, job_info in enumerate(raw_jobs):
+        job_file_path = _save_job_file(folder=jobs_folder, job=job_info)
+        curr_user = users[idx % num_of_users]
+        user_id = curr_user["id"]
+        job_id = job_info["job_id"]
+
+        token, _ = _get_token(
+            client, mocker, data={"user_id": user_id, "job_id": job_id}
+        )
+        headers = _get_headers(token)
+
+        with open(job_file_path, "rb") as file:
+            response = client.post(
+                "/jobs", files={"upload_file": file}, headers=headers
+            )
+
+        actual_job = response.json()
+        job_ids_in_fifo.append(actual_job["job_id"])
+
+        assert actual_job["user_id"] == user_id
+        assert actual_job["job_id"] == job_info["job_id"]
+
+    return job_ids_in_fifo
+
+
 def _submit_multiple_jobs(
     client: "TestClient",
     user_id_token_map: Dict[str, str],
@@ -1529,9 +1603,30 @@ def _create_user_token_map(
     user_id_token_map: Dict[str, str] = {}
     for user in raw_users:
         user_id, _ = _create_user(client, user=user)
+        # FIXME: this is wrong
         token, _ = _get_token(client, mocker=mocker, data=user)
         user_id_token_map[user_id] = token
     return user_id_token_map
+
+
+def _create_many_users(
+    client: "TestClient",
+    raw_users: List[Dict[str, Any]] = tuple(USERS),
+) -> List[Dict[str, Any]]:
+    """Creates a list of users, returning them as dicts
+
+    Args:
+        client: the fastapi test client
+        raw_users: the list of raw user data
+
+    Returns:
+        dictionary of user_id: token
+    """
+    result: List[Dict[str, Any]] = []
+    for user in raw_users:
+        user_id, resp = _create_user(client, user=user)
+        result.append(resp.json())
+    return result
 
 
 def _create_booking(

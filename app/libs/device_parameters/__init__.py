@@ -18,9 +18,7 @@
 # - Stefan Hill, 2024
 # - Adilet Tuleuov, 2025
 #
-# CAUTION: This updater is currently also used in the tergite-autocalibration-lite repository!
-# Any change on this file should be done in both repositories until they are eventually merged!
-from typing import Optional
+from typing import Dict, Optional, Tuple
 
 from redis import Redis
 from requests import Session
@@ -34,9 +32,9 @@ from .dtos import (
     DeviceCalibration,
 )
 
-# _BACKEND_CONFIG: Optional[BackendConfig] = None
-_DEVICES_STORE: Optional[Collection[Device]] = None
-_CALIB_STORE: Optional[Collection[DeviceCalibration]] = None
+_BACKEND_CONFIGS_CACHE: Dict[Tuple[str, str], BackendConfig] = {}
+_DEVICES_STORE_CACHE: Dict[str, Collection[Device]] = {}
+_CALIB_STORE_CACHE: Dict[str, Collection[DeviceCalibration]] = {}
 
 
 def get_backend_config() -> BackendConfig:
@@ -46,18 +44,27 @@ def get_backend_config() -> BackendConfig:
     merges it with seed data (from either qiskit_pulse or quantify seed file)
     validated via Pydantic.
     """
-    return BackendConfig.from_toml(
-        settings.BACKEND_SETTINGS,
-        seed_file=settings.CALIBRATION_SEED,
-    )
-    # global _BACKEND_CONFIG
-    # if _BACKEND_CONFIG is None:
-    #     # Load static configuration from the main backend_config.toml
-    #     _BACKEND_CONFIG = BackendConfig.from_toml(
-    #         settings.BACKEND_SETTINGS,
-    #         seed_file=settings.CALIBRATION_SEED,
-    #     )
-    # return _BACKEND_CONFIG
+    global _BACKEND_CONFIGS_CACHE
+    backend_config_file = settings.BACKEND_SETTINGS
+    calib_seed_file = settings.CALIBRATION_SEED
+
+    try:
+        return _BACKEND_CONFIGS_CACHE[(backend_config_file, calib_seed_file)]
+    except KeyError:
+        backend_config = BackendConfig.from_toml(
+            backend_config_file,
+            seed_file=calib_seed_file,
+        )
+        _BACKEND_CONFIGS_CACHE[(backend_config_file, calib_seed_file)] = backend_config
+        return backend_config
+
+
+def clear_config_caches():
+    """Clears the caches for configurations"""
+    global _BACKEND_CONFIGS_CACHE, _DEVICES_STORE_CACHE, _CALIB_STORE_CACHE
+    _BACKEND_CONFIGS_CACHE.clear()
+    _DEVICES_STORE_CACHE.clear()
+    _CALIB_STORE_CACHE.clear()
 
 
 def initialize_backend(
@@ -116,16 +123,20 @@ def get_device_info(
     Raises:
         ItemNotFoundError: '{backend_config.general_config.name}' not found
     """
-    global _DEVICES_STORE
+    global _DEVICES_STORE_CACHE
     if backend_config is None:
         backend_config = get_backend_config()
 
-    if _DEVICES_STORE is None:
-        connection = Redis.from_url(settings.RQ_REDIS_URL)
-        _DEVICES_STORE = Collection[Device](connection, schema=Device)
+    redis_url = settings.RQ_REDIS_URL
+    try:
+        devices_store = _DEVICES_STORE_CACHE[redis_url]
+    except KeyError:
+        connection = Redis.from_url(redis_url)
+        devices_store = Collection(connection, schema=Device)
+        _DEVICES_STORE_CACHE[redis_url] = devices_store
 
     device_name = backend_config.general_config.name
-    return _DEVICES_STORE.get_one(device_name)
+    return devices_store.get_one(device_name)
 
 
 def get_device_calibration_info(
@@ -142,18 +153,20 @@ def get_device_calibration_info(
     Raises:
         ItemNotFoundError: '{backend_config.general_config.name}' not found
     """
-    global _CALIB_STORE
+    global _CALIB_STORE_CACHE
     if backend_config is None:
         backend_config = get_backend_config()
 
-    if _CALIB_STORE is None:
-        connection = Redis.from_url(settings.RQ_REDIS_URL)
-        _CALIB_STORE = Collection[DeviceCalibration](
-            connection, schema=DeviceCalibration
-        )
+    redis_url = settings.RQ_REDIS_URL
+    try:
+        calib_store = _CALIB_STORE_CACHE[redis_url]
+    except KeyError:
+        connection = Redis.from_url(redis_url)
+        calib_store = Collection(connection, schema=DeviceCalibration)
+        _CALIB_STORE_CACHE[redis_url] = calib_store
 
     device_name = backend_config.general_config.name
-    return _CALIB_STORE.get_one(device_name)
+    return calib_store.get_one(device_name)
 
 
 def send_backend_info_to_mss(

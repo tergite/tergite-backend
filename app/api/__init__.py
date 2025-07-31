@@ -473,7 +473,7 @@ async def view_jobs(
     status: Optional[JobStatus] = Query(default=None),
     skip: int = Query(default=0),
     limit: Optional[int] = Query(default=None),
-) -> PaginatedListResponse[Job]:
+) -> dict:
     """Views all jobs that belong to the current user
 
     Args:
@@ -488,4 +488,5 @@ async def view_jobs(
     data = scheduler.get_many_jobs(
         user_id=user_id, status=status, skip=skip, limit=limit
     )
-    return PaginatedListResponse(skip=skip, limit=limit, data=data)
+    results = PaginatedListResponse[Job](skip=skip, limit=limit, data=data)
+    return results.model_dump(mode="json")

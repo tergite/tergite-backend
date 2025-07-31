@@ -19,12 +19,12 @@
 This module implements the executor.
 """
 
-import copy
 import os
 from datetime import datetime
 from typing import List, Optional, Union
 
 import qblox_instruments
+from qcodes import Instrument
 from qiskit.qobj import PulseQobj
 from quantify_scheduler.backends.graph_compilation import SerialCompiler
 from quantify_scheduler.device_under_test.quantum_device import QuantumDevice
@@ -83,6 +83,18 @@ class QuantifyExecutor(QuantumExecutor):
             cluster.reset()  # resets cluster for consistency
             self._coordinator.add_component(ClusterComponent(cluster))
 
+        device_name = "DUT"
+        try:
+            self._quantum_device = Instrument.find_instrument(
+                device_name, QuantumDevice
+            )
+        except KeyError:
+            self._quantum_device = QuantumDevice(device_name)
+
+        self._quantum_device.hardware_config(self.quantify_config)
+        self._compiler = SerialCompiler(name="compiler")
+        self._compilation_config = self._quantum_device.generate_compilation_config()
+
     def _to_native_experiments(
         self, qobj: PulseQobj, native_config: NativeQobjConfig, /
     ) -> List[QuantifyExperiment]:
@@ -109,14 +121,9 @@ class QuantifyExecutor(QuantumExecutor):
         self._coordinator.stop()
         t1 = datetime.now()
 
-        quantum_device = QuantumDevice("DUT")
-        clean_config = self.quantify_config
-        quantum_device.hardware_config(clean_config)
-
-        compiler = SerialCompiler(name="compiler")
-        compiled_schedule = compiler.compile(
+        compiled_schedule = self._compiler.compile(
             schedule=experiment.schedule,
-            config=quantum_device.generate_compilation_config(),
+            config=self._compilation_config,
         )
         t2 = datetime.now()
         print(t2 - t1, "DURATION OF COMPILING")

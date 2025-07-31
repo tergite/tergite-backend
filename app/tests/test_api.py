@@ -36,7 +36,7 @@ _DYNAMIC_PROPERTIES = [
     load_fixture("dynamic_properties.simq1.json"),
     load_fixture("dynamic_properties.simq2.json"),
 ]
-_SIMULATOR_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload_simulator.json")
+_SIMULATOR_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload_simulator_1q.json")
 _SIMULATOR_JOBS_FOR_UPLOAD_2Q = load_fixture("jobs_to_upload_simulator_2q.json")
 _JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload.json")
 _INVALID_JOBS_FOR_UPLOAD = load_fixture("invalid_jobs_to_upload.json")
@@ -98,16 +98,6 @@ _UNAUTHENTICATED_UPLOAD_JOB_PARAMS = [
         _JOBS_FOR_UPLOAD, _WRONG_APP_TOKENS[:1], fillvalue=None
     )
     for client, redis_client, rq_worker in CLIENT_AND_RQ_WORKER_TUPLES
-]
-_BLACKLISTED_FETCH_JOB_PARAMS = [
-    (client, redis_client, job_id)
-    for job_id in _JOB_IDS
-    for client, redis_client in BLACKLISTED_CLIENTS
-]
-_BLACKLISTED_UPLOAD_JOB_PARAMS = [
-    (client, redis_client, rq_worker, job)
-    for job in _JOBS_FOR_UPLOAD
-    for client, redis_client, rq_worker in BLACKLISTED_CLIENT_AND_RQ_WORKER_TUPLES
 ]
 _STATIC_PROPERTIES_PARAMS = [
     (client, resp) for client, resp in zip(FASTAPI_CLIENTS, _STATIC_PROPERTIES)

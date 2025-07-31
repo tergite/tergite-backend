@@ -266,7 +266,7 @@ class Collection(Generic[T]):
         index_keys = self._get_index_keys_from_dict(filters)
 
         matched_keys = self._connection.sinter(index_keys)
-        matched_keys = _paginate(matched_keys, skip=skip, limit=limit)
+        matched_keys = _paginate(list(matched_keys), skip=skip, limit=limit)
         if len(matched_keys) == 0:
             return []
 

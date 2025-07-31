@@ -282,6 +282,7 @@ def execute(
 
     except Exception as exp:
         logging.error(f"Job failed\nJob execution failed. exp: {exp}")
+        print(f"Job failed\nJob execution failed. exp: {exp}")
         log_job_failure(
             jobs_store, job_id=job_id, reason="unexpected error during execution"
         )
