@@ -29,7 +29,7 @@ from pydantic import ValidationError
 from qiskit.qobj import PulseQobj
 from rq import Repeat, get_current_job
 
-from ...libs.device_parameters import get_backend_config, get_device_calibration_info
+from ...libs.device_parameters import get_device_calibration_info
 from ...libs.qiskit_providers.utils import json_decoder
 from ...libs.quantum_executor.base.quantum_job import (
     MeasLvl,
@@ -51,6 +51,7 @@ from ...utils.datetime import get_utc_now
 from ...utils.exc import JobAlreadyCancelled, PostProcessingError
 from ...utils.redis_store import Collection
 from ...utils.rq import cancel_rq_job
+from ..booking import get_active_booking
 from ..booking.models import Booking
 from ..booking.service import get_booking, get_next_booking
 from ..booking.store import get_bookings_sql_engine
@@ -117,9 +118,7 @@ def preprocess(
         if booking_id is None:
             return _try_enqueue_on_normal_queue(job, context)
         else:
-            return _try_enqueue_on_booked_queue(
-                job, context, booking_id=booking_id, is_from_waitlist=False
-            )
+            return _try_enqueue_on_booked_queue(job, context, booking_id=booking_id)
     except JobAlreadyCancelled as exp:
         logging.error(f"{exp}")
         raise exp
@@ -231,7 +230,7 @@ def reset_idleness_timer(
 def execute(
     job: Job,
     context: QueueContext,
-) -> Tuple[str, QueueContext, Path]:
+) -> Tuple[str, QueueContext, str]:
     """Runs the job given the file containing compiled experiments
 
     Args:
@@ -290,7 +289,7 @@ def execute(
 
 
 def postprocess(
-    job: "Job", context: "QueueContext", results_file: Path
+    job: "Job", context: "QueueContext", results_file: str
 ) -> Tuple[str, "QueueContext"]:
     """Processes the results got from running the experiments on the quantum computer
 
@@ -302,13 +301,14 @@ def postprocess(
     Returns:
         the tuple of job_id and the context
     """
-    logging.info(f"Postprocessing logfile {str(results_file)}")
+    logging.info(f"Postprocessing logfile {results_file}")
+    results_file_path = Path(results_file)
 
     job_id = job.job_id
     working_folder = Path(context["postprocessing_folder"])
 
     jobs_store = get_jobs_store(url=context["jobs_store_url"])
-    new_file = move_file(results_file, new_folder=working_folder, ext=".hdf5")
+    new_file = move_file(results_file_path, new_folder=working_folder, ext=".hdf5")
     logging.info(f"Moved the logfile to {str(new_file)}")
 
     update_job_stage(jobs_store, job_id=job_id, stage=Stage.PST_PROC_W)
@@ -476,7 +476,6 @@ def _try_enqueue_on_booked_queue(
     job: Job,
     context: QueueContext,
     booking_id: Optional[str] = None,
-    is_from_waitlist: bool = False,
 ) -> Tuple[str, QueueContext]:
     """Attempts to push the job to the booked execution queue, failing it or waitlisting it if too long
 
@@ -496,7 +495,6 @@ def _try_enqueue_on_booked_queue(
     Args:
         job: the job that is to be run
         context: the context required when running a job on a queue
-        is_from_waitlist: whether the current job has been pushed from the waitlist; default = False
         booking_id: the unique identifier of the current booking if any
 
     Returns:
@@ -554,33 +552,22 @@ def _try_enqueue_on_booked_queue(
         return job_id, context
 
     if not is_booker:
-        if is_from_waitlist:
-            if active_booking:
-                # restart the timer to run once to push next waitlisted job to this queue
-                # immediately after this job is done.
-                # This will be canceled if a new job from the booker is sent to run on this queue
-                reset_idleness_timer(
-                    end_utc=active_booking.end_utc,
-                    booking_id=active_booking.id,
-                    context=context,
-                    restart_in=job.estimated_duration,
-                    max_idle_time=0,
-                )
-            job = update_job_stage(job_store, job_id=job_id, stage=Stage.EXEC_Q)
-            queue.enqueue(job, context, job_id=get_rq_job_id(job_id, Stage.EXEC_Q))
-        else:
-            _push_to_waitlist(job_id=job_id, context=context)
+        _push_to_waitlist(job_id=job_id, context=context)
         return job_id, context
 
     return job_id, context
 
 
-def _push_to_waitlist(job_id: str, context: QueueContext) -> Tuple[str, QueueContext]:
+def _push_to_waitlist(
+    job_id: str, context: QueueContext, *args, **kwargs
+) -> Tuple[str, QueueContext]:
     """Pushes a job to the waitlist
 
     Args:
         job_id: the id of the job
         context: the context that the job is to run in
+        args: extra args to pass when enqueueing the job
+        kwargs: extra key-word args to pass when enqueuing the job
 
     Returns:
         a tuple of the job_id and context
@@ -594,7 +581,9 @@ def _push_to_waitlist(job_id: str, context: QueueContext) -> Tuple[str, QueueCon
     jobs_store = get_jobs_store(context["jobs_store_url"])
     uptodate_job = jobs_store.get_one(job_id)
 
-    waitlist.add(uptodate_job)
+    waitlist.add(
+        uptodate_job, *args, **kwargs, job_id=get_rq_job_id(job_id, Stage.EXEC_Q)
+    )
     return job_id, context
 
 
@@ -611,27 +600,47 @@ def _pop_waitlist_to_booking(
     Returns:
         a tuple of job_id/None and context
     """
-    from .queues import get_waitlist
+    from .queues import get_booked_execution_queue, get_waitlist
 
     booking_db_url = context["booking_db_url"]
+    jobs_store_url = context["jobs_store_url"]
     queue_prefix = context["queue_prefix"]
-    redis_connection = get_current_job().connection
+    is_async = context["is_async"]
+    connection = get_current_job().connection
 
-    waitlist = get_waitlist(prefix=queue_prefix, connection=redis_connection)
+    waitlist = get_waitlist(prefix=queue_prefix, connection=connection)
     bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
+    job_store = get_jobs_store(jobs_store_url)
+    queue = get_booked_execution_queue(
+        prefix=queue_prefix, connection=connection, is_async=is_async
+    )
 
     usable_time = float("inf")
     next_booking = get_next_booking(bookings_sql_engine)
     if isinstance(next_booking, Booking):
         usable_time = (next_booking.start_utc - get_utc_now()).total_seconds()
 
-    next_job = waitlist.pop_first(_is_job_shorter, usable_time)
-    if next_job is None:
+    next_job_tuple = waitlist.pop_first(_is_job_shorter, usable_time)
+    if next_job_tuple is None:
         return None, context
 
-    return _try_enqueue_on_booked_queue(
-        next_job, context, booking_id=None, is_from_waitlist=True
-    )
+    job, args, kwargs = next_job_tuple
+    active_booking = get_active_booking(bookings_sql_engine)
+    if active_booking:
+        # restart the timer to run once to push next waitlisted job to this queue
+        # immediately after this job is done.
+        # This will be canceled if a new job from the booker is sent to run on this queue
+        reset_idleness_timer(
+            end_utc=active_booking.end_utc,
+            booking_id=active_booking.id,
+            context=context,
+            restart_in=job.estimated_duration,
+            max_idle_time=0,
+        )
+    job = update_job_stage(job_store, job_id=job.job_id, stage=Stage.EXEC_Q)
+    queue.enqueue(job, *args, **kwargs)
+
+    return job.job_id, context
 
 
 def _pop_waitlist_to_normal_queue(context: QueueContext):
@@ -649,20 +658,23 @@ def _pop_waitlist_to_normal_queue(context: QueueContext):
     )
 
     booking_db_url = context["booking_db_url"]
+    jobs_store_url = context["jobs_store_url"]
     queue_prefix = context["queue_prefix"]
     is_async = context["is_async"]
     redis_connection = get_current_job().connection
 
     bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
+    job_store = get_jobs_store(jobs_store_url)
     waitlist = get_waitlist(prefix=queue_prefix, connection=redis_connection)
     next_booking = get_next_booking(bookings_sql_engine)
     max_total_duration = None
     if next_booking:
         max_total_duration = (next_booking.start_utc - get_utc_now()).total_seconds()
 
-    jobs = waitlist.pop_many(max_total_duration=max_total_duration)
+    job_tuples = waitlist.pop_many(max_total_duration=max_total_duration)
     normal_queue = get_normal_execution_queue(
         prefix=queue_prefix, connection=redis_connection, is_async=is_async
     )
-    for job in jobs:
-        normal_queue.enqueue(job, context)
+    for job, args, kwargs in job_tuples:
+        job = update_job_stage(job_store, job_id=job.job_id, stage=Stage.EXEC_Q)
+        normal_queue.enqueue(job, *args, **kwargs)

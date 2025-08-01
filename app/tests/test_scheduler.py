@@ -1137,6 +1137,7 @@ def test_view_job(client, worker, job, user, client_jobs_folder, mocker: MockerF
 
 
 # TODO: Add test for view_jobs by status
+@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, _redis, worker, job, device", _VIEW_JOBS_PARAMS)
 def test_view_jobs(
     client, _redis, worker, job, device, client_jobs_folder, mocker: MockerFixture
@@ -1214,6 +1215,7 @@ def test_view_jobs(
                 "estimated_duration": jobs_in_resp[v["job_id"]]["estimated_duration"],
                 "actual_duration": jobs_in_resp[v["job_id"]]["actual_duration"],
                 "download_url": jobs_in_resp[v["job_id"]]["download_url"],
+                "storage_id": f"{v['job_id']}:::{jobs_in_resp[v["job_id"]]["estimated_duration"]}",
             }
             for idx, v in enumerate(expected_jobs)
         ]

@@ -159,7 +159,7 @@ class QuantumExecutor(abc.ABC):
             logger.error(f"\nFailed job: {job_id}, tuid: {tuid}\n{format_exc()}")
             raise e
 
-    def run(self, job_id: str, inputs_folder: Path = PREPROCESSED_JOB_POOL) -> Path:
+    def run(self, job_id: str, inputs_folder: Path = PREPROCESSED_JOB_POOL) -> str:
         """Runs the experiments and returns the results file path
 
         Args:
@@ -227,7 +227,7 @@ class QuantumExecutor(abc.ABC):
                 logger.error(f"\nFailed job: {job_id}\n{format_exc()}")
             raise e
 
-        return results_file_path
+        return str(results_file_path)
 
     @abc.abstractmethod
     def close(self):

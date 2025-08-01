@@ -13,16 +13,17 @@
 """Module containing the types of queues"""
 
 import math
+import zlib
 from contextlib import suppress
 from types import TracebackType
-from typing import Any, Callable, Generator, Optional, Type, Union
+from typing import Any, Callable, Dict, Generator, Optional, Tuple, Type, Union
 
 from pydantic import ValidationError
 from redis import Redis
 from rq import Callback, Queue, get_current_job
 from rq.job import Job as RqJob
 from rq.results import Result as RqResult
-from rq.serializers import Serializer
+from rq.serializers import DefaultSerializer, Serializer
 from rq.timeouts import BaseDeathPenalty, UnixSignalDeathPenalty
 
 from ...utils.rq import cancel_rq_job
@@ -36,18 +37,23 @@ class StaticQueue:
     It thus just keeps items without running them
     """
 
-    def __init__(self, name: str, connection: "Redis"):
+    def __init__(
+        self, name: str, connection: "Redis", serializer: Serializer = DefaultSerializer
+    ):
         """
         Args:
             name: the name of the queue
             connection: the connection to Redis
+            serializer: the class for serializing the args and kwargs of the job
         """
         self.name = name
         self._database = f"backing_map_{name}"
         self._metadata = f"metadata_{name}"
+        self._args_kwargs_db = f"__args_kwargs_{name}"
         self._duration_key = "total_duration"
         self._current_job = "current_job"
         self._connection = connection
+        self._serializer = serializer
 
     @property
     def total_duration(self) -> float:
@@ -67,16 +73,23 @@ class StaticQueue:
         except ValidationError:
             return None
 
-    def add(self, job: Job):
+    def add(self, job: Job, *args, **kwargs):
         """Adds the item to the queue
 
         Args:
             job: the item to add to the queue
+            args: the positional arguments to pass when enqueueing the job
+            kwargs: the key-word arguments to pass when enqueueing the job
         """
-        payload = job.model_dump_json()
+        job_json = job.model_dump_json(exclude={"args_kwargs"})
+        args_kwargs_data = _serialize_args_kwargs(
+            self._serializer, args=args, kwargs=kwargs
+        )
 
         pipe = self._connection.pipeline()
-        pipe.hset(self._database, job.storage_id, payload)
+        pipe.hset(self._database, job.storage_id, job_json)
+        pipe.hset(self._args_kwargs_db, mapping={job.storage_id: args_kwargs_data})
+
         pipe.rpush(self.name, job.storage_id)
         pipe.hincrbyfloat(
             self._metadata, self._duration_key, job.estimated_duration or 0
@@ -84,11 +97,11 @@ class StaticQueue:
 
         pipe.execute()
 
-    def next(self) -> Optional[Job]:
+    def next(self) -> Optional[Tuple[Job, Tuple[Any, ...], Dict[str, Any]]]:
         """Gets the next item on the queue
 
         Returns:
-            the str that is next on the queue or None if there is no item
+            the job and the args, kwargs next on the queue or None if there is no item
         """
         try:
             storage_id = self._connection.lpop(self.name)
@@ -99,13 +112,19 @@ class StaticQueue:
 
             pipe.hincrbyfloat(self._metadata, self._duration_key, -job_duration)
             pipe.hget(self._database, storage_id)
+            pipe.hget(self._args_kwargs_db, storage_id)
             pipe.hdel(self._database, storage_id)
+            pipe.hdel(self._args_kwargs_db, storage_id)
             pipeline_results = pipe.execute()
 
-            payload = pipeline_results[1]
-            job = Job.model_validate_json(payload)
-            self._connection.hset(self._metadata, self._current_job, payload)
-            return job
+            job_json = pipeline_results[1]
+            args_kwargs_bytes = pipeline_results[2]
+
+            job = Job.model_validate_json(job_json)
+            self._connection.hset(self._metadata, self._current_job, job_json)
+
+            args, kwargs = _deserialize_args_kwargs(self._serializer, args_kwargs_bytes)
+            return job, args, kwargs
         except ValidationError:
             return None
 
@@ -114,14 +133,16 @@ class StaticQueue:
         # network request 1
         self._connection.delete(self._database, self.name, self._metadata)
 
-    def pop_job(self, storage_id: StorageID) -> Job:
-        """Removes a job out of this queue and returns it
+    def pop_job(
+        self, storage_id: StorageID
+    ) -> Tuple[Job, Tuple[Any, ...], Dict[str, Any]]:
+        """Removes a job out of this queue and returns it with its args and kwargs
 
         Args:
             storage_id: the storage id of the job
 
         Returns:
-            the job
+            the tuple of the job, args and kwargs
 
         Raises:
             ValidationError: job is of invalid format or does not exist
@@ -131,17 +152,23 @@ class StaticQueue:
 
         pipe.lrem(self.name, 1, storage_id)
         pipe.hget(self._database, storage_id)
+        pipe.hget(self._args_kwargs_db, storage_id)
         pipe.hdel(self._database, storage_id)
+        pipe.hdel(self._args_kwargs_db, storage_id)
         pipe.hincrbyfloat(self._metadata, self._duration_key, -job_duration)
 
         pipeline_results = pipe.execute()
         job_json = pipeline_results[1]
+        job = Job.model_validate_json(job_json)
 
-        return Job.model_validate_json(job_json)
+        args_kwargs_data = pipeline_results[2]
+        args, kwargs = _deserialize_args_kwargs(self._serializer, args_kwargs_data)
+
+        return job, args, kwargs
 
     def pop_first(
         self, filter_func: Callable[[StorageID, ...], bool], *args, **kwargs
-    ) -> Optional[Job]:
+    ) -> Optional[Tuple[Job, Tuple[Any, ...], Dict[str, Any]]]:
         """Pops the first job that fulfills the given filter function
 
         Args:
@@ -150,7 +177,7 @@ class StaticQueue:
             kwargs: extra key-word arguments to pass to the filter function
 
         Returns:
-            the job if one is found fulfilling the condition or None
+            the tuple of the job, args, and kwargs if a job is found fulfilling the condition or None
         """
         num_of_entries = self._connection.llen(self.name)
         batch_size = 100
@@ -175,14 +202,14 @@ class StaticQueue:
     def pop_many(
         self,
         max_total_duration: Optional[float] = None,
-    ) -> Generator[Job, None, None]:
+    ) -> Generator[Tuple[Job, Tuple[Any, ...], Dict[str, Any]], None, None]:
         """Pops jobs in FIFO order given a few limitations
 
         Args:
             max_total_duration: the total seconds the collection of jobs should not exceed; default None
 
         Returns:
-            the generator of jobs
+            the generator of tuples of (job, args, kwargs)
         """
         if max_total_duration is None:
             max_total_duration = float("inf")
@@ -207,8 +234,8 @@ class StaticQueue:
                     # is too big for available duration
                     continue
 
-                job = self.pop_job(storage_id)
-                yield job
+                job, args, kwargs = self.pop_job(storage_id)
+                yield job, args, kwargs
 
                 # update the available duration
                 available_duration -= duration
@@ -299,20 +326,31 @@ class RunnerQueue(Queue):
         Returns:
             rq_job (rq.job.Job): The created rq.job.Job
         """
-        self._static_queue.add(job)
-        kwargs = {
-            "on_success": self._success_callback,
-            "on_failure": self._failure_callback,
-            "on_stopped": self._stopped_callback,
-            **kwargs,
-            "job_id": self.get_rq_job_id(job.job_id),
+        queue_kwargs = {
+            "job_timeout": kwargs.pop("job_timeout", None),
+            "result_ttl": kwargs.pop("result_ttl", None),
+            "ttl": kwargs.pop("ttl", None),
+            "failure_ttl": kwargs.pop("failure_ttl", None),
+            "description": kwargs.pop("description", None),
+            "depends_on": kwargs.pop("depends_on", None),
+            "at_front": kwargs.pop("at_front", False),
+            "meta": kwargs.pop("meta", None),
+            "retry": kwargs.pop("retry", None),
+            "repeat": kwargs.pop("repeat", None),
+            "pipeline": kwargs.pop("pipeline", None),
+            "on_success": kwargs.pop("on_success", self._success_callback),
+            "on_failure": kwargs.pop("on_failure", self._failure_callback),
+            "on_stopped": kwargs.pop("on_stopped", self._stopped_callback),
+            "job_id": kwargs.pop("job_id", self.get_rq_job_id(job.job_id)),
         }
+
+        self._static_queue.add(job, *args, **kwargs)
+
         return super().enqueue(
             _run_next_job,
             self._static_queue.name,
             self._job_executor_func,
-            *args,
-            **kwargs,
+            **queue_kwargs,
         )
 
     def get_rq_job_id(self, job_id: str) -> str:
@@ -356,18 +394,16 @@ class RunnerQueue(Queue):
         cancel_rq_job(self.connection, rq_job_id, ignore_errors=ignore_errors)
 
 
-def _run_next_job(static_queue_name, exec_func_path: str, *args, **kwargs):
+def _run_next_job(static_queue_name, exec_func_path: str):
     """A wrapper around the execution function to do some book-keeping on next job on the queue
 
     Args:
         static_queue_name: the name of the static queue
         exec_func_path: the import path of the function that executes this job
-        args: function args
-        kwargs: function kwargs
     """
     connection = get_current_job().connection
     static_queue = StaticQueue(static_queue_name, connection=connection)
-    job = static_queue.next()
+    job, args, kwargs = static_queue.next()
     exec_func = import_func(exec_func_path)
     return exec_func(job, *args, **kwargs)
 
@@ -399,3 +435,40 @@ def _to_callback(func: Union[str, Callable[..., Any], Callback]) -> Callback:
     if isinstance(func, Callback):
         return func
     return Callback(func)
+
+
+def _deserialize_args_kwargs(
+    serializer: Serializer, data: bytes
+) -> Tuple[Tuple[Any, ...], Dict[str, Any]]:
+    """Retrieves the args and kwargs for the serialized args kwargs
+
+    Args:
+        serializer: the serializer used to serialize them in the past
+        data: the serialized args, kwargs data
+
+    Returns:
+        a tuple (args, kwargs)
+    """
+    try:
+        data = zlib.decompress(data)
+    except zlib.error:
+        # Fallback to uncompressed string
+        data = data
+
+    return serializer.loads(data)
+
+
+def _serialize_args_kwargs(
+    serializer: Serializer, args: Tuple[Any, ...], kwargs: Dict[str, Any]
+) -> bytes:
+    """Converts the args and kwargs into bytes to store
+
+    Args:
+        serializer: the serializer to convert the args and kwargs
+        args: the positional arguments when running the job
+        kwargs: the key-word arguments when running the job
+
+    Returns:
+        the metadata for the job
+    """
+    return zlib.compress(serializer.dumps((args, kwargs)))

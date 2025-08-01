@@ -324,7 +324,7 @@ class Collection(Generic[T]):
 
         old_item = self.get_one(key)
         new_props = {**old_item.model_dump(), **updates_dict}
-        updated_item = self._schema(**new_props)
+        updated_item = self._schema.model_validate(new_props)
         redis_key = self._schema.construct_redis_key(key)
         pipe = self._connection.pipeline()
 

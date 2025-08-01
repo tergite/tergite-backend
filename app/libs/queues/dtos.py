@@ -111,6 +111,23 @@ class StorageID(str):
         """the job id in this storage id"""
         return self.parts[0]
 
+    def clone_with(self, uuid: str = None, duration: float = None) -> "StorageID":
+        """Returns a new instance with the given updates, ignoring updates set to None
+
+        Args:
+            uuid: the new uuid to set
+            duration: the new duration to set
+
+        Returns:
+            a new instance of StorageID with the updates
+        """
+        if uuid is None:
+            uuid = self.uuid
+        if duration is None:
+            duration = self.duration
+
+        return self.from_details(uuid, duration)
+
     @classmethod
     def from_job(cls, job: "Job") -> "StorageID":
         """Gets Storage ID from the job where uuid part is the job_id
@@ -135,7 +152,7 @@ class StorageID(str):
         Returns:
             the storage id
         """
-        value = f"{uuid}{_STORAGE_ID_SEPARATOR}{duration or 0}"
+        value = f"{uuid}{_STORAGE_ID_SEPARATOR}{duration or 0.0}"
         return cls(value)
 
     @classmethod
@@ -330,8 +347,7 @@ class Job(Schema):
         timestamps: the timestamps for each stage of running this job; default = None
         status: the status of this job; default = JobStatus.PENDING
         failure_reason: the reason why the job has failed; default = None
-        type: the category in which this job falls, which thus determines the
-            functions to preprocess or execute it; default = None
+        etc.
     """
 
     __primary_key_fields__ = ("job_id",)
@@ -415,6 +431,19 @@ class Job(Schema):
                 or self.estimated_duration
             ):
                 self.storage_id = StorageID.from_job(self)
+
+        # we don't want to automatically reset this say on a partial model
+        # that may have no duration or job_id.
+        # We should update it however if either job_id or estimated_duration is updated
+        if self.storage_id is None and not isinstance(self, PartialMeta):
+            self.storage_id = StorageID.from_job(self)
+        elif isinstance(self.storage_id, StorageID):
+            new_storage_id = self.storage_id.clone_with(
+                uuid=self.job_id, duration=self.estimated_duration
+            )
+            if new_storage_id != self.storage_id:
+                # if-statement to avoid endless recursion
+                self.storage_id = new_storage_id
 
         return self
 
