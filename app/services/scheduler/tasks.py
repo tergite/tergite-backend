@@ -343,18 +343,17 @@ def postprocess(
 
 
 def postprocessing_success_callback(
-    _rq_job, _rq_connection, result: str, *args, **kwargs
+    _rq_job, _rq_connection, result: Tuple[str, QueueContext], *args, **kwargs
 ):
     """Callback to invoke when postprocessing succeeds
 
     Args:
         _rq_job: the rq job
         _rq_connection: the redis connection
-        result: the result from the worker handler
+        result: the result from the postprocessing worker handler
     """
-    # From logfile_postprocess:
-    job_id = result
-    jobs_store = Collection[Job](_rq_connection, schema=Job)
+    job_id, context = result
+    jobs_store = get_jobs_store(context["jobs_store_url"])
 
     job = update_job_stage(jobs_store, job_id=job_id, stage=Stage.FINAL_Q)
     with get_mss_client() as mss_client:
