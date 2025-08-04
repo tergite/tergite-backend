@@ -1157,6 +1157,36 @@ def test_view_job(
         assert complete_job == expected_completed_job
 
 
+@pytest.mark.parametrize("client, worker, job, device_name, user", _VIEW_JOB_PARAMS)
+def test_unauthenticated_view_job(
+    client, worker, job, device_name, user, client_jobs_folder, mocker: MockerFixture
+):
+    """Get to /jobs/{job_id} raise 401 if not accessed through MSS"""
+    job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
+
+    with client as client:
+        user_id, _ = _create_user(client, user=user)
+        job_id = job["job_id"]
+        token, _ = _get_token(
+            client, mocker, data={"user_id": user_id, "job_id": job_id}
+        )
+
+        # submit job
+        headers = _get_headers(token)
+
+        with open(job_file_path, "rb") as file:
+            client.post("/jobs", files={"upload_file": file}, headers=headers)
+
+        response = client.get(f"/jobs/{job_id}")
+        assert response.status_code == 401
+        assert response.json() == {"detail": "user not authenticated"}
+
+        # use a token used only for submitting jobs directly to the backend
+        response = client.get(f"/jobs/{job_id}", headers=headers)
+        assert response.status_code == 401
+        assert response.json() == {"detail": "user not authenticated"}
+
+
 @pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, _redis, worker, job, device", _VIEW_JOBS_PARAMS)
 def test_view_jobs(
@@ -1372,6 +1402,49 @@ def test_view_jobs_by_status(
         # ensure ordering is the same
         all_jobs_resp["data"] = order_by(all_jobs_resp["data"], field="job_id")
         assert all_jobs_resp == _paginate(expected_all_jobs)
+
+
+@pytest.mark.parametrize("client, _redis, worker, job, device", _VIEW_JOBS_PARAMS)
+def test_unauthenticated_view_jobs(
+    client, _redis, worker, job, device, client_jobs_folder, mocker: MockerFixture
+):
+    """Get to /jobs/ raise 401 if not accessed through MSS"""
+    with client as client:
+        # create many users and their tokens
+        users = _create_many_users(client)
+
+        # current user
+        curr_user = users[0]
+        user_id = curr_user["id"]
+
+        durations = [0.4, 3, 4, 1.1, 2.9, 0.3, 0.1]
+        raw_jobs = []
+        for duration in durations:
+            new_job = {**job, "job_id": f"{uuid4()}"}
+            new_job["params"]["qobj"]["header"]["test_duration"] = duration
+            raw_jobs.append(new_job)
+
+        # submit many jobs from many users
+        job_ids = _submit_multiple_jobs_v2(
+            client,
+            users=users,
+            mocker=mocker,
+            raw_jobs=raw_jobs,
+            jobs_folder=client_jobs_folder,
+        )
+
+        response = client.get("/jobs")
+        assert response.status_code == 401
+        assert response.json() == {"detail": "user not authenticated"}
+
+        # use a token used only for submitting jobs directly to the backend
+        token, _ = _get_token(
+            client, mocker, data={"user_id": user_id, "job_id": job_ids[0]}
+        )
+        headers = _get_headers(token)
+        response = client.get(f"/jobs", headers=headers)
+        assert response.status_code == 401
+        assert response.json() == {"detail": "user not authenticated"}
 
 
 @pytest.mark.parametrize("user", USERS)

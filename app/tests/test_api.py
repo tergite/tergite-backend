@@ -177,34 +177,34 @@ def test_root_invalid_headers(client, headers):
 #         assert got == expected
 
 
-@pytest.mark.parametrize(
-    "client, redis_client, job_id, headers, app_token", _UNAUTHORIZED_FETCH_JOB_PARAMS
-)
-def test_unauthenticated_fetch_job(
-    redis_client, client, job_id: str, headers, app_token
-):
-    """Get to /jobs/{job_id} raise 401 if no app token is passed in Authorization header"""
-    raw_jobs = _get_raw_jobs()
-    insert_in_hash(
-        client=redis_client,
-        hash_name=_JOBS_HASH_NAME,
-        data=raw_jobs,
-        id_fields=(_JOB_ID_FIELD,),
-    )
-
-    # using context manager to ensure on_startup runs
-    with client as client:
-        response = client.get(f"/jobs/{job_id}", headers=headers)
-        got = response.json()
-        detail = (
-            "Unauthorized"
-            if app_token is None
-            else f"job {job_id} does not exist for current user"
-        )
-        expected = {"detail": detail}
-
-        assert response.status_code == 401
-        assert got == expected
+# @pytest.mark.parametrize(
+#     "client, redis_client, job_id, headers, app_token", _UNAUTHORIZED_FETCH_JOB_PARAMS
+# )
+# def test_unauthenticated_fetch_job(
+#     redis_client, client, job_id: str, headers, app_token
+# ):
+#     """Get to /jobs/{job_id} raise 401 if no app token is passed in Authorization header"""
+#     raw_jobs = _get_raw_jobs()
+#     insert_in_hash(
+#         client=redis_client,
+#         hash_name=_JOBS_HASH_NAME,
+#         data=raw_jobs,
+#         id_fields=(_JOB_ID_FIELD,),
+#     )
+#
+#     # using context manager to ensure on_startup runs
+#     with client as client:
+#         response = client.get(f"/jobs/{job_id}", headers=headers)
+#         got = response.json()
+#         detail = (
+#             "Unauthorized"
+#             if app_token is None
+#             else f"job {job_id} does not exist for current user"
+#         )
+#         expected = {"detail": detail}
+#
+#         assert response.status_code == 401
+#         assert got == expected
 
 
 @pytest.mark.parametrize("client, redis_client, job_id", _FETCH_JOB_PARAMS)
