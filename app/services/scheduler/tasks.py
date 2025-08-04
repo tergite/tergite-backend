@@ -582,7 +582,11 @@ def _push_to_waitlist(
     uptodate_job = jobs_store.get_one(job_id)
 
     waitlist.add(
-        uptodate_job, *args, **kwargs, job_id=get_rq_job_id(job_id, Stage.EXEC_Q)
+        uptodate_job,
+        context,
+        *args,
+        **kwargs,
+        job_id=get_rq_job_id(job_id, Stage.EXEC_Q),
     )
     return job_id, context
 
