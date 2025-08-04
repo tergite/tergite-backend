@@ -35,7 +35,7 @@ from pydantic import ValidationError
 from pytest_mock import MockerFixture
 from redis import Redis
 
-from app.libs.queues.dtos import Job, JobStatus, Stage
+from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps
 from app.services.booking.models import Booking
 from app.tests.conftest import (
     CLIENT_AND_RQ_WORKER_TUPLES,
@@ -85,17 +85,20 @@ _ALL_UPLOAD_JOB_PARAMS = (
     + [(*args, {"0x0": 400, "0x3": 400}) for args in _SIM_2Q_UPLOAD_JOB_PARAMS]
     # the bell state of 00 and 11 == ~512
 )
-_VIEW_JOB_PARAMS = [
-    (client, worker, job, user)
-    for (client, _, worker, job, _) in _ALL_UPLOAD_JOB_PARAMS
-    for user in USERS[:2]
-]
+
 # client, worker, job, device_name
 _VIEW_JOBS_PARAMS = (
     [(*args, "system_test") for args in _QUANTIFY_UPLOAD_JOB_PARAMS]
     + [(*args, "qiskit_pulse_1q") for args in _SIM_1Q_UPLOAD_JOB_PARAMS]
     + [(*args, "qiskit_pulse_2q") for args in _SIM_2Q_UPLOAD_JOB_PARAMS]
 )
+
+# client, worker, job, device_name, user
+_VIEW_JOB_PARAMS = [
+    (client, worker, job, device_name, user)
+    for (client, _, worker, job, device_name) in _VIEW_JOBS_PARAMS
+    for user in USERS[:2]
+]
 
 _ALL_INVALID_UPLOAD_JOB_PARAMS = [
     (client, redis, rq_worker, job)
@@ -1103,8 +1106,11 @@ def test_cancel_completed_booking(
         assert got == expected
 
 
-@pytest.mark.parametrize("client, worker, job, user", _VIEW_JOB_PARAMS)
-def test_view_job(client, worker, job, user, client_jobs_folder, mocker: MockerFixture):
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize("client, worker, job, device_name, user", _VIEW_JOB_PARAMS)
+def test_view_job(
+    client, worker, job, device_name, user, client_jobs_folder, mocker: MockerFixture
+):
     """GET '/jobs/{job_id}' by a user can show the job for the job_id if job belongs to them"""
     job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
 
@@ -1132,11 +1138,25 @@ def test_view_job(client, worker, job, user, client_jobs_folder, mocker: MockerF
         worker.work(burst=True)
 
         complete_job, _ = _view_job(client, user_id=user_id, job_id=job_id)
-        assert complete_job.status == JobStatus.SUCCESSFUL
-        assert complete_job.actual_duration is not None
+        expected_completed_job = Job(
+            job_id=job_id,
+            device=device_name,
+            calibration_date=complete_job.calibration_date,
+            updated_at=complete_job.updated_at,
+            created_at=complete_job.created_at,
+            user_id=user_id,
+            stage=Stage.FINAL_W,
+            status=JobStatus.SUCCESSFUL,
+            result=complete_job.result,
+            timestamps=complete_job.timestamps,
+            estimated_duration=complete_job.estimated_duration,
+            actual_duration=complete_job.actual_duration,
+            download_url=complete_job.download_url,
+            storage_id=f"{job_id}:::{complete_job.estimated_duration}",
+        )
+        assert complete_job == expected_completed_job
 
 
-# TODO: Add test for view_jobs by status
 @pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, _redis, worker, job, device", _VIEW_JOBS_PARAMS)
 def test_view_jobs(
@@ -1159,7 +1179,7 @@ def test_view_jobs(
             new_job["params"]["qobj"]["header"]["test_duration"] = duration
             raw_jobs.append(new_job)
 
-        # submit many jobs from many users when booking starts
+        # submit many jobs from many users
         job_ids = _submit_multiple_jobs_v2(
             client,
             users=users,
@@ -1225,6 +1245,133 @@ def test_view_jobs(
             completed_jobs_resp["data"], field="job_id"
         )
         assert completed_jobs_resp == _paginate(expected_jobs)
+
+
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize("client, _redis, worker, job, device", _VIEW_JOBS_PARAMS)
+def test_view_jobs_by_status(
+    client, _redis, worker, job, device, client_jobs_folder, mocker: MockerFixture
+):
+    """GET '/jobs' by a user can show the paginated list of jobs that belong to them"""
+    with client as client:
+        # create many users and their tokens
+        users = _create_many_users(client)
+        user_count = len(users)
+
+        # current user
+        curr_user = users[0]
+        user_id = curr_user["id"]
+
+        durations = [0.4, 3, 4, 1.1, 2.9, 0.3, 0.1]
+        raw_jobs = []
+        for duration in durations:
+            new_job = {**job, "job_id": f"{uuid4()}"}
+            new_job["params"]["qobj"]["header"]["test_duration"] = duration
+            raw_jobs.append(new_job)
+
+        # submit many jobs from many users
+        completed_job_ids = _submit_multiple_jobs_v2(
+            client,
+            users=users,
+            mocker=mocker,
+            raw_jobs=raw_jobs,
+            jobs_folder=client_jobs_folder,
+        )
+
+        # Run the queue to run the job and see that it is updated
+        worker.work(burst=True)
+
+        new_raw_jobs = [{**v, "job_id": f"{uuid4()}"} for v in raw_jobs]
+
+        # submit many jobs from many users when booking starts
+        pending_job_ids = _submit_multiple_jobs_v2(
+            client,
+            users=users,
+            mocker=mocker,
+            raw_jobs=new_raw_jobs,
+            jobs_folder=client_jobs_folder,
+        )
+
+        # get pending jobs
+        headers = create_mss_headers(user_id)
+        response = client.get(
+            "/jobs", headers=headers, params={"status": JobStatus.PENDING.value}
+        )
+        pending_jobs_resp = response.json()
+        jobs_in_resp = {v["job_id"]: v for v in pending_jobs_resp["data"]}
+
+        expected_pending_jobs = [
+            Job(
+                job_id=job_id,
+                device=device,
+                calibration_date=jobs_in_resp[job_id]["calibration_date"],
+                updated_at=jobs_in_resp[job_id]["updated_at"],
+                created_at=jobs_in_resp[job_id]["created_at"],
+                user_id=user_id,
+                stage=Stage.PRE_PROC_Q,
+                status=JobStatus.PENDING,
+            ).model_dump(mode="json")
+            for idx, job_id in enumerate(pending_job_ids)
+            if idx % user_count == 0
+        ]
+
+        # ensure ordering is the same
+        pending_jobs_resp["data"] = order_by(pending_jobs_resp["data"], field="job_id")
+        expected_pending_jobs = order_by(expected_pending_jobs, field="job_id")
+
+        assert pending_jobs_resp == _paginate(expected_pending_jobs)
+
+        ## Get completed jobs
+
+        # refresh the headers
+        headers = create_mss_headers(user_id)
+        response = client.get(
+            "/jobs", headers=headers, params={"status": JobStatus.SUCCESSFUL.value}
+        )
+        completed_jobs_resp = response.json()
+        jobs_in_resp = {v["job_id"]: v for v in completed_jobs_resp["data"]}
+
+        expected_completed_jobs = [
+            Job(
+                job_id=job_id,
+                device=device,
+                calibration_date=jobs_in_resp[job_id]["calibration_date"],
+                updated_at=jobs_in_resp[job_id]["updated_at"],
+                created_at=jobs_in_resp[job_id]["created_at"],
+                user_id=user_id,
+                stage=Stage.FINAL_W,
+                status=JobStatus.SUCCESSFUL,
+                result=jobs_in_resp[job_id]["result"],
+                timestamps=Timestamps(**jobs_in_resp[job_id]["timestamps"]),
+                estimated_duration=jobs_in_resp[job_id]["estimated_duration"],
+                actual_duration=jobs_in_resp[job_id]["actual_duration"],
+                download_url=jobs_in_resp[job_id]["download_url"],
+                storage_id=f"{job_id}:::{jobs_in_resp[job_id]["estimated_duration"]}",
+            ).model_dump(mode="json")
+            for idx, job_id in enumerate(completed_job_ids)
+            if idx % user_count == 0
+        ]
+
+        # ensure ordering is the same
+        completed_jobs_resp["data"] = order_by(
+            completed_jobs_resp["data"], field="job_id"
+        )
+        expected_completed_jobs = order_by(expected_completed_jobs, field="job_id")
+        assert completed_jobs_resp == _paginate(expected_completed_jobs)
+
+        ## Get all jobs
+
+        # refresh the headers
+        headers = create_mss_headers(user_id)
+        response = client.get("/jobs", headers=headers)
+        all_jobs_resp = response.json()
+
+        expected_all_jobs = expected_completed_jobs + expected_pending_jobs
+        expected_all_jobs = order_by(expected_all_jobs, field="job_id")
+
+        # ensure ordering is the same
+        all_jobs_resp["data"] = order_by(all_jobs_resp["data"], field="job_id")
+        assert all_jobs_resp == _paginate(expected_all_jobs)
 
 
 @pytest.mark.parametrize("user", USERS)
