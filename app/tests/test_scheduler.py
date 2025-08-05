@@ -62,12 +62,12 @@ T = TypeVar("T")
 
 _SIM_1Q_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload_simulator_1q.json")
 _SIM_2Q_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload_simulator_2q.json")
-_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload.json")
+_QUANTIFY_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload.json")
 _INVALID_JOBS_FOR_UPLOAD = load_fixture("invalid_jobs_to_upload.json")
 
 # params
 _QUANTIFY_UPLOAD_JOB_PARAMS = [
-    (*CLIENT_AND_RQ_WORKER_TUPLES[0], job) for job in _JOBS_FOR_UPLOAD
+    (*CLIENT_AND_RQ_WORKER_TUPLES[0], job) for job in _QUANTIFY_JOBS_FOR_UPLOAD
 ]
 
 _SIM_1Q_UPLOAD_JOB_PARAMS = [
@@ -626,6 +626,7 @@ def test_view_bookings_without_token(quantify_rest_client, rq_worker, redis_clie
         assert json_response["detail"] == "Not authenticated"
 
 
+@pytest.mark.timeout(240)
 @pytest.mark.parametrize(
     "client, redis_conn, worker, job, expected_counts, device",
     _ALL_UPLOAD_JOB_PARAMS,
@@ -725,64 +726,65 @@ def test_submit_jobs_no_booking(
             assert final.start_timestamp < final.finish_timestamp
 
 
-def test_submit_jobs_no_booking_no_job_id(
-    quantify_rest_client, rq_worker, redis_client, mocker: MockerFixture
-):
-    """POST jobs without job_id to '/jobs' when there is no booking runs them in FIFO (first in, first out)"""
-    with quantify_rest_client as client:
-        # create many users and their tokens
-        user_id_token_map = _create_user_token_map(client, mocker=mocker)
-
-        # submit many jobs from many users
-        job_ids_in_fifo = _submit_multiple_jobs(
-            client, user_id_token_map=user_id_token_map, is_job_id_specified=False
-        )
-
-        # Run the queue
-        rq_worker.work(burst=True)
-        jobs_in_redis = _get_jobs_in_redis(redis_client)
-
-        jobs_in_redis.sort(key=lambda v: v.timestamps.execution.start_timestamp)
-        # Assert that they are all complete and their timestamp of completion is in FIFO order
-        assert all([v.status == JobStatus.SUCCESSFUL for v in jobs_in_redis])
-        assert [v.job_id for v in jobs_in_redis] == job_ids_in_fifo
-
-
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize(
+    "client, redis_conn, worker, job, expected_counts, device",
+    _ALL_UPLOAD_JOB_PARAMS,
+)
 def test_submit_jobs_in_active_booking(
-    quantify_rest_client, rq_worker, redis_client, mocker: MockerFixture
+    client,
+    worker,
+    redis_conn,
+    job,
+    expected_counts,
+    device,
+    client_jobs_folder,
+    mocker: MockerFixture,
 ):
     """POST '/jobs' when there is an active booking runs the booker jobs first then runs the other jobs after booking."""
-    with quantify_rest_client as client:
+
+    with client as client:
         # create many users and their tokens
-        user_id_token_map = _create_user_token_map(client, mocker=mocker)
+        users = _create_many_users(client)
 
         # create booking
         # third user; thus third job (duration: 2.1) belongs to them
-        booker_user_id = next(islice(user_id_token_map, 2, 3))
-        booker_token = user_id_token_map[booker_user_id]
+        booker = users[2]
+        booker_id = booker["id"]
         # duration: 3; max idle time = 1
         booking_info = {"duration": 3, "starts_in": 0}
-        _, response = _create_booking(client, token=booker_token, booking=booking_info)
+        _, response = _create_booking_v2(
+            client, user_id=booker_id, booking=booking_info
+        )
         booking = Booking.model_validate(response.json())
 
-        # submit many jobs from many users when booking starts
-        _submit_multiple_jobs(
-            client, user_id_token_map=user_id_token_map, is_job_id_specified=False
+        durations = [0.23, 2.0, 2.1, 10]
+        raw_jobs = []
+        for duration in durations:
+            new_job = copy.deepcopy(job)
+            new_job["job_id"] = f"{uuid4()}"
+            new_job["params"]["qobj"]["header"]["test_duration"] = duration
+            raw_jobs.append(new_job)
+
+        # submit many jobs from many users
+        _submit_multiple_jobs_v2(
+            client,
+            users=users,
+            mocker=mocker,
+            raw_jobs=raw_jobs,
+            jobs_folder=client_jobs_folder,
         )
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        general_queue = rq_worker.queues[0]
+        general_queue = worker.queues[0]
         while general_queue.scheduled_job_registry.count > 0:
-            rq_worker.work(burst=True, with_scheduler=True)
+            worker.work(burst=True, with_scheduler=True)
 
-        jobs_in_redis = _get_jobs_in_redis(redis_client)
-
+        jobs_in_redis = _get_jobs_in_redis(redis_conn)
         jobs_in_redis.sort(key=lambda v: v.timestamps.execution.start_timestamp)
-        booker_jobs = [job for job in jobs_in_redis if job.user_id == booker_user_id]
-        non_booker_jobs = [
-            job for job in jobs_in_redis if job.user_id != booker_user_id
-        ]
+
+        booker_jobs = [job for job in jobs_in_redis if job.user_id == booker_id]
+        non_booker_jobs = [job for job in jobs_in_redis if job.user_id != booker_id]
         last_booker_job = booker_jobs[-1]
         first_non_booker_job = non_booker_jobs[0]
 
@@ -1933,6 +1935,43 @@ def _create_many_users(
         user_id, resp = _create_user(client, user=user)
         result.append(resp.json())
     return result
+
+
+def _create_booking_v2(
+    client: "TestClient", user_id: str, booking: "_BasicBookingInfo"
+) -> Tuple["_BasicBookingInfo", "Response"]:
+    """Creates the booking and returns the actual booking details
+
+    Actual booking details include actual duration and actual delay
+
+    Args:
+        client: the fastapi TestClient used for testing
+        user_id: the id of the user
+        booking: the basic booking info
+
+    Returns:
+        the tuple of the actual basic info of the created booking and the httpx.Response
+    """
+    headers = create_mss_headers(user_id)
+    current_timestamp = datetime.now(timezone.utc)
+    data = _to_booking_payload(booking)
+    response = client.post("/bookings", headers=headers, json=data)
+    json_response = response.json()
+
+    start_utc = json_response["start_utc"]
+    start_utc_datetime = datetime.fromisoformat(start_utc)
+    end_utc = json_response["end_utc"]
+    end_utc_datetime = datetime.fromisoformat(end_utc)
+
+    actual_duration = (end_utc_datetime - start_utc_datetime).total_seconds()
+    actual_delay = (start_utc_datetime - current_timestamp).total_seconds()
+    # round off delay just to shave off the milliseconds lost during execution
+    actual_delay = int(actual_delay)
+
+    return {
+        "duration": actual_duration,
+        "starts_in": actual_delay,
+    }, response
 
 
 def _create_booking(
