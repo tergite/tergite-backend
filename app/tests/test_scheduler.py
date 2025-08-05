@@ -11,11 +11,11 @@
 # that they have been altered from the originals.
 #
 """Tests for the scheduler that handles queueing of user's jobs"""
-
+import copy
 import json
 import time
 from datetime import datetime, timedelta, timezone
-from itertools import islice
+from itertools import islice, zip_longest
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -78,11 +78,13 @@ _SIM_2Q_UPLOAD_JOB_PARAMS = [
     (*CLIENT_AND_RQ_WORKER_TUPLES[2], job) for job in _SIM_2Q_JOBS_FOR_UPLOAD
 ]
 
-
 _ALL_UPLOAD_JOB_PARAMS = (
-    [(*args, {"0x0": 750}) for args in _QUANTIFY_UPLOAD_JOB_PARAMS]
-    + [(*args, {"0x0": 750}) for args in _SIM_1Q_UPLOAD_JOB_PARAMS]
-    + [(*args, {"0x0": 400, "0x3": 400}) for args in _SIM_2Q_UPLOAD_JOB_PARAMS]
+    [(*args, {"0x0": 750}, "system_test") for args in _QUANTIFY_UPLOAD_JOB_PARAMS]
+    + [(*args, {"0x0": 750}, "qiskit_pulse_1q") for args in _SIM_1Q_UPLOAD_JOB_PARAMS]
+    + [
+        (*args, {"0x0": 400, "0x3": 400}, "qiskit_pulse_2q")
+        for args in _SIM_2Q_UPLOAD_JOB_PARAMS
+    ]
     # the bell state of 00 and 11 == ~512
 )
 
@@ -108,7 +110,7 @@ _ALL_INVALID_UPLOAD_JOB_PARAMS = [
 
 
 @pytest.mark.parametrize("user", USERS)
-def test_create_user(rest_client, user):
+def test_create_user(quantify_rest_client, user):
     """POST to '/users' should create the user in the REST API
 
         curl -L 'http://127.0.0.1:5000/users' \
@@ -119,7 +121,7 @@ def test_create_user(rest_client, user):
             "password": "some-password-for-john"
         }'
     """
-    with rest_client as client:
+    with quantify_rest_client as client:
         user_id, response = _create_user(client, user=user)
         expected = {
             "id": user_id,
@@ -133,13 +135,13 @@ def test_create_user(rest_client, user):
 
 
 @pytest.mark.parametrize("user", USERS)
-def test_view_profile(rest_client, user, mocker: MockerFixture):
+def test_view_profile(quantify_rest_client, user, mocker: MockerFixture):
     """GET '/me' should show the user profile in the REST API
 
     curl -L 'http://127.0.0.1:5000/me' \
     -H 'Authorization: Bearer access-token-for-john'
     """
-    with rest_client as client:
+    with quantify_rest_client as client:
         user_id, _ = _create_user(client, user=user)
         token, _ = _get_token(client, mocker=mocker, data=user)
 
@@ -156,7 +158,7 @@ def test_view_profile(rest_client, user, mocker: MockerFixture):
         assert profile == expected
 
 
-def test_create_root_user(rest_client):
+def test_create_root_user(quantify_rest_client):
     """POST to '/root-user' creates the root user only once per app instance
 
         curl -L 'http://127.0.0.1:5000/root-user' \
@@ -167,7 +169,7 @@ def test_create_root_user(rest_client):
             "password": "some-password-for-peninah"
         }'
     """
-    with rest_client as client:
+    with quantify_rest_client as client:
         user = USERS[0]
         other_user = USERS[1]
         user_id, response = _create_root_user(client, user=user)
@@ -190,14 +192,14 @@ def test_create_root_user(rest_client):
 
 @pytest.mark.parametrize("pagination", PAGINATION)
 def test_admin_view_users(
-    rest_client, pagination: "_PaginationInfo", mocker: MockerFixture
+    quantify_rest_client, pagination: "_PaginationInfo", mocker: MockerFixture
 ):
     """GET '/users' should show to an admin the paginated list of user profiles
 
     curl -L 'http://127.0.0.1:5000/users?skip=1&limit=10' \
     -H 'Authorization: Bearer access-token-for-john'
     """
-    with rest_client as client:
+    with quantify_rest_client as client:
         # create admin user and token
         admin_user_data, *other_user_data = USERS
         admin_user_id, _ = _create_root_user(client, user=admin_user_data)
@@ -248,13 +250,15 @@ def test_admin_view_users(
 
 
 @pytest.mark.timeout(180)
-def test_delete_profile(rest_client, rq_worker, redis_client, mocker: MockerFixture):
+def test_delete_profile(
+    quantify_rest_client, rq_worker, redis_client, mocker: MockerFixture
+):
     """DELETE '/me' should delete their own user profile
 
     curl -L -X DELETE 'http://127.0.0.1:5000/me' \
     -H 'Authorization: Bearer access-token-for-john'
     """
-    with rest_client as client:
+    with quantify_rest_client as client:
         # create many users and their tokens
         user_id_token_map = _create_user_token_map(client, mocker=mocker)
         user_id = next(islice(user_id_token_map, 0, 1))
@@ -303,13 +307,15 @@ def test_delete_profile(rest_client, rq_worker, redis_client, mocker: MockerFixt
 
 
 @pytest.mark.timeout(180)
-def test_admin_remove_user(rest_client, rq_worker, redis_client, mocker: MockerFixture):
+def test_admin_remove_user(
+    quantify_rest_client, rq_worker, redis_client, mocker: MockerFixture
+):
     """DELETE '/users/{user_id}' by ddmin removes the user, and their bookings and jobs
 
     curl -L -X DELETE 'http://127.0.0.1:5000/users/janes-user-id' \
     -H 'Authorization: Bearer access-token-for-john'
     """
-    with rest_client as client:
+    with quantify_rest_client as client:
         # create admin user and token
         admin_user_data, *other_user_data = USERS
         admin_user_id, _ = _create_root_user(client, user=admin_user_data)
@@ -368,10 +374,10 @@ def test_admin_remove_user(rest_client, rq_worker, redis_client, mocker: MockerF
 
 @pytest.mark.timeout(180)
 def test_non_admin_remove_user(
-    rest_client, rq_worker, redis_client, mocker: MockerFixture
+    quantify_rest_client, rq_worker, redis_client, mocker: MockerFixture
 ):
     """Non admin cannot remove the profile of any user"""
-    with rest_client as client:
+    with quantify_rest_client as client:
         # create many users and their tokens
         user_id_token_map = _create_user_token_map(client, mocker=mocker)
         curr_user_id = next(islice(user_id_token_map, 0, 1))
@@ -408,7 +414,7 @@ def test_non_admin_remove_user(
 
 
 @pytest.mark.parametrize("user", USERS)
-def test_login(rest_client, user, mocker: MockerFixture):
+def test_login(quantify_rest_client, user, mocker: MockerFixture):
     """POST '/login' should return the JWT token for the user
 
     curl -L 'http://127.0.0.1:5000/login' \
@@ -418,7 +424,7 @@ def test_login(rest_client, user, mocker: MockerFixture):
         "password": "some-password-for-john"
     }'
     """
-    with rest_client as client:
+    with quantify_rest_client as client:
         _create_user(client, user=user)
         token, response = _get_token(client, mocker=mocker, data=user)
 
@@ -428,7 +434,7 @@ def test_login(rest_client, user, mocker: MockerFixture):
 
 @pytest.mark.parametrize("user,booking", VALID_CREATE_BOOKINGS_PARAMS)
 def test_create_booking(
-    rest_client, user, booking: "_BasicBookingInfo", mocker: MockerFixture
+    quantify_rest_client, user, booking: "_BasicBookingInfo", mocker: MockerFixture
 ):
     """POST '/bookings' should return the new booking created by the user
 
@@ -440,7 +446,7 @@ def test_create_booking(
         "end_utc": "2025-07-18T17:52:58.619Z"
     }'
     """
-    with rest_client as client:
+    with quantify_rest_client as client:
         user_id, _ = _create_user(client, user=user)
         token, _ = _get_token(client, mocker=mocker, data=user)
 
@@ -460,13 +466,13 @@ def test_create_booking(
 
 @pytest.mark.parametrize("user,booking", INVALID_CREATE_BOOKINGS_PARAMS)
 def test_create_invalid_booking(
-    rest_client, user, booking: "_BasicBookingInfo", mocker: MockerFixture
+    quantify_rest_client, user, booking: "_BasicBookingInfo", mocker: MockerFixture
 ):
     """Should return an error message if an attempt to create an invalid booking is made
 
     e.g. start_utc in the past
     """
-    with rest_client as client:
+    with quantify_rest_client as client:
         user_id, _ = _create_user(client, user=user)
         token, _ = _get_token(client, mocker=mocker, data=user)
         data = _to_booking_payload(booking)
@@ -482,10 +488,10 @@ def test_create_invalid_booking(
 
 @pytest.mark.parametrize("user,booking", VALID_CREATE_BOOKINGS_PARAMS)
 def test_create_conflicting_booking(
-    rest_client, user, booking: "_BasicBookingInfo", mocker: MockerFixture
+    quantify_rest_client, user, booking: "_BasicBookingInfo", mocker: MockerFixture
 ):
     """Should return an error message when creating a booking overlapping with another"""
-    with rest_client as client:
+    with quantify_rest_client as client:
         user_id, _ = _create_user(client, user=user)
         token, _ = _get_token(client, mocker=mocker, data=user)
 
@@ -512,9 +518,9 @@ def test_create_conflicting_booking(
 
 
 @pytest.mark.parametrize("user", USERS)
-def test_create_too_many_booking(rest_client, user, mocker: MockerFixture):
+def test_create_too_many_booking(quantify_rest_client, user, mocker: MockerFixture):
     """Returns error message when creating a booking when number of bookings in a period for user are maxed out."""
-    with rest_client as client:
+    with quantify_rest_client as client:
         user_id, _ = _create_user(client, user=user)
         token, _ = _get_token(client, mocker=mocker, data=user)
 
@@ -538,9 +544,9 @@ def test_create_too_many_booking(rest_client, user, mocker: MockerFixture):
                 assert response.status_code == 200
 
 
-def test_create_booking_invalid_token(rest_client, rq_worker, redis_client):
+def test_create_booking_invalid_token(quantify_rest_client, rq_worker, redis_client):
     """Creating booking with invalid tokens results in an error"""
-    with rest_client as client:
+    with quantify_rest_client as client:
         headers = _get_headers("token")
         data = _to_booking_payload(VALID_BOOKINGS[0])
 
@@ -551,9 +557,9 @@ def test_create_booking_invalid_token(rest_client, rq_worker, redis_client):
         assert "not authenticated" in json_response["detail"]
 
 
-def test_create_booking_without_token(rest_client, rq_worker, redis_client):
+def test_create_booking_without_token(quantify_rest_client, rq_worker, redis_client):
     """Creating booking without a token results in an error"""
-    with rest_client as client:
+    with quantify_rest_client as client:
         data = _to_booking_payload(VALID_BOOKINGS[0])
 
         response = client.post("/bookings", data=data)
@@ -565,10 +571,10 @@ def test_create_booking_without_token(rest_client, rq_worker, redis_client):
 
 @pytest.mark.parametrize("pagination", PAGINATION)
 def test_view_bookings(
-    rest_client, mocker: MockerFixture, pagination: "_PaginationInfo"
+    quantify_rest_client, mocker: MockerFixture, pagination: "_PaginationInfo"
 ):
     """GET "/bookings" shows paginated list of all available bookings"""
-    with rest_client as client:
+    with quantify_rest_client as client:
         # create many users and their tokens
         user_id_token_map = _create_user_token_map(client, mocker=mocker)
         curr_user_id = next(islice(user_id_token_map, 0, 1))
@@ -600,9 +606,9 @@ def test_view_bookings(
             assert actual_output == expected
 
 
-def test_view_bookings_invalid_token(rest_client, rq_worker, redis_client):
+def test_view_bookings_invalid_token(quantify_rest_client, rq_worker, redis_client):
     """Viewing bookings with invalid tokens results in an error"""
-    with rest_client as client:
+    with quantify_rest_client as client:
         response = _view_booking_list(client, token="token")
         json_response = response.json()
 
@@ -610,9 +616,9 @@ def test_view_bookings_invalid_token(rest_client, rq_worker, redis_client):
         assert "not authenticated" in json_response["detail"]
 
 
-def test_view_bookings_without_token(rest_client, rq_worker, redis_client):
+def test_view_bookings_without_token(quantify_rest_client, rq_worker, redis_client):
     """Viewing bookings without a token results in an error"""
-    with rest_client as client:
+    with quantify_rest_client as client:
         response = client.get("/bookings")
         json_response = response.json()
 
@@ -620,34 +626,110 @@ def test_view_bookings_without_token(rest_client, rq_worker, redis_client):
         assert json_response["detail"] == "Not authenticated"
 
 
+@pytest.mark.parametrize(
+    "client, redis_conn, worker, job, expected_counts, device",
+    _ALL_UPLOAD_JOB_PARAMS,
+)
 def test_submit_jobs_no_booking(
-    rest_client, rq_worker, redis_client, mocker: MockerFixture
+    client,
+    worker,
+    redis_conn,
+    job,
+    expected_counts,
+    device,
+    client_jobs_folder,
+    mocker: MockerFixture,
 ):
     """POST '/jobs' when there is no booking should run the jobs in FIFO (first in, first out)"""
-    with rest_client as client:
+    with client as client:
         # create many users and their tokens
-        user_id_token_map = _create_user_token_map(client, mocker=mocker)
+        users = _create_many_users(client)
+
+        durations = [0.4, 3, 4, 1.1, 2.9, 0.3, 0.1]
+        raw_jobs = []
+        for duration in durations:
+            new_job = copy.deepcopy(job)
+            new_job["job_id"] = f"{uuid4()}"
+            new_job["params"]["qobj"]["header"]["test_duration"] = duration
+            raw_jobs.append(new_job)
 
         # submit many jobs from many users
-        job_ids_in_fifo = _submit_multiple_jobs(
-            client, user_id_token_map=user_id_token_map, is_job_id_specified=True
+        job_ids_in_fifo = _submit_multiple_jobs_v2(
+            client,
+            users=users,
+            mocker=mocker,
+            raw_jobs=raw_jobs,
+            jobs_folder=client_jobs_folder,
         )
 
         # Run the queue
-        rq_worker.work(burst=True)
-        jobs_in_redis = _get_jobs_in_redis(redis_client)
+        worker.work(burst=True)
+
+        jobs_in_redis = _get_jobs_in_redis(redis_conn)
         jobs_in_redis.sort(key=lambda v: v.timestamps.execution.start_timestamp)
 
+        expected_jobs_in_redis = [
+            Job(
+                job_id=job_id,
+                user_id=job_in_db.user_id,
+                device=device,
+                download_url=f"http://localhost:8000/logfiles/{job_id}",
+                status=JobStatus.SUCCESSFUL,
+                stage=Stage.FINAL_W,
+                timestamps=job_in_db.timestamps,
+                result=job_in_db.result,
+                created_at=job_in_db.created_at,
+                updated_at=job_in_db.updated_at,
+                calibration_date=job_in_db.calibration_date,
+                estimated_duration=job_in_db.estimated_duration,
+                actual_duration=job_in_db.actual_duration,
+                storage_id=f"{job_id}:::{job_in_db.estimated_duration}",
+            )
+            for job_id, job_in_db in zip_longest(
+                job_ids_in_fifo, jobs_in_redis, fillvalue=None
+            )
+        ]
+
         # Assert that they are all complete and their timestamp of completion is in FIFO order
-        assert all([v.status == JobStatus.SUCCESSFUL for v in jobs_in_redis])
-        assert [v.job_id for v in jobs_in_redis] == job_ids_in_fifo
+        assert jobs_in_redis == expected_jobs_in_redis
+
+        user_count = len(users)
+        for idx, job_in_db in enumerate(jobs_in_redis):
+            user = users[idx % user_count]
+
+            assert job_in_db.user_id == user["id"]
+            assert job_in_db.estimated_duration == durations[idx]
+
+            # Check actual duration
+            assert job_in_db.actual_duration > 0
+
+            # Check that the results are appropriate
+            # This can be seen as testing gate fidelity ~70%
+            assert _job_results_match(
+                results=job_in_db.result.memory[0], expected_min_counts=expected_counts
+            )
+
+            # Check that the timestamps are appropriately filled
+            timestamps = job_in_db.timestamps
+            pre_processing = timestamps.pre_processing
+            execution = timestamps.execution
+            post_processing = timestamps.post_processing
+            final = timestamps.final
+
+            assert pre_processing.start_timestamp < pre_processing.finish_timestamp
+            assert pre_processing.finish_timestamp <= execution.start_timestamp
+            assert execution.start_timestamp < execution.finish_timestamp
+            assert execution.finish_timestamp <= post_processing.start_timestamp
+            assert post_processing.start_timestamp < post_processing.finish_timestamp
+            assert post_processing.finish_timestamp <= final.start_timestamp
+            assert final.start_timestamp < final.finish_timestamp
 
 
 def test_submit_jobs_no_booking_no_job_id(
-    rest_client, rq_worker, redis_client, mocker: MockerFixture
+    quantify_rest_client, rq_worker, redis_client, mocker: MockerFixture
 ):
     """POST jobs without job_id to '/jobs' when there is no booking runs them in FIFO (first in, first out)"""
-    with rest_client as client:
+    with quantify_rest_client as client:
         # create many users and their tokens
         user_id_token_map = _create_user_token_map(client, mocker=mocker)
 
@@ -668,10 +750,10 @@ def test_submit_jobs_no_booking_no_job_id(
 
 @pytest.mark.timeout(180)
 def test_submit_jobs_in_active_booking(
-    rest_client, rq_worker, redis_client, mocker: MockerFixture
+    quantify_rest_client, rq_worker, redis_client, mocker: MockerFixture
 ):
     """POST '/jobs' when there is an active booking runs the booker jobs first then runs the other jobs after booking."""
-    with rest_client as client:
+    with quantify_rest_client as client:
         # create many users and their tokens
         user_id_token_map = _create_user_token_map(client, mocker=mocker)
 
@@ -722,10 +804,10 @@ def test_submit_jobs_in_active_booking(
 
 @pytest.mark.timeout(180)
 def test_submit_jobs_in_idle_booking(
-    rest_client, rq_worker, redis_client, mocker: MockerFixture
+    quantify_rest_client, rq_worker, redis_client, mocker: MockerFixture
 ):
     """POST '/jobs' when there is an idle booking runs the non booker jobs even during the booking."""
-    with rest_client as client:
+    with quantify_rest_client as client:
         # create many users and their tokens
         user_id_token_map = _create_user_token_map(client, mocker=mocker)
 
@@ -771,10 +853,10 @@ def test_submit_jobs_in_idle_booking(
 
 @pytest.mark.timeout(180)
 def test_submit_jobs_in_idle_booking_before_another(
-    rest_client, rq_worker, redis_client, mocker: MockerFixture
+    quantify_rest_client, rq_worker, redis_client, mocker: MockerFixture
 ):
     """When there is an idle booking and another is next, only non booker jobs, short enough to fit in between, run."""
-    with rest_client as client:
+    with quantify_rest_client as client:
         # create many users and their tokens
         user_id_token_map = _create_user_token_map(client, mocker=mocker)
 
@@ -873,10 +955,10 @@ def test_submit_jobs_in_idle_booking_before_another(
 
 @pytest.mark.timeout(180)
 def test_submit_long_jobs_before_booking(
-    rest_client, rq_worker, redis_client, mocker: MockerFixture
+    quantify_rest_client, rq_worker, redis_client, mocker: MockerFixture
 ):
     """POST long jobs to '/jobs' before booking starts waitlists them but runs the shorter ones"""
-    with rest_client as client:
+    with quantify_rest_client as client:
         # create many users and their tokens
         user_id_token_map = _create_user_token_map(client, mocker=mocker)
 
@@ -918,9 +1000,9 @@ def test_submit_long_jobs_before_booking(
         assert job_estimated_durations == [0.4, 1.1, 0.3, 0.1, 3.0, 4.0, 2.9]
 
 
-def test_submit_jobs_invalid_token(rest_client, rq_worker, redis_client):
+def test_submit_jobs_invalid_token(quantify_rest_client, rq_worker, redis_client):
     """POST '/jobs' with invalid tokens results in an error"""
-    with rest_client as client:
+    with quantify_rest_client as client:
         headers = _get_headers("token")
         response = client.post("/jobs", headers=headers, json=JOBS[0])
         json_response = response.json()
@@ -929,9 +1011,9 @@ def test_submit_jobs_invalid_token(rest_client, rq_worker, redis_client):
         assert "not authenticated" in json_response["detail"]
 
 
-def test_submit_jobs_without_token(rest_client, rq_worker, redis_client):
+def test_submit_jobs_without_token(quantify_rest_client, rq_worker, redis_client):
     """POST to '/jobs' jobs without a token results in an error"""
-    with rest_client as client:
+    with quantify_rest_client as client:
         response = client.post("/jobs", json=JOBS[0])
         json_response = response.json()
 
@@ -941,10 +1023,10 @@ def test_submit_jobs_without_token(rest_client, rq_worker, redis_client):
 
 @pytest.mark.timeout(180)
 def test_cancel_future_booking(
-    rest_client, rq_worker, redis_client, mocker: MockerFixture
+    quantify_rest_client, rq_worker, redis_client, mocker: MockerFixture
 ):
     """POST '/booking/{id}/cancel' for a future booking, deletes the booking and allows jobs to run without it."""
-    with rest_client as client:
+    with quantify_rest_client as client:
         # create many users and their tokens
         user_id_token_map = _create_user_token_map(client, mocker=mocker)
 
@@ -985,9 +1067,9 @@ def test_cancel_future_booking(
         assert job_ids == expected_job_ids
 
 
-def test_admin_cancel_future_booking(rest_client, mocker: MockerFixture):
+def test_admin_cancel_future_booking(quantify_rest_client, mocker: MockerFixture):
     """Admin POST '/bookings/{id}/cancel' cancels any user's future booking"""
-    with rest_client as client:
+    with quantify_rest_client as client:
         # create admin user and token
         admin_user_data, *other_user_data = USERS
         admin_user_id, _ = _create_root_user(client, user=admin_user_data)
@@ -1027,10 +1109,10 @@ def test_admin_cancel_future_booking(rest_client, mocker: MockerFixture):
 
 @pytest.mark.timeout(180)
 def test_cancel_active_booking(
-    rest_client, rq_worker, redis_client, mocker: MockerFixture
+    quantify_rest_client, rq_worker, redis_client, mocker: MockerFixture
 ):
     """POST '/bookings/{id}/cancel' for an active booking fails."""
-    with rest_client as client:
+    with quantify_rest_client as client:
         # create many users and their tokens
         user_id_token_map = _create_user_token_map(client, mocker=mocker)
 
@@ -1081,10 +1163,10 @@ def test_cancel_active_booking(
 
 @pytest.mark.timeout(180)
 def test_cancel_completed_booking(
-    rest_client, rq_worker, redis_client, mocker: MockerFixture
+    quantify_rest_client, rq_worker, redis_client, mocker: MockerFixture
 ):
     """POST '/bookings/{id}/cancel' for a completed booking fails."""
-    with rest_client as client:
+    with quantify_rest_client as client:
         # create many users and their tokens
         user_id_token_map = _create_user_token_map(client, mocker=mocker)
 
@@ -1448,9 +1530,11 @@ def test_unauthenticated_view_jobs(
 
 
 @pytest.mark.parametrize("user", USERS)
-def test_cancel_job(rest_client, user, rq_worker, redis_client, mocker: MockerFixture):
+def test_cancel_job(
+    quantify_rest_client, user, rq_worker, redis_client, mocker: MockerFixture
+):
     """A user POST to '/jobs/{id}/cancel' cancels the job of the job_id if the job belongs to them"""
-    with rest_client as client:
+    with quantify_rest_client as client:
         user_id, _ = _create_user(client, user=user)
         token, _ = _get_token(client, mocker=mocker, data=user)
         job_info = JOBS[0]
@@ -1969,6 +2053,21 @@ def _save_job_file(folder: Path, job: Dict[str, Any], ext: str = ".json") -> Pat
         json.dump(job, file)
 
     return file_path
+
+
+def _job_results_match(results: List[str], expected_min_counts: Dict[str, int]):
+    """Matches job results, keeping in mind that the results are probabilistic
+
+    The states are written in hex '0x0', '0x1', '0x2', '0x3' i.e. 00, 01, 10, 11
+
+    Args:
+        results: the results obtained
+        expected_min_counts: the expected counts minimum counts for each state
+
+    Returns:
+        True if they match, False if they don't
+    """
+    return all([results.count(k) >= v for k, v in expected_min_counts.items()])
 
 
 class _PaginatedList(TypedDict, Generic[T]):

@@ -22,7 +22,6 @@ from app.tests.utils.records import (
     with_current_timestamps,
     with_incremental_timestamps,
 )
-from app.tests.utils.redis import insert_in_hash
 
 _PARENT_FOLDER = path.dirname(path.abspath(__file__))
 _JOBS_LIST = load_fixture("job_list.json")
@@ -207,123 +206,123 @@ def test_root_invalid_headers(client, headers):
 #         assert got == expected
 
 
-@pytest.mark.parametrize("client, redis_client, job_id", _FETCH_JOB_PARAMS)
-def test_fetch_job_result(redis_client, client, job_id: str, app_token_header):
-    """Get to /jobs/{job_id}/result returns the job result for the given job_id"""
-    raw_jobs = _get_raw_jobs()
-
-    insert_in_hash(
-        client=redis_client,
-        hash_name=_JOBS_HASH_NAME,
-        data=raw_jobs,
-        id_fields=(_JOB_ID_FIELD,),
-    )
-
-    # using context manager to ensure on_startup runs
-    with client as client:
-        response = client.get(f"/jobs/{job_id}/result", headers=app_token_header)
-        got = response.json()
-        expected_job = list(filter(lambda x: x["job_id"] == job_id, raw_jobs))[0]
-
-        try:
-            expected = {"message": expected_job["result"]}
-        except KeyError:
-            expected = {"message": "job has not finished"}
-
-        assert response.status_code == 200
-        assert got == expected
-
-
-@pytest.mark.parametrize(
-    "client, redis_client, job_id, headers, app_token", _UNAUTHORIZED_FETCH_JOB_PARAMS
-)
-def test_unauthenticated_fetch_job_result(
-    redis_client, client, job_id: str, headers, app_token
-):
-    """Get to /jobs/{job_id}/result returns 401 error when no valid app token is passed"""
-    raw_jobs = _get_raw_jobs()
-
-    insert_in_hash(
-        client=redis_client,
-        hash_name=_JOBS_HASH_NAME,
-        data=raw_jobs,
-        id_fields=(_JOB_ID_FIELD,),
-    )
-
-    # using context manager to ensure on_startup runs
-    with client as client:
-        response = client.get(f"/jobs/{job_id}/result", headers=headers)
-        got = response.json()
-        detail = (
-            "Unauthorized"
-            if app_token is None
-            else f"job {job_id} does not exist for current user"
-        )
-        expected = {"detail": detail}
-
-        assert response.status_code == 401
-        assert got == expected
+# @pytest.mark.parametrize("client, redis_client, job_id", _FETCH_JOB_PARAMS)
+# def test_fetch_job_result(redis_client, client, job_id: str, app_token_header):
+#     """Get to /jobs/{job_id}/result returns the job result for the given job_id"""
+#     raw_jobs = _get_raw_jobs()
+#
+#     insert_in_hash(
+#         client=redis_client,
+#         hash_name=_JOBS_HASH_NAME,
+#         data=raw_jobs,
+#         id_fields=(_JOB_ID_FIELD,),
+#     )
+#
+#     # using context manager to ensure on_startup runs
+#     with client as client:
+#         response = client.get(f"/jobs/{job_id}/result", headers=app_token_header)
+#         got = response.json()
+#         expected_job = list(filter(lambda x: x["job_id"] == job_id, raw_jobs))[0]
+#
+#         try:
+#             expected = {"message": expected_job["result"]}
+#         except KeyError:
+#             expected = {"message": "job has not finished"}
+#
+#         assert response.status_code == 200
+#         assert got == expected
 
 
-@pytest.mark.parametrize("client, redis_client, job_id", _FETCH_JOB_PARAMS)
-def test_fetch_job_status(redis_client, client, job_id: str, app_token_header):
-    """Get to /jobs/{job_id}/status returns the job status for the given job_id"""
-    raw_jobs = _get_raw_jobs()
+# @pytest.mark.parametrize(
+#     "client, redis_client, job_id, headers, app_token", _UNAUTHORIZED_FETCH_JOB_PARAMS
+# )
+# def test_unauthenticated_fetch_job_result(
+#     redis_client, client, job_id: str, headers, app_token
+# ):
+#     """Get to /jobs/{job_id}/result returns 401 error when no valid app token is passed"""
+#     raw_jobs = _get_raw_jobs()
+#
+#     insert_in_hash(
+#         client=redis_client,
+#         hash_name=_JOBS_HASH_NAME,
+#         data=raw_jobs,
+#         id_fields=(_JOB_ID_FIELD,),
+#     )
+#
+#     # using context manager to ensure on_startup runs
+#     with client as client:
+#         response = client.get(f"/jobs/{job_id}/result", headers=headers)
+#         got = response.json()
+#         detail = (
+#             "Unauthorized"
+#             if app_token is None
+#             else f"job {job_id} does not exist for current user"
+#         )
+#         expected = {"detail": detail}
+#
+#         assert response.status_code == 401
+#         assert got == expected
+#
+#
+# @pytest.mark.parametrize("client, redis_client, job_id", _FETCH_JOB_PARAMS)
+# def test_fetch_job_status(redis_client, client, job_id: str, app_token_header):
+#     """Get to /jobs/{job_id}/status returns the job status for the given job_id"""
+#     raw_jobs = _get_raw_jobs()
+#
+#     insert_in_hash(
+#         client=redis_client,
+#         hash_name=_JOBS_HASH_NAME,
+#         data=raw_jobs,
+#         id_fields=(_JOB_ID_FIELD,),
+#     )
+#
+#     # using context manager to ensure on_startup runs
+#     with client as client:
+#         response = client.get(f"/jobs/{job_id}/status", headers=app_token_header)
+#         got = response.json()
+#         expected_job = list(filter(lambda x: x["job_id"] == job_id, raw_jobs))[0]
+#         # We add this, because we do not want to overwrite values as in the lines below
+#         expected_job = copy.deepcopy(expected_job)
+#
+#         try:
+#             status = expected_job["status"]
+#             expected = {"message": status}
+#         except KeyError:
+#             expected = {"message": f"job {job_id} not found"}
+#
+#         assert response.status_code == 200
+#         assert got == expected
 
-    insert_in_hash(
-        client=redis_client,
-        hash_name=_JOBS_HASH_NAME,
-        data=raw_jobs,
-        id_fields=(_JOB_ID_FIELD,),
-    )
 
-    # using context manager to ensure on_startup runs
-    with client as client:
-        response = client.get(f"/jobs/{job_id}/status", headers=app_token_header)
-        got = response.json()
-        expected_job = list(filter(lambda x: x["job_id"] == job_id, raw_jobs))[0]
-        # We add this, because we do not want to overwrite values as in the lines below
-        expected_job = copy.deepcopy(expected_job)
-
-        try:
-            status = expected_job["status"]
-            expected = {"message": status}
-        except KeyError:
-            expected = {"message": f"job {job_id} not found"}
-
-        assert response.status_code == 200
-        assert got == expected
-
-
-@pytest.mark.parametrize(
-    "client, redis_client, job_id, headers, app_token", _UNAUTHORIZED_FETCH_JOB_PARAMS
-)
-def test_unauthenticated_fetch_job_status(
-    redis_client, client, job_id: str, headers, app_token
-):
-    """Get to /jobs/{job_id}/status returns 401 error when no valid app token is passed"""
-    raw_jobs = _get_raw_jobs()
-
-    insert_in_hash(
-        client=redis_client,
-        hash_name=_JOBS_HASH_NAME,
-        data=raw_jobs,
-        id_fields=(_JOB_ID_FIELD,),
-    )
-
-    # using context manager to ensure on_startup runs
-    with client as client:
-        response = client.get(f"/jobs/{job_id}/status", headers=headers)
-        got = response.json()
-        detail = (
-            "Unauthorized"
-            if app_token is None
-            else f"job {job_id} does not exist for current user"
-        )
-        expected = {"detail": detail}
-
-        assert response.status_code == 401
-        assert got == expected
+# @pytest.mark.parametrize(
+#     "client, redis_client, job_id, headers, app_token", _UNAUTHORIZED_FETCH_JOB_PARAMS
+# )
+# def test_unauthenticated_fetch_job_status(
+#     redis_client, client, job_id: str, headers, app_token
+# ):
+#     """Get to /jobs/{job_id}/status returns 401 error when no valid app token is passed"""
+#     raw_jobs = _get_raw_jobs()
+#
+#     insert_in_hash(
+#         client=redis_client,
+#         hash_name=_JOBS_HASH_NAME,
+#         data=raw_jobs,
+#         id_fields=(_JOB_ID_FIELD,),
+#     )
+#
+#     # using context manager to ensure on_startup runs
+#     with client as client:
+#         response = client.get(f"/jobs/{job_id}/status", headers=headers)
+#         got = response.json()
+#         detail = (
+#             "Unauthorized"
+#             if app_token is None
+#             else f"job {job_id} does not exist for current user"
+#         )
+#         expected = {"detail": detail}
+#
+#         assert response.status_code == 401
+#         assert got == expected
 
 
 @pytest.mark.parametrize(

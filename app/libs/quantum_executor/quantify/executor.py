@@ -73,8 +73,8 @@ class QuantifyExecutor(QuantumExecutor):
         qblox_instruments.Cluster.close_all()
 
         # Initialize a (singleton) instrument coordinator if not already set.
-        if QuantifyExecutor._coordinator is None:
-            QuantifyExecutor._coordinator = InstrumentCoordinator(
+        if self._coordinator is None:
+            self.__class__._coordinator = InstrumentCoordinator(
                 "tergite_quantum_executor"
             )
 

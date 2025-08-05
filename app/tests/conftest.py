@@ -1,5 +1,3 @@
-import importlib
-
 from .utils.env import (
     TEST_BACKEND_SETTINGS_FILE,
     TEST_BOOKING_DB_URL,
@@ -23,17 +21,24 @@ from .utils.env import (
 setup_test_env()
 
 
+import importlib
 import logging
 import os
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, NotRequired, Optional, TypedDict
+from typing import (
+    Any,
+    Dict,
+    List,
+    NotRequired,
+    Optional,
+    TypedDict,
+)
 
 import numpy as np
 import pytest
 import redis
 from fastapi.testclient import TestClient
-from freezegun import freeze_time
 from pytest_lazy_fixtures import lf as lazy_fixture
 from redis.client import Redis
 from rq import SimpleWorker
@@ -45,49 +50,47 @@ from ..libs.queues.dtos import Job
 from ..services.scheduler.queues import QueuePool
 from .utils.analysis import MockLinearDiscriminantAnalysis
 from .utils.api import create_invalid_mss_headers
+from .utils.executors import MockQiskitDynamicsExecutor, MockQuantifyExecutor
 from .utils.fixtures import load_fixture
 from .utils.http import MockHttpResponse, MockHttpSession
 from .utils.rq import get_rq_pool_worker
 
 _redis_connection = redis.Redis.from_url(TEST_RQ_REDIS_URL)
-# _async_queue_pool = QueuePool(
-#     prefix=TEST_DEFAULT_PREFIX, connection=_redis_connection, is_async=True
-# )
 
 MOCK_NOW = "2023-11-27T12:46:48.851656+00:00"
 TEST_APP_TOKEN_STRING = "eecbf107ad103f70187923f49c1a1141219da95f1ab3906f"
 
 FASTAPI_CLIENTS = [
-    lazy_fixture("rest_client"),
-    lazy_fixture("rest_client_with_qiskit_simulator"),
-    lazy_fixture("rest_client_with_qiskit_simulator_2_qubit"),
+    lazy_fixture("quantify_rest_client"),
+    lazy_fixture("qiskit_1q_rest_client"),
+    lazy_fixture("qiskit_2q_rest_client"),
 ]
 
 CLIENTS = [
-    (lazy_fixture("rest_client"), lazy_fixture("redis_client")),
+    (lazy_fixture("quantify_rest_client"), lazy_fixture("redis_client")),
     (
-        lazy_fixture("rest_client_with_qiskit_simulator"),
+        lazy_fixture("qiskit_1q_rest_client"),
         lazy_fixture("redis_client"),
     ),
     (
-        lazy_fixture("rest_client_with_qiskit_simulator_2_qubit"),
+        lazy_fixture("qiskit_2q_rest_client"),
         lazy_fixture("redis_client"),
     ),
 ]
 
 CLIENT_AND_RQ_WORKER_TUPLES = [
     (
-        lazy_fixture("rest_client"),
+        lazy_fixture("quantify_rest_client"),
         lazy_fixture("redis_client"),
         lazy_fixture("rq_worker"),
     ),
     (
-        lazy_fixture("rest_client_with_qiskit_simulator"),
+        lazy_fixture("qiskit_1q_rest_client"),
         lazy_fixture("redis_client"),
         lazy_fixture("rq_worker_for_simulator_1q"),
     ),
     (
-        lazy_fixture("rest_client_with_qiskit_simulator_2_qubit"),
+        lazy_fixture("qiskit_2q_rest_client"),
         lazy_fixture("redis_client"),
         lazy_fixture("rq_worker_for_simulator_2q"),
     ),
@@ -199,13 +202,17 @@ def mock_mss_post_requests(url: str, **kwargs):
 
 
 @pytest.fixture
-def rest_client(mocker, redis_client) -> TestClient:
+def quantify_rest_client(mocker, redis_client) -> TestClient:
     """A test client for fast api when rq is running asynchronously"""
     _patch_async_client(mocker)
     os.environ["EXECUTOR_TYPE"] = "quantify"
     os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX
     os.environ["BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
     os.environ["CALIBRATION_SEED"] = TEST_QUANTIFY_SEED_FILE
+
+    mocker.patch(
+        "app.services.scheduler.utils.QuantifyExecutor", new=MockQuantifyExecutor
+    )
 
     import app
     import settings
@@ -214,13 +221,12 @@ def rest_client(mocker, redis_client) -> TestClient:
     importlib.reload(app)
     from app import api
 
-    # with freeze_time(MOCK_NOW):
     yield TestClient(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
 
 
 @pytest.fixture
-def rest_client_with_qiskit_simulator(mocker) -> TestClient:
+def qiskit_1q_rest_client(mocker) -> TestClient:
     """A test client for fast api when rq is running asynchronously"""
     _patch_async_client(mocker)
     os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_1q"
@@ -241,7 +247,7 @@ def rest_client_with_qiskit_simulator(mocker) -> TestClient:
 
 
 @pytest.fixture
-def rest_client_with_qiskit_simulator_2_qubit(mocker) -> TestClient:
+def qiskit_2q_rest_client(mocker) -> TestClient:
     """A test client for fast api when rq is running asynchronously"""
     _patch_async_client_sim2q(mocker)
     os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_2q"
@@ -277,7 +283,6 @@ def async_standalone_backend_client(mocker) -> TestClient:
     importlib.reload(app)
     from app import api
 
-    # with freeze_time(MOCK_NOW):
     yield TestClient(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
     _redis_connection.flushall()
@@ -336,6 +341,13 @@ def _patch_async_client(mocker):
         post=mock_mss_post_requests,
     )
 
+    mocker.patch(
+        "app.services.scheduler.utils.QuantifyExecutor", new=MockQuantifyExecutor
+    )
+    mocker.patch(
+        "app.services.scheduler.utils.QiskitDynamicsExecutor",
+        new=MockQiskitDynamicsExecutor,
+    )
     mocker.patch("requests.post", side_effect=mock_post_requests)
     mocker.patch("requests.Session", return_value=mss_client)
     mocker.patch(
@@ -352,6 +364,13 @@ def _patch_async_client_sim2q(mocker):
         post=mock_mss_post_requests,
     )
 
+    mocker.patch(
+        "app.services.scheduler.utils.QuantifyExecutor", new=MockQuantifyExecutor
+    )
+    mocker.patch(
+        "app.services.scheduler.utils.QiskitDynamicsExecutor",
+        new=MockQiskitDynamicsExecutor,
+    )
     mocker.patch("requests.post", side_effect=mock_post_requests)
     mocker.patch("requests.Session", return_value=mss_client)
     mocker.patch(
