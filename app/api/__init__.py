@@ -67,6 +67,7 @@ from ..utils.strings import uuid_str
 from .dependencies import (
     get_db_engine,
     get_queue_pool,
+    get_unverified_mss_is_admin,
     get_user_job_id_pair_dep,
     get_verified_mss_admin_user_id,
     get_verified_mss_user_id,
@@ -434,17 +435,19 @@ async def submit_job(
 async def view_job(
     job_id: str,
     user_id: str = Depends(get_verified_mss_user_id),
+    is_mss_admin: bool = Depends(get_unverified_mss_is_admin),
 ) -> Job:
     """View the job of given job_id if job belongs to current user or if user is admin
 
     Args:
         job_id: the unique identifier of the job
         user_id: the user_id as provided by MSS
+        is_mss_admin: whether the user is an mss admin or not
 
     Returns:
         the job of the given job_id
     """
-    return scheduler.get_job(job_id, user_id=user_id)
+    return scheduler.get_job(job_id, user_id=user_id, is_mss_admin=is_mss_admin)
 
 
 @app.post("/jobs/{job_id}/cancel")
@@ -452,6 +455,7 @@ async def cancel_job(
     job_id: str,
     user_id: str = Depends(get_verified_mss_user_id),
     queue_pool: QueuePool = Depends(get_queue_pool),
+    is_mss_admin: bool = Depends(get_unverified_mss_is_admin),
 ) -> GeneralMessage:
     """Cancels the job of given job_id if job belongs to current user or if user is admin
 
@@ -459,12 +463,47 @@ async def cancel_job(
         job_id: the unique identifier of the job
         user_id: the JWT token for the user, transformed into user_id by callback
         queue_pool: the collection of queues to run the jobs on
+        is_mss_admin: whether the user is an mss admin or not
 
     Returns:
         a general message showing status
+    Raises:
+        NotAuthenticatedError: user not found
+        ItemNotFoundError: Job {job_id} not found
+        rq.exceptions.InvalidJobOperationError: if the job has already been cancelled
+        rq.exceptions.InvalidJobOperation: if the job has already been cancelled
     """
-    scheduler.cancel_job(queue_pool, job_id=job_id, user_id=user_id)
-    return {"status": "success", "detail": f"Booking of id {job_id} cancelled"}
+    scheduler.cancel_job(
+        queue_pool, job_id=job_id, user_id=user_id, is_mss_admin=is_mss_admin
+    )
+    return {"status": "success", "detail": f"Job of id {job_id} cancelled"}
+
+
+@app.delete("/jobs/{job_id}")
+async def remove_job(
+    job_id: str,
+    user_id: str = Depends(get_verified_mss_user_id),
+    queue_pool: QueuePool = Depends(get_queue_pool),
+    is_mss_admin: bool = Depends(get_unverified_mss_is_admin),
+) -> GeneralMessage:
+    """Deletes the job of given job_id if job belongs to current user or if user is admin
+
+    Args:
+        job_id: the unique identifier of the job
+        user_id: the JWT token for the user, transformed into user_id by callback
+        queue_pool: the collection of queues to run the jobs on
+        is_mss_admin: whether the user is an mss admin or not
+
+    Returns:
+        a general message showing status
+    Raises:
+        NotAuthenticatedError: user not found
+        ItemNotFoundError: Job {job_id} not found
+    """
+    scheduler.delete_job(
+        queue_pool, job_id=job_id, user_id=user_id, is_mss_admin=is_mss_admin
+    )
+    return {"status": "success", "detail": f"Job of id {job_id} deleted"}
 
 
 @app.get("/jobs")

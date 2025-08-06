@@ -1056,11 +1056,9 @@ def test_upload_invalid_job(client, redis_conn, worker, job, jobs_folder, mocker
     # using context manager to ensure on_startup runs
     with client as client:
         users = _create_many_users(client, raw_users=USERS[:1])
-        job = copy.deepcopy(job)
-        job.setdefault("job_id", "dummy")
-
+        raw_jobs = _get_raw_jobs(job, durations=[0.2])
         job_metadata = _get_job_submission_metadata(
-            client, jobs=[job], users=users, mocker=mocker, jobs_folder=jobs_folder
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
         job_info = job_metadata[0]
 
@@ -1085,11 +1083,9 @@ def test_duplicate_job_upload(client, redis_conn, jobs_folder, worker, job, mock
     """Uploading two jobs of the same job_id returns an error"""
     with client as client:
         users = _create_many_users(client, raw_users=USERS[:1])
-        job = copy.deepcopy(job)
-        job_id = job.setdefault("job_id", "dummy")
-
+        raw_jobs = _get_raw_jobs(job, durations=[0.2])
         job_metadata = _get_job_submission_metadata(
-            client, jobs=[job], users=users, mocker=mocker, jobs_folder=jobs_folder
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
         job_info = job_metadata[0]
 
@@ -1116,12 +1112,116 @@ def test_duplicate_job_upload(client, redis_conn, jobs_folder, worker, job, mock
 
             worker.work(burst=True)
 
-    expected_err_resp = {"detail": f"job {job_id} already exists"}
+    expected_err_resp = {"detail": f"job {job_info["job_id"]} already exists"}
     assert first_response.status_code == 200
     assert second_response.status_code == 409
     assert second_response.json() == expected_err_resp
     assert third_response.status_code == 409
     assert third_response.json() == expected_err_resp
+
+
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_remove_job(client, redis_conn, jobs_folder, worker, job, mocker):
+    """DELETE to '/jobs/{job_id}' deletes the given job if job belongs to user"""
+    # using context manager to ensure on_startup runs
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS[:2])
+        raw_jobs = _get_raw_jobs(job, durations=[0.2, 1, 0.3])
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
+
+        # submit many jobs from many users
+        _submit_multiple_jobs_v2(client, data=job_metadata_list)
+
+        # start the worker
+        worker.work(burst=True)
+
+        # initiate delete
+        job_info = job_metadata_list[0]
+        headers = create_mss_headers(user_id=job_info["user_id"])
+        deletion_response = client.delete(
+            f"/jobs/{job_info["job_id"]}", headers=headers
+        )
+        # run the rest of the tasks
+        worker.work(burst=True)
+
+        jobs_in_db = _get_jobs_in_redis(redis_conn)
+        job_ids_in_db = sorted([v.job_id for v in jobs_in_db])
+        expected_ids = sorted([v["job_id"] for v in job_metadata_list[1:]])
+        assert deletion_response.status_code == 200
+        assert job_ids_in_db == expected_ids
+
+
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_remove_another_users_job(client, redis_conn, jobs_folder, worker, job, mocker):
+    """DELETE to '/jobs/{job_id}' fails if the user does not own the given job"""
+    # using context manager to ensure on_startup runs
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS[:2])
+        raw_jobs = _get_raw_jobs(job, durations=[0.2, 1, 0.3])
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
+
+        # submit many jobs from many users
+        _submit_multiple_jobs_v2(client, data=job_metadata_list)
+
+        # start the worker
+        worker.work(burst=True)
+
+        # initiate delete
+        another_user = users[1]
+        job_info = job_metadata_list[0]
+        job_id = job_info["job_id"]
+        headers = create_mss_headers(user_id=another_user["id"])
+        deletion_response = client.delete(f"/jobs/{job_id}", headers=headers)
+        # run the rest of the tasks
+        worker.work(burst=True)
+
+        jobs_in_db = _get_jobs_in_redis(redis_conn)
+        job_ids_in_db = sorted([v.job_id for v in jobs_in_db])
+        expected_ids = sorted([v["job_id"] for v in job_metadata_list])
+        assert deletion_response.status_code == 404
+        assert deletion_response.json() == {"detail": f"Job {job_id} not found"}
+        assert job_ids_in_db == expected_ids
+
+
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_admin_remove_job(client, redis_conn, jobs_folder, worker, job, mocker):
+    """DELETE to '/jobs/{job_id}' deletes the given job if user is admin"""
+    # using context manager to ensure on_startup runs
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS[:2])
+        raw_jobs = _get_raw_jobs(job, durations=[0.2, 1, 0.3])
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
+
+        # submit many jobs from many users
+        _submit_multiple_jobs_v2(client, data=job_metadata_list)
+
+        # start the job registration but stop there
+        worker.work(burst=True)
+
+        # initiate delete
+        another_user = users[1]
+        job_info = job_metadata_list[0]
+        headers = create_mss_headers(user_id=another_user["id"], is_admin=True)
+        deletion_response = client.delete(
+            f"/jobs/{job_info["job_id"]}", headers=headers
+        )
+        # run the rest of the tasks
+        worker.work(burst=True)
+
+        jobs_in_db = _get_jobs_in_redis(redis_conn)
+        job_ids_in_db = sorted([v.job_id for v in jobs_in_db])
+        expected_ids = sorted([v["job_id"] for v in job_metadata_list[1:]])
+        assert deletion_response.status_code == 200
+        assert job_ids_in_db == expected_ids
 
 
 @pytest.mark.timeout(180)
@@ -1301,6 +1401,9 @@ def test_view_job(
 
     with client as client:
         user_id, _ = _create_user(client, user=user)
+        other_user_id, _ = _create_user(
+            client, user={**user, "email": f"extra-{user["email"]}"}
+        )
         job_id = job["job_id"]
         token, _ = _get_token(
             client, mocker, data={"user_id": user_id, "job_id": job_id}
@@ -1370,6 +1473,69 @@ def test_unauthenticated_view_job(
         response = client.get(f"/jobs/{job_id}", headers=headers)
         assert response.status_code == 401
         assert response.json() == {"detail": "user not authenticated"}
+
+
+@pytest.mark.parametrize("client, worker, job, device_name, user", _VIEW_JOB_PARAMS[:3])
+def test_unauthorized_view_job(
+    client, worker, job, device_name, user, jobs_folder, mocker: MockerFixture
+):
+    """Get to /jobs/{job_id} raise 404 if user is not owner"""
+    job_file_path = _save_job_file(folder=jobs_folder, job=job)
+
+    with client as client:
+        user_id, _ = _create_user(client, user=user)
+        other_user_id, _ = _create_user(
+            client, user={**user, "email": f"extra-{user["email"]}"}
+        )
+        job_id = job["job_id"]
+        token, _ = _get_token(
+            client, mocker, data={"user_id": user_id, "job_id": job_id}
+        )
+
+        # submit job
+        headers = _get_headers(token)
+
+        with open(job_file_path, "rb") as file:
+            client.post("/jobs", files={"upload_file": file}, headers=headers)
+
+        received_job, response = _view_job(client, user_id=other_user_id, job_id=job_id)
+        assert received_job is None
+
+        assert response.status_code == 404
+        assert response.json() == {"detail": f"Job {job_id} not found"}
+
+
+@pytest.mark.parametrize("client, worker, job, device_name, user", _VIEW_JOB_PARAMS[:3])
+def test_admin_view_job(
+    client, worker, job, device_name, user, jobs_folder, mocker: MockerFixture
+):
+    """Get to /jobs/{job_id} returns the job if user is admin"""
+    job_file_path = _save_job_file(folder=jobs_folder, job=job)
+
+    with client as client:
+        user_id, _ = _create_user(client, user=user)
+        other_user_id, _ = _create_user(
+            client, user={**user, "email": f"extra-{user["email"]}"}
+        )
+        job_id = job["job_id"]
+        token, _ = _get_token(
+            client, mocker, data={"user_id": user_id, "job_id": job_id}
+        )
+
+        # submit job
+        headers = _get_headers(token)
+
+        with open(job_file_path, "rb") as file:
+            resp = client.post("/jobs", files={"upload_file": file}, headers=headers)
+
+        expected_job = Job.model_validate(resp.json())
+
+        received_job, response = _view_job(
+            client, user_id=other_user_id, job_id=job_id, is_admin=True
+        )
+
+        assert response.status_code == 200
+        assert received_job == expected_job
 
 
 @pytest.mark.timeout(240)
@@ -1697,7 +1863,7 @@ def _cancel_booking(client: "TestClient", token: str, booking_id: str) -> "Respo
 
 
 def _view_job(
-    client: "TestClient", user_id: str, job_id: str
+    client: "TestClient", user_id: str, job_id: str, is_admin: Optional[bool] = None
 ) -> Tuple[Optional[Job], "Response"]:
     """Gets the job as viewed on the REST API
 
@@ -1705,11 +1871,12 @@ def _view_job(
         client: the TestClient for the running tests in
         user_id: the unique identifier of the user associated with this job
         job_id: the unique identifier of the job
+        is_admin: whether the MSS user is admin
 
     Returns:
         the tuple of the job or None if no job and the httpx.Response from endpoint
     """
-    headers = create_mss_headers(user_id)
+    headers = create_mss_headers(user_id, is_admin=is_admin)
     response = client.get(f"/jobs/{job_id}", headers=headers)
     try:
         job = Job.model_validate(response.json())

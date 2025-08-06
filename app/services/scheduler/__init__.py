@@ -14,6 +14,7 @@
 from .service import (
     cancel_booking,
     cancel_job,
+    delete_job,
     delete_user_profile,
     get_job,
     get_many_jobs,

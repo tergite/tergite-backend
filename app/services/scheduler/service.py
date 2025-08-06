@@ -16,7 +16,7 @@
 # - Martin Ahindura, 2023, 2025
 #
 """Module containing service for scheduling jobs"""
-
+import logging
 from contextlib import suppress
 from pathlib import Path
 from typing import List, Optional
@@ -115,7 +115,9 @@ def submit_booking(
     return booking
 
 
-def cancel_booking(queues: QueuePool, user_id: str, booking_id: str):
+def cancel_booking(
+    queues: QueuePool, user_id: str, booking_id: str, is_mss_admin: bool = False
+):
     """Cancels the given booking as long as the user is the owner or is admin
 
     If the booking has already started, canceling fails.
@@ -124,6 +126,7 @@ def cancel_booking(queues: QueuePool, user_id: str, booking_id: str):
         queues: the collection of queues on which jobs run.
         booking_id: the unique identifier of the booking to cancel
         user_id: the ID of the user cancelling the booking
+        is_mss_admin: whether the user is an MSS admin
 
     Raises:
         ItemNotFoundError: the booking of id {booking_id} was not found
@@ -142,7 +145,7 @@ def cancel_booking(queues: QueuePool, user_id: str, booking_id: str):
     booking = get_booking(
         db_engine,
         Booking.id == booking_id,
-        or_(Booking.user_id == user_id, user.is_admin == True),
+        or_(Booking.user_id == user_id, user.is_admin == True, is_mss_admin == True),
     )
     if booking is None:
         raise ItemNotFoundError(f"the booking of id {booking_id} was not found")
@@ -248,13 +251,16 @@ def submit_job_file(
     return job
 
 
-def cancel_job(queues: QueuePool, job_id: str, user_id: str) -> Job:
+def cancel_job(
+    queues: QueuePool, job_id: str, user_id: str, is_mss_admin: bool = False
+) -> Job:
     """Cancels the job of a given job_id if it belongs to the user or the user is admin
 
     Args:
         queues: the collection of queues on which jobs run.
         job_id: the unique identifier of the job
         user_id: the user_id of the user requesting the job
+        is_mss_admin: whether the user is an MSS admin
 
     Returns:
         the job
@@ -278,7 +284,8 @@ def cancel_job(queues: QueuePool, job_id: str, user_id: str) -> Job:
     job_store = get_jobs_store(url=jobs_store_url)
     job: Job = job_store.get_one(job_id)
 
-    if not user.is_admin and job.user_id != user_id:
+    is_owner = job.user_id == user_id
+    if not user.is_admin and not is_mss_admin and not is_owner:
         raise ItemNotFoundError(f"Job {job_id} not found")
 
     _cancel_job_in_queues(queues, job)
@@ -293,12 +300,49 @@ def cancel_job(queues: QueuePool, job_id: str, user_id: str) -> Job:
     return job
 
 
-def get_job(job_id: str, user_id: str) -> Job:
+def delete_job(
+    queues: QueuePool, job_id: str, user_id: str, is_mss_admin: bool = False
+) -> Job:
+    """Deletes the job of a given job_id if it belongs to the user or the user is admin
+
+    Args:
+        queues: the collection of queues on which jobs run.
+        job_id: the unique identifier of the job
+        user_id: the user_id of the user requesting the job
+        is_mss_admin: whether the user is an MSS admin
+
+    Returns:
+        the job
+
+    Raises:
+        NotAuthenticatedError: user not found
+        ItemNotFoundError: Job {job_id} not found
+    """
+    with suppress(rq_errors.InvalidJobOperation, rq_errors.InvalidJobOperationError):
+        job = cancel_job(
+            queues, job_id=job_id, user_id=user_id, is_mss_admin=is_mss_admin
+        )
+
+    context = get_queue_context()
+
+    job_store = get_jobs_store(url=context["jobs_store_url"])
+
+    try:
+        job_store.delete_many((job_id,))
+    except ValidationError as exp:
+        logging.error(f"error deleting job {job_id}: {exp}")
+        raise ItemNotFoundError(f"Job {job_id} not found")
+
+    return job
+
+
+def get_job(job_id: str, user_id: str, is_mss_admin: bool = False) -> Job:
     """Get the job of a given job_id if it belongs to the user or the user is admin
 
     Args:
         job_id: the unique identifier of the job
         user_id: the user_id of the user requesting the job
+        is_mss_admin: whether the user is an MSS admin
 
     Returns:
         the job
@@ -320,7 +364,8 @@ def get_job(job_id: str, user_id: str) -> Job:
     job_store = get_jobs_store(url=jobs_store_url)
     job: Job = job_store.get_one(job_id)
 
-    if user.is_admin or job.user_id == user_id:
+    is_owner = job.user_id == user_id
+    if user.is_admin or is_mss_admin or is_owner:
         return job
 
     raise ItemNotFoundError(f"Job {job_id} not found")

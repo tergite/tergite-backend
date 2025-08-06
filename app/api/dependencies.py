@@ -161,6 +161,22 @@ def get_verified_mss_admin_user_id(request: Request) -> str:
     return user_id
 
 
+def get_unverified_mss_is_admin(request: Request) -> bool:
+    """Gets the MSS flag that is-admin, without verifying
+
+    Args:
+        request: the current FastAPI request
+
+    Returns:
+        the tru if is-admin is true else false
+    """
+    try:
+        is_admin = request.headers["x-mss-is-admin"]
+        return is_admin.lower().strip() == "true"
+    except (KeyError, ValueError):
+        return False
+
+
 def get_verified_mss_user_id(request: Request) -> str:
     """Returns the user_id as got from MSS passed through special headers
 
