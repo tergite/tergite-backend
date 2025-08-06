@@ -1017,25 +1017,35 @@ def test_submit_long_jobs_before_booking(
         assert job_estimated_durations == [0.3, 1, 0.2, 0.1, 3.0, 4.0, 2.9]
 
 
-def test_submit_jobs_invalid_token(quantify_rest_client, rq_worker, redis_client):
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_submit_jobs_invalid_token(client, redis_conn, worker, job, jobs_folder):
     """POST '/jobs' with invalid tokens results in an error"""
-    with quantify_rest_client as client:
+    with client as client:
         headers = _get_headers("token")
-        response = client.post("/jobs", headers=headers, json=JOBS[0])
+        job_file_path = _save_job_file(folder=jobs_folder, job=job)
+        with open(job_file_path, "rb") as file:
+            response = client.post(
+                "/jobs", files={"upload_file": file}, headers=headers
+            )
+
         json_response = response.json()
 
         assert response.status_code == 401
         assert "not authenticated" in json_response["detail"]
 
 
-def test_submit_jobs_without_token(quantify_rest_client, rq_worker, redis_client):
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_submit_jobs_without_token(client, redis_conn, worker, job, jobs_folder):
     """POST to '/jobs' jobs without a token results in an error"""
-    with quantify_rest_client as client:
-        response = client.post("/jobs", json=JOBS[0])
+    with client as client:
+        job_file_path = _save_job_file(folder=jobs_folder, job=job)
+        with open(job_file_path, "rb") as file:
+            response = client.post("/jobs", files={"upload_file": file})
+
         json_response = response.json()
 
         assert response.status_code == 401
-        assert json_response["detail"] == "Not authenticated"
+        assert json_response["detail"] == "Unauthorized"
 
 
 @pytest.mark.timeout(180)
