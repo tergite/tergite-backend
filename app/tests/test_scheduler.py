@@ -850,9 +850,10 @@ def test_submit_jobs_in_idle_booking(
             assert first_non_booker_job_start < booking_end_timestamp
 
 
+# _SIMPLE_UPLOAD_JOB_PARAMS[:-1] because the 2-qubit execution, processing takes long
 @pytest.mark.timeout(240)
 @pytest.mark.parametrize(
-    "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:1]
+    "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-1]
 )
 def test_submit_jobs_in_idle_booking_before_another(
     client,
@@ -867,7 +868,7 @@ def test_submit_jobs_in_idle_booking_before_another(
         # create many users and their tokens
         users = _create_many_users(client)
 
-        durations = [0.2, 3, 4, 1.1, 2.9, 0.4, 0.15]
+        durations = [0.2, 3, 4, 1, 2.9, 0.3, 0.15]
         raw_jobs = _get_raw_jobs(job, durations)
         # Creating this job metadata list first because it takes up a lot of time
         job_metadata_list = _get_job_submission_metadata(
@@ -923,14 +924,14 @@ def test_submit_jobs_in_idle_booking_before_another(
         # Time left = 3 - (0.2 + 1) = 1.8
         # Therefore job (duration=3) is pushed to waitlist
         # job (duration=4) is pushed to waitlist
-        # job (duration=1.1) is run immediately; time left is about 0.7
+        # job (duration=1) is run immediately; time left is about 0.8
         # job (duration=2.9) from booker fails immediately as it is too long for the current booking
-        # job (duration=0.4) runs, time left is about 0.3
-        # job (duration=0.15) runs, time left is about 0.15
+        # job (duration=0.3) runs, time left is about 0.5
+        # job (duration=0.15) runs, time left is about 0.35
         #
         # first and fifth jobs are submitted by the owner of the booking;
         # the fourth is too long for the current booking so it fails immediately.
-        non_booker_pre_2dn_slot_durations = (1.1, 0.4, 0.15)
+        non_booker_pre_2dn_slot_durations = (1, 0.3, 0.15)
         booker_job_durations = (0.2, 2.9)
         expected_non_booker_job_ids_pre_2nd_slot = [
             v["job_id"]
@@ -964,51 +965,56 @@ def test_submit_jobs_in_idle_booking_before_another(
         )
 
 
-@pytest.mark.timeout(180)
+# _SIMPLE_UPLOAD_JOB_PARAMS[:-1] because the 2-qubit execution, processing takes long
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize(
+    "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-1]
+)
 def test_submit_long_jobs_before_booking(
-    quantify_rest_client, rq_worker, redis_client, mocker: MockerFixture
+    client,
+    worker,
+    redis_conn,
+    job,
+    jobs_folder,
+    mocker,
 ):
     """POST long jobs to '/jobs' before booking starts waitlists them but runs the shorter ones"""
-    with quantify_rest_client as client:
+    with client as client:
         # create many users and their tokens
-        user_id_token_map = _create_user_token_map(client, mocker=mocker)
+        users = _create_many_users(client)
+
+        durations = [0.3, 3, 4, 1, 2.9, 0.2, 0.1]
+        raw_jobs = _get_raw_jobs(job, durations)
+        # Creating this job metadata list first because it takes up a lot of time
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
 
         # create booking
         # first user; thus first job (short duration) belongs to them
-        booker_user_id = next(islice(user_id_token_map, 0, 1))
-        booker_token = user_id_token_map[booker_user_id]
+        booker = users[0]
+        booker_id = booker["id"]
 
-        # create job data
-        durations = [0.4, 3, 4, 1.1, 2.9, 0.3, 0.1]
-        raw_jobs = [
-            {"type": "test", "test_duration": duration, "job_id": f"{uuid4()}"}
-            for duration in durations
-        ]
-
+        # create booking
         booking_info = {"duration": 3, "starts_in": 2.2}
-        _create_booking(client, token=booker_token, booking=booking_info)
+        _create_booking_v2(client, user_id=booker_id, booking=booking_info)
 
-        # submit many jobs from many users when booking starts
-        _submit_multiple_jobs(
-            client,
-            user_id_token_map=user_id_token_map,
-            is_job_id_specified=True,
-            raw_jobs=raw_jobs,
-        )
+        # submit many jobs from many users
+        _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        general_queue = rq_worker.queues[0]
+        general_queue = worker.queues[0]
         while general_queue.scheduled_job_registry.count > 0:
-            rq_worker.work(burst=True, with_scheduler=True)
+            worker.work(burst=True, with_scheduler=True)
 
-        jobs_in_db = _get_jobs_in_redis(redis_client)
+        jobs_in_db = _get_jobs_in_redis(redis_conn)
         jobs_in_db.sort(key=lambda v: v.start_utc)
         job_estimated_durations = [v.estimated_duration for v in jobs_in_db]
 
         assert all([job.status == JobStatus.SUCCESSFUL for job in jobs_in_db])
-        # the small-enough first (0.4, 1.1, 0.3, 0.1),
+        # the small-enough first (0.3, 1, 0.2, 0.1),
         # then the bigger ones (3.0, 4.0, 2.9) in original order
-        assert job_estimated_durations == [0.4, 1.1, 0.3, 0.1, 3.0, 4.0, 2.9]
+        assert job_estimated_durations == [0.3, 1, 0.2, 0.1, 3.0, 4.0, 2.9]
 
 
 def test_submit_jobs_invalid_token(quantify_rest_client, rq_worker, redis_client):
