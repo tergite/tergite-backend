@@ -1079,6 +1079,51 @@ def test_upload_invalid_job(client, redis_conn, worker, job, jobs_folder, mocker
         assert jobs_in_db == []
 
 
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_duplicate_job_upload(client, redis_conn, jobs_folder, worker, job, mocker):
+    """Uploading two jobs of the same job_id returns an error"""
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS[:1])
+        job = copy.deepcopy(job)
+        job_id = job.setdefault("job_id", "dummy")
+
+        job_metadata = _get_job_submission_metadata(
+            client, jobs=[job], users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
+        job_info = job_metadata[0]
+
+        with open(job_info["file_path"], "rb") as file:
+            first_response = client.post(
+                "/jobs", files={"upload_file": file}, headers=job_info["headers"]
+            )
+
+            worker.work(burst=True)
+
+            second_response = client.post(
+                "/jobs", files={"upload_file": file}, headers=job_info["headers"]
+            )
+
+            login_details = {
+                "user_id": job_info["user_id"],
+                "job_id": job_info["job_id"],
+            }
+            token, _ = _get_token(client, mocker, data=login_details)
+            fresh_headers = _get_headers(token)
+            third_response = client.post(
+                "/jobs", files={"upload_file": file}, headers=fresh_headers
+            )
+
+            worker.work(burst=True)
+
+    expected_err_resp = {"detail": f"job {job_id} already exists"}
+    assert first_response.status_code == 200
+    assert second_response.status_code == 409
+    assert second_response.json() == expected_err_resp
+    assert third_response.status_code == 409
+    assert third_response.json() == expected_err_resp
+
+
 @pytest.mark.timeout(180)
 def test_cancel_future_booking(
     quantify_rest_client, rq_worker, redis_client, mocker: MockerFixture

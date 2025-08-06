@@ -34,6 +34,7 @@ from ..services.scheduler.queues import QueuePool
 from ..services.scheduler.utils import get_executor, reset_cached_executor
 from ..utils.api import get_request_logs_store, verify_mss_signature
 from ..utils.exc import (
+    ConflictError,
     InvalidJobIdInUploadedFileError,
     ItemNotFoundError,
     NotAuthenticatedError,
@@ -246,7 +247,7 @@ def get_user_job_id_pair_dep(
 
         Raises:
             NotAuthenticatedError: job {job_id} does not exist for current user
-            UnauthorizedError: job {job_id} is already {auth_log.status}
+            ConflictError: job {job_id} is already {auth_log.status}
             UnauthorizedError: unexpected job id {job_id}
             InvalidJobIdInUploadedFileError: The job does not have a valid UUID4 {job_id_field}
         """
@@ -257,7 +258,7 @@ def get_user_job_id_pair_dep(
         try:
             get_job(job_id=job_id, user_id=user_id)
             if not job_exists:
-                raise UnauthorizedError(f"job {job_id} already exists")
+                raise ConflictError(f"job {job_id} already exists")
         except NotAuthenticatedError:
             raise NotAuthenticatedError(f"job {job_id} does not exist for current user")
         except ItemNotFoundError:

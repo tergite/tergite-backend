@@ -34,7 +34,7 @@ class ItemNotFoundError(BaseBccException):
 
 
 class ConflictError(BaseBccException):
-    """Error when the booking conflicts with another"""
+    """Error when an item conflicts with another"""
 
 
 class MaxBookingsError(BaseBccException):

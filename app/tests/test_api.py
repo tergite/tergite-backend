@@ -460,29 +460,29 @@ def test_root_invalid_headers(client, headers):
 #         assert raw_job_in_redis is None
 
 
-@pytest.mark.parametrize("client, redis_client, rq_worker, job", _UPLOAD_JOB_PARAMS)
-def test_duplicate_job_upload(
-    client, redis_client, jobs_folder, rq_worker, job, app_token_header
-):
-    job_id = job[_JOB_ID_FIELD]
-    job_file_path = _save_job_file(folder=jobs_folder, job=job)
-
-    with client as client:
-        with open(job_file_path, "rb") as file:
-            first_response = client.post(
-                "/jobs", files={"upload_file": file}, headers=app_token_header
-            )
-            # run the registration tasks
-            rq_worker.work(burst=True)
-
-            second_response = client.post(
-                "/jobs", files={"upload_file": file}, headers=app_token_header
-            )
-            # run the registration tasks
-            rq_worker.work(burst=True)
-
-    assert first_response.status_code == 200
-    assert second_response.status_code == 409
+# @pytest.mark.parametrize("client, redis_client, rq_worker, job", _UPLOAD_JOB_PARAMS)
+# def test_duplicate_job_upload(
+#     client, redis_client, jobs_folder, rq_worker, job, app_token_header
+# ):
+#     job_id = job[_JOB_ID_FIELD]
+#     job_file_path = _save_job_file(folder=jobs_folder, job=job)
+#
+#     with client as client:
+#         with open(job_file_path, "rb") as file:
+#             first_response = client.post(
+#                 "/jobs", files={"upload_file": file}, headers=app_token_header
+#             )
+#             # run the registration tasks
+#             rq_worker.work(burst=True)
+#
+#             second_response = client.post(
+#                 "/jobs", files={"upload_file": file}, headers=app_token_header
+#             )
+#             # run the registration tasks
+#             rq_worker.work(burst=True)
+#
+#     assert first_response.status_code == 200
+#     assert second_response.status_code == 409
 
 
 @pytest.mark.parametrize("client, redis_client, rq_worker, job", _UPLOAD_JOB_PARAMS)
