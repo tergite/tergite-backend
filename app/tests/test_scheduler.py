@@ -1048,6 +1048,37 @@ def test_submit_jobs_without_token(client, redis_conn, worker, job, jobs_folder)
         assert json_response["detail"] == "Unauthorized"
 
 
+@pytest.mark.parametrize(
+    "client, redis_conn, worker, job", _ALL_INVALID_UPLOAD_JOB_PARAMS
+)
+def test_upload_invalid_job(client, redis_conn, worker, job, jobs_folder, mocker):
+    """POSTing an invalid structure of a job to '/jobs' fails"""
+    # using context manager to ensure on_startup runs
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS[:1])
+        job = copy.deepcopy(job)
+        job.setdefault("job_id", "dummy")
+
+        job_metadata = _get_job_submission_metadata(
+            client, jobs=[job], users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
+        job_info = job_metadata[0]
+
+        with open(job_info["file_path"], "rb") as file:
+            response = client.post(
+                "/jobs", files={"upload_file": file}, headers=job_info["headers"]
+            )
+
+        got = response.json()
+
+        assert response.status_code == 400
+        assert got["detail"].startswith("Invalid file: ")
+
+        worker.work(burst=True)
+        jobs_in_db = _get_jobs_in_redis(redis_conn)
+        assert jobs_in_db == []
+
+
 @pytest.mark.timeout(180)
 def test_cancel_future_booking(
     quantify_rest_client, rq_worker, redis_client, mocker: MockerFixture

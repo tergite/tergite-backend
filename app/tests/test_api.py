@@ -325,139 +325,139 @@ def test_root_invalid_headers(client, headers):
 #         assert got == expected
 
 
-@pytest.mark.parametrize(
-    "client, redis_client, rq_worker, job, expected_counts", _ALL_UPLOAD_JOB_PARAMS
-)
-def test_upload_job(
-    client,
-    redis_client,
-    jobs_folder,
-    rq_worker,
-    job,
-    expected_counts,
-    app_token_header,
-    freezer,
-):
-    """POST to '/jobs' uploads a new job"""
-    job_id = job[_JOB_ID_FIELD]
-    job_file_path = _save_job_file(folder=jobs_folder, job=job)
-    timestamp = MOCK_NOW.replace("+00:00", "Z")
-
-    # using context manager to ensure on_startup runs
-    with client as client:
-        with open(job_file_path, "rb") as file:
-            response = client.post(
-                "/jobs", files={"upload_file": file}, headers=app_token_header
-            )
-
-        got = response.json()
-        expected = {"message": job_id}
-        expected_job_in_redis = {
-            "job_id": job_id,
-            "device": os.environ["DEFAULT_PREFIX"],
-            "download_url": f"http://localhost:8000/logfiles/{job_id}",
-            "failure_reason": None,
-            "cancellation_reason": None,
-            "status": "successful",
-            "stage": 9,
-            "timestamps": {
-                _REGISTRATION_STAGE: {"started": timestamp, "finished": timestamp},
-                _PRE_PROCESSING_STAGE: None,
-                _EXECUTION_STAGE: {"started": timestamp, "finished": timestamp},
-                _POST_PROCESSING_STAGE: {"started": timestamp, "finished": timestamp},
-                _FINAL_STAGE: {"started": timestamp, "finished": timestamp},
-            },
-            "result": {"memory": [["0x0"] * 1024]},
-            "created_at": timestamp,
-            "updated_at": timestamp,
-        }
-
-        assert response.status_code == 200
-        assert got == expected
-
-        rq_worker.work(burst=True)
-        raw_job_in_redis = redis_client.hget(_JOBS_HASH_NAME, job_id)
-        job_in_redis = json.loads(raw_job_in_redis)
-
-        # remove calibration date because it runs outside date freezer
-        job_in_redis.pop("calibration_date")
-
-        # Remove the result, because it is probabilistic
-        results = job_in_redis.pop("result")
-        expected_job_in_redis.pop("result")
-
-        # Check whether the result is plausible
-        # This can be seen as testing gate fidelity ~70%
-        assert _job_results_match(
-            results=results["memory"][0], expected_min_counts=expected_counts
-        )
-        assert job_in_redis == expected_job_in_redis
-
-
-@pytest.mark.parametrize(
-    "client, redis_client, rq_worker, job", _ALL_INVALID_UPLOAD_JOB_PARAMS
-)
-def test_upload_invalid_job(
-    client,
-    redis_client,
-    rq_worker,
-    job,
-    jobs_folder,
-    app_token_header,
-    freezer,
-):
-    """POSTing an invalid structure of a job to '/jobs' fails"""
-    job_id = job.get(_JOB_ID_FIELD, "dummy")
-    job_file_path = _save_job_file(folder=jobs_folder, job=job)
-
-    # using context manager to ensure on_startup runs
-    with client as client:
-        with open(job_file_path, "rb") as file:
-            response = client.post(
-                "/jobs", files={"upload_file": file}, headers=app_token_header
-            )
-
-        got = response.json()
-
-        assert response.status_code == 400
-        assert got["detail"].startswith("Invalid file: ")
-
-        rq_worker.work(burst=True)
-        raw_job_in_redis = redis_client.hget(_JOBS_HASH_NAME, job_id)
-        assert raw_job_in_redis is None
+# @pytest.mark.parametrize(
+#     "client, redis_client, rq_worker, job, expected_counts", _ALL_UPLOAD_JOB_PARAMS
+# )
+# def test_upload_job(
+#     client,
+#     redis_client,
+#     jobs_folder,
+#     rq_worker,
+#     job,
+#     expected_counts,
+#     app_token_header,
+#     freezer,
+# ):
+#     """POST to '/jobs' uploads a new job"""
+#     job_id = job[_JOB_ID_FIELD]
+#     job_file_path = _save_job_file(folder=jobs_folder, job=job)
+#     timestamp = MOCK_NOW.replace("+00:00", "Z")
+#
+#     # using context manager to ensure on_startup runs
+#     with client as client:
+#         with open(job_file_path, "rb") as file:
+#             response = client.post(
+#                 "/jobs", files={"upload_file": file}, headers=app_token_header
+#             )
+#
+#         got = response.json()
+#         expected = {"message": job_id}
+#         expected_job_in_redis = {
+#             "job_id": job_id,
+#             "device": os.environ["DEFAULT_PREFIX"],
+#             "download_url": f"http://localhost:8000/logfiles/{job_id}",
+#             "failure_reason": None,
+#             "cancellation_reason": None,
+#             "status": "successful",
+#             "stage": 9,
+#             "timestamps": {
+#                 _REGISTRATION_STAGE: {"started": timestamp, "finished": timestamp},
+#                 _PRE_PROCESSING_STAGE: None,
+#                 _EXECUTION_STAGE: {"started": timestamp, "finished": timestamp},
+#                 _POST_PROCESSING_STAGE: {"started": timestamp, "finished": timestamp},
+#                 _FINAL_STAGE: {"started": timestamp, "finished": timestamp},
+#             },
+#             "result": {"memory": [["0x0"] * 1024]},
+#             "created_at": timestamp,
+#             "updated_at": timestamp,
+#         }
+#
+#         assert response.status_code == 200
+#         assert got == expected
+#
+#         rq_worker.work(burst=True)
+#         raw_job_in_redis = redis_client.hget(_JOBS_HASH_NAME, job_id)
+#         job_in_redis = json.loads(raw_job_in_redis)
+#
+#         # remove calibration date because it runs outside date freezer
+#         job_in_redis.pop("calibration_date")
+#
+#         # Remove the result, because it is probabilistic
+#         results = job_in_redis.pop("result")
+#         expected_job_in_redis.pop("result")
+#
+#         # Check whether the result is plausible
+#         # This can be seen as testing gate fidelity ~70%
+#         assert _job_results_match(
+#             results=results["memory"][0], expected_min_counts=expected_counts
+#         )
+#         assert job_in_redis == expected_job_in_redis
 
 
-@pytest.mark.parametrize(
-    "client, redis_client, rq_worker, job, headers, app_token",
-    _UNAUTHENTICATED_UPLOAD_JOB_PARAMS,
-)
-def test_unauthenticated_upload_job(
-    client, redis_client, jobs_folder, rq_worker, job, headers, app_token
-):
-    """POST to '/jobs' uploads a new job"""
-    job_id = job[_JOB_ID_FIELD]
-    job_file_path = _save_job_file(folder=jobs_folder, job=job)
+# @pytest.mark.parametrize(
+#     "client, redis_client, rq_worker, job", _ALL_INVALID_UPLOAD_JOB_PARAMS
+# )
+# def test_upload_invalid_job(
+#     client,
+#     redis_client,
+#     rq_worker,
+#     job,
+#     jobs_folder,
+#     app_token_header,
+#     freezer,
+# ):
+#     """POSTing an invalid structure of a job to '/jobs' fails"""
+#     job_id = job.get(_JOB_ID_FIELD, "dummy")
+#     job_file_path = _save_job_file(folder=jobs_folder, job=job)
+#
+#     # using context manager to ensure on_startup runs
+#     with client as client:
+#         with open(job_file_path, "rb") as file:
+#             response = client.post(
+#                 "/jobs", files={"upload_file": file}, headers=app_token_header
+#             )
+#
+#         got = response.json()
+#
+#         assert response.status_code == 400
+#         assert got["detail"].startswith("Invalid file: ")
+#
+#         rq_worker.work(burst=True)
+#         raw_job_in_redis = redis_client.hget(_JOBS_HASH_NAME, job_id)
+#         assert raw_job_in_redis is None
 
-    # using context manager to ensure on_startup runs
-    with client as client:
-        with open(job_file_path, "rb") as file:
-            response = client.post(
-                "/jobs", files={"upload_file": file}, headers=headers
-            )
 
-        rq_worker.work(burst=True)
-        raw_job_in_redis = redis_client.hget(_JOBS_HASH_NAME, job_id)
-        got = response.json()
-        detail = (
-            "Unauthorized"
-            if app_token is None
-            else f"job {job_id} does not exist for current user"
-        )
-        expected = {"detail": detail}
-
-        assert response.status_code == 401
-        assert got == expected
-        assert raw_job_in_redis is None
+# @pytest.mark.parametrize(
+#     "client, redis_client, rq_worker, job, headers, app_token",
+#     _UNAUTHENTICATED_UPLOAD_JOB_PARAMS,
+# )
+# def test_unauthenticated_upload_job(
+#     client, redis_client, jobs_folder, rq_worker, job, headers, app_token
+# ):
+#     """POST to '/jobs' uploads a new job"""
+#     job_id = job[_JOB_ID_FIELD]
+#     job_file_path = _save_job_file(folder=jobs_folder, job=job)
+#
+#     # using context manager to ensure on_startup runs
+#     with client as client:
+#         with open(job_file_path, "rb") as file:
+#             response = client.post(
+#                 "/jobs", files={"upload_file": file}, headers=headers
+#             )
+#
+#         rq_worker.work(burst=True)
+#         raw_job_in_redis = redis_client.hget(_JOBS_HASH_NAME, job_id)
+#         got = response.json()
+#         detail = (
+#             "Unauthorized"
+#             if app_token is None
+#             else f"job {job_id} does not exist for current user"
+#         )
+#         expected = {"detail": detail}
+#
+#         assert response.status_code == 401
+#         assert got == expected
+#         assert raw_job_in_redis is None
 
 
 @pytest.mark.parametrize("client, redis_client, rq_worker, job", _UPLOAD_JOB_PARAMS)
