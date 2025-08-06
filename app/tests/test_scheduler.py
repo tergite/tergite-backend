@@ -1224,6 +1224,48 @@ def test_admin_remove_job(client, redis_conn, jobs_folder, worker, job, mocker):
         assert job_ids_in_db == expected_ids
 
 
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_unauthenticated_remove_job(
+    client, redis_conn, jobs_folder, worker, job, mocker
+):
+    """Delete to /jobs/{job_id} returns 401 error when accessed outside MSS or without proper MSS headers"""
+    # using context manager to ensure on_startup runs
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS[:2])
+        raw_jobs = _get_raw_jobs(job, durations=[0.2, 1, 0.3])
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
+
+        # submit many jobs from many users
+        _submit_multiple_jobs_v2(client, data=job_metadata_list)
+
+        # start the job registration but stop there
+        worker.work(burst=True)
+
+        # initiate delete
+        job_info = job_metadata_list[0]
+        job_id = job_info["job_id"]
+
+        response = client.delete(f"/jobs/{job_id}")
+        assert response.status_code == 401
+        assert response.json() == {"detail": "user not authenticated"}
+
+        # use a token used only for submitting jobs directly to the backend
+        response = client.get(f"/jobs/{job_id}", headers=job_info["headers"])
+        assert response.status_code == 401
+        assert response.json() == {"detail": "user not authenticated"}
+
+        # run the rest of the tasks
+        worker.work(burst=True)
+
+        jobs_in_db = _get_jobs_in_redis(redis_conn)
+        job_ids_in_db = sorted([v.job_id for v in jobs_in_db])
+        expected_ids = sorted([v["job_id"] for v in job_metadata_list])
+        assert job_ids_in_db == expected_ids
+
+
 @pytest.mark.timeout(180)
 def test_cancel_future_booking(
     quantify_rest_client, rq_worker, redis_client, mocker: MockerFixture

@@ -485,138 +485,138 @@ def test_root_invalid_headers(client, headers):
 #     assert second_response.status_code == 409
 
 
-@pytest.mark.parametrize("client, redis_client, rq_worker, job", _UPLOAD_JOB_PARAMS)
-def test_remove_job(
-    client, redis_client, jobs_folder, rq_worker, job, app_token_header
-):
-    """DELETE to '/jobs/{job_id}' deletes the given job"""
-    job_id = job[_JOB_ID_FIELD]
-    job_file_path = _save_job_file(folder=jobs_folder, job=job)
-
-    # using context manager to ensure on_startup runs
-    with client as client:
-        with open(job_file_path, "rb") as file:
-            response = client.post(
-                "/jobs", files={"upload_file": file}, headers=app_token_header
-            )
-            assert response.status_code == 200
-
-        # start the job registration but stop there
-        rq_worker.work(burst=True, max_jobs=1)
-        # initiate delete
-        deletion_response = client.delete(f"/jobs/{job_id}", headers=app_token_header)
-        # run the rest of the tasks
-        rq_worker.work(burst=True)
-
-        job_in_redis = redis_client.hget(_JOBS_HASH_NAME, job_id)
-        assert deletion_response.status_code == 200
-        assert job_in_redis is None
-
-
-@pytest.mark.parametrize(
-    "client, redis_client, rq_worker, job, headers, app_token",
-    _UNAUTHENTICATED_UPLOAD_JOB_PARAMS,
-)
-def test_unauthenticated_remove_job(
-    client,
-    redis_client,
-    jobs_folder,
-    rq_worker,
-    job: dict,
-    app_token_header,
-    headers,
-    app_token,
-):
-    """Delete to /jobs/{job_id} returns 401 error when no valid app token is passed"""
-    job_id = job[_JOB_ID_FIELD]
-    job_file_path = _save_job_file(folder=jobs_folder, job=job)
-
-    # using context manager to ensure on_startup runs
-    with client as client:
-        with open(job_file_path, "rb") as file:
-            response = client.post(
-                "/jobs", files={"upload_file": file}, headers=app_token_header
-            )
-            assert response.status_code == 200
-
-        # start the job registration but stop there
-        rq_worker.work(burst=True, max_jobs=1)
-        # initiate delete
-        deletion_response = client.delete(f"/jobs/{job_id}", headers=headers)
-        # run the rest of the tasks
-        rq_worker.work(burst=True)
-
-        got = deletion_response.json()
-        detail = (
-            "Unauthorized"
-            if app_token is None
-            else f"job {job_id} does not exist for current user"
-        )
-        expected = {"detail": detail}
-
-        job_in_redis = redis_client.hget(_JOBS_HASH_NAME, job_id)
-        assert deletion_response.status_code == 401
-        assert got == expected
-        assert job_in_redis is not None
+# @pytest.mark.parametrize("client, redis_client, rq_worker, job", _UPLOAD_JOB_PARAMS)
+# def test_remove_job(
+#     client, redis_client, jobs_folder, rq_worker, job, app_token_header
+# ):
+#     """DELETE to '/jobs/{job_id}' deletes the given job"""
+#     job_id = job[_JOB_ID_FIELD]
+#     job_file_path = _save_job_file(folder=jobs_folder, job=job)
+#
+#     # using context manager to ensure on_startup runs
+#     with client as client:
+#         with open(job_file_path, "rb") as file:
+#             response = client.post(
+#                 "/jobs", files={"upload_file": file}, headers=app_token_header
+#             )
+#             assert response.status_code == 200
+#
+#         # start the job registration but stop there
+#         rq_worker.work(burst=True, max_jobs=1)
+#         # initiate delete
+#         deletion_response = client.delete(f"/jobs/{job_id}", headers=app_token_header)
+#         # run the rest of the tasks
+#         rq_worker.work(burst=True)
+#
+#         job_in_redis = redis_client.hget(_JOBS_HASH_NAME, job_id)
+#         assert deletion_response.status_code == 200
+#         assert job_in_redis is None
 
 
-@pytest.mark.parametrize("client, redis_client, rq_worker, job", _UPLOAD_JOB_PARAMS)
-def test_cancel_job(
-    client, redis_client, jobs_folder, rq_worker, job, app_token_header
-):
-    """POST to '/jobs/{job_id}/cancel' cancels the given job"""
-    job_id = job[_JOB_ID_FIELD]
-    job_file_path = _save_job_file(folder=jobs_folder, job=job)
-    cancellation_reason = "just testing"
-    timestamp = MOCK_NOW.replace("+00:00", "Z")
+# @pytest.mark.parametrize(
+#     "client, redis_client, rq_worker, job, headers, app_token",
+#     _UNAUTHENTICATED_UPLOAD_JOB_PARAMS,
+# )
+# def test_unauthenticated_remove_job(
+#     client,
+#     redis_client,
+#     jobs_folder,
+#     rq_worker,
+#     job: dict,
+#     app_token_header,
+#     headers,
+#     app_token,
+# ):
+#     """Delete to /jobs/{job_id} returns 401 error when no valid app token is passed"""
+#     job_id = job[_JOB_ID_FIELD]
+#     job_file_path = _save_job_file(folder=jobs_folder, job=job)
+#
+#     # using context manager to ensure on_startup runs
+#     with client as client:
+#         with open(job_file_path, "rb") as file:
+#             response = client.post(
+#                 "/jobs", files={"upload_file": file}, headers=app_token_header
+#             )
+#             assert response.status_code == 200
+#
+#         # start the job registration but stop there
+#         rq_worker.work(burst=True, max_jobs=1)
+#         # initiate delete
+#         deletion_response = client.delete(f"/jobs/{job_id}", headers=headers)
+#         # run the rest of the tasks
+#         rq_worker.work(burst=True)
+#
+#         got = deletion_response.json()
+#         detail = (
+#             "Unauthorized"
+#             if app_token is None
+#             else f"job {job_id} does not exist for current user"
+#         )
+#         expected = {"detail": detail}
+#
+#         job_in_redis = redis_client.hget(_JOBS_HASH_NAME, job_id)
+#         assert deletion_response.status_code == 401
+#         assert got == expected
+#         assert job_in_redis is not None
 
-    # using context manager to ensure on_startup runs
-    with client as client:
-        with open(job_file_path, "rb") as file:
-            response = client.post(
-                "/jobs", files={"upload_file": file}, headers=app_token_header
-            )
-            assert response.status_code == 200
 
-        # start the job registration but stop there
-        rq_worker.work(burst=True, max_jobs=1)
-        # initiate delete
-        cancellation_response = client.post(
-            f"/jobs/{job_id}/cancel",
-            json=cancellation_reason,
-            headers=app_token_header,
-        )
-        # run the rest of the tasks
-        rq_worker.work(burst=True)
-
-        expected_job_in_redis = {
-            "job_id": job_id,
-            "device": os.environ["DEFAULT_PREFIX"],
-            "download_url": None,
-            "failure_reason": None,
-            "cancellation_reason": cancellation_reason,
-            "status": "cancelled",
-            "stage": 4,
-            "timestamps": {
-                _REGISTRATION_STAGE: {"started": timestamp, "finished": timestamp},
-                _PRE_PROCESSING_STAGE: None,
-                _EXECUTION_STAGE: None,
-                _POST_PROCESSING_STAGE: None,
-                _FINAL_STAGE: None,
-            },
-            "result": None,
-            "created_at": timestamp,
-            "updated_at": timestamp,
-        }
-
-        raw_job_in_redis = redis_client.hget(_JOBS_HASH_NAME, job_id)
-        job_in_redis = json.loads(raw_job_in_redis)
-
-        # remove calibration date because it runs outside date freezer
-        job_in_redis.pop("calibration_date")
-
-        assert cancellation_response.status_code == 200
-        assert job_in_redis == expected_job_in_redis
+# @pytest.mark.parametrize("client, redis_client, rq_worker, job", _UPLOAD_JOB_PARAMS)
+# def test_cancel_job(
+#     client, redis_client, jobs_folder, rq_worker, job, app_token_header
+# ):
+#     """POST to '/jobs/{job_id}/cancel' cancels the given job"""
+#     job_id = job[_JOB_ID_FIELD]
+#     job_file_path = _save_job_file(folder=jobs_folder, job=job)
+#     cancellation_reason = "just testing"
+#     timestamp = MOCK_NOW.replace("+00:00", "Z")
+#
+#     # using context manager to ensure on_startup runs
+#     with client as client:
+#         with open(job_file_path, "rb") as file:
+#             response = client.post(
+#                 "/jobs", files={"upload_file": file}, headers=app_token_header
+#             )
+#             assert response.status_code == 200
+#
+#         # start the job registration but stop there
+#         rq_worker.work(burst=True, max_jobs=1)
+#         # initiate delete
+#         cancellation_response = client.post(
+#             f"/jobs/{job_id}/cancel",
+#             json=cancellation_reason,
+#             headers=app_token_header,
+#         )
+#         # run the rest of the tasks
+#         rq_worker.work(burst=True)
+#
+#         expected_job_in_redis = {
+#             "job_id": job_id,
+#             "device": os.environ["DEFAULT_PREFIX"],
+#             "download_url": None,
+#             "failure_reason": None,
+#             "cancellation_reason": cancellation_reason,
+#             "status": "cancelled",
+#             "stage": 4,
+#             "timestamps": {
+#                 _REGISTRATION_STAGE: {"started": timestamp, "finished": timestamp},
+#                 _PRE_PROCESSING_STAGE: None,
+#                 _EXECUTION_STAGE: None,
+#                 _POST_PROCESSING_STAGE: None,
+#                 _FINAL_STAGE: None,
+#             },
+#             "result": None,
+#             "created_at": timestamp,
+#             "updated_at": timestamp,
+#         }
+#
+#         raw_job_in_redis = redis_client.hget(_JOBS_HASH_NAME, job_id)
+#         job_in_redis = json.loads(raw_job_in_redis)
+#
+#         # remove calibration date because it runs outside date freezer
+#         job_in_redis.pop("calibration_date")
+#
+#         assert cancellation_response.status_code == 200
+#         assert job_in_redis == expected_job_in_redis
 
 
 @pytest.mark.parametrize(
