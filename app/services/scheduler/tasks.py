@@ -313,8 +313,6 @@ def postprocess(
 
     update_job_stage(jobs_store, job_id=job_id, stage=Stage.PST_PROC_W)
 
-    # The return value will be passed to postprocessing_success_callback
-    print("Identified TQC storage file, reading file using storage file")
     quantum_job = read_job_from_hdf5(new_file)
 
     try:

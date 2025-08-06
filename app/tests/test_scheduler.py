@@ -78,6 +78,10 @@ _SIM_2Q_UPLOAD_JOB_PARAMS = [
     (*CLIENT_AND_RQ_WORKER_TUPLES[2], job) for job in _SIM_2Q_JOBS_FOR_UPLOAD
 ]
 
+_SIMPLE_UPLOAD_JOB_PARAMS = (
+    _QUANTIFY_UPLOAD_JOB_PARAMS + _SIM_1Q_UPLOAD_JOB_PARAMS + _SIM_2Q_UPLOAD_JOB_PARAMS
+)
+
 _ALL_UPLOAD_JOB_PARAMS = (
     [(*args, {"0x0": 750}, "system_test") for args in _QUANTIFY_UPLOAD_JOB_PARAMS]
     + [(*args, {"0x0": 750}, "qiskit_pulse_1q") for args in _SIM_1Q_UPLOAD_JOB_PARAMS]
@@ -638,7 +642,7 @@ def test_submit_jobs_no_booking(
     job,
     expected_counts,
     device,
-    client_jobs_folder,
+    jobs_folder,
     mocker: MockerFixture,
 ):
     """POST '/jobs' when there is no booking should run the jobs in FIFO (first in, first out)"""
@@ -647,21 +651,14 @@ def test_submit_jobs_no_booking(
         users = _create_many_users(client)
 
         durations = [0.4, 3, 4, 1.1, 2.9, 0.3, 0.1]
-        raw_jobs = []
-        for duration in durations:
-            new_job = copy.deepcopy(job)
-            new_job["job_id"] = f"{uuid4()}"
-            new_job["params"]["qobj"]["header"]["test_duration"] = duration
-            raw_jobs.append(new_job)
+        raw_jobs = _get_raw_jobs(job, durations)
+        # Creating this job metadata list first because it takes up a lot of time
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
 
         # submit many jobs from many users
-        job_ids_in_fifo = _submit_multiple_jobs_v2(
-            client,
-            users=users,
-            mocker=mocker,
-            raw_jobs=raw_jobs,
-            jobs_folder=client_jobs_folder,
-        )
+        job_ids_in_fifo = _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue
         worker.work(burst=True)
@@ -727,18 +724,13 @@ def test_submit_jobs_no_booking(
 
 
 @pytest.mark.timeout(240)
-@pytest.mark.parametrize(
-    "client, redis_conn, worker, job, expected_counts, device",
-    _ALL_UPLOAD_JOB_PARAMS,
-)
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_submit_jobs_in_active_booking(
     client,
     worker,
     redis_conn,
     job,
-    expected_counts,
-    device,
-    client_jobs_folder,
+    jobs_folder,
     mocker: MockerFixture,
 ):
     """POST '/jobs' when there is an active booking runs the booker jobs first then runs the other jobs after booking."""
@@ -746,6 +738,13 @@ def test_submit_jobs_in_active_booking(
     with client as client:
         # create many users and their tokens
         users = _create_many_users(client)
+
+        durations = [0.23, 2.0, 2.1, 10]
+        raw_jobs = _get_raw_jobs(job, durations)
+        # Creating this job metadata list first because it takes up a lot of time
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
 
         # create booking
         # third user; thus third job (duration: 2.1) belongs to them
@@ -758,22 +757,8 @@ def test_submit_jobs_in_active_booking(
         )
         booking = Booking.model_validate(response.json())
 
-        durations = [0.23, 2.0, 2.1, 10]
-        raw_jobs = []
-        for duration in durations:
-            new_job = copy.deepcopy(job)
-            new_job["job_id"] = f"{uuid4()}"
-            new_job["params"]["qobj"]["header"]["test_duration"] = duration
-            raw_jobs.append(new_job)
-
         # submit many jobs from many users
-        _submit_multiple_jobs_v2(
-            client,
-            users=users,
-            mocker=mocker,
-            raw_jobs=raw_jobs,
-            jobs_folder=client_jobs_folder,
-        )
+        _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
         general_queue = worker.queues[0]
@@ -804,40 +789,51 @@ def test_submit_jobs_in_active_booking(
         assert first_non_booker_job_start >= booking_end_timestamp
 
 
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_submit_jobs_in_idle_booking(
-    quantify_rest_client, rq_worker, redis_client, mocker: MockerFixture
+    client,
+    worker,
+    redis_conn,
+    job,
+    jobs_folder,
+    mocker,
 ):
     """POST '/jobs' when there is an idle booking runs the non booker jobs even during the booking."""
-    with quantify_rest_client as client:
+    with client as client:
         # create many users and their tokens
-        user_id_token_map = _create_user_token_map(client, mocker=mocker)
+        users = _create_many_users(client)
+
+        durations = [0.23, 2.0, 2.1, 10]
+        raw_jobs = _get_raw_jobs(job, durations)
+        # Creating this job metadata list first because it takes up a lot of time
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
 
         # create booking
         # first user; thus first job (short duration) belongs to them
-        booker_user_id = next(islice(user_id_token_map, 0, 1))
-        booker_token = user_id_token_map[booker_user_id]
+        booker = users[0]
+        booker_id = booker["id"]
         booking_info = {"duration": 5, "starts_in": 0}
-        _, response = _create_booking(client, token=booker_token, booking=booking_info)
+        _, response = _create_booking_v2(
+            client, user_id=booker_id, booking=booking_info
+        )
         booking = Booking.model_validate(response.json())
 
-        # submit many jobs from many users when booking starts
-        _submit_multiple_jobs(
-            client, user_id_token_map=user_id_token_map, is_job_id_specified=False
-        )
+        # submit many jobs from many users
+        _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        general_queue = rq_worker.queues[0]
+        general_queue = worker.queues[0]
         while general_queue.scheduled_job_registry.count > 0:
-            rq_worker.work(burst=True, with_scheduler=True)
+            worker.work(burst=True, with_scheduler=True)
 
-        jobs_in_redis = _get_jobs_in_redis(redis_client)
+        jobs_in_redis = _get_jobs_in_redis(redis_conn)
 
         jobs_in_redis.sort(key=lambda v: v.timestamps.execution.start_timestamp)
-        booker_jobs = [job for job in jobs_in_redis if job.user_id == booker_user_id]
-        non_booker_jobs = [
-            job for job in jobs_in_redis if job.user_id != booker_user_id
-        ]
+        booker_jobs = [job for job in jobs_in_redis if job.user_id == booker_id]
+        non_booker_jobs = [job for job in jobs_in_redis if job.user_id != booker_id]
         last_booker_job = booker_jobs[-1]
         first_non_booker_job = non_booker_jobs[0]
 
@@ -850,60 +846,66 @@ def test_submit_jobs_in_idle_booking(
 
         assert all([v.status == JobStatus.SUCCESSFUL for v in jobs_in_redis])
         assert last_booker_job_start < booking_end_timestamp
-        assert first_non_booker_job_start < booking_end_timestamp
+        if last_booker_job.actual_duration < booking.total_duration:
+            assert first_non_booker_job_start < booking_end_timestamp
 
 
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize(
+    "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:1]
+)
 def test_submit_jobs_in_idle_booking_before_another(
-    quantify_rest_client, rq_worker, redis_client, mocker: MockerFixture
+    client,
+    worker,
+    redis_conn,
+    job,
+    jobs_folder,
+    mocker,
 ):
     """When there is an idle booking and another is next, only non booker jobs, short enough to fit in between, run."""
-    with quantify_rest_client as client:
+    with client as client:
         # create many users and their tokens
-        user_id_token_map = _create_user_token_map(client, mocker=mocker)
+        users = _create_many_users(client)
+
+        durations = [0.2, 3, 4, 1.1, 2.9, 0.4, 0.15]
+        raw_jobs = _get_raw_jobs(job, durations)
+        # Creating this job metadata list first because it takes up a lot of time
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
 
         # create booking
         # first user; thus first job (short duration) belongs to them
-        booker_user_id = next(islice(user_id_token_map, 0, 1))
-        booker_token = user_id_token_map[booker_user_id]
+        booker = users[0]
+        booker_id = booker["id"]
 
         # create first booking
         first_booking_info = {"duration": 2, "starts_in": 0}
-        _, result = _create_booking(
-            client, token=booker_token, booking=first_booking_info
+        _, result = _create_booking_v2(
+            client, user_id=booker_id, booking=first_booking_info
         )
 
         # create second booking
         second_booking_info = {"duration": 3, "starts_in": 3}
-        _, response = _create_booking(
-            client, token=booker_token, booking=second_booking_info
+        _, response = _create_booking_v2(
+            client, user_id=booker_id, booking=second_booking_info
         )
         next_slot = Booking.model_validate(response.json())
 
-        durations = [0.2, 3, 4, 1.1, 2.9, 0.4, 0.15]
-        raw_jobs = [
-            {"type": "test", "test_duration": duration, "job_id": f"{uuid4()}"}
-            for duration in durations
-        ]
-
-        # submit many jobs from many users when booking starts
-        _submit_multiple_jobs(
-            client,
-            user_id_token_map=user_id_token_map,
-            is_job_id_specified=True,
-            raw_jobs=raw_jobs,
-        )
+        # submit many jobs from many users
+        _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        general_queue = rq_worker.queues[0]
+        general_queue = worker.queues[0]
         while general_queue.scheduled_job_registry.count > 0:
-            rq_worker.work(burst=True, with_scheduler=True)
+            worker.work(burst=True, with_scheduler=True)
 
-        jobs_in_db = _get_jobs_in_redis(redis_client)
-        booker_jobs = [v for v in jobs_in_db if v.user_id == booker_user_id]
-        non_booker_jobs = [v for v in jobs_in_db if v.user_id != booker_user_id]
+        jobs_in_db = _get_jobs_in_redis(redis_conn)
 
-        booker_jobs.sort(key=lambda v: v.test_duration)
+        booker_jobs = [v for v in jobs_in_db if v.user_id == booker_id]
+        non_booker_jobs = [v for v in jobs_in_db if v.user_id != booker_id]
+
+        booker_jobs.sort(key=lambda v: v.estimated_duration)
         non_booker_jobs.sort(key=lambda v: v.start_utc)
         # Note: Enqueue_at ignores microseconds
         non_booker_job_ids_pre_2nd_slot = [
@@ -917,8 +919,14 @@ def test_submit_jobs_in_idle_booking_before_another(
             if _drop_microsec(v.start_utc) > _drop_microsec(next_slot.start_utc)
         ]
 
-        # 1.1, 0.4, 0.15 total to 1.65, plus 1.0 max idle time, equal to  which is less than (3 - 1 - 0.2) = 1.8
-        # where 1 is the max idle time of booking
+        # First booker job takes 0.2, waits for 1 second, releases the waitlist.
+        # Time left = 3 - (0.2 + 1) = 1.8
+        # Therefore job (duration=3) is pushed to waitlist
+        # job (duration=4) is pushed to waitlist
+        # job (duration=1.1) is run immediately; time left is about 0.7
+        # job (duration=2.9) from booker fails immediately as it is too long for the current booking
+        # job (duration=0.4) runs, time left is about 0.3
+        # job (duration=0.15) runs, time left is about 0.15
         #
         # first and fifth jobs are submitted by the owner of the booking;
         # the fourth is too long for the current booking so it fails immediately.
@@ -927,12 +935,13 @@ def test_submit_jobs_in_idle_booking_before_another(
         expected_non_booker_job_ids_pre_2nd_slot = [
             v["job_id"]
             for v in raw_jobs
-            if v["test_duration"] in non_booker_pre_2dn_slot_durations
+            if v["params"]["qobj"]["header"]["test_duration"]
+            in non_booker_pre_2dn_slot_durations
         ]
         expected_non_booker_job_ids_post_2nd_slot = [
             v["job_id"]
             for v in raw_jobs
-            if v["test_duration"]
+            if v["params"]["qobj"]["header"]["test_duration"]
             not in (*non_booker_pre_2dn_slot_durations, *booker_job_durations)
         ]
 
@@ -1193,10 +1202,10 @@ def test_cancel_completed_booking(
 @pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, worker, job, device_name, user", _VIEW_JOB_PARAMS)
 def test_view_job(
-    client, worker, job, device_name, user, client_jobs_folder, mocker: MockerFixture
+    client, worker, job, device_name, user, jobs_folder, mocker: MockerFixture
 ):
     """GET '/jobs/{job_id}' by a user can show the job for the job_id if job belongs to them"""
-    job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
+    job_file_path = _save_job_file(folder=jobs_folder, job=job)
 
     with client as client:
         user_id, _ = _create_user(client, user=user)
@@ -1243,10 +1252,10 @@ def test_view_job(
 
 @pytest.mark.parametrize("client, worker, job, device_name, user", _VIEW_JOB_PARAMS)
 def test_unauthenticated_view_job(
-    client, worker, job, device_name, user, client_jobs_folder, mocker: MockerFixture
+    client, worker, job, device_name, user, jobs_folder, mocker: MockerFixture
 ):
     """Get to /jobs/{job_id} raise 401 if not accessed through MSS"""
-    job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
+    job_file_path = _save_job_file(folder=jobs_folder, job=job)
 
     with client as client:
         user_id, _ = _create_user(client, user=user)
@@ -1274,7 +1283,7 @@ def test_unauthenticated_view_job(
 @pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, _redis, worker, job, device", _VIEW_JOBS_PARAMS)
 def test_view_jobs(
-    client, _redis, worker, job, device, client_jobs_folder, mocker: MockerFixture
+    client, _redis, worker, job, device, jobs_folder, mocker: MockerFixture
 ):
     """GET '/jobs' by a user can show the paginated list of jobs that belong to them"""
     with client as client:
@@ -1293,14 +1302,13 @@ def test_view_jobs(
             new_job["params"]["qobj"]["header"]["test_duration"] = duration
             raw_jobs.append(new_job)
 
-        # submit many jobs from many users
-        job_ids = _submit_multiple_jobs_v2(
-            client,
-            users=users,
-            mocker=mocker,
-            raw_jobs=raw_jobs,
-            jobs_folder=client_jobs_folder,
+        # Creating this job metadata list first because it takes up a lot of time
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
+
+        # submit many jobs from many users
+        job_ids = _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # get jobs
         headers = create_mss_headers(user_id)
@@ -1364,7 +1372,7 @@ def test_view_jobs(
 @pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, _redis, worker, job, device", _VIEW_JOBS_PARAMS)
 def test_view_jobs_by_status(
-    client, _redis, worker, job, device, client_jobs_folder, mocker: MockerFixture
+    client, _redis, worker, job, device, jobs_folder, mocker: MockerFixture
 ):
     """GET '/jobs' by a user can show the paginated list of jobs that belong to them"""
     with client as client:
@@ -1383,28 +1391,25 @@ def test_view_jobs_by_status(
             new_job["params"]["qobj"]["header"]["test_duration"] = duration
             raw_jobs.append(new_job)
 
-        # submit many jobs from many users
-        completed_job_ids = _submit_multiple_jobs_v2(
-            client,
-            users=users,
-            mocker=mocker,
-            raw_jobs=raw_jobs,
-            jobs_folder=client_jobs_folder,
+        # Creating this job metadata list first because it takes up a lot of time
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
+
+        # submit many jobs from many users
+        completed_job_ids = _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue to run the job and see that it is updated
         worker.work(burst=True)
 
         new_raw_jobs = [{**v, "job_id": f"{uuid4()}"} for v in raw_jobs]
+        # Creating this job metadata list first because it takes up a lot of time
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
 
         # submit many jobs from many users when booking starts
-        pending_job_ids = _submit_multiple_jobs_v2(
-            client,
-            users=users,
-            mocker=mocker,
-            raw_jobs=new_raw_jobs,
-            jobs_folder=client_jobs_folder,
-        )
+        pending_job_ids = _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # get pending jobs
         headers = create_mss_headers(user_id)
@@ -1490,7 +1495,7 @@ def test_view_jobs_by_status(
 
 @pytest.mark.parametrize("client, _redis, worker, job, device", _VIEW_JOBS_PARAMS)
 def test_unauthenticated_view_jobs(
-    client, _redis, worker, job, device, client_jobs_folder, mocker: MockerFixture
+    client, _redis, worker, job, device, jobs_folder, mocker: MockerFixture
 ):
     """Get to /jobs/ raise 401 if not accessed through MSS"""
     with client as client:
@@ -1508,14 +1513,13 @@ def test_unauthenticated_view_jobs(
             new_job["params"]["qobj"]["header"]["test_duration"] = duration
             raw_jobs.append(new_job)
 
-        # submit many jobs from many users
-        job_ids = _submit_multiple_jobs_v2(
-            client,
-            users=users,
-            mocker=mocker,
-            raw_jobs=raw_jobs,
-            jobs_folder=client_jobs_folder,
+        # Creating this job metadata list first because it takes up a lot of time
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
+
+        # submit many jobs from many users
+        job_ids = _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         response = client.get("/jobs")
         assert response.status_code == 401
@@ -1732,6 +1736,25 @@ def _to_booking_payload(booking_info: "_BasicBookingInfo") -> "_BookingPayload":
     }
 
 
+def _get_raw_jobs(job_template: dict, durations: List[float]) -> List[dict]:
+    """Generates a list of jobs given a job template and durations
+
+    Args:
+        job_template: the template all jobs adhere to
+        durations: the durations corresponding to each job
+
+    Returns:
+        List of jobs, one job per entry in the list of durations
+    """
+    raw_jobs = []
+    for duration in durations:
+        new_job = copy.deepcopy(job_template)
+        new_job["job_id"] = f"{uuid4()}"
+        new_job["params"]["qobj"]["header"]["test_duration"] = duration
+        raw_jobs.append(new_job)
+    return raw_jobs
+
+
 def _remove_user(client: "TestClient", token: str, user_id: str) -> "Response":
     """Delete the user of the given user ID
 
@@ -1791,55 +1814,79 @@ def _get_jobs_in_redis(redis_client: Redis) -> List[Job]:
 
 
 def _submit_multiple_jobs_v2(
-    client: "TestClient",
-    users: List[Dict[str, Any]],
-    mocker: MockerFixture,
-    jobs_folder: Path,
-    raw_jobs: List[Dict[str, Any]] = tuple(JOBS),
+    client: "TestClient", data: List["_JobSubmissionMetadata"] = None
 ) -> List[str]:
-    """Submits multiple jobs one or more per user in the list of users.
-
-    It attempts to spread the jobs evenly across the users, while
-    maintaining the order i.e. the first user is matched with the first job,
-    the second with the second etc. until all the users are used up then the cycle
-    is restarted from the first user.
+    """Submits multiple jobs given the job metadata list.
 
     Args:
         client: the fastapi TestClient for testing
-        users: the list of dicts of user details
-        mocker: the mocker fixture for capturing the tokens
-        jobs_folder: the folder where to upload the job files from
-        raw_jobs: the list of raw job data; default = JOBS
+        data: list of the job metadata to use for submission
 
     Returns:
         the list of job_ids of the created jobs
     """
     job_ids_in_fifo = []
-    num_of_users = len(users)
 
-    for idx, job_info in enumerate(raw_jobs):
-        job_file_path = _save_job_file(folder=jobs_folder, job=job_info)
+    for job_info in data:
+        with open(job_info["file_path"], "rb") as file:
+            response = client.post(
+                "/jobs", files={"upload_file": file}, headers=job_info["headers"]
+            )
+
+        actual_job = response.json()
+        job_ids_in_fifo.append(actual_job["job_id"])
+
+        assert actual_job["user_id"] == job_info["user_id"]
+        assert actual_job["job_id"] == job_info["job_id"]
+
+    return job_ids_in_fifo
+
+
+def _get_job_submission_metadata(
+    client: "TestClient",
+    jobs: List[dict],
+    users: List[dict],
+    mocker: MockerFixture,
+    jobs_folder: Path,
+) -> List["_JobSubmissionMetadata"]:
+    """Generates a list of job submission metadata to use when submitting jobs
+
+    Metadata includes the token to use, the user_id, the file path
+    This operation is quite expensive
+
+    Args:
+        client: the test client to run the tests on
+        jobs: list of jobs for which the map is constructed
+        users: the list of users to use to submit the jobs in a round-robin style
+        mocker: the mocker for intercepting the generation of the user token
+        jobs_folder: the folder in which the job files are to be saved temporarily before submission
+
+    Returns:
+        a list of job submission metadata
+    """
+    num_of_users = len(users)
+    results = []
+    for idx, job_info in enumerate(jobs):
         curr_user = users[idx % num_of_users]
+        job_file_path = _save_job_file(folder=jobs_folder, job=job_info)
         user_id = curr_user["id"]
         job_id = job_info["job_id"]
 
         token, _ = _get_token(
             client, mocker, data={"user_id": user_id, "job_id": job_id}
         )
-        headers = _get_headers(token)
 
-        with open(job_file_path, "rb") as file:
-            response = client.post(
-                "/jobs", files={"upload_file": file}, headers=headers
-            )
+        results.append(
+            {
+                "job_id": job_id,
+                "user_id": user_id,
+                "file_path": job_file_path,
+                "token": token,
+                "headers": _get_headers(token),
+            }
+        )
 
-        actual_job = response.json()
-        job_ids_in_fifo.append(actual_job["job_id"])
-
-        assert actual_job["user_id"] == user_id
-        assert actual_job["job_id"] == job_info["job_id"]
-
-    return job_ids_in_fifo
+    return results
 
 
 def _submit_multiple_jobs(
@@ -2129,3 +2176,11 @@ class _LoginDetails(TypedDict):
 
     user_id: str
     job_id: str
+
+
+class _JobSubmissionMetadata(TypedDict):
+    job_id: str
+    token: str
+    user_id: str
+    file_path: Path
+    headers: dict

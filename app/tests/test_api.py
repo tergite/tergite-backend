@@ -331,7 +331,7 @@ def test_root_invalid_headers(client, headers):
 def test_upload_job(
     client,
     redis_client,
-    client_jobs_folder,
+    jobs_folder,
     rq_worker,
     job,
     expected_counts,
@@ -340,7 +340,7 @@ def test_upload_job(
 ):
     """POST to '/jobs' uploads a new job"""
     job_id = job[_JOB_ID_FIELD]
-    job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
+    job_file_path = _save_job_file(folder=jobs_folder, job=job)
     timestamp = MOCK_NOW.replace("+00:00", "Z")
 
     # using context manager to ensure on_startup runs
@@ -402,13 +402,13 @@ def test_upload_invalid_job(
     redis_client,
     rq_worker,
     job,
-    client_jobs_folder,
+    jobs_folder,
     app_token_header,
     freezer,
 ):
     """POSTing an invalid structure of a job to '/jobs' fails"""
     job_id = job.get(_JOB_ID_FIELD, "dummy")
-    job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
+    job_file_path = _save_job_file(folder=jobs_folder, job=job)
 
     # using context manager to ensure on_startup runs
     with client as client:
@@ -432,11 +432,11 @@ def test_upload_invalid_job(
     _UNAUTHENTICATED_UPLOAD_JOB_PARAMS,
 )
 def test_unauthenticated_upload_job(
-    client, redis_client, client_jobs_folder, rq_worker, job, headers, app_token
+    client, redis_client, jobs_folder, rq_worker, job, headers, app_token
 ):
     """POST to '/jobs' uploads a new job"""
     job_id = job[_JOB_ID_FIELD]
-    job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
+    job_file_path = _save_job_file(folder=jobs_folder, job=job)
 
     # using context manager to ensure on_startup runs
     with client as client:
@@ -462,10 +462,10 @@ def test_unauthenticated_upload_job(
 
 @pytest.mark.parametrize("client, redis_client, rq_worker, job", _UPLOAD_JOB_PARAMS)
 def test_duplicate_job_upload(
-    client, redis_client, client_jobs_folder, rq_worker, job, app_token_header
+    client, redis_client, jobs_folder, rq_worker, job, app_token_header
 ):
     job_id = job[_JOB_ID_FIELD]
-    job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
+    job_file_path = _save_job_file(folder=jobs_folder, job=job)
 
     with client as client:
         with open(job_file_path, "rb") as file:
@@ -487,11 +487,11 @@ def test_duplicate_job_upload(
 
 @pytest.mark.parametrize("client, redis_client, rq_worker, job", _UPLOAD_JOB_PARAMS)
 def test_remove_job(
-    client, redis_client, client_jobs_folder, rq_worker, job, app_token_header
+    client, redis_client, jobs_folder, rq_worker, job, app_token_header
 ):
     """DELETE to '/jobs/{job_id}' deletes the given job"""
     job_id = job[_JOB_ID_FIELD]
-    job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
+    job_file_path = _save_job_file(folder=jobs_folder, job=job)
 
     # using context manager to ensure on_startup runs
     with client as client:
@@ -520,7 +520,7 @@ def test_remove_job(
 def test_unauthenticated_remove_job(
     client,
     redis_client,
-    client_jobs_folder,
+    jobs_folder,
     rq_worker,
     job: dict,
     app_token_header,
@@ -529,7 +529,7 @@ def test_unauthenticated_remove_job(
 ):
     """Delete to /jobs/{job_id} returns 401 error when no valid app token is passed"""
     job_id = job[_JOB_ID_FIELD]
-    job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
+    job_file_path = _save_job_file(folder=jobs_folder, job=job)
 
     # using context manager to ensure on_startup runs
     with client as client:
@@ -562,11 +562,11 @@ def test_unauthenticated_remove_job(
 
 @pytest.mark.parametrize("client, redis_client, rq_worker, job", _UPLOAD_JOB_PARAMS)
 def test_cancel_job(
-    client, redis_client, client_jobs_folder, rq_worker, job, app_token_header
+    client, redis_client, jobs_folder, rq_worker, job, app_token_header
 ):
     """POST to '/jobs/{job_id}/cancel' cancels the given job"""
     job_id = job[_JOB_ID_FIELD]
-    job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
+    job_file_path = _save_job_file(folder=jobs_folder, job=job)
     cancellation_reason = "just testing"
     timestamp = MOCK_NOW.replace("+00:00", "Z")
 
@@ -626,7 +626,7 @@ def test_cancel_job(
 def test_unauthenticated_cancel_job(
     client,
     redis_client,
-    client_jobs_folder,
+    jobs_folder,
     rq_worker,
     job,
     app_token_header,
@@ -635,7 +635,7 @@ def test_unauthenticated_cancel_job(
 ):
     """POST to '/jobs/{job_id}/cancel' returns 401 error when no valid app token is passed"""
     job_id = job[_JOB_ID_FIELD]
-    job_file_path = _save_job_file(folder=client_jobs_folder, job=job)
+    job_file_path = _save_job_file(folder=jobs_folder, job=job)
     cancellation_reason = "just testing"
 
     # using context manager to ensure on_startup runs

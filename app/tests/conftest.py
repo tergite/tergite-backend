@@ -289,7 +289,7 @@ def async_standalone_backend_client(mocker) -> TestClient:
 
 
 @pytest.fixture
-def client_jobs_folder() -> Path:
+def jobs_folder() -> Path:
     """A temporary folder for the client where jobs can be saved"""
     folder_path = Path("./tmp/jobs")
     folder_path.mkdir(parents=True, exist_ok=True)
