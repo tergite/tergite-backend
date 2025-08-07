@@ -59,7 +59,7 @@ def create_booking(db_engine: Engine, user_id: str, data: NewBookingInfo) -> Boo
 
     Raises:
         ConflictError: booking conflicts with another booking at {start_utc} to {end_utc}
-        MaxBookingsError: booking conflicts with another booking at {start_utc} to {end_utc}
+        MaxBookingsError: you have exceeded the maximum {settings.MAX_SLOTS_PER_DAY} bookings per day for {day_start}-{day_end}
     """
     with Session(db_engine) as session:
         _validate_no_overlap(session, data)
@@ -444,7 +444,7 @@ def _validate_max_slots(session: Session, user_id: str, booking_info: NewBooking
         booking_info: the booking info under examination
 
     Raises:
-        MaxBookingsError: booking conflicts with another booking at {start_utc} to {end_utc}
+        MaxBookingsError: you have exceeded the maximum {settings.MAX_SLOTS_PER_DAY} bookings per day for {day_start}-{day_end}
     """
     day_start, day_end = get_day_range(booking_info.start_utc)
     user_bookings = _get_overlapping_bookings(

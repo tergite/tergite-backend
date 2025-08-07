@@ -65,7 +65,10 @@ TEST_JWT_TTL = 120
 TEST_MSS_NONCE_TTL = 200
 TEST_CORS_ORIGINS = "testclient,localhost,127.0.0.1"
 
-TEST_RQ_REDIS_URL = os.getenv("RQ_REDIS_URL", "redis://localhost:6379/2")
+REDIS_PORT = os.getenv("REDIS_PORT", "6379")
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+
+TEST_RQ_REDIS_URL = os.getenv("RQ_REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/2")
 TEST_JOBS_REDIS_URL = TEST_RQ_REDIS_URL
 
 

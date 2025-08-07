@@ -124,10 +124,14 @@ PAGINATION: List["_PaginationInfo"] = load_fixture("pagination.json")
 JOBS_HASH_NAME = f"{Job.__module__}.{Job.__qualname__}".lower()
 
 VALID_CREATE_BOOKINGS_PARAMS = [
-    (user, booking) for user in USERS for booking in VALID_BOOKINGS
+    (USERS[0], booking, client)
+    for booking in VALID_BOOKINGS
+    for client in FASTAPI_CLIENTS
 ]
 INVALID_CREATE_BOOKINGS_PARAMS = [
-    (user, booking) for user in USERS for booking in INVALID_BOOKINGS
+    (USERS[0], booking, client)
+    for booking in INVALID_BOOKINGS
+    for client in FASTAPI_CLIENTS
 ]
 
 

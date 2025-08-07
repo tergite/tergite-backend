@@ -63,9 +63,9 @@ _DELETE_SLICES = [
 ]
 
 _INDEX_PREFIXES = {
-    "job_id": f"__index__tests.test_redis_store.authlog_::job_id::",
-    "app_token": f"__index__tests.test_redis_store.authlog_::app_token::",
-    "status": f"__index__tests.test_redis_store.authlog_::status::",
+    "job_id": f"__index__{__name__}.authlog_::job_id::",
+    "app_token": f"__index__{__name__}.authlog_::app_token::",
+    "status": f"__index__{__name__}.authlog_::status::",
 }
 
 
@@ -258,7 +258,7 @@ def test_update_not_found(redis_client, payload, freezer):
     with pytest.raises(ItemNotFoundError, match=r"not found"):
         auth_logs.update(key_dict, new_update)
 
-    hmap = _get_redis_hmap(redis_client, schema=AuthLog)
+    hmap = _get_redis_hmap(redis_client, model=AuthLog)
     assert hmap == {}
 
 
@@ -454,7 +454,7 @@ def test_get_all(redis_client, desc, freezer):
     _insert_into_redis(redis_client, items)
 
     got = auth_logs.get_all(desc=desc)
-    hmap = _get_redis_hmap(redis_client, schema=AuthLog)
+    hmap = _get_redis_hmap(redis_client, model=AuthLog)
     expected_hmap = {_get_redis_key(v): v.model_dump_json() for v in sorted_items}
 
     assert got == sorted_items
@@ -551,7 +551,7 @@ def test_delete_many_by_single_keys(redis_client, bounds: Tuple[int, int], freez
     _insert_into_redis(redis_client, items)
 
     auth_logs.delete_many(keys_to_delete)
-    hmap = _get_redis_hmap(redis_client, schema=AuthLog)
+    hmap = _get_redis_hmap(redis_client, model=AuthLog)
     expected_hmap = {_get_redis_key(v): v.model_dump_json() for v in expected_items}
 
     assert hmap == expected_hmap
@@ -570,7 +570,7 @@ def test_delete_many_by_key_tuples(redis_client, bounds: Tuple[int, int], freeze
     _insert_into_redis(redis_client, items)
 
     auth_logs.delete_many(keys_to_delete)
-    hmap = _get_redis_hmap(redis_client, schema=AuthLog)
+    hmap = _get_redis_hmap(redis_client, model=AuthLog)
     expected_hmap = {_get_redis_key(v): v.model_dump_json() for v in expected_items}
 
     assert hmap == expected_hmap
@@ -590,7 +590,7 @@ def test_delete_many_by_key_dicts(redis_client, bounds: Tuple[int, int], freezer
     _insert_into_redis(redis_client, items)
 
     auth_logs.delete_many(keys_to_delete)
-    hmap = _get_redis_hmap(redis_client, schema=AuthLog)
+    hmap = _get_redis_hmap(redis_client, model=AuthLog)
     expected_hmap = {_get_redis_key(v): v.model_dump_json() for v in expected_items}
 
     assert hmap == expected_hmap
@@ -648,7 +648,7 @@ def test_clear(redis_client, freezer):
     _insert_into_redis(redis_client, items)
 
     auth_logs.clear()
-    items_in_db = _get_redis_hmap(redis_client, schema=AuthLog)
+    items_in_db = _get_redis_hmap(redis_client, model=AuthLog)
 
     assert items_in_db == {}
 
