@@ -252,7 +252,11 @@ def submit_job_file(
 
 
 def cancel_job(
-    queues: QueuePool, job_id: str, user_id: str, is_mss_admin: bool = False
+    queues: QueuePool,
+    job_id: str,
+    user_id: str,
+    is_mss_admin: bool = False,
+    reason: Optional[str] = None,
 ) -> Job:
     """Cancels the job of a given job_id if it belongs to the user or the user is admin
 
@@ -261,6 +265,7 @@ def cancel_job(
         job_id: the unique identifier of the job
         user_id: the user_id of the user requesting the job
         is_mss_admin: whether the user is an MSS admin
+        reason: the justification for the cancellation
 
     Returns:
         the job
@@ -289,11 +294,14 @@ def cancel_job(
         raise ItemNotFoundError(f"Job {job_id} not found")
 
     _cancel_job_in_queues(queues, job)
+    if reason is None:
+        reason = "Cancelled by a user"
+
     job = job_store.update(
         job_id,
         {
             "status": JobStatus.CANCELLED,
-            "failure_reason": "Cancelled by a user",
+            "cancellation_reason": reason,
             "updated_at": utc_now_str(),
         },
     )

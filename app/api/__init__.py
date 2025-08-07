@@ -54,6 +54,7 @@ from ..libs.queues.dtos import Job, JobStatus
 from ..services.booking import get_user
 from ..services.scheduler.queues import QueuePool
 from ..utils.api import (
+    CancellationDetails,
     GeneralMessage,
     PaginatedListResponse,
     RequestLog,
@@ -453,6 +454,7 @@ async def view_job(
 @app.post("/jobs/{job_id}/cancel")
 async def cancel_job(
     job_id: str,
+    details: CancellationDetails,
     user_id: str = Depends(get_verified_mss_user_id),
     queue_pool: QueuePool = Depends(get_queue_pool),
     is_mss_admin: bool = Depends(get_unverified_mss_is_admin),
@@ -461,6 +463,7 @@ async def cancel_job(
 
     Args:
         job_id: the unique identifier of the job
+        details: the extra information passed when canceling the job
         user_id: the JWT token for the user, transformed into user_id by callback
         queue_pool: the collection of queues to run the jobs on
         is_mss_admin: whether the user is an mss admin or not
@@ -474,7 +477,11 @@ async def cancel_job(
         rq.exceptions.InvalidJobOperation: if the job has already been cancelled
     """
     scheduler.cancel_job(
-        queue_pool, job_id=job_id, user_id=user_id, is_mss_admin=is_mss_admin
+        queue_pool,
+        job_id=job_id,
+        user_id=user_id,
+        is_mss_admin=is_mss_admin,
+        reason=details.reason,
     )
     return {"status": "success", "detail": f"Job of id {job_id} cancelled"}
 

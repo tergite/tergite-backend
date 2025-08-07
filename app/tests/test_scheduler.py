@@ -1835,58 +1835,266 @@ def test_unauthenticated_view_jobs(
         assert response.json() == {"detail": "user not authenticated"}
 
 
-@pytest.mark.parametrize("user", USERS)
-def test_cancel_job(
-    quantify_rest_client, user, rq_worker, redis_client, mocker: MockerFixture
-):
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_cancel_job(client, redis_conn, jobs_folder, worker, job, mocker):
     """A user POST to '/jobs/{id}/cancel' cancels the job of the job_id if the job belongs to them"""
-    with quantify_rest_client as client:
-        user_id, _ = _create_user(client, user=user)
-        token, _ = _get_token(client, mocker=mocker, data=user)
-        job_info = JOBS[0]
+    with client as client:
+        cancellation_reason = "just testing"
+
+        users = _create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = _get_raw_jobs(job, durations=[0.2])
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
+        job_info = job_metadata_list[0]
         job_id = job_info["job_id"]
+        user_id = job_info["user_id"]
 
-        # submit job
-        headers = _get_headers(token)
-        response = client.post("/jobs", headers=headers, json=job_info)
-        original_job = Job.model_validate(response.json())
+        # submit many jobs from many users
+        with open(job_info["file_path"], "rb") as file:
+            response = client.post(
+                "/jobs", files={"upload_file": file}, headers=job_info["headers"]
+            )
 
-        response = _cancel_job(client, token=token, job_id=job_id)
+        original_job = response.json()
+
+        # Run the queue to run the job and see that it is updated
+        worker.work(burst=True, max_jobs=1)
+
+        response = _cancel_job(
+            client, user_id=user_id, job_id=job_id, reason=cancellation_reason
+        )
         expected = {
             "status": "success",
-            "detail": f"Booking of id {job_id} cancelled",
+            "detail": f"Job of id {job_id} cancelled",
         }
         got = response.json()
 
         assert response.status_code == 200
         assert got == expected
 
-        # Run the queue to run the job and see that it is updated
-        rq_worker.work(burst=True)
+        job_in_db = _get_jobs_in_redis(redis_conn)[0]
+        preprocess_start = job_in_db.timestamps.pre_processing.started
+        preprocess_end = job_in_db.timestamps.pre_processing.finished
 
-        complete_job, response = _view_job(client, token=token, job_id=job_id)
-        expected_updates = {
-            "status": JobStatus.CANCELLED,
-            "failure_reason": "Cancelled by a user",
-        }
-        expected_job = original_job.model_copy(update=expected_updates)
+        expected_job = Job(
+            **{
+                **original_job,
+                "status": JobStatus.CANCELLED.value,
+                "cancellation_reason": cancellation_reason,
+                "estimated_duration": 0.2,
+                "stage": 4,
+                "timestamps": {
+                    "registration": None,
+                    "pre_processing": {
+                        "started": preprocess_start,
+                        "finished": preprocess_end,
+                    },
+                    "execution": None,
+                    "post_processing": None,
+                    "final": None,
+                },
+                "created_at": job_in_db.created_at,
+                "updated_at": job_in_db.updated_at,
+            }
+        )
         assert response.status_code == 200
-        assert complete_job == expected_job
+        assert job_in_db == expected_job
 
 
-def _cancel_job(client: "TestClient", token: str, job_id: str) -> "Response":
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_cancel_another_users_job(client, redis_conn, jobs_folder, worker, job, mocker):
+    """A user POST to '/jobs/{id}/cancel' for a job does is not for the current user errors out"""
+    with client as client:
+        cancellation_reason = "just testing"
+
+        users = _create_many_users(client, raw_users=USERS[:2])
+        raw_jobs = _get_raw_jobs(job, durations=[0.2])
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
+        job_info = job_metadata_list[0]
+        job_id = job_info["job_id"]
+
+        # submit many jobs from many users
+        with open(job_info["file_path"], "rb") as file:
+            response = client.post(
+                "/jobs", files={"upload_file": file}, headers=job_info["headers"]
+            )
+            original_job = Job.model_validate(response.json())
+
+        # Run the queue to run the job and see that it is updated
+        worker.work(burst=True, max_jobs=1)
+
+        other_user_id = users[1]["id"]
+        response = _cancel_job(
+            client, user_id=other_user_id, job_id=job_id, reason=cancellation_reason
+        )
+        expected = {
+            "detail": f"Job {job_id} not found",
+        }
+        got = response.json()
+
+        assert response.status_code == 404
+        assert got == expected
+
+        job_in_db = _get_jobs_in_redis(redis_conn)[0]
+
+        expected_job = original_job.model_copy(
+            update={
+                "stage": Stage.EXEC_Q,
+                "estimated_duration": job_in_db.estimated_duration,
+                "updated_at": job_in_db.updated_at,
+                "timestamps": job_in_db.timestamps,
+                "storage_id": f"{job_id}:::{job_in_db.estimated_duration}",
+            }
+        )
+
+        assert job_in_db == expected_job
+
+
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_admin_cancel_job(client, redis_conn, jobs_folder, worker, job, mocker):
+    """A user POST to '/jobs/{id}/cancel' cancels the job of the job_id if the user is admin"""
+    with client as client:
+        cancellation_reason = "just testing"
+
+        users = _create_many_users(client, raw_users=USERS[:2])
+        raw_jobs = _get_raw_jobs(job, durations=[0.2])
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
+        job_info = job_metadata_list[0]
+        job_id = job_info["job_id"]
+
+        # submit many jobs from many users
+        with open(job_info["file_path"], "rb") as file:
+            response = client.post(
+                "/jobs", files={"upload_file": file}, headers=job_info["headers"]
+            )
+
+        # Run the queue to run the job and see that it is updated
+        worker.work(burst=True, max_jobs=1)
+
+        original_job = response.json()
+
+        other_user_id = users[1]["id"]
+        response = _cancel_job(
+            client,
+            user_id=other_user_id,
+            job_id=job_id,
+            reason=cancellation_reason,
+            is_admin=True,
+        )
+        expected = {
+            "status": "success",
+            "detail": f"Job of id {job_id} cancelled",
+        }
+        got = response.json()
+
+        assert response.status_code == 200
+        assert got == expected
+
+        job_in_db = _get_jobs_in_redis(redis_conn)[0]
+        preprocess_start = job_in_db.timestamps.pre_processing.started
+        preprocess_end = job_in_db.timestamps.pre_processing.finished
+
+        expected_job = Job(
+            **{
+                **original_job,
+                "status": JobStatus.CANCELLED.value,
+                "cancellation_reason": cancellation_reason,
+                "estimated_duration": 0.2,
+                "stage": 4,
+                "timestamps": {
+                    "registration": None,
+                    "pre_processing": {
+                        "started": preprocess_start,
+                        "finished": preprocess_end,
+                    },
+                    "execution": None,
+                    "post_processing": None,
+                    "final": None,
+                },
+                "created_at": job_in_db.created_at,
+                "updated_at": job_in_db.updated_at,
+            }
+        )
+        assert response.status_code == 200
+        assert job_in_db == expected_job
+
+
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_unauthenticated_cancel_job(
+    client, redis_conn, worker, job, jobs_folder, mocker: MockerFixture
+):
+    """POST to `/jobs/{job_id}/cancel` raises 401 if not accessed through MSS"""
+    with client as client:
+        cancellation_reason = "just testing"
+
+        users = _create_many_users(client, raw_users=USERS[:2])
+        raw_jobs = _get_raw_jobs(job, durations=[0.2])
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
+        job_info = job_metadata_list[0]
+        job_id = job_info["job_id"]
+
+        # submit many jobs from many users
+        with open(job_info["file_path"], "rb") as file:
+            client.post(
+                "/jobs", files={"upload_file": file}, headers=job_info["headers"]
+            )
+
+        # Run the queue to run the job and see that it is updated
+        worker.work(burst=True, max_jobs=1)
+
+        payload = {"reason": cancellation_reason}
+        url = f"/jobs/{job_id}/cancel"
+
+        response = client.post(url, json=payload)
+        assert response.status_code == 401
+        assert response.json() == {"detail": "user not authenticated"}
+
+        # use a token used only for submitting jobs directly to the backend
+        login_data = {"user_id": job_info["user_id"], "job_id": job_info["job_id"]}
+        token, _ = _get_token(client, mocker, data=login_data)
+        headers = _get_headers(token)
+        response = client.post(url, json=payload, headers=headers)
+        assert response.status_code == 401
+        assert response.json() == {"detail": "user not authenticated"}
+
+
+def _cancel_job(
+    client: "TestClient",
+    user_id: str,
+    job_id: str,
+    reason: Optional[str] = None,
+    is_admin: Optional[bool] = None,
+) -> "Response":
     """Cancels the job on the REST API
 
     Args:
         client: the TestClient for running tests in
-        token: the user token for authentication
+        user_id: the user ID for authentication
         job_id: the unique identifier of the job
+        reason: the reason for cancelling the job
+        is_admin: whether the user is an MSS admin
 
     Returns:
         the httpx.Response form the cancellation endpoint
     """
-    headers = _get_headers(token)
-    return client.post(f"/jobs/{job_id}/cancel", headers=headers)
+    headers = create_mss_headers(user_id, is_admin=is_admin)
+    payload = {}
+
+    if reason is not None:
+        payload["reason"] = reason
+
+    return client.post(f"/jobs/{job_id}/cancel", json=payload, headers=headers)
 
 
 def _cancel_booking(client: "TestClient", token: str, booking_id: str) -> "Response":

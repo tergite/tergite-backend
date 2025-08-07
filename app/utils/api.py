@@ -51,6 +51,12 @@ _MSS_PUBLIC_KEY: Optional[RSAPublicKey] = None
 _REQUEST_LOGS_STORE: Optional[Collection["RequestLog"]] = None
 
 
+class CancellationDetails(BaseModel):
+    """Details to do with a given cancellation request"""
+
+    reason: Optional[str] = None
+
+
 class RequestLog(Schema):
     """Schema for tracking requests"""
 
