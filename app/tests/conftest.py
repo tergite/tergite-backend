@@ -351,7 +351,7 @@ def _patch_async_client(mocker):
     mocker.patch("requests.post", side_effect=mock_post_requests)
     mocker.patch("requests.Session", return_value=mss_client)
     mocker.patch(
-        "sklearn.discriminant_analysis.LinearDiscriminantAnalysis",
+        "app.libs.quantum_executor.qiskit.backends.one_qubit.LinearDiscriminantAnalysis",
         return_value=_mock_linear_discriminant_analysis,
     )
     os.environ["BLACKLISTED"] = ""
@@ -374,7 +374,7 @@ def _patch_async_client_sim2q(mocker):
     mocker.patch("requests.post", side_effect=mock_post_requests)
     mocker.patch("requests.Session", return_value=mss_client)
     mocker.patch(
-        "sklearn.discriminant_analysis.LinearDiscriminantAnalysis",
+        "app.libs.quantum_executor.qiskit.backends.two_qubit.LinearDiscriminantAnalysis",
         return_value=_mock_linear_discriminant_analysis_sim2q,
     )
     os.environ["BLACKLISTED"] = ""

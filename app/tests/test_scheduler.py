@@ -39,6 +39,7 @@ from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps
 from app.services.booking.models import Booking
 from app.tests.conftest import (
     CLIENT_AND_RQ_WORKER_TUPLES,
+    FASTAPI_CLIENTS,
     INVALID_CREATE_BOOKINGS_PARAMS,
     JOBS,
     JOBS_HASH_NAME,
@@ -64,6 +65,16 @@ _SIM_1Q_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload_simulator_1q.json")
 _SIM_2Q_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload_simulator_2q.json")
 _QUANTIFY_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload.json")
 _INVALID_JOBS_FOR_UPLOAD = load_fixture("invalid_jobs_to_upload.json")
+_STATIC_PROPERTIES = [
+    load_fixture("static_properties.json"),
+    load_fixture("static_properties.simq1.json"),
+    load_fixture("static_properties.simq2.json"),
+]
+_DYNAMIC_PROPERTIES = [
+    load_fixture("dynamic_properties.json"),
+    load_fixture("dynamic_properties.simq1.json"),
+    load_fixture("dynamic_properties.simq2.json"),
+]
 
 # params
 _QUANTIFY_UPLOAD_JOB_PARAMS = [
@@ -110,6 +121,13 @@ _ALL_INVALID_UPLOAD_JOB_PARAMS = [
     (client, redis, rq_worker, job)
     for job in _INVALID_JOBS_FOR_UPLOAD
     for client, redis, rq_worker in CLIENT_AND_RQ_WORKER_TUPLES
+]
+
+_STATIC_PROPERTIES_PARAMS = [
+    (client, resp) for client, resp in zip(FASTAPI_CLIENTS, _STATIC_PROPERTIES)
+]
+_DYNAMIC_PROPERTIES_PARAMS = [
+    (client, resp) for client, resp in zip(FASTAPI_CLIENTS, _DYNAMIC_PROPERTIES)
 ]
 
 
@@ -2150,6 +2168,56 @@ def test_unauthenticated_download_logfile(
         assert response.json() == {"detail": "not authenticated"}
 
 
+@pytest.mark.parametrize("client, expected", _STATIC_PROPERTIES_PARAMS)
+def test_get_static_properties(client, expected):
+    """Get to '/static-properties' retrieves the current static properties of the backend"""
+    # using context manager to ensure on_startup runs
+    with client as client:
+        user_id, _ = _create_user(client, USERS[0])
+        headers = create_mss_headers(user_id)
+
+        response = client.get("/static-properties", headers=headers)
+        got = response.json()
+        assert response.status_code == 200
+        assert got == expected
+
+
+@pytest.mark.parametrize("client, _expected", _STATIC_PROPERTIES_PARAMS)
+def test_unauthenticated_get_static_props(client, _expected):
+    """Get to '/static-properties' outside MSS fails with 401"""
+    # using context manager to ensure on_startup runs
+    with client as client:
+        response = client.get("/static-properties")
+        got = response.json()
+        assert response.status_code == 401
+        assert got == {"detail": "user not authenticated"}
+
+
+@pytest.mark.parametrize("client, expected", _DYNAMIC_PROPERTIES_PARAMS)
+def test_get_dynamic_properties(client, expected):
+    """Get to '/dynamic-properties' retrieves the calibrated device parameters"""
+    # using context manager to ensure on_startup runs
+    with client as client:
+        user_id, _ = _create_user(client, USERS[0])
+        headers = create_mss_headers(user_id)
+
+        response = client.get("/dynamic-properties", headers=headers)
+        got = response.json()
+        assert response.status_code == 200
+        assert _remove_dates(got) == expected
+
+
+@pytest.mark.parametrize("client, _expected", _STATIC_PROPERTIES_PARAMS)
+def test_unauthenticated_get_dynamic_props(client, _expected):
+    """Get to '/dynamic-properties' outside MSS fails with 401"""
+    # using context manager to ensure on_startup runs
+    with client as client:
+        response = client.get("/dynamic-properties")
+        got = response.json()
+        assert response.status_code == 401
+        assert got == {"detail": "user not authenticated"}
+
+
 def _cancel_job(
     client: "TestClient",
     user_id: str,
@@ -2744,6 +2812,46 @@ def _job_results_match(results: List[str], expected_min_counts: Dict[str, int]):
         True if they match, False if they don't
     """
     return all([results.count(k) >= v for k, v in expected_min_counts.items()])
+
+
+def _remove_dates(dynamic_properties: Dict[str, Any]) -> Dict[str, Any]:
+    """A utility to do away with the dates in the dynamic properties
+
+    Args:
+        dynamic_properties: the properties to change
+
+    Returns:
+        the dynamic properties with "date" and "last_calibrated" replaced with "NOW-PLACEHOLDER"
+    """
+    now_placeholder = "NOW-PLACEHOLDER"
+    qubits = dynamic_properties.get("qubits", [])
+    couplers = dynamic_properties.get("couplers", [])
+    resonators = dynamic_properties.get("resonators", [])
+    return {
+        **dynamic_properties,
+        "last_calibrated": now_placeholder,
+        "qubits": [
+            {
+                k: v if not isinstance(v, dict) else {**v, "date": now_placeholder}
+                for k, v in qubit_conf.items()
+            }
+            for qubit_conf in qubits
+        ],
+        "couplers": [
+            {
+                k: v if not isinstance(v, dict) else {**v, "date": now_placeholder}
+                for k, v in coupler_conf.items()
+            }
+            for coupler_conf in couplers
+        ],
+        "resonators": [
+            {
+                k: v if not isinstance(v, dict) else {**v, "date": now_placeholder}
+                for k, v in resonator_conf.items()
+            }
+            for resonator_conf in resonators
+        ],
+    }
 
 
 class _PaginatedList(TypedDict, Generic[T]):

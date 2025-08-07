@@ -713,26 +713,26 @@ def test_root_invalid_headers(client, headers):
 #         assert got == expected
 
 
-@pytest.mark.parametrize("client, expected", _STATIC_PROPERTIES_PARAMS)
-def test_get_static_properties(client, expected):
-    """Get to '/static-properties' retrieves the current static properties of the backend in v2 form"""
-    # using context manager to ensure on_startup runs
-    with client as client:
-        response = client.get("/static-properties")
-        got = response.json()
-        assert response.status_code == 200
-        assert got == expected
-
-
-@pytest.mark.parametrize("client, expected", _DYNAMIC_PROPERTIES_PARAMS)
-def test_get_dynamic_properties(client, expected):
-    """Get to '/dynamic-properties' retrieves the calibrated device parameters in version 2 form"""
-    # using context manager to ensure on_startup runs
-    with client as client:
-        response = client.get("/dynamic-properties")
-        got = response.json()
-        assert response.status_code == 200
-        assert _remove_dates(got) == expected
+# @pytest.mark.parametrize("client, expected", _STATIC_PROPERTIES_PARAMS)
+# def test_get_static_properties(client, expected):
+#     """Get to '/static-properties' retrieves the current static properties of the backend in v2 form"""
+#     # using context manager to ensure on_startup runs
+#     with client as client:
+#         response = client.get("/static-properties")
+#         got = response.json()
+#         assert response.status_code == 200
+#         assert got == expected
+#
+#
+# @pytest.mark.parametrize("client, expected", _DYNAMIC_PROPERTIES_PARAMS)
+# def test_get_dynamic_properties(client, expected):
+#     """Get to '/dynamic-properties' retrieves the calibrated device parameters in version 2 form"""
+#     # using context manager to ensure on_startup runs
+#     with client as client:
+#         response = client.get("/dynamic-properties")
+#         got = response.json()
+#         assert response.status_code == 200
+#         assert _remove_dates(got) == expected
 
 
 def _save_job_file(folder: Path, job: Dict[str, Any], ext: str = ".json") -> Path:
