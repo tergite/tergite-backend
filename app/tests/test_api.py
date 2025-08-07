@@ -619,98 +619,98 @@ def test_root_invalid_headers(client, headers):
 #         assert job_in_redis == expected_job_in_redis
 
 
-@pytest.mark.parametrize(
-    "client, redis_client, rq_worker, job, headers, app_token",
-    _UNAUTHENTICATED_UPLOAD_JOB_PARAMS,
-)
-def test_unauthenticated_cancel_job(
-    client,
-    redis_client,
-    jobs_folder,
-    rq_worker,
-    job,
-    app_token_header,
-    headers,
-    app_token,
-):
-    """POST to '/jobs/{job_id}/cancel' returns 401 error when no valid app token is passed"""
-    job_id = job[_JOB_ID_FIELD]
-    job_file_path = _save_job_file(folder=jobs_folder, job=job)
-    cancellation_reason = "just testing"
-
-    # using context manager to ensure on_startup runs
-    with client as client:
-        with open(job_file_path, "rb") as file:
-            response = client.post(
-                "/jobs", files={"upload_file": file}, headers=app_token_header
-            )
-            assert response.status_code == 200
-
-        # start the job registration but stop there
-        rq_worker.work(burst=True, max_jobs=1)
-        # initiate delete
-        cancellation_response = client.post(
-            f"/jobs/{job_id}/cancel",
-            json=cancellation_reason,
-            headers=headers,
-        )
-        # run the rest of the tasks
-        rq_worker.work(burst=True)
-
-        got = cancellation_response.json()
-        detail = (
-            "Unauthorized"
-            if app_token is None
-            else f"job {job_id} does not exist for current user"
-        )
-        expected = {"detail": detail}
-
-        job_in_redis = json.loads(redis_client.hget(_JOBS_HASH_NAME, job_id))
-        assert cancellation_response.status_code == 401
-        assert got == expected
-        assert job_in_redis["status"] == "successful"
-
-
-@pytest.mark.parametrize("client, redis_client, rq_worker, job", _UPLOAD_JOB_PARAMS)
-def test_download_logfile(
-    logfile_download_folder, client, redis_client, rq_worker, job, app_token_header
-):
-    """GET to '/logfiles/{logfile_id}' downloads the given logfile"""
-    job_id = job[_JOB_ID_FIELD]
-    _save_job_file(folder=logfile_download_folder, job=job, ext=".hdf5")
-
-    # using context manager to ensure on_startup runs
-    with client as client:
-        response = client.get(f"/logfiles/{job_id}", headers=app_token_header)
-        file_content = json.loads(response.content)
-        assert response.status_code == 200
-        assert file_content == job
+# @pytest.mark.parametrize(
+#     "client, redis_client, rq_worker, job, headers, app_token",
+#     _UNAUTHENTICATED_UPLOAD_JOB_PARAMS,
+# )
+# def test_unauthenticated_cancel_job(
+#     client,
+#     redis_client,
+#     jobs_folder,
+#     rq_worker,
+#     job,
+#     app_token_header,
+#     headers,
+#     app_token,
+# ):
+#     """POST to '/jobs/{job_id}/cancel' returns 401 error when no valid app token is passed"""
+#     job_id = job[_JOB_ID_FIELD]
+#     job_file_path = _save_job_file(folder=jobs_folder, job=job)
+#     cancellation_reason = "just testing"
+#
+#     # using context manager to ensure on_startup runs
+#     with client as client:
+#         with open(job_file_path, "rb") as file:
+#             response = client.post(
+#                 "/jobs", files={"upload_file": file}, headers=app_token_header
+#             )
+#             assert response.status_code == 200
+#
+#         # start the job registration but stop there
+#         rq_worker.work(burst=True, max_jobs=1)
+#         # initiate delete
+#         cancellation_response = client.post(
+#             f"/jobs/{job_id}/cancel",
+#             json=cancellation_reason,
+#             headers=headers,
+#         )
+#         # run the rest of the tasks
+#         rq_worker.work(burst=True)
+#
+#         got = cancellation_response.json()
+#         detail = (
+#             "Unauthorized"
+#             if app_token is None
+#             else f"job {job_id} does not exist for current user"
+#         )
+#         expected = {"detail": detail}
+#
+#         job_in_redis = json.loads(redis_client.hget(_JOBS_HASH_NAME, job_id))
+#         assert cancellation_response.status_code == 401
+#         assert got == expected
+#         assert job_in_redis["status"] == "successful"
 
 
-@pytest.mark.parametrize(
-    "client, redis_client, _, job, headers, app_token",
-    _UNAUTHENTICATED_UPLOAD_JOB_PARAMS,
-)
-def test_unauthenticated_download_logfile(
-    logfile_download_folder, client, redis_client, _, job, headers, app_token
-):
-    """Unauthenticated GET to '/logfiles/{logfile_id}' raises 401 error"""
-    job_id = job[_JOB_ID_FIELD]
-    _save_job_file(folder=logfile_download_folder, job=job, ext=".hdf5")
-
-    # using context manager to ensure on_startup runs
-    with client as client:
-        response = client.get(f"/logfiles/{job_id}", headers=headers)
-        got = response.json()
-        detail = (
-            "Unauthorized"
-            if app_token is None
-            else f"job {job_id} does not exist for current user"
-        )
-        expected = {"detail": detail}
-
-        assert response.status_code == 401
-        assert got == expected
+# @pytest.mark.parametrize("client, redis_client, rq_worker, job", _UPLOAD_JOB_PARAMS)
+# def test_download_logfile(
+#     logfile_download_folder, client, redis_client, rq_worker, job, app_token_header
+# ):
+#     """GET to '/logfiles/{logfile_id}' downloads the given logfile"""
+#     job_id = job[_JOB_ID_FIELD]
+#     _save_job_file(folder=logfile_download_folder, job=job, ext=".hdf5")
+#
+#     # using context manager to ensure on_startup runs
+#     with client as client:
+#         response = client.get(f"/logfiles/{job_id}", headers=app_token_header)
+#         file_content = json.loads(response.content)
+#         assert response.status_code == 200
+#         assert file_content == job
+#
+#
+# @pytest.mark.parametrize(
+#     "client, redis_client, _, job, headers, app_token",
+#     _UNAUTHENTICATED_UPLOAD_JOB_PARAMS,
+# )
+# def test_unauthenticated_download_logfile(
+#     logfile_download_folder, client, redis_client, _, job, headers, app_token
+# ):
+#     """Unauthenticated GET to '/logfiles/{logfile_id}' raises 401 error"""
+#     job_id = job[_JOB_ID_FIELD]
+#     _save_job_file(folder=logfile_download_folder, job=job, ext=".hdf5")
+#
+#     # using context manager to ensure on_startup runs
+#     with client as client:
+#         response = client.get(f"/logfiles/{job_id}", headers=headers)
+#         got = response.json()
+#         detail = (
+#             "Unauthorized"
+#             if app_token is None
+#             else f"job {job_id} does not exist for current user"
+#         )
+#         expected = {"detail": detail}
+#
+#         assert response.status_code == 401
+#         assert got == expected
 
 
 @pytest.mark.parametrize("client, expected", _STATIC_PROPERTIES_PARAMS)

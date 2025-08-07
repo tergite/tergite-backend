@@ -2069,6 +2069,87 @@ def test_unauthenticated_cancel_job(
         assert response.json() == {"detail": "user not authenticated"}
 
 
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_download_logfile(
+    logfile_download_folder, client, redis_conn, worker, job, mocker, jobs_folder
+):
+    """GET to '/logfiles/{logfile_id}' downloads the given logfile"""
+    # using context manager to ensure on_startup runs
+    with client as client:
+        _save_job_file(folder=logfile_download_folder, job=job, ext=".hdf5")
+
+        users = _create_many_users(client, raw_users=USERS[:1])
+
+        # Creating this job metadata list first because it takes up a lot of time
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=[job], users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
+        job_info = job_metadata_list[0]
+
+        # submit many jobs from many users
+        _submit_multiple_jobs_v2(client, data=job_metadata_list)
+
+        response = client.get(f"/logfiles/{job["job_id"]}", headers=job_info["headers"])
+        file_content = json.loads(response.content)
+        assert response.status_code == 200
+        assert file_content == job
+
+
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_logfile_for_non_existing_job(
+    logfile_download_folder, client, redis_conn, worker, job, mocker
+):
+    """GET '/logfiles/{logfile_id}' for non-existing jobs fails with a 403"""
+    # using context manager to ensure on_startup runs
+    with client as client:
+        job_id = job["job_id"]
+        _save_job_file(folder=logfile_download_folder, job=job, ext=".hdf5")
+
+        user_id, _ = _create_user(client, USERS[0])
+        login_data = {"user_id": user_id, "job_id": job_id}
+        token, _ = _get_token(client, mocker=mocker, data=login_data)
+
+        headers = _get_headers(token)
+
+        response = client.get(f"/logfiles/{job_id}", headers=headers)
+        assert response.status_code == 403
+        assert response.json() == {"detail": f"job {job_id} does not exist"}
+
+
+@pytest.mark.timeout(240)
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_unauthenticated_download_logfile(
+    logfile_download_folder, client, redis_conn, worker, job, mocker, jobs_folder
+):
+    """Unauthenticated GET to '/logfiles/{logfile_id}' errors out"""
+    # using context manager to ensure on_startup runs
+    with client as client:
+        _save_job_file(folder=logfile_download_folder, job=job, ext=".hdf5")
+
+        users = _create_many_users(client, raw_users=USERS[:1])
+
+        # Creating this job metadata list first because it takes up a lot of time
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=[job], users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
+
+        # submit many jobs from many users
+        _submit_multiple_jobs_v2(client, data=job_metadata_list)
+
+        # no authentication
+        response = client.get(f"/logfiles/{job["job_id"]}")
+        assert response.status_code == 401
+        assert response.json() == {"detail": "Unauthorized"}
+
+        # wrong authentication
+        headers = _get_headers("foo")
+        response = client.get(f"/logfiles/{job["job_id"]}", headers=headers)
+        assert response.status_code == 401
+        assert response.json() == {"detail": "not authenticated"}
+
+
 def _cancel_job(
     client: "TestClient",
     user_id: str,
