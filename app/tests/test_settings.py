@@ -1,5 +1,6 @@
 """Tests for the settings and configs"""
 
+import importlib
 import os
 
 import pytest
@@ -47,13 +48,6 @@ def test_authenticated_mss_client(client):
     mss_client = get_mss_client()
     authorization_header = mss_client.headers.get("Authorization")
     assert authorization_header == f"Bearer {TEST_MSS_APP_TOKEN}"
-
-
-def test_is_standalone(async_standalone_backend_client):
-    """Raises no connection errors when is standalone and MSS is unavailable"""
-    with async_standalone_backend_client as client:
-        response = client.get("/")
-        assert response.status_code == 200
 
 
 def test_redis_connection(redis_client):

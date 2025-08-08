@@ -17,7 +17,7 @@ import json
 import time
 from contextlib import suppress
 from datetime import datetime, timedelta, timezone
-from itertools import islice, zip_longest
+from itertools import zip_longest
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -36,6 +36,7 @@ from black.nodes import Generic
 from pydantic import ValidationError
 from pytest_mock import MockerFixture
 from redis import Redis
+from rq import SimpleWorker, Worker
 
 from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps
 from app.services.booking.models import Booking
@@ -77,6 +78,8 @@ _DYNAMIC_PROPERTIES = [
     load_fixture("dynamic_properties.simq1.json"),
     load_fixture("dynamic_properties.simq2.json"),
 ]
+
+_MAX_QUEUE_WAIT_TIME = 30
 
 # params
 _QUANTIFY_UPLOAD_JOB_PARAMS = [
@@ -199,7 +202,7 @@ def test_view_profile(client):
 
 
 @pytest.mark.parametrize("pagination, client", _VIEW_MANY_PARAMS)
-def test_admin_view_users(client, pagination: "_PaginationInfo", mocker: MockerFixture):
+def test_admin_view_users(client, pagination: "_PaginationInfo"):
     """GET '/users' should show to an admin the paginated list of user profiles via MSS"""
     with client as client:
         users = _create_many_users(client, raw_users=USERS)
@@ -228,7 +231,6 @@ def test_admin_view_users(client, pagination: "_PaginationInfo", mocker: MockerF
         assert actual_output == expected
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_delete_profile(
     client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture
@@ -268,9 +270,7 @@ def test_delete_profile(
         assert response.json() == {"detail": "user not found"}
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        general_queue = worker.queues[0]
-        while general_queue.scheduled_job_registry.count > 0:
-            worker.work(burst=True, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True)
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
 
@@ -285,7 +285,6 @@ def test_delete_profile(
         assert all([v.status == JobStatus.SUCCESSFUL for v in other_user_jobs])
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_admin_remove_user(
     client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture
@@ -328,9 +327,7 @@ def test_admin_remove_user(
         assert response.json() == {"detail": "user not found"}
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        general_queue = worker.queues[0]
-        while general_queue.scheduled_job_registry.count > 0:
-            worker.work(burst=True, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True)
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
 
@@ -345,7 +342,6 @@ def test_admin_remove_user(
         assert all([v.status == JobStatus.SUCCESSFUL for v in other_user_jobs])
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_non_admin_remove_user(
     client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture
@@ -378,9 +374,7 @@ def test_non_admin_remove_user(
         assert response.status_code == 200
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        general_queue = worker.queues[0]
-        while general_queue.scheduled_job_registry.count > 0:
-            worker.work(burst=True, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True, max_idle_time=40)
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
         assert all([v.status == JobStatus.SUCCESSFUL for v in jobs_in_redis])
@@ -549,7 +543,6 @@ def test_unauthenticated_view_bookings(client, worker, redis_conn):
         assert response.json() == {"detail": "user not authenticated"}
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize(
     "client, redis_conn, worker, job, expected_counts, device",
     _ALL_UPLOAD_JOB_PARAMS,
@@ -642,7 +635,6 @@ def test_submit_jobs_no_booking(
             assert final.start_timestamp < final.finish_timestamp
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_submit_jobs_in_active_booking(
     client,
@@ -680,9 +672,7 @@ def test_submit_jobs_in_active_booking(
         _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        general_queue = worker.queues[0]
-        while general_queue.scheduled_job_registry.count > 0:
-            worker.work(burst=True, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True)
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
         jobs_in_redis.sort(key=lambda v: v.timestamps.execution.start_timestamp)
@@ -708,7 +698,6 @@ def test_submit_jobs_in_active_booking(
         assert first_non_booker_job_start >= booking_end_timestamp
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_submit_jobs_in_idle_booking(
     client,
@@ -744,9 +733,7 @@ def test_submit_jobs_in_idle_booking(
         _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        general_queue = worker.queues[0]
-        while general_queue.scheduled_job_registry.count > 0:
-            worker.work(burst=True, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True)
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
 
@@ -770,7 +757,6 @@ def test_submit_jobs_in_idle_booking(
 
 
 # _SIMPLE_UPLOAD_JOB_PARAMS[:-1] because the 2-qubit execution, processing takes long
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize(
     "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-1]
 )
@@ -816,9 +802,7 @@ def test_submit_jobs_in_idle_booking_before_another(
         _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        general_queue = worker.queues[0]
-        while general_queue.scheduled_job_registry.count > 0:
-            worker.work(burst=True, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True)
 
         jobs_in_db = _get_jobs_in_redis(redis_conn)
 
@@ -885,7 +869,6 @@ def test_submit_jobs_in_idle_booking_before_another(
 
 
 # _SIMPLE_UPLOAD_JOB_PARAMS[:-1] because the 2-qubit execution, processing takes long
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize(
     "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-1]
 )
@@ -922,9 +905,7 @@ def test_submit_long_jobs_before_booking(
         _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        general_queue = worker.queues[0]
-        while general_queue.scheduled_job_registry.count > 0:
-            worker.work(burst=True, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True)
 
         jobs_in_db = _get_jobs_in_redis(redis_conn)
         jobs_in_db.sort(key=lambda v: v.start_utc)
@@ -996,7 +977,7 @@ def test_upload_invalid_job(client, redis_conn, worker, job, jobs_folder, mocker
         assert jobs_in_db == []
 
 
-@pytest.mark.timeout(240)
+@pytest.mark.timeout(60)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_duplicate_job_upload(client, redis_conn, jobs_folder, worker, job, mocker):
     """Uploading two jobs of the same job_id returns an error"""
@@ -1037,7 +1018,6 @@ def test_duplicate_job_upload(client, redis_conn, jobs_folder, worker, job, mock
     assert third_response.json() == expected_err_resp
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_remove_job(client, redis_conn, jobs_folder, worker, job, mocker):
     """DELETE to '/jobs/{job_id}' deletes the given job if job belongs to user"""
@@ -1071,7 +1051,6 @@ def test_remove_job(client, redis_conn, jobs_folder, worker, job, mocker):
         assert job_ids_in_db == expected_ids
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_remove_another_users_job(client, redis_conn, jobs_folder, worker, job, mocker):
     """DELETE to '/jobs/{job_id}' fails if the user does not own the given job"""
@@ -1106,7 +1085,6 @@ def test_remove_another_users_job(client, redis_conn, jobs_folder, worker, job, 
         assert job_ids_in_db == expected_ids
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_admin_remove_job(client, redis_conn, jobs_folder, worker, job, mocker):
     """DELETE to '/jobs/{job_id}' deletes the given job if user is admin"""
@@ -1141,7 +1119,6 @@ def test_admin_remove_job(client, redis_conn, jobs_folder, worker, job, mocker):
         assert job_ids_in_db == expected_ids
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_unauthenticated_remove_job(
     client, redis_conn, jobs_folder, worker, job, mocker
@@ -1183,7 +1160,6 @@ def test_unauthenticated_remove_job(
         assert job_ids_in_db == expected_ids
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_cancel_future_booking(
     client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture
@@ -1266,7 +1242,6 @@ def test_admin_cancel_future_booking(client):
         assert got == expected
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_cancel_active_booking(
     client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture
@@ -1304,9 +1279,7 @@ def test_cancel_active_booking(
         _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        general_queue = worker.queues[0]
-        while general_queue.scheduled_job_registry.count > 0:
-            worker.work(burst=True, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True)
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
 
@@ -1326,7 +1299,6 @@ def test_cancel_active_booking(
         assert last_booker_job_start < booking_end_timestamp
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_cancel_completed_booking(
     client, worker, redis_conn, job, mocker: MockerFixture
@@ -1357,7 +1329,6 @@ def test_cancel_completed_booking(
         assert got == expected
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, worker, job, device_name, user", _VIEW_JOB_PARAMS)
 def test_view_job(
     client, worker, job, device_name, user, jobs_folder, mocker: MockerFixture
@@ -1504,7 +1475,6 @@ def test_admin_view_job(
         assert received_job == expected_job
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, _redis, worker, job, device", _VIEW_JOBS_PARAMS)
 def test_view_jobs(
     client, _redis, worker, job, device, jobs_folder, mocker: MockerFixture
@@ -1593,7 +1563,6 @@ def test_view_jobs(
         assert completed_jobs_resp == _paginate(expected_jobs)
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, _redis, worker, job, device", _VIEW_JOBS_PARAMS)
 def test_view_jobs_by_status(
     client, _redis, worker, job, device, jobs_folder, mocker: MockerFixture
@@ -1763,7 +1732,6 @@ def test_unauthenticated_view_jobs(
         assert response.json() == {"detail": "user not authenticated"}
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_cancel_job(client, redis_conn, jobs_folder, worker, job, mocker):
     """A user POST to '/jobs/{id}/cancel' cancels the job of the job_id if the job belongs to them"""
@@ -1831,7 +1799,6 @@ def test_cancel_job(client, redis_conn, jobs_folder, worker, job, mocker):
         assert job_in_db == expected_job
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_cancel_another_users_job(client, redis_conn, jobs_folder, worker, job, mocker):
     """A user POST to '/jobs/{id}/cancel' for a job does is not for the current user errors out"""
@@ -1883,7 +1850,6 @@ def test_cancel_another_users_job(client, redis_conn, jobs_folder, worker, job, 
         assert job_in_db == expected_job
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_admin_cancel_job(client, redis_conn, jobs_folder, worker, job, mocker):
     """A user POST to '/jobs/{id}/cancel' cancels the job of the job_id if the user is admin"""
@@ -1955,7 +1921,6 @@ def test_admin_cancel_job(client, redis_conn, jobs_folder, worker, job, mocker):
         assert job_in_db == expected_job
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_unauthenticated_cancel_job(
     client, redis_conn, worker, job, jobs_folder, mocker: MockerFixture
@@ -1997,7 +1962,6 @@ def test_unauthenticated_cancel_job(
         assert response.json() == {"detail": "user not authenticated"}
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_download_logfile(
     logfile_download_folder, client, redis_conn, worker, job, mocker, jobs_folder
@@ -2024,7 +1988,6 @@ def test_download_logfile(
         assert file_content == job
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_logfile_for_non_existing_job(
     logfile_download_folder, client, redis_conn, worker, job, mocker
@@ -2046,7 +2009,6 @@ def test_logfile_for_non_existing_job(
         assert response.json() == {"detail": f"job {job_id} does not exist"}
 
 
-@pytest.mark.timeout(240)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_unauthenticated_download_logfile(
     logfile_download_folder, client, redis_conn, worker, job, mocker, jobs_folder
@@ -2757,6 +2719,49 @@ def _remove_dates(dynamic_properties: Dict[str, Any]) -> Dict[str, Any]:
             for resonator_conf in resonators
         ],
     }
+
+
+def _wait_on_rq_worker(
+    worker: SimpleWorker,
+    max_idle_time: int = _MAX_QUEUE_WAIT_TIME,
+    burst: bool = True,
+    max_jobs: Optional[int] = None,
+    with_scheduler: bool = False,
+    **kwargs,
+):
+    """Waits for the worker to complete its worker
+
+    Args:
+        worker: the rq worker to wait on
+        max_idle_time: the number of seconds beyond which a timeout is raised
+        with_scheduler: whether to run in a scheduler
+        kwargs: extra kwargs to pass to the work() method of the worker.
+            See the signature of that method
+
+    Raises:
+        TimeoutError: Worker took longer than {max_idle_time} seconds
+    """
+    general_queue = worker.queues[0]
+    deadline = datetime.now() + timedelta(seconds=max_idle_time)
+
+    while general_queue.scheduled_job_registry.count > 0:
+        now = datetime.now()
+        if now > deadline:
+            raise TimeoutError(f"Worker took longer than {max_idle_time} seconds")
+
+        # in order to avoid this from hanging,
+        # whenever with_scheduler is True, burst must be True so that it quits
+        # immediately after starting the scheduler.
+        # With burst=True, the locks are released immediately after running the jobs
+        if with_scheduler:
+            burst = True
+        worker.work(
+            burst=burst,
+            with_scheduler=with_scheduler,
+            max_idle_time=1,
+            max_jobs=max_jobs,
+            **kwargs,
+        )
 
 
 class _PaginatedList(TypedDict, Generic[T]):

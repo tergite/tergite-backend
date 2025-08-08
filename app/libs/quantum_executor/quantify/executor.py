@@ -73,15 +73,14 @@ class QuantifyExecutor(QuantumExecutor):
         qblox_instruments.Cluster.close_all()
 
         # Initialize a (singleton) instrument coordinator if not already set.
-        if self._coordinator is None:
+        if self.__class__._coordinator is None:
             self.__class__._coordinator = InstrumentCoordinator(
                 "tergite_quantum_executor"
             )
-
-        clusters = QuantifyMetadata.from_yaml(quantify_metadata_file).get_clusters()
-        for cluster in clusters:
-            cluster.reset()  # resets cluster for consistency
-            self._coordinator.add_component(ClusterComponent(cluster))
+            clusters = QuantifyMetadata.from_yaml(quantify_metadata_file).get_clusters()
+            for cluster in clusters:
+                cluster.reset()  # resets cluster for consistency
+                self.__class__._coordinator.add_component(ClusterComponent(cluster))
 
         device_name = "DUT"
         try:
