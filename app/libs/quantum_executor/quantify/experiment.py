@@ -21,6 +21,8 @@ from typing import Dict, Optional, Tuple, Type
 from qiskit.qobj import PulseQobjConfig, PulseQobjExperiment, PulseQobjInstruction
 from quantify_scheduler import Schedule
 from quantify_scheduler.resources import ClockResource
+from quantify_scheduler.operations.pulse_library import IdlePulse
+
 
 from app.libs.quantum_executor.base.experiment import (
     NativeExperiment,
@@ -57,6 +59,7 @@ _INSTRUCTION_PULSE_MAP: Dict[Tuple[str, Optional[str]], Type[BaseInstruction]] =
     ("parametric_pulse", "gaussian"): GaussPulseInstruction,
     ("parametric_pulse", "constant"): SquarePulseInstruction,
     ("parametric_pulse", "wacqt_cz"): WacqtCZPulseInstruction,
+    ("parametric_pulse", "wacqt_cz_gate_pulse"): WacqtCZPulseInstruction,
 }
 
 
@@ -82,7 +85,7 @@ class QuantifyExperiment(NativeExperiment):
             operation=root_instruction.to_operation(config=self.config),
         )
 
-        for channel in self.channel_registry.values():  # type: QuantifyChannel
+        for channel in self.channel_registry.values():
             if (
                 len(channel.instructions) == 1
                 and channel.instructions[0].name == "delay"
@@ -93,6 +96,7 @@ class QuantifyExperiment(NativeExperiment):
                 continue
 
             prev = root_instruction
+            scheduled_any = False
             for curr in channel.instructions:
                 rel_time = curr.t0 - prev.final_timestamp + self.timegrid_interval
                 ref_op = prev.label
@@ -108,6 +112,18 @@ class QuantifyExperiment(NativeExperiment):
 
                 # set the previous to the current
                 prev = curr
+                scheduled_any = True
+            # Ensure the channel does not end with a parameter op
+            # (Quantify forbids a zero-duration parameter operation at the schedule end).
+            if scheduled_any:
+                raw_schedule.add(
+                    ref_op=prev.label,
+                    ref_pt="end",
+                    ref_pt_new="start",
+                    rel_time=self.timegrid_interval,
+                    label=f"{prev.label}__tail_idle",
+                    operation=IdlePulse(duration=self.timegrid_interval),
+                )
 
         return _get_absolute_timed_schedule(
             schedule=raw_schedule, channel_registry=self.channel_registry

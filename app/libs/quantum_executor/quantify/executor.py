@@ -21,6 +21,7 @@ This module implements the executor.
 
 import copy
 import os
+import re
 from datetime import datetime
 from typing import List, Optional, Union
 
@@ -44,7 +45,7 @@ from app.libs.quantum_executor.utils.config import (
 from app.libs.quantum_executor.utils.logger import ExperimentLogger
 from app.libs.quantum_executor.utils.portclock import generate_hardware_map
 from .spi_dac import SpiDAC
-from settings import REDIS_CONNECTION
+from settings import REDIS_CONNECTION, QUANTIFY_METADATA_FILE
 
 
 class QuantifyExecutor(QuantumExecutor):
@@ -70,6 +71,23 @@ class QuantifyExecutor(QuantumExecutor):
             quantify_config=self.quantify_config,
         )
         super().__init__(hardware_map=self.hardware_map)
+
+        # canonical list like ['u1', 'u2', ...] sorted by number
+        def _ukey(u: str) -> int:
+            m = re.search(r"\d+", u)
+            return int(m.group(0)) if m else 10**9
+
+        self._couplers = sorted(
+            backend_config.device_config.coupling_dict.keys(),
+            key=_ukey,
+        )
+
+        # Build maps between coupler IDs and Quantify/port names from the hardware_map.
+        # Assumes generate_hardware_map has entries for 'uN' like: hardware_map['u1'] -> (clock, port).
+        self._coupler_to_port = {
+            u: self.hardware_map[u][1] for u in self._couplers if u in self.hardware_map
+        }
+        self._port_to_coupler = {port: u for u, port in self._coupler_to_port.items()}
 
         # make sure all previous connections are closed
         qblox_instruments.Cluster.close_all()
@@ -137,7 +155,7 @@ class QuantifyExecutor(QuantumExecutor):
         logger.log_Q1ASM_programs(compiled_schedule)
         logger.log_schedule(compiled_schedule)
 
-        spi_dac = SpiDAC(couplers=self._couplers)
+        spi_dac = SpiDAC(couplers=self._couplers, metadata_path=QUANTIFY_METADATA_FILE)
         self._baseline_couplers(spi_dac)
 
         bias_currents = self._extract_bias(experiment)
@@ -160,18 +178,26 @@ class QuantifyExecutor(QuantumExecutor):
 
     def _extract_bias(self, expt: QuantifyExperiment) -> dict[str, float]:
         """
-        Return {port_name: current[A]} for every WACQT-CZ instruction.
+        Return {'uN': current[A]} for every WACQT-CZ instruction.
+        If multiple pulses hit the same coupler, keep the largest |current|.
         """
         bias: dict[str, float] = {}
         for ch in expt.channel_registry.values():
             for inst in ch.instructions:
                 if inst.name == "wacqt_cz" and "dc_bias" in inst.parameters:
-                    # TODO: port name would be different than expected
-                    # debug and parse properly
                     port = inst.port
+                    try:
+                        u = self._port_to_coupler[port]  # normalize to 'uN'
+                    except KeyError as e:
+                        raise KeyError(
+                            f"Unknown coupler port '{port}'. "
+                            f"Make sure hardware_map has an entry for the coupler "
+                            f"and that it’s connected to canonical ID via _port_to_coupler."
+                        ) from e
+
                     cur = float(inst.parameters["dc_bias"])
-                    if port not in bias or abs(cur) > abs(bias[port]):
-                        bias[port] = cur
+                    if u not in bias or abs(cur) > abs(bias[u]):
+                        bias[u] = cur
         return bias
 
     @classmethod

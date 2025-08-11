@@ -729,10 +729,13 @@ class WacqtCZPulseInstruction(BaseInstruction):
         hardware_map: Optional[Dict[str, Any]] = None,
     ) -> List["WacqtCZPulseInstruction"]:
         # Accept either a dedicated name or a parametric pulse with shape tag
-        if not (
-            qobj_inst.name.lower() in {"wacqt_cz", "parametric_pulse"}
-            and getattr(qobj_inst, "pulse_shape", "wacqt_cz").lower() == "wacqt_cz"
-        ):
+        name_ok = qobj_inst.name.lower() in {"wacqt_cz", "parametric_pulse"}
+        shape = getattr(qobj_inst, "pulse_shape", "wacqt_cz")
+        shape_ok = isinstance(shape, str) and shape.lower() in {
+            "wacqt_cz",
+            "wacqt_cz_gate_pulse",
+        }
+        if not (name_ok and shape_ok):
             return []
 
         params = {k.lower(): v for k, v in qobj_inst.parameters.items()}
@@ -742,20 +745,35 @@ class WacqtCZPulseInstruction(BaseInstruction):
         clock, port = hardware_map[qobj_inst.ch]
         channel = channel_registry.get(clock)
 
-        return [
-            cls(
+        cz_freq = params.get("freq")
+        setf = None
+        if cz_freq is not None:
+            setf = SetFreqInstruction(
+                name="setf",
                 t0=t0,
                 channel=channel,
                 port=port,
-                duration=duration,
-                parameters=params,
+                duration=0.0,
+                frequency=float(cz_freq),
             )
-        ]
+        cz = cls(
+            t0=t0,
+            channel=channel,
+            port=port,
+            duration=duration,
+            parameters=params,
+        )
+
+        return [inst for inst in (setf, cz) if inst is not None]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
-        n_pts = int(self.parameters["duration"])
+        n_pts = int(
+            self.parameters.get(
+                "n_pts", max(1, int(self.duration / QBLOX_TIMEGRID_INTERVAL))
+            )
+        )
         samples = _cz_delta_samples(n_pts, self.parameters)
-        t_samples = np.linspace(0, self.duration, n_pts).tolist()
+        t_samples = np.linspace(0, self.duration, n_pts, endpoint=False).tolist()
         return NumericalPulse(
             samples=samples.tolist(),
             t_samples=t_samples,

@@ -103,19 +103,18 @@ class QuantifyMetadata(RootModel[Dict[str, InstrumentConfig]]):
         cls, v: Dict[str, InstrumentConfig]
     ) -> Dict[str, InstrumentConfig]:
         for name, instr in v.items():
-            # Validate that for each Cluster instrument the name matches the expected pattern.
-            if instr.instrument_type == "Cluster" and not CLUSTER_NAME_REGEX.match(
-                name
-            ):
-                raise ValueError(
-                    f"Cluster name '{name}' does not match expected pattern 'cluster<number>'."
-                )
-
-            # Validate that for each Cluster instrument has an ip address.
-            if not instr.ip_address:
-                raise ValueError(
-                    f"Cluster '{name}' must specify an instrument_address."
-                )
+            if instr.instrument_type == "Cluster":
+                # Validate that for each Cluster instrument the name matches the expected pattern.
+                if not CLUSTER_NAME_REGEX.match(name):
+                    raise ValueError(
+                        f"Cluster name '{name}' does not match expected pattern 'cluster<number>'."
+                    )
+                # Validate that for each Cluster instrument has an ip address.
+                if not instr.ip_address:
+                    raise ValueError(f"Cluster '{name}' must specify an ip_address.")
+            elif instr.instrument_type == "SPI-Rack":
+                if not instr.port:
+                    raise ValueError(f"SPI-Rack '{name}' must specify a serial 'port'.")
         return v
 
     @classmethod
@@ -134,12 +133,11 @@ class QuantifyMetadata(RootModel[Dict[str, InstrumentConfig]]):
         return cls.model_validate(data)
 
     def get_clusters(self) -> List[qblox_instruments.Cluster]:
-        """Get the clusters corresponding to the metadata
-
-        Returns:
-            the list of clusters got from this metadata
-        """
-        return [_create_cluster(name, conf) for name, conf in self.root.items()]
+        return [
+            _create_cluster(name, conf)
+            for name, conf in self.root.items()
+            if conf.instrument_type == "Cluster"
+        ]
 
 
 def load_quantify_config(

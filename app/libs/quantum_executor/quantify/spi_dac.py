@@ -84,7 +84,7 @@ def _find_and_validate_spi_port(port: str | None) -> str | None:
     # For the default base case, return None
     logger.warning(
         "Couldn't find the serial port of the SPI rack. "
-        "Please check cable or fix the entry in metadata.yml",
+        "Please check cable or fix the entry in metadata.yml (port=%s)",
         port,
     )
     return None
@@ -136,7 +136,7 @@ class SpiDAC:
 
         # build DAC handles
         self.dacs_dictionary: Dict[str, Any] = {
-            coupler: self._create_spi_dac(coupler) for coupler in couplers
+            coupler: self.create_spi_dac(coupler) for coupler in couplers
         }
 
     def create_spi_dac(self, coupler: str):
@@ -202,8 +202,8 @@ class SpiDAC:
 
     def set_dac_current(self, dac_values: dict[str, float]) -> None:
         if self.is_dummy:
-            logger.status(
-                f"Dummy DAC to current {dac_values}. NO REAL CURRENT is generated"
+            logger.info(
+                f"Dummy DAC to current %s. NO REAL CURRENT is generated", dac_values
             )
             return
         self.ramp_current_serially(dac_values)
@@ -213,10 +213,9 @@ class SpiDAC:
             dac = self.dacs_dictionary[coupler]
             dac.current(target_current)
         ramp_counter = 0
-        couplers = self.dacs_dictionary.keys()
+        couplers = list(self.dacs_dictionary.keys())
         dacs = self.dacs_dictionary.values()
-        logger.status(f"{'Ramping current (mA)'}")
-        logger.status(f"{couplers}", end=": ")
+        logger.info("Ramping current (mA): %s", couplers)
         while any([dac.is_ramping() for dac in dacs]):
             ramp_counter += 1
             print_termination = " -> "
@@ -263,7 +262,7 @@ class SpiDAC:
                         logger.error(f"Error reading DAC current: {e}")
                         break
 
-        logger.status(f"Ramping finished")
+        logger.info(f"Ramping finished")
 
     def print_currents(self):
         for coupler, dac in self.dacs_dictionary.items():
@@ -272,4 +271,4 @@ class SpiDAC:
 
     def close_spi_rack(self):
         self.spi.close()
-        logger.status(f"Closing SPI rack")
+        logger.info(f"Closing SPI rack")
