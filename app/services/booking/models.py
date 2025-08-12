@@ -56,6 +56,7 @@ class UserProfile(BaseModel):
 class NewUserInfo(SQLModel, table=False):
     """Schema for creating new users"""
 
+    id: str = Field(primary_key=True, index=True)
     name: str = Field()
     email: str = Field(unique=True, index=True)
     password: str = Field()
@@ -65,7 +66,6 @@ class NewUserInfo(SQLModel, table=False):
 class User(NewUserInfo, table=True):
     """Schema for users"""
 
-    id: str = Field(default_factory=uuid_str, primary_key=True, index=True)
     bookings: List["Booking"] = Relationship(
         back_populates="user", passive_deletes="all"
     )

@@ -206,6 +206,7 @@ def create_random_user(db_engine: Engine, user_id: str) -> User:
         ConflictError: booking conflicts with another user
     """
     user_data = NewUserInfo(
+        id=user_id,
         name=f"User-{user_id}",
         email=f"{user_id}@{get_random_name()}.com",
         password=uuid_str(),
