@@ -4,6 +4,7 @@
 
 - The first version of the tergite-backend
 - Support for [Labber](https://www.keysight.com/us/en/products/software/application-sw/labber-software.html)
+- Original FIFO queueing
 
 ## Axel Andersson
 
@@ -27,6 +28,7 @@
 - Hardware configuration clean up with YAML and TOML
 - integration test suite plus CI/CD
 - Simplification of data storage in redis
+- Advanced queue supporting both booked time slots and FIFO (first in, first out)
 
 ## Nicklas Botö
 
