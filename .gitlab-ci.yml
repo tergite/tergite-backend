@@ -5,7 +5,7 @@ variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   PYTHON_VERSION: "3.12"
   REDIS_PORT: 6378
-  TEST_RQ_MAX_QUEUE_WAIT_TIME: 60
+  TEST_RQ_MAX_QUEUE_WAIT_TIME: 45
 
 tests:
   stage: tests

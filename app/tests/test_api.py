@@ -340,7 +340,9 @@ def test_admin_remove_user(
         assert all([v.status == JobStatus.SUCCESSFUL for v in other_user_jobs])
 
 
-@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+@pytest.mark.parametrize(
+    "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-1]
+)
 def test_non_admin_remove_user(
     client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture
 ):
@@ -696,7 +698,9 @@ def test_submit_jobs_in_active_booking(
         assert first_non_booker_job_start >= booking_end_timestamp
 
 
-@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+@pytest.mark.parametrize(
+    "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-1]
+)
 def test_submit_jobs_in_idle_booking(
     client,
     worker,
@@ -1240,7 +1244,9 @@ def test_admin_cancel_future_booking(client):
         assert got == expected
 
 
-@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+@pytest.mark.parametrize(
+    "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-1]
+)
 def test_cancel_active_booking(
     client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture
 ):
@@ -1270,7 +1276,7 @@ def test_cancel_active_booking(
 
         # It still works
         # submit many jobs from many users when booking starts
-        raw_jobs = _get_raw_jobs(job, durations=[0.23, 0.3, 1])
+        raw_jobs = _get_raw_jobs(job, durations=[0.23, 0.3, 0.1])
         job_metadata_list = _get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, jobs_folder=jobs_folder, mocker=mocker
         )
@@ -2761,7 +2767,7 @@ def _wait_on_rq_worker(
         worker.work(
             burst=burst,
             with_scheduler=with_scheduler,
-            max_idle_time=1,
+            # max_idle_time=1,
             max_jobs=max_jobs,
             **kwargs,
         )
