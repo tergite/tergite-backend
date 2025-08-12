@@ -63,7 +63,8 @@ def test_redis_connection(redis_client):
     redis_client.flushall()
 
 
-def test_no_mss_connected():
+@pytest.mark.asyncio
+async def test_no_mss_connected():
     """Raises connection errors only when MSS is unavailable and is not standalone"""
     remove_modules(["os", "app", "settings"])
 
@@ -71,11 +72,20 @@ def test_no_mss_connected():
     os.environ["BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
     os.environ["IS_STANDALONE"] = "False"
 
+    from sqlmodel import SQLModel
+
+    SQLModel.metadata.clear()
+
     with pytest.raises(requests.exceptions.ConnectionError):
         from app.api import app
 
+        # just to run the startup events
+        async with app.router.lifespan_context(app):
+            pass
 
-def test_calibration_seed_required_for_simulator():
+
+@pytest.mark.asyncio
+async def test_calibration_seed_required_for_simulator():
     """Raises validation errors if calibration seed is not set for simulator."""
     remove_modules(["os", "app", "settings"])
 
@@ -84,13 +94,22 @@ def test_calibration_seed_required_for_simulator():
     os.environ["BACKEND_SETTINGS"] = TEST_SIMQ1_BACKEND_SETTINGS_FILE
     os.environ["CALIBRATION_SEED"] = get_fixture_path("non-existent.toml")
 
+    from sqlmodel import SQLModel
+
+    SQLModel.metadata.clear()
+
     with pytest.raises(
         ValidationError, match="Calibration config is required for simulators."
     ):
         from app.api import app
 
+        # just to run the startup events
+        async with app.router.lifespan_context(app):
+            pass
 
-def test_calibration_seed_broken_for_simulator():
+
+@pytest.mark.asyncio
+async def test_calibration_seed_broken_for_simulator():
     """Raises validation errors if calibration seed provided is broken for simulator only."""
     remove_modules(["os", "app", "settings"])
 
@@ -99,13 +118,22 @@ def test_calibration_seed_broken_for_simulator():
     os.environ["BACKEND_SETTINGS"] = TEST_SIMQ1_BACKEND_SETTINGS_FILE
     os.environ["CALIBRATION_SEED"] = get_fixture_path("broken.seed.toml")
 
+    from sqlmodel import SQLModel
+
+    SQLModel.metadata.clear()
+
     with pytest.raises(
         ValidationError, match="Calibration config is required for simulators."
     ):
         from app.api import app
 
+        # just to run the startup events
+        async with app.router.lifespan_context(app):
+            pass
 
-def test_quantify_metadata_is_broken():
+
+@pytest.mark.asyncio
+async def test_quantify_metadata_is_broken():
     """Raises validation errors if quantify metadata conf file is broken"""
     remove_modules(["os", "app", "settings"])
 
@@ -115,11 +143,20 @@ def test_quantify_metadata_is_broken():
     os.environ["QUANTIFY_CONFIG_FILE"] = TEST_QUANTIFY_CONFIG_FILE
     os.environ["QUANTIFY_METADATA_FILE"] = TEST_BROKEN_QUANTIFY_METADATA_FILE
 
+    from sqlmodel import SQLModel
+
+    SQLModel.metadata.clear()
+
     with pytest.raises(ValidationError):
         from app.api import app
 
+        # just to run the startup events
+        async with app.router.lifespan_context(app):
+            pass
 
-def test_quantify_config_is_broken():
+
+@pytest.mark.asyncio
+async def test_quantify_config_is_broken():
     """Raises validation errors if quantify config file is broken"""
     remove_modules(["os", "app", "settings"])
 
@@ -129,5 +166,13 @@ def test_quantify_config_is_broken():
     os.environ["QUANTIFY_CONFIG_FILE"] = TEST_BROKEN_QUANTIFY_CONFIG_FILE
     os.environ["QUANTIFY_METADATA_FILE"] = TEST_QUANTIFY_METADATA_FILE
 
+    from sqlmodel import SQLModel
+
+    SQLModel.metadata.clear()
+
     with pytest.raises(ValidationError):
         from app.api import app
+
+        # just to run the startup events
+        async with app.router.lifespan_context(app):
+            pass

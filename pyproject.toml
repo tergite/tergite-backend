@@ -91,6 +91,7 @@ dev = [
     "freezegun~=1.5.1",
     "pytest-freezegun>=0.4.2",
     "pytest-lazy-fixtures>=1.1.2",
+    "pytest-asyncio~=1.1.0",
     "pre-commit~=4.2.0",
     "rq-dashboard~=0.8.3.2",
     "requests-mock>=1.11.0",
