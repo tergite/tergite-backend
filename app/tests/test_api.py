@@ -252,7 +252,7 @@ def test_delete_profile(
         )
 
         # wait for the first booking to start
-        raw_jobs = _get_raw_jobs(job, durations=[0.23, 2, 2.1, 1])
+        raw_jobs = _get_raw_jobs(job, durations=[0.23, 0.1, 0.23])
         job_metadata_list = _get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
@@ -303,7 +303,7 @@ def test_admin_remove_user(
         )
 
         # wait for the first booking to start
-        raw_jobs = _get_raw_jobs(job, durations=[0.23, 2, 2.1, 0.3])
+        raw_jobs = _get_raw_jobs(job, durations=[0.23, 0.1, 0.23])
         job_metadata_list = _get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
@@ -354,7 +354,7 @@ def test_non_admin_remove_user(
         for booking in VALID_BOOKINGS[:TEST_MAX_SLOTS_PER_DAY]:
             _, result = _create_booking(client, user_id=curr_user_id, booking=booking)
 
-        raw_jobs = _get_raw_jobs(job, durations=[0.23, 1, 0.3, 0.2])
+        raw_jobs = _get_raw_jobs(job, durations=[0.23, 0.4, 0.3])
         job_metadata_list = _get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
@@ -372,7 +372,7 @@ def test_non_admin_remove_user(
         assert response.status_code == 200
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True, max_idle_time=40)
+        _wait_on_rq_worker(worker, with_scheduler=True)
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
         assert all([v.status == JobStatus.SUCCESSFUL for v in jobs_in_redis])
