@@ -2613,9 +2613,14 @@ def _create_user(client: "TestClient", user: dict) -> Tuple[str, "Response"]:
         the tuple of id of the user and the result
     """
     headers = create_mss_headers(is_admin=True)
-    response = client.post("/users", json=user, headers=headers)
+    user_id = f"{uuid4()}"
+    payload = {**user, "id": user_id}
+
+    response = client.post("/users", json=payload, headers=headers)
     json_response = response.json()
-    return json_response["id"], response
+
+    assert json_response["id"] == user_id
+    return user_id, response
 
 
 def _get_token(
