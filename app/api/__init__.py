@@ -371,6 +371,7 @@ async def cancel_booking(
     booking_id: str,
     user_id: str = Depends(get_verified_mss_user_id),
     queue_pool: QueuePool = Depends(get_queue_pool),
+    is_mss_admin: bool = Depends(get_unverified_mss_is_admin),
 ) -> GeneralMessage:
     """Cancels a booking of given id for the user of the given token
 
@@ -378,11 +379,14 @@ async def cancel_booking(
         booking_id: the unique identifier of the booking to cancel
         user_id: the MSS user_id as sent by MSS
         queue_pool: the collection of queues to run the jobs on
+        is_mss_admin: whether the user is an admin in MSS or not
 
     Returns:
         the general message object with the status
     """
-    scheduler.cancel_booking(queue_pool, user_id=user_id, booking_id=booking_id)
+    scheduler.cancel_booking(
+        queue_pool, user_id=user_id, booking_id=booking_id, is_mss_admin=is_mss_admin
+    )
     return {"status": "success", "detail": f"Booking of id {booking_id} cancelled"}
 
 

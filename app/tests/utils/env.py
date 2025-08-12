@@ -70,6 +70,8 @@ REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 
 TEST_RQ_REDIS_URL = os.getenv("RQ_REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/2")
 TEST_JOBS_REDIS_URL = TEST_RQ_REDIS_URL
+TEST_LOGGING_LEVEL = os.getenv("LOGGING_LEVEL", "ERROR")
+TEST_RQ_MAX_QUEUE_WAIT_TIME = int(os.getenv("TEST_RQ_MAX_QUEUE_WAIT_TIME", "30"))
 
 
 def setup_test_env():
@@ -114,3 +116,4 @@ def setup_test_env():
     environ["MSS_PUBLIC_KEY_PATH"] = f"{TEST_MSS_PUBLIC_KEY_PATH}"
     environ["MSS_NONCE_TTL"] = f"{TEST_MSS_NONCE_TTL}"
     environ["CORS_ORIGINS"] = f"{TEST_CORS_ORIGINS}"
+    environ["LOGGING_LEVEL"] = f"{TEST_LOGGING_LEVEL}"
