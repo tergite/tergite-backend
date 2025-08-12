@@ -131,11 +131,15 @@ if command -v redis-cli &> /dev/null; then
   done
 fi
 
+export PYTHONPATH="$(pwd):${PYTHONPATH}"
+
 # Worker processes
-rq worker -u "$REDIS_URL" "${DEFAULT_PREFIX}_job_registration" &
-rq worker -u "$REDIS_URL" "${DEFAULT_PREFIX}_job_execution" &
-rq worker -u "$REDIS_URL" "${DEFAULT_PREFIX}_logfile_postprocessing" &
+rq worker -u "$REDIS_URL" -w app.utils.logging_worker.LoggingWorker "${DEFAULT_PREFIX}_job_registration" &
+rq worker -u "$REDIS_URL" -w app.utils.logging_worker.LoggingWorker "${DEFAULT_PREFIX}_job_execution" &
+rq worker -u "$REDIS_URL" -w app.utils.logging_worker.LoggingWorker "${DEFAULT_PREFIX}_logfile_postprocessing" &
+
 
 # REST-API
 extra_params=$([[ "$IS_SYSTEMD" = "true" ]] && echo "--proxy-headers" || echo "--reload")
-python -m uvicorn --host 0.0.0.0 --port "$PORT_NUMBER" app.api:app "$extra_params"
+python -m uvicorn --host 0.0.0.0 --port "$PORT_NUMBER" --log-level ${UVICORN_LOG_LEVEL:-info} app.api:app "$extra_params"
+

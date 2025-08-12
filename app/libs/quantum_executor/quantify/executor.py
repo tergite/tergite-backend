@@ -119,14 +119,14 @@ class QuantifyExecutor(QuantumExecutor):
         return native_experiments
 
     def _baseline_couplers(self, spi_dac: SpiDAC) -> None:
-        zero_currents = {cplr: 0e-6 for cplr in self._couplers}
-        spi_dac.set_dac_current(zero_currents)
-
         # Persist the parking current (0 A) in Redis for each coupler
         # TODO: couplers ref names would be different than expected here
         # debug and parse properly
         for cplr in self._couplers:
-            REDIS_CONNECTION.hset(f"couplers:{cplr}", "parking_current", 0e-6)
+            REDIS_CONNECTION.hset(f"couplers:{cplr}", "parking_current", 1e-4)
+
+        # zero_currents = {cplr: 0e-6 for cplr in self._couplers}
+        # spi_dac.set_dac_current(zero_currents)
 
     def _run_native(
         self,
@@ -158,9 +158,14 @@ class QuantifyExecutor(QuantumExecutor):
         spi_dac = SpiDAC(couplers=self._couplers, metadata_path=QUANTIFY_METADATA_FILE)
         self._baseline_couplers(spi_dac)
 
+        spi_dac.set_parking_currents(self._couplers)
+
         bias_currents = self._extract_bias(experiment)
         if bias_currents:
+            print("Bias currents requested: %s", bias_currents)
             spi_dac.set_dac_current(bias_currents)
+        else:
+            print("No dc_bias extracted from schedule; skipping bias set.")
 
         self._coordinator.prepare(compiled_schedule)
         t3 = datetime.now()
@@ -181,10 +186,12 @@ class QuantifyExecutor(QuantumExecutor):
         Return {'uN': current[A]} for every WACQT-CZ instruction.
         If multiple pulses hit the same coupler, keep the largest |current|.
         """
+        print("Scanning %d channels for dc_bias...", len(expt.channel_registry))
         bias: dict[str, float] = {}
+        dc_bias_alias = "theta"
         for ch in expt.channel_registry.values():
             for inst in ch.instructions:
-                if inst.name == "wacqt_cz" and "dc_bias" in inst.parameters:
+                if inst.name == "wacqt_cz" and dc_bias_alias in inst.parameters:
                     port = inst.port
                     try:
                         u = self._port_to_coupler[port]  # normalize to 'uN'
@@ -195,7 +202,7 @@ class QuantifyExecutor(QuantumExecutor):
                             f"and that it’s connected to canonical ID via _port_to_coupler."
                         ) from e
 
-                    cur = float(inst.parameters["dc_bias"])
+                    cur = float(inst.parameters[dc_bias_alias])
                     if u not in bias or abs(cur) > abs(bias[u]):
                         bias[u] = cur
         return bias

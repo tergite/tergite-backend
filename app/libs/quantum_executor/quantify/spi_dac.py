@@ -225,7 +225,7 @@ class SpiDAC:
             sys.stdout.write(f"{these_currents * 1000}", end=print_termination)
             sys.stdout.flush()
             time.sleep(1)
-        logger.status(f"Ramping finished at {dac.current() * 1000:.4f} mA")
+        logger.info(f"Ramping finished at {dac.current() * 1000:.4f} mA")
 
     def ramp_current_serially(self, dac_values: dict[str, float]):
         for coupler, target_current in dac_values.items():
@@ -270,5 +270,10 @@ class SpiDAC:
             logger.info(f"{coupler}: {current:.4f} mA")
 
     def close_spi_rack(self):
+        for dac in self.dacs_dictionary.values():
+            while bool(dac.is_ramping()):
+                time.sleep(0.05)
+            dac.ramping_enabled(False)  # future sets are instant
+        time.sleep(0.05)
         self.spi.close()
         logger.info(f"Closing SPI rack")

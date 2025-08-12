@@ -46,6 +46,15 @@ from .utils import get_executor
 rq_queues = QueuePool(prefix=DEFAULT_PREFIX, connection=REDIS_CONNECTION)
 executor = get_executor()
 
+import logging, os, sys
+
+level = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, level, logging.INFO),
+    format="%(asctime)s [%(levelname)-8s] %(name)s: %(message)s",
+    stream=sys.stdout,
+)
+
 
 def job_execute(job_file: Path):
     print(f"Executing file {str(job_file)}")

@@ -737,7 +737,6 @@ class WacqtCZPulseInstruction(BaseInstruction):
         }
         if not (name_ok and shape_ok):
             return []
-
         params = {k.lower(): v for k, v in qobj_inst.parameters.items()}
         t0 = _map_to_qblox_timegrid(qobj_inst.t0 * 1e-9)
         duration = _map_to_qblox_timegrid(params["duration"] * 1e-9)
