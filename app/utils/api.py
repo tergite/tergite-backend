@@ -247,7 +247,7 @@ def encrypt_mss_jwt_token(
             label=None,
         ),
     )
-    return cipher_bytes.decode()
+    return base64.b64encode(cipher_bytes).decode()
 
 
 def verify_mss_signature(

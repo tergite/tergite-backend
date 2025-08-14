@@ -22,6 +22,8 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 
 from app.tests.utils.env import TEST_MSS_PRIVATE_KEY_PATH
 
+_MSS_PRIVATE_KEY: Optional[RSAPrivateKey] = None
+
 
 def create_invalid_mss_headers(user_id: str = "") -> List[Dict[str, str]]:
     """Creates MSS headers that would be invalid
@@ -128,5 +130,12 @@ def _get_mss_private_key() -> RSAPrivateKey:
     Returns:
         the private key of the MSS
     """
-    with open(TEST_MSS_PRIVATE_KEY_PATH, "rb") as file:
-        return serialization.load_pem_private_key(file.read(), password=None)
+    global _MSS_PRIVATE_KEY
+
+    if not isinstance(_MSS_PRIVATE_KEY, RSAPrivateKey):
+        with open(TEST_MSS_PRIVATE_KEY_PATH, "rb") as file:
+            _MSS_PRIVATE_KEY = serialization.load_pem_private_key(
+                file.read(), password=None
+            )
+
+    return _MSS_PRIVATE_KEY
