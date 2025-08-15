@@ -270,10 +270,11 @@ class SpiDAC:
             logger.info(f"{coupler}: {current:.4f} mA")
 
     def close_spi_rack(self):
-        for dac in self.dacs_dictionary.values():
-            while bool(dac.is_ramping()):
-                time.sleep(0.05)
-            dac.ramping_enabled(False)  # future sets are instant
+        if not self.is_dummy:
+            for dac in self.dacs_dictionary.values():
+                while bool(dac.is_ramping()):
+                    time.sleep(0.05)
+                dac.ramping_enabled(False)  # future sets are instant
         time.sleep(0.05)
         self.spi.close()
         logger.info(f"Closing SPI rack")
