@@ -65,12 +65,11 @@ def test_redis_connection(redis_client):
 
 @pytest.mark.asyncio
 async def test_no_mss_connected():
-    """Raises connection errors only when MSS is unavailable and is not standalone"""
+    """Raises connection errors only when MSS is unavailable"""
     remove_modules(["os", "app", "settings"])
 
     os.environ["EXECUTOR_TYPE"] = "quantify"
     os.environ["BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
-    os.environ["IS_STANDALONE"] = "False"
 
     from sqlmodel import SQLModel
 

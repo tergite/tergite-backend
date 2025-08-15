@@ -272,27 +272,6 @@ def qiskit_2q_rest_client(mocker) -> TestClient:
 
 
 @pytest.fixture
-def async_standalone_backend_client(mocker) -> TestClient:
-    """A test client for fast api when rq is running asynchronously and backend is standalone"""
-
-    os.environ["EXECUTOR_TYPE"] = "quantify"
-    os.environ["BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
-    os.environ["IS_STANDALONE"] = "True"
-    os.environ["CALIBRATION_SEED"] = TEST_QUANTIFY_SEED_FILE
-
-    import app
-    import settings
-
-    importlib.reload(settings)
-    importlib.reload(app)
-    from app import api
-
-    yield TestClient(api.app)
-    _clear_test_db(TEST_BOOKING_DB_URL)
-    _redis_connection.flushall()
-
-
-@pytest.fixture
 def jobs_folder() -> Path:
     """A temporary folder for the client where jobs can be saved"""
     folder_path = Path("./tmp/jobs")

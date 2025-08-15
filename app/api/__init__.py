@@ -66,11 +66,14 @@ from ..utils.api import (
 from ..utils.redis_store import ItemNotFoundError
 from ..utils.strings import uuid_str
 from .dependencies import (
+    MSSAuthDetails,
+    get_bearer_token,
     get_db_engine,
+    get_mss_token_claims_dep,
     get_queue_pool,
     get_unverified_mss_is_admin,
-    get_user_job_id_pair_dep,
     get_verified_mss_admin_user_id,
+    get_verified_mss_details,
     get_verified_mss_user_id,
     lifespan,
     validate_job_file,
@@ -170,7 +173,7 @@ async def root():
 
 @app.get(
     "/logfiles/{logfile_id}",
-    dependencies=[Depends(get_user_job_id_pair_dep(job_id_field="logfile_id"))],
+    dependencies=[Depends(get_mss_token_claims_dep(job_id_field="logfile_id"))],
 )
 async def download_logfile(logfile_id: UUID):
     """Downloads the job logfile
@@ -413,7 +416,7 @@ async def view_bookings(
 @app.post("/jobs")
 async def submit_job(
     upload_file: Annotated[UploadFile, Depends(validate_job_file)] = File(...),
-    token_claims: MSSTokenClaims = Depends(get_user_job_id_pair_dep(job_exists=False)),
+    token_claims: MSSTokenClaims = Depends(get_mss_token_claims_dep(job_exists=False)),
     queue_pool: QueuePool = Depends(get_queue_pool),
     force_normal_queue: bool = Query(default=False),
 ) -> Job:
@@ -459,18 +462,16 @@ async def view_job(
 async def cancel_job(
     job_id: str,
     details: CancellationDetails,
-    user_id: str = Depends(get_verified_mss_user_id),
+    mss_auth_details: MSSAuthDetails = Depends(get_verified_mss_details),
     queue_pool: QueuePool = Depends(get_queue_pool),
-    is_mss_admin: bool = Depends(get_unverified_mss_is_admin),
 ) -> GeneralMessage:
     """Cancels the job of given job_id if job belongs to current user or if user is admin
 
     Args:
         job_id: the unique identifier of the job
         details: the extra information passed when canceling the job
-        user_id: the JWT token for the user, transformed into user_id by callback
+        mss_auth_details: the auth details from MSS for this request
         queue_pool: the collection of queues to run the jobs on
-        is_mss_admin: whether the user is an mss admin or not
 
     Returns:
         a general message showing status
@@ -483,8 +484,8 @@ async def cancel_job(
     scheduler.cancel_job(
         queue_pool,
         job_id=job_id,
-        user_id=user_id,
-        is_mss_admin=is_mss_admin,
+        user_id=mss_auth_details.user_id,
+        is_mss_admin=mss_auth_details.is_mss_admin,
         reason=details.reason,
     )
     return {"status": "success", "detail": f"Job of id {job_id} cancelled"}

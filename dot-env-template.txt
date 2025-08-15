@@ -76,8 +76,6 @@ QUANTIFY_METADATA_FILE="quantify-metadata.yml"
 # A system user (user with the system role) should log in to QAL 9000, generate an app token
 # and set it here.
 MSS_APP_TOKEN=
-# Default is true. Setting this to False in production will raise a ValueError at startup.
-IS_AUTH_ENABLED=True
 
 # (7) Operation mode
 # APP_SETTINGS reflect which environment the app is to run in.
@@ -88,10 +86,6 @@ IS_AUTH_ENABLED=True
 #  - test
 # Default is production
 APP_SETTINGS=production
-
-# Whether to run with MSS or not
-# Default is false. Setting this to true when MSS is not running will raise connection errors
-IS_STANDALONE=False
 
 # Maximum time in seconds a booking is allowed to have
 # Negative values not allowed. Negative values are automatically changed to 0

@@ -23,6 +23,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   - `/bookings` (POST, GET)
   - `/bookings/{booking_id}/cancel` (POST)
 - BREAKING: Added authentication of requests from MSS by verifying that `x-mss-signature` is signed using MSS's private key
+- Added canceling of jobs via MSS
 
 ### Changed
 

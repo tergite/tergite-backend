@@ -90,9 +90,7 @@ ENV QUANTIFY_CONFIG_FILE="quantify-config.json"
 ENV QUANTIFY_METADATA_FILE="quantify-metadata.yml"
 
 #ENV MSS_APP_TOKEN=""
-#ENV IS_AUTH_ENABLED="True"
 ENV APP_SETTINGS="production"
-ENV IS_STANDALONE="False"
 #ENV REDIS_HOST="host.docker.internal"
 #ENV REDIS_PORT=6379
 #ENV REDIS_USER=""

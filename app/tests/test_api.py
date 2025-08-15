@@ -947,7 +947,7 @@ def test_submit_jobs_without_token(client, redis_conn, worker, job, jobs_folder)
         json_response = response.json()
 
         assert response.status_code == 401
-        assert json_response["detail"] == "Unauthorized"
+        assert json_response["detail"] == "user not authenticated"
 
 
 @pytest.mark.parametrize(
@@ -1737,8 +1737,8 @@ def test_unauthenticated_view_jobs(
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
-def test_cancel_job(client, redis_conn, jobs_folder, worker, job, mocker):
-    """A user POST to '/jobs/{id}/cancel' cancels the job of the job_id if the job belongs to them"""
+def test_cancel_job_via_mss(client, redis_conn, jobs_folder, worker, job, mocker):
+    """An MSS POST to '/jobs/{id}/cancel' cancels the job of the job_id if the job belongs to the current user"""
     with client as client:
         cancellation_reason = "just testing"
 
@@ -1762,8 +1762,77 @@ def test_cancel_job(client, redis_conn, jobs_folder, worker, job, mocker):
         # Run the queue to run the job and see that it is updated
         worker.work(burst=True, max_jobs=1)
 
-        response = _cancel_job(
+        response = _cancel_job_via_mss(
             client, user_id=user_id, job_id=job_id, reason=cancellation_reason
+        )
+        expected = {
+            "status": "success",
+            "detail": f"Job of id {job_id} cancelled",
+        }
+        got = response.json()
+
+        assert response.status_code == 200
+        assert got == expected
+
+        job_in_db = _get_jobs_in_redis(redis_conn)[0]
+        preprocess_start = job_in_db.timestamps.pre_processing.started
+        preprocess_end = job_in_db.timestamps.pre_processing.finished
+
+        expected_job = Job(
+            **{
+                **original_job,
+                "status": JobStatus.CANCELLED.value,
+                "cancellation_reason": cancellation_reason,
+                "estimated_duration": 0.2,
+                "stage": 4,
+                "timestamps": {
+                    "registration": None,
+                    "pre_processing": {
+                        "started": preprocess_start,
+                        "finished": preprocess_end,
+                    },
+                    "execution": None,
+                    "post_processing": None,
+                    "final": None,
+                },
+                "created_at": job_in_db.created_at,
+                "updated_at": job_in_db.updated_at,
+            }
+        )
+        assert response.status_code == 200
+        assert job_in_db == expected_job
+
+
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_cancel_job_directly(client, redis_conn, jobs_folder, worker, job, mocker):
+    """A POST to '/jobs/{id}/cancel' with JWT token cancels the job of the job_id if the job belongs to user"""
+    with client as client:
+        cancellation_reason = "just testing"
+
+        users = _create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = _get_raw_jobs(job, durations=[0.2])
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
+        job_info = job_metadata_list[0]
+        job_id = job_info["job_id"]
+        user_id = job_info["user_id"]
+
+        # submit many jobs from many users
+        with open(job_info["file_path"], "rb") as file:
+            response = client.post(
+                "/jobs", files={"upload_file": file}, headers=job_info["headers"]
+            )
+
+        original_job = response.json()
+
+        # Run the queue to run the job and see that it is updated
+        worker.work(burst=True, max_jobs=1)
+
+        response = client.post(
+            f"/jobs/{job_id}/cancel",
+            json={"reason": cancellation_reason},
+            headers=job_info["headers"],
         )
         expected = {
             "status": "success",
@@ -1828,7 +1897,7 @@ def test_cancel_another_users_job(client, redis_conn, jobs_folder, worker, job, 
         worker.work(burst=True, max_jobs=1)
 
         other_user_id = users[1]["id"]
-        response = _cancel_job(
+        response = _cancel_job_via_mss(
             client, user_id=other_user_id, job_id=job_id, reason=cancellation_reason
         )
         expected = {
@@ -1880,7 +1949,7 @@ def test_admin_cancel_job(client, redis_conn, jobs_folder, worker, job, mocker):
         original_job = response.json()
 
         other_user_id = users[1]["id"]
-        response = _cancel_job(
+        response = _cancel_job_via_mss(
             client,
             user_id=other_user_id,
             job_id=job_id,
@@ -1957,14 +2026,6 @@ def test_unauthenticated_cancel_job(
         assert response.status_code == 401
         assert response.json() == {"detail": "user not authenticated"}
 
-        # use a token used only for submitting jobs directly to the backend
-        login_data = {"user_id": job_info["user_id"], "job_id": job_info["job_id"]}
-        token, _ = _get_token(client, mocker, data=login_data)
-        headers = _get_headers(token)
-        response = client.post(url, json=payload, headers=headers)
-        assert response.status_code == 401
-        assert response.json() == {"detail": "user not authenticated"}
-
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_download_logfile(
@@ -2035,7 +2096,7 @@ def test_unauthenticated_download_logfile(
         # no authentication
         response = client.get(f"/logfiles/{job["job_id"]}")
         assert response.status_code == 401
-        assert response.json() == {"detail": "Unauthorized"}
+        assert response.json() == {"detail": "user not authenticated"}
 
         # wrong authentication
         headers = _get_headers("foo")
@@ -2094,14 +2155,14 @@ def test_unauthenticated_get_dynamic_props(client, _expected):
         assert got == {"detail": "user not authenticated"}
 
 
-def _cancel_job(
+def _cancel_job_via_mss(
     client: "TestClient",
     user_id: str,
     job_id: str,
     reason: Optional[str] = None,
     is_admin: Optional[bool] = None,
 ) -> "Response":
-    """Cancels the job on the REST API
+    """Cancels the job on the REST API via MSS, passing signed MSS headers
 
     Args:
         client: the TestClient for running tests in

@@ -101,7 +101,6 @@ def setup_test_env():
 
     environ["MSS_APP_TOKEN"] = TEST_MSS_APP_TOKEN
     environ["QUANTIFY_CONFIG_FILE"] = TEST_QUANTIFY_CONFIG_FILE
-    environ["IS_AUTH_ENABLED"] = "True"
 
     environ["MAX_TIME_SLOT_LENGTH"] = f"{TEST_MAX_TIME_SLOT_LENGTH}"
     environ["MIN_TIME_SLOT_LENGTH"] = f"{TEST_MIN_TIME_SLOT_LENGTH}"

@@ -57,7 +57,6 @@ openssl rsa -pubout -in mss_private_key.pem -out mss_public_key.pem
 cp dot-env-template.txt .env
 ```
 
-_Note: If you want to run without a running MSS, set the variable `IS_STANDALONE=True` in the `.env`_  
 _Note: If you don't want to use the simulator, set the variable `EXECUTOR_TYPE=quantify` in the `.env`_  
 
 - **If you have `EXECUTOR_TYPE=quantify`**, copy the quantify example config file `quantify-config.example.json` and `quantify-metadata.example.yml` into 

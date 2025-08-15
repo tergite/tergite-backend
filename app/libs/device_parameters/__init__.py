@@ -68,11 +68,7 @@ def clear_config_caches():
 
 
 def initialize_backend(
-    redis: Redis,
-    backend_config: BackendConfig,
-    mss_client: Session,
-    mss_url: str,
-    is_standalone: bool = settings.IS_STANDALONE,
+    redis: Redis, backend_config: BackendConfig, mss_client: Session, mss_url: str
 ):
     """Runs a number of operations to initialize the backend
 
@@ -81,7 +77,6 @@ def initialize_backend(
         backend_config: the configuration of the backend
         mss_client: the requests Session to make requests to MSS with
         mss_url: the URL to MSS
-        is_standalone: whether this backend is standalone or is connected to an MSS
 
     Raises:
         ValueError: error message from MSS when it attempts to update mss
@@ -99,14 +94,13 @@ def initialize_backend(
     except ValueError:
         calib_info = calib_db.get_one(device_info.name)
 
-    if not is_standalone:
-        # update MSS of this backend's configuration
-        send_backend_info_to_mss(
-            mss_client,
-            device_info=device_info,
-            calibration_info=calib_info,
-            mss_url=mss_url,
-        )
+    # update MSS of this backend's configuration
+    send_backend_info_to_mss(
+        mss_client,
+        device_info=device_info,
+        calibration_info=calib_info,
+        mss_url=mss_url,
+    )
 
 
 def get_device_info(

@@ -20,8 +20,9 @@ from cryptography.exceptions import InvalidSignature
 from fastapi import Depends, FastAPI, HTTPException, UploadFile, status
 from fastapi.requests import Request
 from fastapi.security import OAuth2PasswordBearer
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import Engine
+from starlette.requests import Request
 
 import settings
 
@@ -195,6 +196,9 @@ def get_verified_mss_user_id(request: Request) -> str:
 
     Returns:
         the user_id as got from MSS
+
+    Raises:
+        NotAuthenticatedError: user not authenticated
     """
     try:
         user_id = request.headers["x-mss-user-id"]
@@ -225,7 +229,7 @@ def get_verified_mss_user_id(request: Request) -> str:
         raise NotAuthenticatedError("user not authenticated")
 
 
-def get_user_job_id_pair_dep(
+def get_mss_token_claims_dep(
     job_exists: bool = True,
     job_id_field: str = "job_id",
 ):
@@ -310,17 +314,13 @@ async def validate_job_file(upload_file: UploadFile) -> UploadFile:
         )
 
 
-def get_bearer_token(
-    request: Request, raise_if_error: bool = settings.IS_AUTH_ENABLED
-) -> Optional[str]:
+def get_bearer_token(request: Request) -> Optional[str]:
     """Extracts the bearer token from the request.
 
     It throws a 401 exception if not exist and `raise_if_error` is False
 
     Args:
         request: the request object from FastAPI
-        raise_if_error: whether an error should be raised if it occurs.
-            defaults to settings.IS_AUTH_ENABLED
 
     Raises:
         HTTPException: Unauthorized
@@ -332,5 +332,38 @@ def get_bearer_token(
         authorization_header = request.headers["Authorization"]
         return authorization_header.split("Bearer ")[1].strip()
     except (KeyError, IndexError):
-        if raise_if_error:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="user not authenticated"
+        )
+
+
+class MSSAuthDetails(BaseModel):
+    user_id: str
+    job_id: str
+    is_mss_admin: bool = False
+
+
+def get_verified_mss_details(request: Request) -> MSSAuthDetails:
+    """Gets the MSS verified details either from token or verified MSS headers or fails with error
+
+    Args:
+        request: the request object
+
+    Returns:
+        the MSS details from the given request
+
+    Raises:
+        NotAuthenticatedError: not authenticated
+        UnauthorizedError: forbidden
+    """
+    job_id = request.path_params["job_id"]
+    try:
+        user_id = get_verified_mss_user_id(request)
+        is_mss_admin = get_unverified_mss_is_admin(request)
+        return MSSAuthDetails(user_id=user_id, job_id=job_id, is_mss_admin=is_mss_admin)
+    except NotAuthenticatedError as exp:
+        token = get_bearer_token(request)
+        user_id, token_job_id = get_user_job_id_pair_from_token(token)
+        if token_job_id != job_id:
+            raise UnauthorizedError("forbidden")
+        return MSSAuthDetails(user_id=user_id, job_id=job_id)
