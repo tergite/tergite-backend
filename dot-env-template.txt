@@ -38,8 +38,8 @@ MSS_MACHINE_ROOT_URL=http://host:port
 # The maximum time in seconds that a nonce from MSS can be valid when its timestamp is
 # compared to current time.
 # Note that this may have issues if any of the system clocks of BCC or MSS are not at the correct time
-# default: 500
-MSS_NONCE_TTL=500
+# default: 300
+MSS_NONCE_TTL=300
 
 # (5) Instrument interfacing and simulators
 # This is to configure the hardware or simulated measurement instruments.

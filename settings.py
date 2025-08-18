@@ -100,7 +100,10 @@ BCC_PORT = config("BCC_PORT", cast=int, default=8000)
 
 MSS_APP_TOKEN = config("MSS_APP_TOKEN", cast=str, default="")
 # MSS public key for encrypting/verifying messages for/from MSS only
-MSS_PUBLIC_KEY_PATH = config("MSS_PUBLIC_KEY_PATH", cast=Path)
+MSS_PUBLIC_KEY_PATH = config("MSS_PUBLIC_KEY_PATH", cast=Path, default=_ROOT_PATH / "public-mss-key.pem").resolve()
+if not MSS_PUBLIC_KEY_PATH.exists():
+    raise ValueError(f"{MSS_PUBLIC_KEY_PATH} does not exist")
+
 # time-to-live for the nonce; defaults to 5 minutes
 MSS_NONCE_TTL = config("MSS_NONCE_TTL", cast=float, default=300)
 

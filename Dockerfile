@@ -95,5 +95,7 @@ ENV APP_SETTINGS="production"
 #ENV REDIS_PORT=6379
 #ENV REDIS_USER=""
 #ENV REDIS_PASSWORD=""
+ENV MSS_PUBLIC_KEY_PATH="public-mss-key.pem"
+ENV MSS_NONCE_TTL=300
 
 ENTRYPOINT ["/code/start_bcc.sh"]
