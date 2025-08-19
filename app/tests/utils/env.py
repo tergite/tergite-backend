@@ -67,8 +67,11 @@ TEST_CORS_ORIGINS = "testclient,localhost,127.0.0.1"
 
 REDIS_PORT = os.getenv("REDIS_PORT", "6379")
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_DB = os.getenv("REDIS_DB", "2")
 
-TEST_RQ_REDIS_URL = os.getenv("RQ_REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/2")
+TEST_RQ_REDIS_URL = os.getenv(
+    "RQ_REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+)
 TEST_JOBS_REDIS_URL = TEST_RQ_REDIS_URL
 TEST_LOGGING_LEVEL = os.getenv("LOGGING_LEVEL", "ERROR")
 TEST_RQ_MAX_QUEUE_WAIT_TIME = int(os.getenv("TEST_RQ_MAX_QUEUE_WAIT_TIME", "40"))
@@ -111,8 +114,11 @@ def setup_test_env():
     environ["JWT_SECRET"] = f"{TEST_JWT_SECRET}"
     environ["JWT_TTL"] = f"{TEST_JWT_TTL}"
     environ["JOBS_REDIS_URL"] = f"{TEST_JOBS_REDIS_URL}"
-    environ["RQ_REDIS_URL"] = f"{TEST_RQ_REDIS_URL}"
     environ["MSS_PUBLIC_KEY_PATH"] = f"{TEST_MSS_PUBLIC_KEY_PATH}"
     environ["MSS_NONCE_TTL"] = f"{TEST_MSS_NONCE_TTL}"
     environ["CORS_ORIGINS"] = f"{TEST_CORS_ORIGINS}"
     environ["LOGGING_LEVEL"] = f"{TEST_LOGGING_LEVEL}"
+
+    environ["REDIS_PORT"] = f"{REDIS_PORT}"
+    environ["REDIS_HOST"] = f"{REDIS_HOST}"
+    environ["REDIS_DB"] = f"{REDIS_DB}"

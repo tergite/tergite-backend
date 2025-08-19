@@ -100,7 +100,9 @@ BCC_PORT = config("BCC_PORT", cast=int, default=8000)
 
 MSS_APP_TOKEN = config("MSS_APP_TOKEN", cast=str, default="")
 # MSS public key for encrypting/verifying messages for/from MSS only
-MSS_PUBLIC_KEY_PATH = config("MSS_PUBLIC_KEY_PATH", cast=Path, default=_ROOT_PATH / "public-mss-key.pem").resolve()
+MSS_PUBLIC_KEY_PATH = config(
+    "MSS_PUBLIC_KEY_PATH", cast=Path, default=_ROOT_PATH / "public-mss-key.pem"
+).resolve()
 if not MSS_PUBLIC_KEY_PATH.exists():
     raise ValueError(f"{MSS_PUBLIC_KEY_PATH} does not exist")
 
@@ -160,7 +162,8 @@ IS_ASYNC = config("IS_ASYNC", cast=bool, default="True")
 BOOKING_DB_URL = config("BOOKING_DB_URL", default="sqlite:///booking_db.db")
 
 # default: "redis://localhost:6379"
-RQ_REDIS_URL = config("RQ_REDIS_URL", default="redis://localhost:6379/0")
+_REDIS_URL = f"redis://{REDIS_USER or ''}:{REDIS_PASSWORD or ''}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+RQ_REDIS_URL = config("RQ_REDIS_URL", default=_REDIS_URL)
 # FIXME: Get rid of this when all queues are shifted over to scheduler
 REDIS_CONNECTION = redis.Redis.from_url(RQ_REDIS_URL)
 

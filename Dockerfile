@@ -97,5 +97,7 @@ ENV APP_SETTINGS="production"
 #ENV REDIS_PASSWORD=""
 ENV MSS_PUBLIC_KEY_PATH="public-mss-key.pem"
 ENV MSS_NONCE_TTL=300
+# ENV JWT_SECRET=""
+# ENV CORS_ORIGINS="127.0.0.1,localhost"
 
 ENTRYPOINT ["/code/start_bcc.sh"]
