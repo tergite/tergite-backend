@@ -108,9 +108,11 @@ fi
 set -e # exit if any step fails
 
 # Clean start
-rq empty -u "$REDIS_URL" "${DEFAULT_PREFIX}_job_registration"
-rq empty -u "$REDIS_URL" "${DEFAULT_PREFIX}_job_execution"
-rq empty -u "$REDIS_URL" "${DEFAULT_PREFIX}_logfile_postprocessing"
+rq empty -u "$REDIS_URL" "${DEFAULT_PREFIX}_general"
+rq empty -u "$REDIS_URL" "${DEFAULT_PREFIX}_preprocessing"
+rq empty -u "$REDIS_URL" "${DEFAULT_PREFIX}_normal_execution"
+rq empty -u "$REDIS_URL" "${DEFAULT_PREFIX}_booked_execution"
+rq empty -u "$REDIS_URL" "${DEFAULT_PREFIX}_postprocessing"
 rm -fr "/tmp/${DEFAULT_PREFIX}"
 
 
@@ -132,9 +134,11 @@ if command -v redis-cli &> /dev/null; then
 fi
 
 # Worker processes
-rq worker -u "$REDIS_URL" "${DEFAULT_PREFIX}_job_registration" &
-rq worker -u "$REDIS_URL" "${DEFAULT_PREFIX}_job_execution" &
-rq worker -u "$REDIS_URL" "${DEFAULT_PREFIX}_logfile_postprocessing" &
+rq worker -u "$REDIS_URL" "${DEFAULT_PREFIX}_general" &
+rq worker -u "$REDIS_URL" "${DEFAULT_PREFIX}_preprocessing" &
+rq worker -u "$REDIS_URL" "${DEFAULT_PREFIX}_normal_execution" &
+rq worker -u "$REDIS_URL" "${DEFAULT_PREFIX}_booked_execution" &
+rq worker -u "$REDIS_URL" "${DEFAULT_PREFIX}_postprocessing" &
 
 # REST-API
 extra_params=$([[ "$IS_SYSTEMD" = "true" ]] && echo "--proxy-headers" || echo "--reload")

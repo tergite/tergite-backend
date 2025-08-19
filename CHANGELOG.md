@@ -46,6 +46,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   to `{"status": "success", "detail": string}` as opposed to nothing
 - BREAKING: Changed the return type of the `/logfiles/{logfile_id}` GET endpoint when an error 
   occurs to return an error status code with `{"detail": string}` JSON response.
+- BREAKING: Changed the names of the workers/queues used to `{PREFIX}_general`, `{PREFIX}_preprocessing`, `{PREFIX}_normal_execution`,
+  `{PREFIX}_booked_execution`, `{PREFIX}_postprocessing`
 
 ## [2025.06.2] - 2025-06-17
 
