@@ -328,7 +328,7 @@ def update_job_in_mss(
     """
     data = payload
     if isinstance(payload, BaseModel):
-        data = payload.model_dump(exclude_unset=True)
+        data = payload.model_dump(exclude_unset=True, mode="json")
 
     url = f"{MSS_MACHINE_ROOT_URL}/jobs/{job_id}"
     resp = mss_client.put(url, json=data)
