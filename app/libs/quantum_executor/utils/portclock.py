@@ -22,7 +22,7 @@ def generate_hardware_map(
     quantify_config: QbloxHardwareCompilationConfig,
 ) -> Dict[str, Tuple[str, str]]:
     """
-    Create a mapping from the qobj port-clock convention to the QBLOX instrument configuration.
+    Create a mapping from the qobj channel convention to the QBLOX port-clock instrument configuration.
 
     Parameters:
       qubit_ids: List of qubit id strings, e.g. ["q6", "q7", "q8"].
