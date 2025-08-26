@@ -96,6 +96,7 @@ dev = [
     # Adding these here to constrain their versions to
     # avoid resolution-too-deep errors
     "click~=8.1.8",
+    "setuptools~=80.9.0"
 ]
 
 [project.urls]
