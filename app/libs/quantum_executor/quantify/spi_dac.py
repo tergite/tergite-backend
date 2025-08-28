@@ -37,7 +37,7 @@ import os
 import numpy as np
 from qblox_instruments import SpiRack
 from qcodes import validators
-from rich.progress import Progress
+
 from typing import Tuple, Dict, Any
 
 
@@ -46,11 +46,9 @@ import settings
 from app.libs.quantum_executor.utils.config import QuantifyMetadata
 from ..utils.config import CouplerMapEntry
 
-# TODO: 2. Set up REDIS_CONNECTION and plan for it's use for storing/fetching parking currents
 # TODO: 8. Make safety ranges configurable
 
 logger = logging.getLogger(__name__)
-REDIS_CONNECTION = settings.REDIS_CONNECTION
 
 
 def _find_and_validate_spi_port(port: str | None) -> str | None:
@@ -116,7 +114,11 @@ class SpiDAC:
         self,
         couplers: list[str],
         metadata_path: str | Path = settings.QUANTIFY_METADATA_FILE,
+        print_progress: bool = False,
     ):
+        # set up redis connection
+        self._connection = settings.REDIS_CONNECTION
+        self.print_progress = print_progress
         # grab spi metadata
         raw_port, self.is_dummy, self._coupler_map = _get_spi_metadata(metadata_path)
 
@@ -183,9 +185,9 @@ class SpiDAC:
         parking_currents = {}
         # TODO: Change message about zero currents in device_config.toml - tergite-backend has backend_config.toml instead
         for coupler in couplers:
-            if REDIS_CONNECTION.hexists(f"couplers:{coupler}", "parking_current"):
+            if self._connection.hexists(f"couplers:{coupler}", "parking_current"):
                 parking_current = float(
-                    REDIS_CONNECTION.hget(f"couplers:{coupler}", "parking_current")
+                    self._connection.hget(f"couplers:{coupler}", "parking_current")
                 )
             else:
                 message = (
@@ -232,35 +234,30 @@ class SpiDAC:
             dac = self.dacs_dictionary[coupler]
             initial_current = dac.current() * 1000  # Convert to mA
             target_mA = target_current * 1000  # Convert to mA
-            total_range = abs(target_mA - initial_current)  # Compute range for progress
+            total_range = abs(
+                target_mA - initial_current
+            )  # Compute range for progress bar
             if total_range == 0:
                 continue  # Already at target, no need to ramp
 
             dac.current(target_current)
 
-            with Progress() as progress:
-                task = progress.add_task("Ramping current...", total=total_range)
-
-                while dac.is_ramping():
-                    try:
-                        current_mA = dac.current() * 1000  # Get current in mA
-                        progress.update(
-                            task,
-                            completed=abs(current_mA - initial_current),
-                            description=f"Coupler {coupler}: current is {current_mA:.4f} with target {target_mA:.4f} mA",
+            while dac.is_ramping():
+                try:
+                    current_mA = dac.current() * 1000  # Get current in mA
+                    if self.print_progress:
+                        logger.info(
+                            f"Coupler {coupler}: current is {current_mA:.4f} with target {target_mA:.4f} mA, completed = {abs(current_mA - initial_current)} %"
                         )
 
-                        if (
-                            abs(current_mA - target_mA) < 0.005
-                        ):  # Stop when close enough
-                            break
-
-                        time.sleep(0.5)  # Simulate delay
-
-                    except ValueError as e:
-                        progress.stop()
-                        logger.error(f"Error reading DAC current: {e}")
+                    if abs(current_mA - target_mA) < 0.005:  # Stop when close enough
                         break
+
+                    time.sleep(0.5)  # Simulate delay
+
+                except ValueError as e:
+                    logger.error(f"Error reading DAC current: {e}")
+                    break
 
         logger.info(f"Ramping finished")
 

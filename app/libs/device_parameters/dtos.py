@@ -77,6 +77,8 @@ class CouplerProps(BaseModel):
     cz_pulse_duration_before: float
     cz_pulse_duration_rise: float
     cz_pulse_duration_constant: float
+    control_rz_lambda: float
+    target_rz_lambda: float
     pulse_type: str
     id: Optional[int] = None
 
@@ -248,6 +250,8 @@ class CouplerCalibration(BaseModel, extra=Extra.allow):
     cz_pulse_duration_before: Optional[CalibrationValue[float]] = None
     cz_pulse_duration_rise: Optional[CalibrationValue[float]] = None
     cz_pulse_duration_constant: Optional[CalibrationValue[float]] = None
+    control_rz_lambda: Optional[CalibrationValue] = None
+    target_rz_lambda: Optional[CalibrationValue] = None
     pulse_type: Optional[CalibrationValue[str]] = None
     id: Optional[int] = None
 

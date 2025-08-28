@@ -133,6 +133,12 @@ class QuantifyMetadata(RootModel[Dict[str, InstrumentConfig]]):
         return cls.model_validate(data)
 
     def get_clusters(self) -> List[qblox_instruments.Cluster]:
+        """Get the clusters corresponding to the metadata
+
+        Returns:
+            the list of clusters got from this metadata
+        """
+
         return [
             _create_cluster(name, conf)
             for name, conf in self.root.items()

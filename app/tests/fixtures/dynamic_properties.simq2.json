@@ -57,6 +57,16 @@
         "value": -15000000.0
       },
       "id": 0,
+      "control_rz_lambda": {
+        "date": "NOW-PLACEHOLDER",
+        "unit": "rad",
+        "value": 0.0
+      },
+      "target_rz_lambda": {
+        "date": "NOW-PLACEHOLDER",
+        "unit": "rad",
+        "value": 0.0
+      },
       "pulse_type": {
         "date": "NOW-PLACEHOLDER",
         "unit": "",

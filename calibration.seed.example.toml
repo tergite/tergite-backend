@@ -32,6 +32,8 @@ cz_pulse_phase_offset = "rad"
 cz_pulse_duration_before = "s"
 cz_pulse_duration_rise = "s"
 cz_pulse_duration_constant = "s"
+control_rz_lambda = "rad"
+target_rz_lambda = "rad"
 pulse_type = ""
 
 
@@ -113,6 +115,8 @@ cz_pulse_phase_offset = 0
 cz_pulse_duration_before = 0
 cz_pulse_duration_rise = 0
 cz_pulse_duration_constant = 0
+control_rz_lambda = 0.6
+target_rz_lambda = 0.3
 pulse_type = ""
 
 [[calibration_config.coupler]]
@@ -128,6 +132,8 @@ cz_pulse_phase_offset = 0
 cz_pulse_duration_before = 0
 cz_pulse_duration_rise = 0
 cz_pulse_duration_constant = 0
+control_rz_lambda = 0.6
+target_rz_lambda = 0.3
 pulse_type = ""
 
 # -- Discriminators --

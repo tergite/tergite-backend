@@ -133,7 +133,7 @@ class QuantifyExecutor(QuantumExecutor):
     def _baseline_couplers(self) -> None:
         # Persist the parking current (0 A) in Redis for each coupler
         for cplr in self._couplers:
-            REDIS_CONNECTION.hset(f"couplers:{cplr}", "parking_current", 1e-4)
+            self.spi_dac._connection.hset(f"couplers:{cplr}", "parking_current", 1e-4)
 
     def _run_native(
         self,
