@@ -96,7 +96,6 @@ class QuantifyExperiment(NativeExperiment):
                 continue
 
             prev = root_instruction
-            scheduled_any = False
             for curr in channel.instructions:
                 rel_time = curr.t0 - prev.final_timestamp + self.timegrid_interval
                 ref_op = prev.label
@@ -112,10 +111,9 @@ class QuantifyExperiment(NativeExperiment):
 
                 # set the previous to the current
                 prev = curr
-                scheduled_any = True
             # Ensure the channel does not end with a parameter op
             # (Quantify forbids a zero-duration parameter operation at the schedule end).
-            if scheduled_any:
+            if len(channel.instructions) > 0:
                 raw_schedule.add(
                     ref_op=prev.label,
                     ref_pt="end",

@@ -6,6 +6,11 @@
         "unit": "Hz",
         "value": -170000000.0
       },
+      "control_rz_lambda": {
+        "date": "NOW-PLACEHOLDER",
+        "unit": "rad",
+        "value": 0.6
+      },
       "coupling_strength_02": {
         "date": "NOW-PLACEHOLDER",
         "unit": "Hz",
@@ -57,20 +62,15 @@
         "value": -15000000.0
       },
       "id": 0,
-      "control_rz_lambda": {
-        "date": "NOW-PLACEHOLDER",
-        "unit": "rad",
-        "value": 0.0
-      },
-      "target_rz_lambda": {
-        "date": "NOW-PLACEHOLDER",
-        "unit": "rad",
-        "value": 0.0
-      },
       "pulse_type": {
         "date": "NOW-PLACEHOLDER",
         "unit": "",
         "value": "wacqt_cz_gate_pulse"
+      },
+      "target_rz_lambda": {
+        "date": "NOW-PLACEHOLDER",
+        "unit": "rad",
+        "value": 0.3
       }
     }
   ],

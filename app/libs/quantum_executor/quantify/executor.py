@@ -73,15 +73,7 @@ class QuantifyExecutor(QuantumExecutor):
         )
         super().__init__(hardware_map=self.hardware_map)
 
-        # canonical list like ['u1', 'u2', ...] sorted by number
-        def _ukey(u: str) -> int:
-            m = re.search(r"\d+", u)
-            return int(m.group(0)) if m else 10**9
-
-        self._couplers = sorted(
-            backend_config.device_config.coupling_dict.keys(),
-            key=_ukey,
-        )
+        self._couplers = sorted(backend_config.device_config.coupling_dict.keys())
 
         # Build maps between coupler IDs and Quantify/port names from the hardware_map.
         # Assumes generate_hardware_map has entries for 'uN' like: hardware_map['u1'] -> (clock, port).
@@ -156,15 +148,16 @@ class QuantifyExecutor(QuantumExecutor):
         logger.log_Q1ASM_programs(compiled_schedule)
         logger.log_schedule(compiled_schedule)
 
-        spi_dac = SpiDAC(couplers=self._couplers, metadata_path=QUANTIFY_METADATA_FILE)
+        self.spi_dac = SpiDAC(
+            couplers=self._couplers, metadata_path=QUANTIFY_METADATA_FILE
+        )
         self._baseline_couplers()
-
-        spi_dac.set_parking_currents(self._couplers)
+        self.spi_dac.set_parking_currents(self._couplers)
 
         bias_currents = self._extract_bias(experiment)
         if bias_currents:
             print("Bias currents requested: %s", bias_currents)
-            spi_dac.set_dac_current(bias_currents)
+            self.spi_dac.set_dac_current(bias_currents)
         else:
             print("No dc_bias extracted from schedule; skipping bias set.")
 
@@ -177,8 +170,8 @@ class QuantifyExecutor(QuantumExecutor):
         t4 = datetime.now()
         print(t4 - t3, "DURATION OF MEASURING")
 
-        spi_dac.set_parking_currents(self._couplers)
-        spi_dac.close_spi_rack()
+        self.spi_dac.set_parking_currents(self._couplers)
+        self.spi_dac.close_spi_rack()
 
         return QExperimentResult.from_xarray(results)
 
