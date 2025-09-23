@@ -37,6 +37,9 @@ from pytest_lazy_fixtures import lf as lazy_fixture
 from redis.client import Redis
 from rq import SimpleWorker
 
+import logging, sys, os, pytest
+
+
 from ..libs.device_parameters import DeviceCalibration
 from ..utils.queues import QueuePool
 from .utils.analysis import MockLinearDiscriminantAnalysis
@@ -392,3 +395,26 @@ def _patch_async_client_sim2q(mocker):
         return_value=_mock_linear_discriminant_analysis_sim2q,
     )
     os.environ["BLACKLISTED"] = ""
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _configure_logging_for_tests():
+    root = logging.getLogger()
+    # Remove any preconfigured handlers (libraries may have added them)
+    for h in root.handlers[:]:
+        root.removeHandler(h)
+    # Use stderr (or sys.__stdout__) which we won't close
+    h = logging.StreamHandler(sys.__stderr__)
+    fmt = logging.Formatter("%(asctime)s [%(levelname)-8s] %(name)s: %(message)s")
+    h.setFormatter(fmt)
+    root.addHandler(h)
+    root.setLevel(
+        getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
+    )
+    yield
+    # No need to close sys.__stderr__; just flush
+    for h in root.handlers[:]:
+        try:
+            h.flush()
+        except Exception:
+            pass

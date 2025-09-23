@@ -22,6 +22,7 @@ This module implements the executor.
 import copy
 import os
 import re
+import logging
 from datetime import datetime
 from typing import List, Optional, Union
 
@@ -47,6 +48,8 @@ from app.libs.quantum_executor.utils.logger import ExperimentLogger
 from app.libs.quantum_executor.utils.portclock import generate_hardware_map
 from .spi_dac import SpiDAC
 from settings import REDIS_CONNECTION, QUANTIFY_METADATA_FILE
+
+worker_logger = logging.getLogger(__name__)
 
 
 class QuantifyExecutor(QuantumExecutor):

@@ -104,3 +104,15 @@ REDIS_PORT=6379
 # Set the password, which to use when connecting to redis
 # REDIS_PASSWORD=""
 
+# (9) Uvicorn and rq logging 
+
+# use this set root logger log level
+# CRITICAL|ERROR|WARNING|INFO|DEBUG
+LOG_LEVEL=WARNING
+
+# Enable logger worker for rq workers
+DEBUG=true
+
+# uvicorn’s log level
+# (valid: critical|error|warning|info|debug|trace)
+UVICORN_LOG_LEVEL=info
