@@ -745,6 +745,8 @@ class WacqtCZPulseInstruction(BaseInstruction):
         channel = channel_registry.get(clock)
 
         cz_freq = params.get("freq")
+
+        # TODO: Frequency setting is not needed for  a flux pulse
         setf = None
         if cz_freq is not None:
             setf = SetFreqInstruction(
