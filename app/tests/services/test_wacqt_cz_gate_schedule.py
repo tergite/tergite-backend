@@ -10,19 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 
-# Plan
-# create QuantumJob with Qobj for real cluster (dummy) and two-qubit cz gate
-# get a compiled schedule
-# assert that compiled schedule is equivalent to the fixture for correct wacqt_cz_gate schedule block (i.e. single phase corrections and frequency is set)
-# This code is part of Tergite
-#
-# (C) Copyright Chalmers Next Labs 2025
-# Licensed under the Apache License, Version 2.0.
-
-import os
-import json
 import math
-import logging
 from pathlib import Path
 
 import pytest
@@ -37,7 +25,6 @@ from app.tests.utils.fixtures import load_fixture, get_fixture_path
 
 # SUT pieces
 from app.libs.quantum_executor.quantify.experiment import QuantifyExperiment
-from app.libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
 from app.libs.quantum_executor.utils.portclock import generate_hardware_map
 from app.libs.quantum_executor.utils.config import load_quantify_config
 from types import SimpleNamespace
@@ -180,11 +167,10 @@ def _compile_schedule_from_qobj(qobj_dict: dict, quantify_config_path: Path):
 
 def test_compiled_schedule_matches_fixture():
     """
-    Compile the provided QOBJ and verify the timing table matches the expected
+    Compile the provided Qobj and verify the timing table matches the expected
     fixture (normalized comparison with rounded floats and op types).
     """
 
-    # --- Locate fixtures ---
     fixture_path = Path(get_fixture_path())
     quantify_config_path = fixture_path / "two-qubit_quantify-config.json"
     expected_table_path = fixture_path / "compiled_schedule_expected.csv"
@@ -192,14 +178,13 @@ def test_compiled_schedule_matches_fixture():
 
     if not expected_table_path.exists():
         pytest.skip(f"{expected_table_path} not found.")
-    # --- Compile & normalize actual timing table ---
+    # compile & normalize actual timing table
     _, actual_df = _compile_schedule_from_qobj(qobj_dict, quantify_config_path)
 
-    # --- Load expected (CSV) & normalize columns just like actual ---
+    # load expected (CSV) & normalize columns just like actual
     expected_df_raw = pd.read_csv(expected_table_path)
     expected_df = _normalize_timing_table(expected_df_raw)
 
-    # --- Compare ---
     # Allow tiny numeric jitter (floats) with atol = 1e-12 s
     pd.testing.assert_frame_equal(
         actual_df.reset_index(drop=True),
