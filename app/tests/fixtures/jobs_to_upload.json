@@ -5,8 +5,9 @@
       "qobj": {
         "qobj_id": "2aeea890-edd0-496d-b4a3-5ea62c49bd97",
         "header": {
-          "backend_name": "test",
-          "backend_version": "2023.11.15"
+          "backend_name": "system_test",
+          "backend_version": "2023.11.15",
+          "test_duration": 0.23
         },
         "config": {
           "meas_level": 2,
@@ -121,8 +122,9 @@
       "qobj": {
         "qobj_id": "07603edf-9051-4be1-8cff-46f71bdc7414",
         "header": {
-          "backend_name": "SimulatorC",
-          "backend_version": "2023.11.15"
+          "backend_name": "system_test",
+          "backend_version": "2023.11.15",
+          "test_duration": 2.0
         },
         "config": {
           "meas_level": 2,

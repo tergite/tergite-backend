@@ -19,12 +19,12 @@
 This module implements the executor.
 """
 
-import copy
 import os
 from datetime import datetime
 from typing import List, Optional, Union
 
 import qblox_instruments
+from qcodes import Instrument
 from qiskit.qobj import PulseQobj
 from quantify_scheduler.backends.graph_compilation import SerialCompiler
 from quantify_scheduler.device_under_test.quantum_device import QuantumDevice
@@ -73,15 +73,26 @@ class QuantifyExecutor(QuantumExecutor):
         qblox_instruments.Cluster.close_all()
 
         # Initialize a (singleton) instrument coordinator if not already set.
-        if QuantifyExecutor._coordinator is None:
-            QuantifyExecutor._coordinator = InstrumentCoordinator(
+        if self.__class__._coordinator is None:
+            self.__class__._coordinator = InstrumentCoordinator(
                 "tergite_quantum_executor"
             )
+            clusters = QuantifyMetadata.from_yaml(quantify_metadata_file).get_clusters()
+            for cluster in clusters:
+                cluster.reset()  # resets cluster for consistency
+                self.__class__._coordinator.add_component(ClusterComponent(cluster))
 
-        clusters = QuantifyMetadata.from_yaml(quantify_metadata_file).get_clusters()
-        for cluster in clusters:
-            cluster.reset()  # resets cluster for consistency
-            self._coordinator.add_component(ClusterComponent(cluster))
+        device_name = "DUT"
+        try:
+            self._quantum_device = Instrument.find_instrument(
+                device_name, QuantumDevice
+            )
+        except KeyError:
+            self._quantum_device = QuantumDevice(device_name)
+
+        self._quantum_device.hardware_config(self.quantify_config)
+        self._compiler = SerialCompiler(name="compiler")
+        self._compilation_config = self._quantum_device.generate_compilation_config()
 
     def _to_native_experiments(
         self, qobj: PulseQobj, native_config: NativeQobjConfig, /
@@ -108,16 +119,10 @@ class QuantifyExecutor(QuantumExecutor):
         # Stop any running sequences.
         self._coordinator.stop()
         t1 = datetime.now()
-        schedule_to_compile = copy.deepcopy(experiment.schedule)
 
-        quantum_device = QuantumDevice("DUT")
-        clean_config = self.quantify_config
-        quantum_device.hardware_config(clean_config)
-
-        compiler = SerialCompiler(name="compiler")
-        compiled_schedule = compiler.compile(
-            schedule=schedule_to_compile,
-            config=quantum_device.generate_compilation_config(),
+        compiled_schedule = self._compiler.compile(
+            schedule=experiment.schedule,
+            config=self._compilation_config,
         )
         t2 = datetime.now()
         print(t2 - t1, "DURATION OF COMPILING")

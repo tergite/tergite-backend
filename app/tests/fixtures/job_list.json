@@ -3,19 +3,22 @@
     "job_id": "951bcab8-4d88-4a27-9f1c-23197d92148a",
     "status": "pending",
     "stage": 1,
-    "device": "pingu"
+    "device": "pingu",
+    "test_duration": 0.23
   },
   {
     "job_id": "cee16be6-5869-4820-8686-98c761c8a0e1",
     "status": "pending",
     "stage": 1,
-    "device": "pingu"
+    "device": "pingu",
+    "test_duration": 2.0
   },
   {
     "job_id": "5b11de5b-34d2-4618-bbc2-a25112981b44",
     "status": "successful",
     "stage": 9,
     "device": "pingu",
+    "test_duration": 2.1,
     "result": {
       "memory": [["0x0"]]
     },
@@ -25,7 +28,8 @@
     "job_id": "17ddd1b7-b867-4ba3-ad0e-2cea04215e56",
     "status": "pending",
     "stage": 1,
-    "device": "pingu"
+    "device": "pingu",
+    "test_duration": 10
   },
   {
     "job_id": "2df4ad77-4a36-4837-b3ce-0b9acd9493eb",
@@ -1068,12 +1072,14 @@
     "job_id": "05159bca-5b47-4f05-a11e-6410d159b853",
     "status": "pending",
     "stage": 1,
+    "test_duration": 2.0,
     "device": "pingu"
   },
   {
     "job_id": "d332996f-6286-4ad2-b102-4572779b9f09",
     "status": "pending",
     "stage": 1,
+    "test_duration": 1.9,
     "device": "pingu"
   },
   {
@@ -1081,12 +1087,14 @@
     "status": "failed",
     "stage": 7,
     "device": "pingu",
+    "test_duration": 0.4,
     "failure_reason": "just some random reason"
   },
   {
     "job_id": "aa37d115-eddb-493e-b5e9-4e4c14c8482f",
     "status": "successful",
     "stage": 9,
+    "test_duration": 2.0,
     "device": "pingu",
     "result": {
       "memory": [["0x0"]]
@@ -1097,18 +1105,21 @@
     "job_id": "76bf7f38-fc50-4242-a0cb-e94365568622",
     "status": "pending",
     "stage": 1,
+    "test_duration": 1.1,
     "device": "pingu"
   },
   {
     "job_id": "b65d5e22-08d4-4ac2-b634-abd5f12199b9",
     "status": "pending",
     "stage": 1,
+    "test_duration": 0.23,
     "device": "pingu"
   },
   {
     "job_id": "f15a3bf8-d508-44dd-bcec-1db186506e50",
     "status": "cancelled",
     "stage": 6,
+    "test_duration": 0.4,
     "device": "pingu",
     "cancellation_reason": "cancelled by user"
   },
@@ -1116,6 +1127,7 @@
     "job_id": "ea7dcb91-7237-42c9-b86c-cfff24aff47e",
     "status": "pending",
     "stage": 1,
+    "test_duration": 1.5,
     "device": "pingu"
   }
 ]

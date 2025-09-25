@@ -11,24 +11,71 @@
 # that they have been altered from the originals.
 """Dependencies useful for the FastAPI API"""
 import json
+import logging
+from contextlib import asynccontextmanager
+from datetime import datetime
 from typing import Optional
 
-from fastapi import Depends, HTTPException, UploadFile, status
+from cryptography.exceptions import InvalidSignature
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, status
 from fastapi.requests import Request
-from pydantic import ValidationError
-from redis import Redis
+from fastapi.security import OAuth2PasswordBearer
+from pydantic import BaseModel, ValidationError
+from sqlalchemy import Engine
+from starlette.requests import Request
 
 import settings
 
-from ..services import auth as auth_service
-from ..services.jobs.dtos import JobFile, JobStatus
-from ..utils.uuid import validate_uuid4_str
-from .exc import InvalidJobIdInUploadedFileError, IpNotAllowedError
+from ..libs.queues.dtos import JobFile
+from ..services.booking.models import MSSTokenClaims
+from ..services.booking.service import get_user_job_id_pair_from_token
+from ..services.booking.store import get_bookings_sql_engine
+from ..services.scheduler import get_job
+from ..services.scheduler.queues import QueuePool
+from ..services.scheduler.utils import get_executor, reset_cached_executor
+from ..utils.api import get_request_logs_store, verify_mss_signature
+from ..utils.exc import (
+    ConflictError,
+    InvalidJobIdInUploadedFileError,
+    ItemNotFoundError,
+    NotAuthenticatedError,
+    UnauthorizedError,
+)
+from ..utils.strings import validate_uuid4_str
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+DB_ENGINE = get_bookings_sql_engine(settings.BOOKING_DB_URL)
+QUEUE_POOL = QueuePool.from_settings()
 
 
-def get_redis_connection():
-    """Returns a redis connection"""
-    return settings.REDIS_CONNECTION
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Handles functions to run before and after the application"""
+    global DB_ENGINE, QUEUE_POOL
+
+    DB_ENGINE = get_bookings_sql_engine(settings.BOOKING_DB_URL)
+    QUEUE_POOL = QueuePool.from_settings()
+    get_executor(
+        redis=settings.REDIS_CONNECTION,
+        executor_type=settings.EXECUTOR_TYPE,
+        quantify_config_file=settings.QUANTIFY_CONFIG_FILE,
+        quantify_metadata_file=settings.QUANTIFY_METADATA_FILE,
+        mss_url=settings.MSS_MACHINE_ROOT_URL,
+    )
+    yield
+
+    DB_ENGINE = None
+    reset_cached_executor()
+
+
+def get_queue_pool() -> QueuePool:
+    """Dependency injector to retrieve the latest queue pool"""
+    return QUEUE_POOL
+
+
+def get_db_engine() -> Engine:
+    """Dependency injector to retrieve the latest sql db engine"""
+    return DB_ENGINE
 
 
 def get_job_id_dependency(job_id_field: str):
@@ -91,96 +138,156 @@ async def get_job_id_from_uploaded_file(
     raise InvalidJobIdInUploadedFileError(error_message)
 
 
-def get_whitelisted_ip(request: Request) -> str:
-    """Returns the whitelisted IP if exists or raises a IpNotAllowedError
+def get_verified_mss_admin_user_id(request: Request) -> str:
+    """Returns the user_id if user is admin in MSS as got from MSS passed through special headers
+
+    We are choosing to trust MSS and so whenever a request comes from
+    MSS. The `x-mss-is-admin` header shows whether this is user is admin in MSS or not
 
     Args:
         request: the current FastAPI request
 
     Returns:
-        the whitelisted IP
+        the user_id as got from MSS
     """
+    user_id = get_verified_mss_user_id(request)
     try:
-        return request.state.whitelisted_ip
-    except AttributeError:
-        raise IpNotAllowedError()
+        is_admin = request.headers["x-mss-is-admin"]
+        if is_admin.lower().strip() != "true":
+            raise ValueError(f"{is_admin} is not true")
+    except (KeyError, ValueError) as exp:
+        logging.error(exp)
+        raise UnauthorizedError("Forbidden")
+
+    return user_id
 
 
-def get_valid_credentials_dep(
-    expected_status: Optional[JobStatus] = None,
-    job_id_field: str = "job_id",
-):
-    """Returns a dependency injector that gets a valid credentials with the expected job status.
-
-    It extracts the app_token from the headers and the job_id from the parameters
-    The dependency injector raises authentication or authorization errors if no
-    valid app_token and job_id pair is found.
+def get_unverified_mss_is_admin(request: Request) -> bool:
+    """Gets the MSS flag that is-admin, without verifying
 
     Args:
-        expected_status: the status that the job should be at. If None, status does not matter
+        request: the current FastAPI request
+
+    Returns:
+        the tru if is-admin is true else false
+    """
+    try:
+        is_admin = request.headers["x-mss-is-admin"]
+        return is_admin.lower().strip() == "true"
+    except (KeyError, ValueError):
+        return False
+
+
+def get_verified_mss_user_id(request: Request) -> str:
+    """Returns the user_id as got from MSS passed through special headers
+
+    We are choosing to trust MSS and so whenever a request comes from
+    MSS, there will be an `x-mss-user-id` and `x-mss-signature` header.
+    We will get the `x-mss-user-id` and return it only if the `x-mss-signature`
+    is verified by MSS public key.
+
+    For better security against replay attacks, we also use the `x-mss-request-id` and
+    `x-mss-timestamp` headers
+
+    Note that the user can be "" i.e. no user especially where there is no user expected
+
+    Args:
+        request: the current FastAPI request
+
+    Returns:
+        the user_id as got from MSS
+
+    Raises:
+        NotAuthenticatedError: user not authenticated
+    """
+    try:
+        user_id = request.headers["x-mss-user-id"]
+        nonce = request.headers["x-mss-request-id"]
+        timestamp = request.headers["x-mss-timestamp"]
+        signature = request.headers["x-mss-signature"]
+
+        message = f"{user_id}-{nonce}-{timestamp}"
+        verify_mss_signature(signature=signature, message=message)
+
+        current_timestamp = datetime.now().timestamp()
+        timestamp_float = float(timestamp)
+        time_difference = current_timestamp - timestamp_float
+        if time_difference > settings.MSS_NONCE_TTL:
+            raise ValueError(
+                f"nonce of timestamp {timestamp} is {time_difference}s older than {settings.MSS_NONCE_TTL} seconds"
+            )
+        elif time_difference < 0:
+            raise ValueError(f"timestamp {timestamp} is in the future")
+
+        requests_store = get_request_logs_store()
+        if requests_store.exists(nonce):
+            raise ValueError(f"duplicate request nonce: '{nonce}'")
+
+        return user_id
+    except (KeyError, InvalidSignature, ValueError) as exp:
+        logging.error(exp)
+        raise NotAuthenticatedError("user not authenticated")
+
+
+def get_mss_token_claims_dep(
+    job_exists: bool = True,
+    job_id_field: str = "job_id",
+):
+    """Gets a dependency injector that gets the pair (user_id, job_id) from the request to allow job submission.
+
+    It extracts the JWT token from the headers and the job_id from the parameters
+    or from the file body.
+    The dependency injector raises authentication or authorization errors if no
+    valid token and job_id pair is found.
+
+    The dependency injector returns the MSSTokenClaims and may raise the following errors:
+        NotAuthenticatedError: job {job_id} does not exist for current user
+        UnauthorizedError: job {job_id} is already {auth_log.status}
+        UnauthorizedError: unexpected job id {job_id}
+        InvalidJobIdInUploadedFileError: The job does not have a valid UUID4 {job_id_field}
+
+    Args:
+        job_exists: whether the job is expected to exist already or not
         job_id_field: the name of the parameter or field that contains the job_id. Default is 'job_id'
+
     """
 
     def dependency_injector(
-        redis_connection: Redis = Depends(get_redis_connection),
         job_id: str = Depends(get_job_id_dependency(job_id_field=job_id_field)),
-        app_token: Optional[str] = Depends(get_bearer_token),
-    ) -> auth_service.Credentials:
-        """Gets a valid app_token-job_id pair with the expected job status.
+        token: Optional[str] = Depends(get_bearer_token),
+    ) -> MSSTokenClaims:
+        """Gets a valid user_id-job_id pair.
 
         Args:
             job_id: the job_id as got from the parameters or from the uploaded file
-            redis_connection: the connection to the redis database
-            app_token: the app_token as got from the FastAPI request
+            token: the bearer token in the authorization header
+
+        Returns:
+            the MSSTokenClaims of the user_id and the job_id
 
         Raises:
-            HTTPException: status_code=401, detail=job {credentials.job_id} does not exist for current user
-            HTTPException: status_code=403, detail=job {credentials.job_id} is already {auth_log.status}
-            InvalidJobIdInUploadedFileError: f"The job does not have a valid UUID4 {job_id_field}"
+            NotAuthenticatedError: job {job_id} does not exist for current user
+            ConflictError: job {job_id} is already {auth_log.status}
+            UnauthorizedError: unexpected job id {job_id}
+            InvalidJobIdInUploadedFileError: The job does not have a valid UUID4 {job_id_field}
         """
-        credentials = auth_service.Credentials(job_id=job_id, app_token=f"{app_token}")
-        try:
-            auth_service.authenticate(
-                redis_connection,
-                credentials=credentials,
-                expected_status=expected_status,
-            )
-        except auth_service.AuthenticationError as exp:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED, detail=f"{exp}"
-            )
-        except auth_service.AuthorizationError as exp:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"{exp}")
+        user_id, token_job_id = get_user_job_id_pair_from_token(token)
+        if job_id != token_job_id:
+            raise UnauthorizedError(f"unexpected job id {job_id}")
 
-        return credentials
+        try:
+            get_job(job_id=job_id, user_id=user_id)
+            if not job_exists:
+                raise ConflictError(f"job {job_id} already exists")
+        except NotAuthenticatedError:
+            raise NotAuthenticatedError(f"job {job_id} does not exist for current user")
+        except ItemNotFoundError:
+            if job_exists:
+                raise UnauthorizedError(f"job {job_id} does not exist")
+
+        return MSSTokenClaims(user_id=user_id, job_id=job_id)
 
     return dependency_injector
-
-
-def get_bearer_token(
-    request: Request, raise_if_error: bool = settings.IS_AUTH_ENABLED
-) -> Optional[str]:
-    """Extracts the bearer token from the request.
-
-    It throws a 401 exception if not exist and `raise_if_error` is False
-
-    Args:
-        request: the request object from FastAPI
-        raise_if_error: whether an error should be raised if it occurs.
-            defaults to settings.IS_AUTH_ENABLED
-
-    Raises:
-        HTTPException: Unauthorized
-
-    Returns:
-        the bearer token as a string or None if it does not exist and `raise_if_error` is False
-    """
-    try:
-        authorization_header = request.headers["Authorization"]
-        return authorization_header.split("Bearer ")[1].strip()
-    except (KeyError, IndexError):
-        if raise_if_error:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
 
 
 async def validate_job_file(upload_file: UploadFile) -> UploadFile:
@@ -205,3 +312,58 @@ async def validate_job_file(upload_file: UploadFile) -> UploadFile:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid file: {exp}"
         )
+
+
+def get_bearer_token(request: Request) -> Optional[str]:
+    """Extracts the bearer token from the request.
+
+    It throws a 401 exception if not exist and `raise_if_error` is False
+
+    Args:
+        request: the request object from FastAPI
+
+    Raises:
+        HTTPException: Unauthorized
+
+    Returns:
+        the bearer token as a string or None if it does not exist and `raise_if_error` is False
+    """
+    try:
+        authorization_header = request.headers["Authorization"]
+        return authorization_header.split("Bearer ")[1].strip()
+    except (KeyError, IndexError):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="user not authenticated"
+        )
+
+
+class MSSAuthDetails(BaseModel):
+    user_id: str
+    job_id: str
+    is_mss_admin: bool = False
+
+
+def get_verified_mss_details(request: Request) -> MSSAuthDetails:
+    """Gets the MSS verified details either from token or verified MSS headers or fails with error
+
+    Args:
+        request: the request object
+
+    Returns:
+        the MSS details from the given request
+
+    Raises:
+        NotAuthenticatedError: not authenticated
+        UnauthorizedError: forbidden
+    """
+    job_id = request.path_params["job_id"]
+    try:
+        user_id = get_verified_mss_user_id(request)
+        is_mss_admin = get_unverified_mss_is_admin(request)
+        return MSSAuthDetails(user_id=user_id, job_id=job_id, is_mss_admin=is_mss_admin)
+    except NotAuthenticatedError as exp:
+        token = get_bearer_token(request)
+        user_id, token_job_id = get_user_job_id_pair_from_token(token)
+        if token_job_id != job_id:
+            raise UnauthorizedError("forbidden")
+        return MSSAuthDetails(user_id=user_id, job_id=job_id)

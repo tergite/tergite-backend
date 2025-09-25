@@ -42,13 +42,21 @@ cd tergite-backend
 pip install ."[dev]"
 ```
 
+- If you don't have a key certificate pair for MSS, generate them on the MSS machine 
+  and copy the public key certificate to the backend machine in this root folder.
+
+```shell
+openssl genpkey -algorithm RSA -out mss_private_key.pem -pkeyopt rsa_keygen_bits:4096
+openssl rsa -pubout -in mss_private_key.pem -out mss_public_key.pem
+# scp mss_public_key.pem backend-host:~/tergite-backend/mss_public_key.pem
+```
+
 - Copy the `dot-env-template.txt` file to `.env` and update the environment variables there appropriately.
 
 ```shell
 cp dot-env-template.txt .env
 ```
 
-_Note: If you want to run without a running MSS, set the variable `IS_STANDALONE=True` in the `.env`_  
 _Note: If you don't want to use the simulator, set the variable `EXECUTOR_TYPE=quantify` in the `.env`_  
 
 - **If you have `EXECUTOR_TYPE=quantify`**, copy the quantify example config file `quantify-config.example.json` and `quantify-metadata.example.yml` into 

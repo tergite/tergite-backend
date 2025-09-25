@@ -1,0 +1,14 @@
+[
+  {
+    "starts_in": 0,
+    "duration": 3
+  },
+  {
+    "starts_in": 3,
+    "duration": 5
+  },
+  {
+    "starts_in": 8,
+    "duration": 120
+  }
+]

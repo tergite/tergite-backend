@@ -1,6 +1,6 @@
 # This code is part of Tergite
 #
-# (C) Copyright Miroslav Dobsicek 2021
+# (C) Chalmers Next Labs 2025
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -10,22 +10,14 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 #
-# Modified:
-#
-# - Martin Ahindura 2023
-#
 
-
-import uuid
-
-
-def validate_uuid4_str(id_str):
-    return validate_uuid_str(id_str, 4)
-
-
-def validate_uuid_str(id_str, version):
-    try:
-        temp_uuid = uuid.UUID(id_str, version=version)
-    except (ValueError, TypeError):
-        return False
-    return str(temp_uuid) == id_str
+from .service import (
+    cancel_booking,
+    cancel_job,
+    delete_job,
+    delete_user_profile,
+    get_job,
+    get_many_jobs,
+    submit_booking,
+    submit_job_file,
+)

@@ -10,17 +10,18 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 
-import numpy as np
-import xarray as xr
-import pytest
 from types import SimpleNamespace
 from typing import Dict, List
 
+import numpy as np
+import pytest
+import xarray as xr
+
 from ...libs.quantum_executor.base.quantum_job import (
-    discriminate_results,
     ByteOrder,
+    discriminate_results,
 )
-from ...libs.quantum_executor.base.quantum_job.dtos import QuantumJob, MeasRet, MeasLvl
+from ...libs.quantum_executor.base.quantum_job.dtos import MeasLvl, MeasRet, QuantumJob
 from ...libs.quantum_executor.base.quantum_job.typing import QDataset
 
 
