@@ -50,8 +50,8 @@ from app.tests.conftest import (
     USERS,
     VALID_BOOKINGS,
     VALID_CREATE_BOOKINGS_PARAMS,
-    _BasicBookingInfo,
-    _PaginationInfo,
+    BasicBookingInfo,
+    PaginationInfo,
 )
 from app.tests.utils.api import create_invalid_mss_headers, create_mss_headers
 from app.tests.utils.env import TEST_MAX_SLOTS_PER_DAY, TEST_RQ_MAX_QUEUE_WAIT_TIME
@@ -200,7 +200,7 @@ def test_view_profile(client):
 
 
 @pytest.mark.parametrize("pagination, client", _VIEW_MANY_PARAMS)
-def test_admin_view_users(client, pagination: "_PaginationInfo"):
+def test_admin_view_users(client, pagination: "PaginationInfo"):
     """GET '/users' should show to an admin the paginated list of user profiles via MSS"""
     with client as client:
         users = _create_many_users(client, raw_users=USERS)
@@ -381,7 +381,7 @@ def test_non_admin_remove_user(
 
 
 @pytest.mark.parametrize("user,booking,client", VALID_CREATE_BOOKINGS_PARAMS)
-def test_create_booking(client, user, booking: "_BasicBookingInfo"):
+def test_create_booking(client, user, booking: "BasicBookingInfo"):
     """POST '/bookings' should return the new booking created by the user"""
     with client as client:
         user_id, _ = _create_user(client, user=user)
@@ -401,7 +401,7 @@ def test_create_booking(client, user, booking: "_BasicBookingInfo"):
 
 
 @pytest.mark.parametrize("user,booking,client", INVALID_CREATE_BOOKINGS_PARAMS)
-def test_create_invalid_booking(client, user, booking: "_BasicBookingInfo"):
+def test_create_invalid_booking(client, user, booking: "BasicBookingInfo"):
     """Should return an error message if an attempt to create an invalid booking is made
 
     e.g. start_utc in the past
@@ -421,7 +421,7 @@ def test_create_invalid_booking(client, user, booking: "_BasicBookingInfo"):
 
 @pytest.mark.parametrize("user,booking,client", VALID_CREATE_BOOKINGS_PARAMS)
 def test_create_conflicting_booking(
-    client, user, booking: "_BasicBookingInfo", mocker: MockerFixture
+    client, user, booking: "BasicBookingInfo", mocker: MockerFixture
 ):
     """Should return an error message when creating a booking overlapping with another"""
     with client as client:
@@ -494,7 +494,7 @@ def test_unauthenticated_create_booking(client, worker, redis_conn):
 
 
 @pytest.mark.parametrize("pagination,client", _VIEW_MANY_PARAMS)
-def test_view_bookings(client, pagination: "_PaginationInfo"):
+def test_view_bookings(client, pagination: "PaginationInfo"):
     """GET "/bookings" shows paginated list of all available bookings"""
     with client as client:
         users = _create_many_users(client)
@@ -516,16 +516,31 @@ def test_view_bookings(client, pagination: "_PaginationInfo"):
         limit = pagination["limit"]
         skip = pagination["skip"]
 
+        filters_and_results = [
+            ({}, all_records),
+            ({"min_start_utc": all_records[1]["start_utc"]}, all_records[1:]),
+            ({"min_start_utc": all_records[2]["start_utc"]}, all_records[2:]),
+            ({"max_start_utc": all_records[1]["start_utc"]}, all_records[:2]),
+            (
+                {
+                    "min_start_utc": all_records[1]["start_utc"],
+                    "max_start_utc": all_records[1]["start_utc"],
+                },
+                all_records[1:2],
+            ),
+        ]
+
         # view bookings
         for user_id in user_ids:
-            response = _view_booking_list(
-                client, user_id=user_id, skip=skip, limit=limit
-            )
-            actual_output = response.json()
-            expected = _paginate(all_records, skip=skip, limit=limit)
+            for filters, expected_all_records in filters_and_results:
+                response = _view_booking_list(
+                    client, user_id=user_id, skip=skip, limit=limit, **filters
+                )
+                actual_output = response.json()
+                expected = _paginate(expected_all_records, skip=skip, limit=limit)
 
-            assert response.status_code == 200
-            assert actual_output == expected
+                assert response.status_code == 200
+                assert actual_output == expected
 
 
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
@@ -2231,6 +2246,7 @@ def _view_booking_list(
     skip: int = 0,
     limit: Optional[int] = None,
     is_admin: Optional[bool] = None,
+    **filters,
 ) -> "Response":
     """Views the paginated list of bookings
 
@@ -2240,6 +2256,7 @@ def _view_booking_list(
         skip: the number of records to skip
         limit: the maximum number of records to return
         is_admin: whether to access the bookings endpoint as admin
+        filters: additional filters to apply to the bookings
 
     Returns:
         the httpx.Response for the request
@@ -2248,6 +2265,7 @@ def _view_booking_list(
     params = {"skip": skip}
     if isinstance(limit, int):
         params["limit"] = limit
+    params.update(filters)
 
     return client.get("/bookings", headers=headers, params=params)
 
@@ -2317,7 +2335,7 @@ def _get_headers(token: str) -> Dict[str, Any]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def _to_booking_payload(booking_info: "_BasicBookingInfo") -> "_BookingPayload":
+def _to_booking_payload(booking_info: "BasicBookingInfo") -> "_BookingPayload":
     """Converts the booking info to payload for creation of a new booking
 
     Args:
@@ -2596,8 +2614,8 @@ def _create_many_users(
 
 
 def _create_booking_v2(
-    client: "TestClient", user_id: str, booking: "_BasicBookingInfo"
-) -> Tuple["_BasicBookingInfo", "Response"]:
+    client: "TestClient", user_id: str, booking: "BasicBookingInfo"
+) -> Tuple["BasicBookingInfo", "Response"]:
     """Creates the booking and returns the actual booking details
 
     Actual booking details include actual duration and actual delay
@@ -2633,8 +2651,8 @@ def _create_booking_v2(
 
 
 def _create_booking(
-    client: "TestClient", user_id: str, booking: "_BasicBookingInfo"
-) -> Tuple["_BasicBookingInfo", "Response"]:
+    client: "TestClient", user_id: str, booking: "BasicBookingInfo"
+) -> Tuple["BasicBookingInfo", "Response"]:
     """Creates the booking and returns the actual booking details
 
     Actual booking details include actual duration and actual delay

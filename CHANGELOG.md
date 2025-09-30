@@ -9,6 +9,12 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- Add filtering bookings by minimum/maximum start timestamps
+
+## [2025.09.0] - 2025-09-30
+
+### Added
+
 - Install a pre-commit hook to run black
 - Added a support for measurement level 1 for simulator for both single and avg modes
 - Added a support for measurement level 1 for real backend for both single and avg modes
