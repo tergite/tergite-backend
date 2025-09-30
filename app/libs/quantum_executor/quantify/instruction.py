@@ -729,13 +729,13 @@ class WacqtCZPulseInstruction(BaseInstruction):
         hardware_map: Optional[Dict[str, Any]] = None,
     ) -> List["WacqtCZPulseInstruction"]:
         # Accept either a dedicated name or a parametric pulse with shape tag
-        name_ok = qobj_inst.name.lower() in {"wacqt_cz", "parametric_pulse"}
+        is_name_ok = qobj_inst.name.lower() in {"wacqt_cz", "parametric_pulse"}
         shape = getattr(qobj_inst, "pulse_shape", "wacqt_cz")
         shape_ok = isinstance(shape, str) and shape.lower() in {
             "wacqt_cz",
             "wacqt_cz_gate_pulse",
         }
-        if not (name_ok and shape_ok):
+        if not (is_name_ok and shape_ok):
             return []
         params = {k.lower(): v for k, v in qobj_inst.parameters.items()}
         t0 = _map_to_qblox_timegrid(qobj_inst.t0 * 1e-9)

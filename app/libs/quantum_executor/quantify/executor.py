@@ -125,7 +125,7 @@ class QuantifyExecutor(QuantumExecutor):
         ]
         return native_experiments
 
-    def _baseline_couplers(self) -> None:
+    def _save_default_current_value_to_redis(self) -> None:
         # Persist the parking current (0 A) in Redis for each coupler
         for cplr in self._couplers:
             self.spi_dac._connection.hset(f"couplers:{cplr}", "parking_current", 1e-4)
@@ -154,7 +154,7 @@ class QuantifyExecutor(QuantumExecutor):
         self.spi_dac = SpiDAC(
             couplers=self._couplers, metadata_path=QUANTIFY_METADATA_FILE
         )
-        self._baseline_couplers()
+        self._save_default_current_value_to_redis()
         self.spi_dac.set_parking_currents(self._couplers)
 
         bias_currents = self._extract_bias(experiment)

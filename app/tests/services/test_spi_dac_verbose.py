@@ -19,8 +19,6 @@ import pytest
 from functools import wraps
 from pathlib import Path
 
-qblox = pytest.importorskip("qblox_instruments")
-
 from ...libs.quantum_executor.quantify import spi_dac as spi_module
 from ...libs.quantum_executor.quantify.spi_dac import SpiDAC
 
