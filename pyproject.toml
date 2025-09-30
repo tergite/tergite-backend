@@ -49,6 +49,9 @@ dependencies = [
     "sqlmodel~=0.0.24",
     "hiredis~=3.2.1",
     "passlib[bcrypt]~=1.7.4",
+    # bycrypt 5.0.0 seems to have a bug ValueError('password cannot be longer than 72 bytes, truncate manually if necessary (e.g. my_password[:72])')
+    # https://stackoverflow.com/questions/79776559/passlib-bcrypt-not-working-when-deployed-to-render-valueerror-password-cannot
+    "bcrypt<5.0.0,>=4.3.0",
     "pyjwt~=2.9.0",
     "pyyaml~=6.0.2",
     "fastapi[standard]~=0.116.1",

@@ -9,12 +9,6 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
-- Add filtering bookings by minimum/maximum start timestamps
-
-## [2025.09.0] - 2025-09-30
-
-### Added
-
 - Install a pre-commit hook to run black
 - Added a support for measurement level 1 for simulator for both single and avg modes
 - Added a support for measurement level 1 for real backend for both single and avg modes
@@ -30,6 +24,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   - `/bookings/{booking_id}/cancel` (POST)
 - BREAKING: Added authentication of requests from MSS by verifying that `x-mss-signature` is signed using MSS's private key
 - Added canceling of jobs via MSS
+- Add filtering bookings by minimum/maximum start timestamps
 
 ### Changed
 
@@ -54,6 +49,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   occurs to return an error status code with `{"detail": string}` JSON response.
 - BREAKING: Changed the names of the workers/queues used to `{PREFIX}_general`, `{PREFIX}_preprocessing`, `{PREFIX}_normal_execution`,
   `{PREFIX}_booked_execution`, `{PREFIX}_postprocessing`
+
+### Fixed
+
+- Fix bcrypt 5.0.0 ValueError 'password cannot be longer than 72 bytes, truncate manually if necessary (e.g. my_password[:72])'
 
 ## [2025.06.2] - 2025-06-17
 
