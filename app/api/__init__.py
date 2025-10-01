@@ -15,6 +15,7 @@
 # Modified:
 #
 # - Martin Ahindura 2023
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
@@ -344,7 +345,7 @@ async def view_users(
         db_engine: the SQL database to query
 
     Returns:
-        the paginated list of the available bookings
+        the paginated list of the available users
     """
     data = booking.get_many_user_profiles(db_engine, skip=skip, limit=limit)
     return PaginatedListResponse(skip=skip, limit=limit, data=data)
@@ -397,6 +398,8 @@ async def cancel_booking(
 async def view_bookings(
     skip: int = Query(default=0),
     limit: Optional[int] = Query(default=None),
+    min_start_utc: Optional[datetime] = Query(default=None),
+    max_start_utc: Optional[datetime] = Query(default=None),
     db_engine: Engine = Depends(get_db_engine),
 ) -> PaginatedListResponse[Booking]:
     """Views all available bookings
@@ -405,11 +408,19 @@ async def view_bookings(
         skip: number of records to ignore at the top of the returned results; default is 0
         limit: maximum number of records to return; default is None.
         db_engine: the SQL database engine to query
+        min_start_utc: the minimum start time in UTC
+        max_start_utc: the maximum start time in UTC
 
     Returns:
         the paginated list of the available bookings
     """
-    data = booking.get_many_bookings(db_engine, skip=skip, limit=limit)
+    filters = []
+    if min_start_utc is not None:
+        filters.append(Booking.start_utc >= min_start_utc)
+    if max_start_utc is not None:
+        filters.append(Booking.start_utc <= max_start_utc)
+
+    data = booking.get_many_bookings(db_engine, *filters, skip=skip, limit=limit)
     return PaginatedListResponse(skip=skip, limit=limit, data=data)
 
 
