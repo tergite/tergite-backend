@@ -387,6 +387,8 @@ def _configure_logging_for_tests():
             h.flush()
         except Exception:
             pass
+
+
 def _clear_test_db(url: str = TEST_BOOKING_DB_URL):
     """Clears the test database
 
