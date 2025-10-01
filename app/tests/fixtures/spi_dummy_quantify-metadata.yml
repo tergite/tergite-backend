@@ -1,0 +1,15 @@
+cluster0:
+  instrument_type: Cluster
+  ip_address: 192.168.0.101
+  is_dummy: true
+  modules:
+    "2":
+      instrument_type: QCM_RF
+spi_rack:
+  instrument_type: SPI-Rack
+  port: /dev/ttyACM0
+  is_dummy: true
+  coupler_spi_mapping:
+    u0:
+      spi_module_number: 6
+      dac_name: dac0

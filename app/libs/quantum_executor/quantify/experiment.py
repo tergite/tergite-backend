@@ -26,6 +26,8 @@ from qiskit.qobj import (
 )
 from quantify_scheduler import Schedule
 from quantify_scheduler.resources import ClockResource
+from quantify_scheduler.operations.pulse_library import IdlePulse
+
 
 from app.libs.quantum_executor.base.experiment import (
     NativeExperiment,
@@ -48,6 +50,7 @@ from .instruction import (
     ShiftFreqInstruction,
     ShiftPhaseInstruction,
     SquarePulseInstruction,
+    WacqtCZPulseInstruction,
 )
 
 # Map (name, pulse_shape) => Quantify Instruction class
@@ -60,6 +63,8 @@ _INSTRUCTION_PULSE_MAP: Dict[Tuple[str, Optional[str]], Type[BaseInstruction]] =
     ("acquire", None): AcquireInstruction,
     ("parametric_pulse", "gaussian"): GaussPulseInstruction,
     ("parametric_pulse", "constant"): SquarePulseInstruction,
+    ("parametric_pulse", "wacqt_cz"): WacqtCZPulseInstruction,
+    ("parametric_pulse", "wacqt_cz_gate_pulse"): WacqtCZPulseInstruction,
 }
 
 
@@ -195,6 +200,15 @@ def _construct_schedule(
 
             # set the previous to the current
             prev = curr
+        if len(channel.instructions) > 0:
+            raw_schedule.add(
+                ref_op=prev.label,
+                ref_pt="end",
+                ref_pt_new="start",
+                rel_time=timegrid_interval,
+                label=f"{prev.label}__tail_idle",
+                operation=IdlePulse(duration=timegrid_interval),
+            )
 
     return _get_absolute_timed_schedule(
         schedule=raw_schedule, channel_registry=channel_registry

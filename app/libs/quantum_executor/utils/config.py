@@ -13,7 +13,7 @@
 import json
 import re
 from os import PathLike
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union, Mapping
 
 import qblox_instruments
 import yaml
@@ -25,6 +25,7 @@ ALLOWED_TOP_LEVEL_INSTRUMENTS = {
     "LocalOscillator",
     "IQMixer",
     "OpticalModulator",
+    "SPI-Rack",
 }
 ALLOWED_MODULE_TYPES = {"QCM", "QRM", "QCM_RF", "QRM_RF", "QTM"}
 _QBLOX_CLUSTER_TYPE_MAP: Dict[str, qblox_instruments.ClusterType] = {
@@ -36,6 +37,11 @@ _QBLOX_CLUSTER_TYPE_MAP: Dict[str, qblox_instruments.ClusterType] = {
 
 # Regex pattern for cluster names
 CLUSTER_NAME_REGEX = re.compile(r"^cluster[A-Za-z0-9]+$", re.IGNORECASE)
+
+
+class CouplerMapEntry(BaseModel):
+    spi_module_number: int
+    dac_name: str
 
 
 class ModuleConfig(BaseModel):
@@ -72,6 +78,8 @@ class InstrumentConfig(BaseModel):
     is_dummy: Optional[bool] = Field(
         None, description="Indicates if the cluster is a dummy cluster."
     )
+    port: Optional[str] = None
+    coupler_spi_mapping: Optional[Dict[str, CouplerMapEntry]] = None
 
     class Config:
         extra = "allow"
@@ -95,19 +103,18 @@ class QuantifyMetadata(RootModel[Dict[str, InstrumentConfig]]):
         cls, v: Dict[str, InstrumentConfig]
     ) -> Dict[str, InstrumentConfig]:
         for name, instr in v.items():
-            # Validate that for each Cluster instrument the name matches the expected pattern.
-            if instr.instrument_type == "Cluster" and not CLUSTER_NAME_REGEX.match(
-                name
-            ):
-                raise ValueError(
-                    f"Cluster name '{name}' does not match expected pattern 'cluster<number>'."
-                )
-
-            # Validate that for each Cluster instrument has an ip address.
-            if not instr.ip_address:
-                raise ValueError(
-                    f"Cluster '{name}' must specify an instrument_address."
-                )
+            if instr.instrument_type == "Cluster":
+                # Validate that for each Cluster instrument the name matches the expected pattern.
+                if not CLUSTER_NAME_REGEX.match(name):
+                    raise ValueError(
+                        f"Cluster name '{name}' does not match expected pattern 'cluster<number>'."
+                    )
+                # Validate that for each Cluster instrument has an ip address.
+                if not instr.ip_address:
+                    raise ValueError(f"Cluster '{name}' must specify an ip_address.")
+            elif instr.instrument_type == "SPI-Rack":
+                if not instr.port:
+                    raise ValueError(f"SPI-Rack '{name}' must specify a serial 'port'.")
         return v
 
     @classmethod
@@ -131,7 +138,12 @@ class QuantifyMetadata(RootModel[Dict[str, InstrumentConfig]]):
         Returns:
             the list of clusters got from this metadata
         """
-        return [_create_cluster(name, conf) for name, conf in self.root.items()]
+
+        return [
+            _create_cluster(name, conf)
+            for name, conf in self.root.items()
+            if conf.instrument_type == "Cluster"
+        ]
 
 
 def load_quantify_config(
