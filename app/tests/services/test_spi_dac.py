@@ -33,7 +33,7 @@ def spi_metadata_path() -> str:
 
 
 @pytest.fixture
-def patched_settings(mocker, spi_metadata_path, real_redis_client):
+def patched_settings(mocker, spi_metadata_path, redis_client):
     """
     Patch exactly what SpiDAC reads from `settings`:
     - DEFAULT_PREFIX
@@ -42,7 +42,7 @@ def patched_settings(mocker, spi_metadata_path, real_redis_client):
     """
     mocker.patch.object(spi_module.settings, "DEFAULT_PREFIX", "quantify", create=True)
     mocker.patch.object(
-        spi_module.settings, "REDIS_CONNECTION", real_redis_client, create=True
+        spi_module.settings, "REDIS_CONNECTION", redis_client, create=True
     )
     mocker.patch.object(
         spi_module.settings, "QUANTIFY_METADATA_FILE", spi_metadata_path, create=True
@@ -99,7 +99,7 @@ def test_set_parking_requires_value_in_redis(spi_dac_dummy):
     assert "parking current is not present on redis" in str(ei.value)
 
 
-def test_missing_coupler_in_metadata_raises_keyerror(mocker, real_redis_client):
+def test_missing_coupler_in_metadata_raises_keyerror(mocker, redis_client):
     """
     Use a dedicated fixture file missing 'u1' mapping to assert clear error.
     """
@@ -108,7 +108,7 @@ def test_missing_coupler_in_metadata_raises_keyerror(mocker, real_redis_client):
     # Patch settings to point at this fixture + real test redis
     mocker.patch.object(spi_module.settings, "DEFAULT_PREFIX", "quantify", create=True)
     mocker.patch.object(
-        spi_module.settings, "REDIS_CONNECTION", real_redis_client, create=True
+        spi_module.settings, "REDIS_CONNECTION", redis_client, create=True
     )
     mocker.patch.object(
         spi_module.settings, "QUANTIFY_METADATA_FILE", missing_path, create=True
@@ -138,7 +138,7 @@ def test_set_dacs_zero_calls_underlying_rack(spi_dac_dummy, mocker):
     not os.environ.get("SPI_TEST_PORT"),
     reason="Set SPI_TEST_PORT=/dev/ttyXXX (or COMX) to run hardware tests.",
 )
-def test_ramp_behavior_on_real_rack(mocker, tmp_path, real_redis_client):
+def test_ramp_behavior_on_real_rack(mocker, tmp_path, redis_client):
     """
     Hardware test (opt-in via SPI_TEST_PORT):
       - No per-step jump > 1 µA.
@@ -159,7 +159,7 @@ def test_ramp_behavior_on_real_rack(mocker, tmp_path, real_redis_client):
     # Patch settings for hardware path + real test redis
     mocker.patch.object(spi_module.settings, "DEFAULT_PREFIX", "quantify", create=True)
     mocker.patch.object(
-        spi_module.settings, "REDIS_CONNECTION", real_redis_client, create=True
+        spi_module.settings, "REDIS_CONNECTION", redis_client, create=True
     )
     mocker.patch.object(
         spi_module.settings, "QUANTIFY_METADATA_FILE", str(p), create=True
@@ -168,7 +168,7 @@ def test_ramp_behavior_on_real_rack(mocker, tmp_path, real_redis_client):
     sd = SpiDAC(couplers=["u0"], metadata_path=str(p), print_progress=False)
 
     # Start near 0 A
-    real_redis_client.hset("couplers:u0", "parking_current", 0.0)
+    redis_client.hset("couplers:u0", "parking_current", 0.0)
     sd.set_parking_currents(["u0"])
 
     target = 0.0005  # 0.5 mA

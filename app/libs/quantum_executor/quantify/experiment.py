@@ -71,66 +71,6 @@ _INSTRUCTION_PULSE_MAP: Dict[Tuple[str, Optional[str]], Type[BaseInstruction]] =
 @dataclass(frozen=True)
 class QuantifyExperiment(NativeExperiment[Schedule]):
     channel_registry: QuantifyChannelRegistry
-    buffer_time: float = 0.0
-
-    # the interval between grid lines in the time grid used by Q1ASM
-    timegrid_interval: float = QBLOX_TIMEGRID_INTERVAL
-
-    @property
-    def schedule(self: "QuantifyExperiment") -> Schedule:
-        raw_schedule = Schedule(name=self.header.name, repetitions=self.config.shots)
-
-        root_instruction = InitialObjectInstruction()
-        raw_schedule.add(
-            ref_op=None,
-            ref_pt="end",
-            ref_pt_new="start",
-            rel_time=0.0,
-            label=root_instruction.label,
-            operation=root_instruction.to_operation(config=self.config),
-        )
-
-        for channel in self.channel_registry.values():
-            if (
-                len(channel.instructions) == 1
-                and channel.instructions[0].name == "delay"
-            ):
-                # if the channel contains a single instruction and that instruction is a delay,
-                # then do not schedule any operations on that channel
-                print("\nNO DELAY\n")
-                continue
-
-            prev = root_instruction
-            for curr in channel.instructions:
-                rel_time = curr.t0 - prev.final_timestamp + self.timegrid_interval
-                ref_op = prev.label
-
-                raw_schedule.add(
-                    ref_op=ref_op,
-                    ref_pt="end",
-                    ref_pt_new="start",
-                    rel_time=rel_time,
-                    label=curr.label,
-                    operation=curr.to_operation(config=self.config),
-                )
-
-                # set the previous to the current
-                prev = curr
-            # Ensure the channel does not end with a parameter op
-            # (Quantify forbids a zero-duration parameter operation at the schedule end).
-            if len(channel.instructions) > 0:
-                raw_schedule.add(
-                    ref_op=prev.label,
-                    ref_pt="end",
-                    ref_pt_new="start",
-                    rel_time=self.timegrid_interval,
-                    label=f"{prev.label}__tail_idle",
-                    operation=IdlePulse(duration=self.timegrid_interval),
-                )
-
-        return _get_absolute_timed_schedule(
-            schedule=raw_schedule, channel_registry=self.channel_registry
-        )
 
     @classmethod
     def from_qobj_expt(
@@ -210,7 +150,6 @@ def _add_instruction_to_channel_registry(
     ):
         instruction.register()
 
-
 def _construct_schedule(
     channel_registry: QuantifyChannelRegistry,
     header: QobjExperimentHeader,
@@ -260,6 +199,15 @@ def _construct_schedule(
 
             # set the previous to the current
             prev = curr
+        if len(channel.instructions) > 0:
+                raw_schedule.add(
+                    ref_op=prev.label,
+                    ref_pt="end",
+                    ref_pt_new="start",
+                    rel_time=timegrid_interval,
+                    label=f"{prev.label}__tail_idle",
+                    operation=IdlePulse(duration=timegrid_interval),
+                )
 
     return _get_absolute_timed_schedule(
         schedule=raw_schedule, channel_registry=channel_registry

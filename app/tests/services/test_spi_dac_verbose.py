@@ -32,7 +32,7 @@ def spi_metadata_path() -> str:
 
 
 @pytest.fixture
-def patched_settings(mocker, spi_metadata_path, real_redis_client):
+def patched_settings(mocker, spi_metadata_path, redis_client):
     """
     Patch only what SpiDAC reads from settings:
     - DEFAULT_PREFIX
@@ -41,7 +41,7 @@ def patched_settings(mocker, spi_metadata_path, real_redis_client):
     """
     mocker.patch.object(spi_module.settings, "DEFAULT_PREFIX", "quantify", create=True)
     mocker.patch.object(
-        spi_module.settings, "REDIS_CONNECTION", real_redis_client, create=True
+        spi_module.settings, "REDIS_CONNECTION", redis_client, create=True
     )
     mocker.patch.object(
         spi_module.settings, "QUANTIFY_METADATA_FILE", spi_metadata_path, create=True

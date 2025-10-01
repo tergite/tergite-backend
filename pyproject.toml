@@ -49,6 +49,7 @@ dependencies = [
     "sqlmodel~=0.0.24",
     "hiredis~=3.2.1",
     "passlib[bcrypt]~=1.7.4",
+    "bcrypt<5.0.0,>=4.3.0",
     "pyjwt~=2.9.0",
     "pyyaml~=6.0.2",
     "fastapi[standard]~=0.116.1",
@@ -96,7 +97,6 @@ dev = [
     "rq-dashboard~=0.8.3.2",
     "requests-mock>=1.11.0",
     "pytest-mock~=3.14.1",
-    "setuptools~=75.9.1",
     # deps of deps
     # -----------
     # Adding these here to constrain their versions to
