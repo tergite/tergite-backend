@@ -28,6 +28,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Modify Quantify quantum executor by calling SpiDAC to bring up currents before running a schedule
 - Add a placeholder Wacqt-two-qubit-gate function for Qobj to QuantifySchedule mapper with a flux port reference 
 - Add safety features to SpiDAC to limit current values and bring-up/down speed
+- Add filtering bookings by minimum/maximum start timestamps
 
 ### Changed
 
@@ -52,6 +53,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   occurs to return an error status code with `{"detail": string}` JSON response.
 - BREAKING: Changed the names of the workers/queues used to `{PREFIX}_general`, `{PREFIX}_preprocessing`, `{PREFIX}_normal_execution`,
   `{PREFIX}_booked_execution`, `{PREFIX}_postprocessing`
+
+### Fixed
+
+- Fix bcrypt 5.0.0 ValueError 'password cannot be longer than 72 bytes, truncate manually if necessary (e.g. my_password[:72])'
 
 ## [2025.06.2] - 2025-06-17
 

@@ -119,10 +119,10 @@ _mock_linear_discriminant_analysis_sim2q = MockLinearDiscriminantAnalysis(
 )
 
 USERS: List[Dict[str, Any]] = load_fixture("users.json")
-VALID_BOOKINGS: List["_BasicBookingInfo"] = load_fixture("valid_bookings.json")
-INVALID_BOOKINGS: List["_BasicBookingInfo"] = load_fixture("invalid_bookings.json")
+VALID_BOOKINGS: List["BasicBookingInfo"] = load_fixture("valid_bookings.json")
+INVALID_BOOKINGS: List["BasicBookingInfo"] = load_fixture("invalid_bookings.json")
 JOBS: List[Dict[str, Any]] = load_fixture("job_list.json")
-PAGINATION: List["_PaginationInfo"] = load_fixture("pagination.json")
+PAGINATION: List["PaginationInfo"] = load_fixture("pagination.json")
 
 JOBS_HASH_NAME = f"{Job.__module__}.{Job.__qualname__}".lower()
 
@@ -397,7 +397,7 @@ def _clear_test_db(url: str = TEST_BOOKING_DB_URL):
     SQLModel.metadata.drop_all(db)
 
 
-class _BasicBookingInfo(TypedDict):
+class BasicBookingInfo(TypedDict):
     """The simplified basic booking info"""
 
     starts_in: float
@@ -405,7 +405,7 @@ class _BasicBookingInfo(TypedDict):
     error_message: NotRequired[str]
 
 
-class _PaginationInfo(TypedDict):
+class PaginationInfo(TypedDict):
     """The pagination info"""
 
     skip: int
