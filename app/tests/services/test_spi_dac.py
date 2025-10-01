@@ -17,6 +17,7 @@ import yaml
 
 from pathlib import Path
 
+from qblox_instruments import SpiRack
 
 # SUT
 from ...libs.quantum_executor.quantify import spi_dac as spi_module
@@ -82,7 +83,7 @@ def test_instantiation_uses_dummy_driver_and_returns_dummy_dac(
     sd = SpiDAC(couplers=["u0"], metadata_path=patched_settings.QUANTIFY_METADATA_FILE)
 
     # We really created a qblox-instruments SpiRack (dummy)
-    assert isinstance(sd.spi, qblox.SpiRack)
+    assert isinstance(sd.spi, SpiRack)
 
     # In dummy mode, create_spi_dac returns a descriptive string handle
     assert isinstance(sd.dacs_dictionary["u0"], str)
@@ -124,10 +125,11 @@ def test_missing_coupler_in_metadata_raises_keyerror(mocker, real_redis_client):
 def test_set_dacs_zero_calls_underlying_rack(spi_dac_dummy, mocker):
     called = {"hit": False}
 
-    def fake_zero():
+    def fake_zero(self):
         called["hit"] = True
 
-    mocker.patch.object(spi_dac_dummy.spi, "set_dacs_zero", fake_zero)
+    # mocker.patch.object(spi_dac_dummy.spi, "set_dacs_zero", fake_zero)
+    mocker.patch.object(type(spi_dac_dummy.spi), "set_dacs_zero", fake_zero)
     spi_dac_dummy.set_dacs_zero()
     assert called["hit"] is True
 
