@@ -1,0 +1,11 @@
+cluster0:
+  instrument_type: Cluster
+  ip_address: 192.168.0.101
+spi_rack:
+  instrument_type: SPI-Rack
+  port: /dev/ttyACM0  
+  is_dummy: false
+  coupler_spi_mapping:
+    u0:
+      spi_module_number: 6
+      dac_name: dac0

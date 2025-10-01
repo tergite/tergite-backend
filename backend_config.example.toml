@@ -63,6 +63,8 @@ coupler_parameters = [
   "cz_pulse_duration_before",
   "cz_pulse_duration_rise",
   "cz_pulse_duration_constant",
+  "control_rz_lambda",
+  "target_rz_lambda",
   "pulse_type"
 ]
 
@@ -110,6 +112,8 @@ cz_pulse_phase_offset = "rad"
 cz_pulse_duration_before = "s"
 cz_pulse_duration_rise = "s"
 cz_pulse_duration_constant = "s"
+control_rz_lambda = "rad"
+target_rz_lambda = "rad"
 pulse_type = ""
 
 [[simulator_config.qubit]]
@@ -167,6 +171,8 @@ cz_pulse_phase_offset = 0
 cz_pulse_duration_before = 88e-9
 cz_pulse_duration_rise = 25e-9
 cz_pulse_duration_constant = 370e-9
+control_rz_lambda = 0.6
+target_rz_lambda = 0.3
 pulse_type = "wacqt_cz_gate_pulse"
 
 [simulator_config.discriminators.lda.q0]

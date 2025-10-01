@@ -14,7 +14,7 @@
 # that they have been altered from the originals.
 
 [build-system]
-requires = ["setuptools", "setuptools-scm"]
+requires = ["setuptools>=69", "wheel","setuptools-scm[toml]>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -99,12 +99,12 @@ dev = [
     "rq-dashboard~=0.8.3.2",
     "requests-mock>=1.11.0",
     "pytest-mock~=3.14.1",
-    "setuptools~=75.9.1",
     # deps of deps
     # -----------
     # Adding these here to constrain their versions to
     # avoid resolution-too-deep errors
     "click~=8.1.8",
+    "setuptools~=80.9.0"
 ]
 
 [project.urls]
@@ -115,7 +115,14 @@ Issues = "https://github.com/tergite/tergite-backend/issues"
 Changelog = "https://github.com/tergite/tergite-backend/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
-exclude = ["docs*", "app.tests*"]
+where = ["."]
+include = ["app*"]                    
+exclude = ["tests*", "build*", "dist*", "*.egg-info", ".venv*", "venv*"]
+
+[tool.setuptools_scm]
+# optional tweaks:
+version_scheme = "post-release"
+local_scheme = "no-local-version"
 
 [tool.isort]
 skip_gitignore = true

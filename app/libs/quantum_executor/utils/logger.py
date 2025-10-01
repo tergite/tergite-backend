@@ -17,6 +17,7 @@ import logging
 import logging.handlers
 from os.path import abspath, join
 from typing import Union
+from pathlib import Path
 
 import pandas as pd
 import quantify_core.data.handling as dh
@@ -139,6 +140,27 @@ class ExperimentLogger:
             tt = tabulate.tabulate(df.values, df.columns, tablefmt="simple")
             tt = "\n" + str(tt)
             self.info(f"Timing table: {tt}")
+
+        out_dir = Path(self.folder)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        csv_path = out_dir / "compiled_schedule_expected.csv"
+
+        # Keep only stable columns
+        cols = [
+            c
+            for c in [
+                "port",
+                "clock",
+                "abs_time",
+                "duration",
+                "is_acquisition",
+                "operation",
+            ]
+            if c in df.columns
+        ]
+
+        df[cols].to_csv(csv_path, index=False)
+        self.info(f"Wrote timing table CSV to {csv_path}")
 
     @staticmethod
     def format_Q1ASM(path: tuple, code: set) -> str:

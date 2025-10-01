@@ -42,6 +42,8 @@ from app.libs.quantum_executor.quantify.channel import (
     QuantifyChannelRegistry,
 )
 
+from app.libs.quantum_executor.qiskit.functions import _delta_t_function
+
 QBLOX_TIMEGRID_INTERVAL = 4e-9
 """
 Qblox instruments send pulses in a given equidistant time grid.
@@ -702,6 +704,99 @@ class PulseLibInstruction(BaseInstruction):
             )
         except KeyError:
             raise RuntimeError(f"Unable to schedule operation {self}.")
+
+
+class WacqtCZPulseInstruction(BaseInstruction):
+    """
+    Microwave-frequency flux pulse for the WACQT-CZ gate.
+    •  The seconds-scale DC sweet-spot bias is *not* scheduled here.
+    •  `parameters` must contain `duration` (int samples) and `dc_bias` (A).
+    """
+
+    __slots__ = ()
+
+    def __init__(self, **kwargs):
+        kwargs["name"] = "wacqt_cz"
+        super().__init__(**kwargs)
+
+    @classmethod
+    def list_from_qobj_inst(
+        cls,
+        qobj_inst: PulseQobjInstruction,
+        config: PulseQobjConfig,
+        native_config: NativeQobjConfig,
+        channel_registry: QuantifyChannelRegistry,
+        hardware_map: Optional[Dict[str, Any]] = None,
+    ) -> List["WacqtCZPulseInstruction"]:
+        # Accept either a dedicated name or a parametric pulse with shape tag
+        is_name_ok = qobj_inst.name.lower() in {"wacqt_cz", "parametric_pulse"}
+        shape = getattr(qobj_inst, "pulse_shape", "wacqt_cz")
+        shape_ok = isinstance(shape, str) and shape.lower() in {
+            "wacqt_cz",
+            "wacqt_cz_gate_pulse",
+        }
+        if not (is_name_ok and shape_ok):
+            return []
+        params = {k.lower(): v for k, v in qobj_inst.parameters.items()}
+        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * 1e-9)
+        duration = _map_to_qblox_timegrid(params["duration"] * 1e-9)
+
+        clock, port = hardware_map[qobj_inst.ch]
+        channel = channel_registry.get(clock)
+
+        cz_freq = params.get("freq")
+
+        # TODO: Frequency setting is not needed for  a flux pulse
+        setf = None
+        if cz_freq is not None:
+            setf = SetFreqInstruction(
+                name="setf",
+                t0=t0,
+                channel=channel,
+                port=port,
+                duration=0.0,
+                frequency=float(cz_freq),
+            )
+        cz = cls(
+            t0=t0,
+            channel=channel,
+            port=port,
+            duration=duration,
+            parameters=params,
+        )
+
+        return [inst for inst in (setf, cz) if inst is not None]
+
+    def to_operation(self, config: PulseQobjConfig) -> Operation:
+        num_points = int(
+            self.parameters.get(
+                "n_pts", max(1, int(self.duration / QBLOX_TIMEGRID_INTERVAL))
+            )
+        )
+        samples = _cz_delta_samples(num_points, self.parameters)
+        t_samples = np.linspace(0, self.duration, num_points, endpoint=False).tolist()
+        return NumericalPulse(
+            samples=samples.tolist(),
+            t_samples=t_samples,
+            port=self.port,
+            clock=self.channel.clock,
+            t0=self.t0,
+            interpolation="linear",
+        )
+
+
+def _cz_delta_samples(n_samples: int, p: Dict[str, float]) -> np.ndarray:
+    """Return a real-valued delta(t) array (complex64) of length *n_samples*."""
+    t_gate = p["t_p"] + p["t_rf"] + 2 * p["t_w"]
+    t = np.linspace(0, t_gate, n_samples, endpoint=False)
+    delta_arr = _delta_t_function(
+        t,
+        t_w=p["t_w"],
+        t_rf=p["t_rf"],
+        t_p=p["t_p"],
+        delta_0=p["delta_0"],
+    )
+    return delta_arr.astype(np.complex64)
 
 
 def _generate_numerical_pulse(
