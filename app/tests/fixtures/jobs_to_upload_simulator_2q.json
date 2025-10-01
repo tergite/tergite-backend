@@ -6,7 +6,8 @@
         "qobj_id": "827f0774-8f2d-4f50-9964-ffd492bcb2be",
         "header": {
           "backend_name": "qiskit_pulse_2q",
-          "backend_version": "1.0.0"
+          "backend_version": "1.0.0",
+          "test_duration": 10
         },
         "config": {
           "meas_level": 2,

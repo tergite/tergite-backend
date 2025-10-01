@@ -139,6 +139,7 @@ config.ini
 
 # ssh keys
 *.pem
+!app/tests/fixtures/*.pem
 
 Labber/
 
@@ -175,3 +176,6 @@ backend_config.**.toml
 
 # redis
 **.rdb
+
+# sql databases
+*.db

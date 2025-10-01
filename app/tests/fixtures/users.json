@@ -1,0 +1,22 @@
+[
+  {
+    "name": "John Doe",
+    "email": "johndoe@example.com",
+    "password": "passDontdoit5"
+  },
+  {
+    "name": "Paul Doe",
+    "email": "pauldoe@example.com",
+    "password": "dfhjhdfayuyewja"
+  },
+    {
+    "name": "Jane Doe",
+    "email": "janendoe@example.com",
+    "password": "playing-for-fun"
+  },
+  {
+    "name": "June Doe",
+    "email": "junendoe@example.com",
+    "password": "kairos-fo5"
+  }
+]

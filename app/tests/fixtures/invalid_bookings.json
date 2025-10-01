@@ -1,0 +1,22 @@
+[
+  {
+    "starts_in": -120,
+    "duration": 1800,
+    "error_message": "is in the past"
+  },
+  {
+    "starts_in": 120,
+    "duration": 1,
+    "error_message": "duration is too short compared to the minimum of 2.0 seconds"
+  },
+  {
+    "starts_in": 10,
+    "duration": 7000,
+    "error_message": "duration is beyond the limit of 3600.0 seconds"
+  },
+    {
+    "starts_in": 10,
+    "duration": -180,
+      "error_message": "comes earlier than start_utc"
+  }
+]

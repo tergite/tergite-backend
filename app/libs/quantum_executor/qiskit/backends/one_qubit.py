@@ -141,9 +141,15 @@ class QiskitPulse1Q(QiskitPulseBackend):
     ) -> PulseBackendConfiguration:
         backend_name = backend_config.general_config.name
         backend_version = backend_config.general_config.version
-        gates_configs = [
-            GateConfig(name=k, **v) for k, v in backend_config.gates.items()
-        ]
+        try:
+            gates_configs = [
+                GateConfig(name=k, **v) for k, v in backend_config.gates.items()
+            ]
+        except TypeError as exp:
+            print(
+                f"qiskit pulse 1q backend_config.gates: {backend_config.gates}\nbackend_config: {backend_config}"
+            )
+            raise exp
         dt = backend_config.general_config.dt
         first_qubit_conf = backend_config.calibration_config.qubit[0]
         freq = first_qubit_conf["frequency"]

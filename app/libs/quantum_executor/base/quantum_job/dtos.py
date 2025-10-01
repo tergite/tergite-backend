@@ -16,10 +16,10 @@ import enum
 import json
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import Any, Optional, Type, Union, List
+from typing import Any, List, Optional, Type, Union
 
 import numpy as np
-from pydantic import BaseModel, Extra
+from pydantic import BaseModel, ConfigDict, Extra
 from qiskit.qobj import PulseQobj
 from quantify_scheduler.enums import BinMode
 
@@ -45,6 +45,18 @@ class MeasProtocol(str, enum.Enum):
     TRACE = "trace"
 
 
+class AcqReturnType(int, enum.Enum):
+    COMPLEX = 1
+    ND_ARRAY = 2
+
+    def to_type(self) -> Union[Type]:
+        """Retrieves the type associated with this enum"""
+        if self == AcqReturnType.COMPLEX:
+            return complex
+        elif self == AcqReturnType.ND_ARRAY:
+            return np.ndarray
+
+
 @dataclass(frozen=True)
 class NativeQobjConfig:
     """Settings for running native experiments"""
@@ -57,6 +69,29 @@ class NativeQobjConfig:
     meas_return_cols: int
     n_qubits: int
     shots: int
+
+    def to_dict(self) -> dict:
+        """Converts this config into a JSON serializable dictionary"""
+        raw_dict = asdict(self)
+        if self.acq_return_type == complex:
+            raw_dict["acq_return_type"] = AcqReturnType.COMPLEX
+        elif self.acq_return_type == np.ndarray:
+            raw_dict["acq_return_type"] = AcqReturnType.ND_ARRAY
+        return raw_dict
+
+    @classmethod
+    def from_dict(cls, value: dict) -> "NativeQobjConfig":
+        """Converts a dict into a NativeQobjConfig object
+
+        Args:
+            value: the dictionary to convert
+
+        Returns:
+            the NativeQobjConfig object
+        """
+        acq_return_type = value["acq_return_type"].to_type()
+        value = {**value, "acq_return_type": acq_return_type}
+        return cls(**value)
 
 
 class ByteOrder(str, enum.Enum):
@@ -161,8 +196,10 @@ class QuantumJob:
         return asdict(self)
 
 
-class QobjHeaderMetadata(BaseModel, extra=Extra.ignore):
+class QobjHeaderMetadata(BaseModel):
     """The metadata on the QobjHeader"""
+
+    model_config = ConfigDict(extra="ignore")
 
     backend_name: Optional[str] = None
 
@@ -179,8 +216,10 @@ class QobjHeaderMetadata(BaseModel, extra=Extra.ignore):
         return cls(**qobj_header_dict)
 
 
-class QobjSweepData(BaseModel, extra=Extra.allow):
+class QobjSweepData(BaseModel):
     """The metadata on the sweep data in the QobjHeader"""
+
+    model_config = ConfigDict(extra="ignore")
 
     dataset_name: Optional[str] = None
     serial_order: Optional[Any] = None
@@ -215,8 +254,10 @@ class QobjSweepData(BaseModel, extra=Extra.allow):
         }
 
 
-class SweepParamMetadata(BaseModel, extra=Extra.ignore):
+class SweepParamMetadata(BaseModel):
     """The sweep param as obtained from the qobj header"""
+
+    model_config = ConfigDict(extra="ignore")
 
     long_name: str
     unit: str

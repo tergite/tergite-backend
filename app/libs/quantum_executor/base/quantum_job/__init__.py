@@ -14,6 +14,7 @@
 # Refactored by Chalmers Next Labs 2025
 
 import re
+from collections import namedtuple
 from pathlib import Path
 from typing import (
     Any,
@@ -21,20 +22,19 @@ from typing import (
     List,
     Literal,
     Match,
+    Sequence,
+    Tuple,
     Type,
+    TypeAlias,
     TypeVar,
     Union,
-    TypeAlias,
-    Tuple,
-    Sequence,
 )
-from collections import namedtuple
 
 import h5py
 import numpy as np
 import xarray as xr
 from numpy import typing as npt
-from qiskit.qobj import PulseQobjConfig, PulseQobjInstruction, PulseQobj
+from qiskit.qobj import PulseQobj, PulseQobjConfig, PulseQobjInstruction
 from quantify_scheduler.enums import BinMode
 
 from ...utils.general import search_nested
@@ -58,7 +58,6 @@ from .typing import (
     QJobResult,
     RepetitionsByAcquisitionsMatrix,
 )
-
 
 T = TypeVar("T")
 

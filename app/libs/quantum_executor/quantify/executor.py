@@ -19,7 +19,6 @@
 This module implements the executor.
 """
 
-import copy
 import os
 import re
 import logging

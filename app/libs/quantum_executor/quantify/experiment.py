@@ -18,7 +18,12 @@
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Type
 
-from qiskit.qobj import PulseQobjConfig, PulseQobjExperiment, PulseQobjInstruction
+from qiskit.qobj import (
+    PulseQobjConfig,
+    PulseQobjExperiment,
+    PulseQobjInstruction,
+    QobjExperimentHeader,
+)
 from quantify_scheduler import Schedule
 from quantify_scheduler.resources import ClockResource
 from quantify_scheduler.operations.pulse_library import IdlePulse
@@ -64,7 +69,7 @@ _INSTRUCTION_PULSE_MAP: Dict[Tuple[str, Optional[str]], Type[BaseInstruction]] =
 
 
 @dataclass(frozen=True)
-class QuantifyExperiment(NativeExperiment):
+class QuantifyExperiment(NativeExperiment[Schedule]):
     channel_registry: QuantifyChannelRegistry
     buffer_time: float = 0.0
 
@@ -160,10 +165,19 @@ class QuantifyExperiment(NativeExperiment):
                 hardware_map=hardware_map,
             )
 
+        schedule = _construct_schedule(
+            channel_registry=channel_registry, header=header, config=qobj_config
+        )
+        duration = 0
+        if isinstance(schedule.duration, (float, int)):
+            duration = schedule.duration
+
         return cls(
             header=header,
             config=qobj_config,
             channel_registry=channel_registry,
+            schedule=schedule,
+            duration=duration,
         )
 
 
@@ -195,6 +209,61 @@ def _add_instruction_to_channel_registry(
         hardware_map=hardware_map,
     ):
         instruction.register()
+
+
+def _construct_schedule(
+    channel_registry: QuantifyChannelRegistry,
+    header: QobjExperimentHeader,
+    config: PulseQobjConfig,
+    timegrid_interval: float = QBLOX_TIMEGRID_INTERVAL,
+) -> Schedule:
+    """Constructs a schedule given
+
+    Args:
+        channel_registry: the iterable of QuantifyChannel's to which are attached ClockResource's
+        header: the qobj experiment header
+        config: the pulse qobject config
+        timegrid_interval: the interval between grid lines in the time grid used by Q1ASM
+    """
+    raw_schedule = Schedule(name=header.name, repetitions=config.shots)
+
+    root_instruction = InitialObjectInstruction()
+    raw_schedule.add(
+        ref_op=None,
+        ref_pt="end",
+        ref_pt_new="start",
+        rel_time=0.0,
+        label=root_instruction.label,
+        operation=root_instruction.to_operation(config=config),
+    )
+
+    for channel in channel_registry.values():  # type: QuantifyChannel
+        if len(channel.instructions) == 1 and channel.instructions[0].name == "delay":
+            # if the channel contains a single instruction and that instruction is a delay,
+            # then do not schedule any operations on that channel
+            print("\nNO DELAY\n")
+            continue
+
+        prev = root_instruction
+        for curr in channel.instructions:
+            rel_time = curr.t0 - prev.final_timestamp + timegrid_interval
+            ref_op = prev.label
+
+            raw_schedule.add(
+                ref_op=ref_op,
+                ref_pt="end",
+                ref_pt_new="start",
+                rel_time=rel_time,
+                label=curr.label,
+                operation=curr.to_operation(config=config),
+            )
+
+            # set the previous to the current
+            prev = curr
+
+    return _get_absolute_timed_schedule(
+        schedule=raw_schedule, channel_registry=channel_registry
+    )
 
 
 def _get_absolute_timed_schedule(
