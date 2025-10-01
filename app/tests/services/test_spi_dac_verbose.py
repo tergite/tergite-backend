@@ -10,77 +10,47 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 
-import os
-import yaml
-import time
-import types
 import logging
 import pytest
 from functools import wraps
-from pathlib import Path
 
 from ...libs.quantum_executor.quantify import spi_dac as spi_module
 from ...libs.quantum_executor.quantify.spi_dac import SpiDAC
+
+from app.tests.utils.fixtures import get_fixture_path
+
 
 TEST_LOGGER_NAME = "test.spi_dac.verbose"
 testlog = logging.getLogger(TEST_LOGGER_NAME)
 testlog.setLevel(logging.DEBUG)
 
 
-class FakeRedis:
-    def __init__(self):
-        self._h = {}
-
-    def hexists(self, key: str, field: str) -> bool:
-        return key in self._h and field in self._h[key]
-
-    def hget(self, key: str, field: str):
-        return self._h[key][field]
-
-    def hset(self, key: str, field: str, value):
-        self._h.setdefault(key, {})[field] = value
+@pytest.fixture
+def spi_metadata_path() -> str:
+    """Re-use committed dummy SPI metadata fixture."""
+    return get_fixture_path("spi_dummy_quantify-metadata.yml")
 
 
 @pytest.fixture
-def tmp_metadata_path(tmp_path: Path) -> Path:
-    meta = {
-        "cluster0": {
-            "instrument_type": "Cluster",
-            "ip_address": "192.168.0.101",
-            "is_dummy": True,
-            "modules": {"2": {"instrument_type": "QCM_RF"}},
-        },
-        "spi_rack": {
-            "instrument_type": "SPI-Rack",
-            "port": "/dev/ttyACM0",
-            "is_dummy": True,
-            "coupler_spi_mapping": {
-                "u0": {"spi_module_number": 6, "dac_name": "dac0"},
-            },
-        },
-    }
-    p = tmp_path / "quantify-metadata.yml"
-    p.write_text(yaml.safe_dump(meta))
-    return p
+def patched_settings(mocker, spi_metadata_path, real_redis_client):
+    """
+    Patch only what SpiDAC reads from settings:
+    - DEFAULT_PREFIX
+    - REDIS_CONNECTION (real test redis from conftest)
+    - QUANTIFY_METADATA_FILE (fixture path)
+    """
+    mocker.patch.object(spi_module.settings, "DEFAULT_PREFIX", "quantify", create=True)
+    mocker.patch.object(
+        spi_module.settings, "REDIS_CONNECTION", real_redis_client, create=True
+    )
+    mocker.patch.object(
+        spi_module.settings, "QUANTIFY_METADATA_FILE", spi_metadata_path, create=True
+    )
+    return spi_module.settings
 
 
 @pytest.fixture
-def settings_stub(tmp_metadata_path: Path):
-    st = types.SimpleNamespace()
-    st.DEFAULT_PREFIX = "quantify"
-    st.REDIS_CONNECTION = FakeRedis()
-    st.QUANTIFY_METADATA_FILE = str(tmp_metadata_path)
-    return st
-
-
-@pytest.fixture
-def patch_settings(monkeypatch: pytest.MonkeyPatch, settings_stub):
-    monkeypatch.setattr(spi_module, "settings", settings_stub, raising=False)
-    return settings_stub
-
-
-@pytest.fixture
-def verbose_wrappers(monkeypatch: pytest.MonkeyPatch):
+def verbose_wrappers(mocker):
     """
     Wrap core SpiDAC methods to log enter/exit/exception and keep references
     to originals on the class as `__orig_<name>`. Also expose `__wrapped__`
@@ -108,8 +78,8 @@ def verbose_wrappers(monkeypatch: pytest.MonkeyPatch):
                 raise
 
         # install wrapper and stash the original
-        monkeypatch.setattr(SpiDAC, name, _wrapped, raising=True)
-        monkeypatch.setattr(SpiDAC, f"__orig_{name}", orig, raising=False)
+        mocker.patch.object(SpiDAC, name, _wrapped)
+        setattr(SpiDAC, f"__orig_{name}", orig)
 
     for fn in [
         "__init__",
@@ -126,13 +96,15 @@ def verbose_wrappers(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.fixture
-def spi_dac_dummy(patch_settings, verbose_wrappers) -> SpiDAC:
-    sd = SpiDAC(couplers=["u0"], metadata_path=patch_settings.QUANTIFY_METADATA_FILE)
-    yield sd
+def spi_dac_dummy(patched_settings, verbose_wrappers) -> SpiDAC:
+    sd = SpiDAC(couplers=["u0"], metadata_path=patched_settings.QUANTIFY_METADATA_FILE)
     try:
-        sd.close_spi_rack()
-    except Exception:
-        pass
+        yield sd
+    finally:
+        try:
+            sd.close_spi_rack()
+        except Exception:
+            pass
 
 
 def _get_orig_ramp():
@@ -146,7 +118,7 @@ def _get_orig_ramp():
     return orig
 
 
-def test_verbose_happy_path(caplog, spi_dac_dummy, patch_settings, monkeypatch):
+def test_verbose_happy_path(caplog, spi_dac_dummy, patched_settings, mocker):
     """
     Log-heavy check of the nominal flow on dummy rack:
     - parking -> bias -> back to parking -> close
@@ -156,7 +128,7 @@ def test_verbose_happy_path(caplog, spi_dac_dummy, patch_settings, monkeypatch):
     caplog.set_level(logging.DEBUG)
 
     # Arrange parking
-    patch_settings.REDIS_CONNECTION.hset("couplers:u0", "parking_current", 1e-4)
+    spi_module.settings.REDIS_CONNECTION.hset("couplers:u0", "parking_current", 1e-4)
 
     # Spy: catch accidental ramping even in dummy mode
     called_ramp = {"count": 0}
@@ -168,7 +140,7 @@ def test_verbose_happy_path(caplog, spi_dac_dummy, patch_settings, monkeypatch):
         testlog.error("!!! ramp_current_serially CALLED in dummy mode with %r", values)
         return orig_ramp(self, values)
 
-    monkeypatch.setattr(SpiDAC, "ramp_current_serially", ramp_spy, raising=True)
+    mocker.patch.object(SpiDAC, "ramp_current_serially", ramp_spy)
 
     testlog.info("=== SET TO PARKING ===")
     spi_dac_dummy.set_parking_currents(["u0"])

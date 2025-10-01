@@ -768,13 +768,13 @@ class WacqtCZPulseInstruction(BaseInstruction):
         return [inst for inst in (setf, cz) if inst is not None]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
-        n_pts = int(
+        num_points = int(
             self.parameters.get(
                 "n_pts", max(1, int(self.duration / QBLOX_TIMEGRID_INTERVAL))
             )
         )
-        samples = _cz_delta_samples(n_pts, self.parameters)
-        t_samples = np.linspace(0, self.duration, n_pts, endpoint=False).tolist()
+        samples = _cz_delta_samples(num_points, self.parameters)
+        t_samples = np.linspace(0, self.duration, num_points, endpoint=False).tolist()
         return NumericalPulse(
             samples=samples.tolist(),
             t_samples=t_samples,
