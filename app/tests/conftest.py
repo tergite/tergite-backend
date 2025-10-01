@@ -366,7 +366,6 @@ def _patch_async_client_sim2q(mocker):
     os.environ["BLACKLISTED"] = ""
 
 
-<<<<<<< HEAD
 @pytest.fixture(autouse=True, scope="session")
 def _configure_logging_for_tests():
     root = logging.getLogger()
@@ -388,7 +387,6 @@ def _configure_logging_for_tests():
             h.flush()
         except Exception:
             pass
-=======
 def _clear_test_db(url: str = TEST_BOOKING_DB_URL):
     """Clears the test database
 
@@ -412,4 +410,3 @@ class _PaginationInfo(TypedDict):
 
     skip: int
     limit: Optional[float]
->>>>>>> origin/main
