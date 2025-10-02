@@ -7,6 +7,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2025.09.0] - 2025-10-02
+
 ### Added
 
 - Install a pre-commit hook to run black
@@ -27,7 +29,6 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Added and adapted SpiDAC class from autocalibration package for coupler biasing
 - Modify Quantify quantum executor by calling SpiDAC to bring up currents before running a schedule
 - Add a placeholder Wacqt-two-qubit-gate function for Qobj to QuantifySchedule mapper with a flux port reference 
-- Add safety features to SpiDAC to limit current values and bring-up/down speed
 - Add filtering bookings by minimum/maximum start timestamps
 
 ### Changed
