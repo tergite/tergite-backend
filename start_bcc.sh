@@ -138,7 +138,7 @@ fi
 
 WORKER_FLAG="";
 if [[ "$DEBUG" = "true" ]]; then
-  WORKER_FLAG = "-w app.utils.logging_worker.LoggingWorker";
+  WORKER_FLAG="-w app.utils.logging_worker.LoggingWorker";
 fi
 
 # Worker processes
