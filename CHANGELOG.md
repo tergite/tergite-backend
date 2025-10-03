@@ -9,6 +9,12 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- Added the `/bookings/config` endpoint to return the configuration for the booking service
+
+## [2025.09.1] - 2025-10-15
+
+### Added
+
 - Added `isort` check in the CI files
 - Added `isort` in the `pre-commit-config.yaml` file
 

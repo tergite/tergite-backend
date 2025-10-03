@@ -204,3 +204,31 @@ class Booking(SQLModel, table=True):
         """Whether this booking must have completed or not"""
         now = get_utc_now()
         return self.end_utc < now
+
+
+class BookingsConfig(BaseModel):
+    """Configurations for the booking service"""
+
+    # Maximum time in seconds a booking is allowed to have
+    max_time_slot_length: float
+
+    # Minimum time in seconds a booking is allowed to have
+    min_time_slot_length: float
+
+    # Maximum number of bookings per day that a user can have
+    max_slots_per_day: int
+
+    # Maximum time in seconds that a booking can lie idle without a running job
+    max_idle_time: int
+
+    @classmethod
+    def from_settings(cls) -> "BookingsConfig":
+        """Creates this configuration from the settings"""
+        import settings
+
+        return cls(
+            max_time_slot_length=settings.MAX_TIME_SLOT_LENGTH,
+            min_time_slot_length=settings.MIN_TIME_SLOT_LENGTH,
+            max_slots_per_day=settings.MAX_SLOTS_PER_DAY,
+            max_idle_time=settings.MAX_IDLE_TIME,
+        )

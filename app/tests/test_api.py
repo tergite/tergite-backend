@@ -37,6 +37,7 @@ from pydantic import ValidationError
 from pytest_mock import MockerFixture
 from redis import Redis
 from rq import SimpleWorker
+from scipy.stats import expon
 
 from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps
 from app.services.booking.models import Booking
@@ -54,7 +55,13 @@ from app.tests.conftest import (
     PaginationInfo,
 )
 from app.tests.utils.api import create_invalid_mss_headers, create_mss_headers
-from app.tests.utils.env import TEST_MAX_SLOTS_PER_DAY, TEST_RQ_MAX_QUEUE_WAIT_TIME
+from app.tests.utils.env import (
+    TEST_MAX_SLOTS_PER_DAY,
+    TEST_RQ_MAX_QUEUE_WAIT_TIME,
+    TEST_MAX_TIME_SLOT_LENGTH,
+    TEST_MIN_TIME_SLOT_LENGTH,
+    TEST_MAX_IDLE_TIME,
+)
 from app.tests.utils.fixtures import load_fixture
 from app.tests.utils.records import order_by
 
@@ -558,6 +565,36 @@ def test_unauthenticated_view_bookings(client, worker, redis_conn):
         assert response.json() == {"detail": "user not authenticated"}
 
 
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_view_bookings_config(client):
+    """GET "/bookings/config" shows paginated list of all available bookings"""
+    with client as client:
+        user_id, _ = _create_user(client, user=USERS[0])
+        headers = create_mss_headers(user_id)
+
+        got = client.get("/bookings/config", headers=headers).json()
+        assert got == dict(
+            max_time_slot_length=TEST_MAX_TIME_SLOT_LENGTH,
+            min_time_slot_length=TEST_MIN_TIME_SLOT_LENGTH,
+            max_slots_per_day=TEST_MAX_SLOTS_PER_DAY,
+            max_idle_time=TEST_MAX_IDLE_TIME,
+        )
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_unauthenticated_view_bookings_configs(client):
+    """Viewing bookings configs with non-existing user or outside MSS errors out"""
+    with client as client:
+        response = client.get("/bookings/config", headers=_get_headers("token"))
+
+        assert response.status_code == 401
+        assert response.json() == {"detail": "user not authenticated"}
+
+        response = client.get("/bookings/config")
+
+        assert response.status_code == 401
+        assert response.json() == {"detail": "user not authenticated"}
+
+
 @pytest.mark.parametrize(
     "client, redis_conn, worker, job, expected_counts, device",
     _ALL_UPLOAD_JOB_PARAMS,
@@ -678,9 +715,7 @@ def test_submit_jobs_in_active_booking(
         booker_id = booker["id"]
         # duration: 3; max idle time = 1
         booking_info = {"duration": 3, "starts_in": 0}
-        _, response = _create_booking_v2(
-            client, user_id=booker_id, booking=booking_info
-        )
+        _, response = _create_booking(client, user_id=booker_id, booking=booking_info)
         booking = Booking.model_validate(response.json())
 
         # submit many jobs from many users
@@ -741,9 +776,7 @@ def test_submit_jobs_in_idle_booking(
         booker = users[0]
         booker_id = booker["id"]
         booking_info = {"duration": 5, "starts_in": 0}
-        _, response = _create_booking_v2(
-            client, user_id=booker_id, booking=booking_info
-        )
+        _, response = _create_booking(client, user_id=booker_id, booking=booking_info)
         booking = Booking.model_validate(response.json())
 
         # submit many jobs from many users
@@ -804,13 +837,13 @@ def test_submit_jobs_in_idle_booking_before_another(
 
         # create first booking
         first_booking_info = {"duration": 2, "starts_in": 0}
-        _, result = _create_booking_v2(
+        _, result = _create_booking(
             client, user_id=booker_id, booking=first_booking_info
         )
 
         # create second booking
         second_booking_info = {"duration": 3, "starts_in": 3}
-        _, response = _create_booking_v2(
+        _, response = _create_booking(
             client, user_id=booker_id, booking=second_booking_info
         )
         next_slot = Booking.model_validate(response.json())
@@ -916,7 +949,7 @@ def test_submit_long_jobs_before_booking(
 
         # create booking
         booking_info = {"duration": 3, "starts_in": 2.2}
-        _create_booking_v2(client, user_id=booker_id, booking=booking_info)
+        _create_booking(client, user_id=booker_id, booking=booking_info)
 
         # submit many jobs from many users
         _submit_multiple_jobs_v2(client, data=job_metadata_list)
@@ -2613,7 +2646,7 @@ def _create_many_users(
     return result
 
 
-def _create_booking_v2(
+def _create_booking(
     client: "TestClient", user_id: str, booking: "BasicBookingInfo"
 ) -> Tuple["BasicBookingInfo", "Response"]:
     """Creates the booking and returns the actual booking details
@@ -2644,47 +2677,11 @@ def _create_booking_v2(
     # round off delay just to shave off the milliseconds lost during execution
     actual_delay = int(actual_delay)
 
-    return {
+    actual_basic_info: BasicBookingInfo = {
         "duration": actual_duration,
         "starts_in": actual_delay,
-    }, response
-
-
-def _create_booking(
-    client: "TestClient", user_id: str, booking: "BasicBookingInfo"
-) -> Tuple["BasicBookingInfo", "Response"]:
-    """Creates the booking and returns the actual booking details
-
-    Actual booking details include actual duration and actual delay
-
-    Args:
-        client: the fastapi TestClient used for testing
-        user_id: the user ID for authenticating the user
-        booking: the basic booking info
-
-    Returns:
-        the tuple of the actual basic info of the created booking and the httpx.Response
-    """
-    headers = create_mss_headers(user_id)
-    current_timestamp = datetime.now(timezone.utc)
-    data = _to_booking_payload(booking)
-    response = client.post("/bookings", headers=headers, json=data)
-    json_response = response.json()
-
-    start_utc = json_response["start_utc"]
-    start_utc_datetime = datetime.fromisoformat(start_utc)
-    end_utc = json_response["end_utc"]
-    end_utc_datetime = datetime.fromisoformat(end_utc)
-
-    actual_duration = (end_utc_datetime - start_utc_datetime).total_seconds()
-    actual_delay = (start_utc_datetime - current_timestamp).total_seconds()
-    # round off delay just to shave off the milliseconds lost during execution
-    actual_delay = int(actual_delay)
-
-    return {
-        "duration": actual_duration,
-        "starts_in": actual_delay,
-    }, response
+    }
+    return actual_basic_info, response
 
 
 def _create_user(client: "TestClient", user: dict) -> Tuple[str, "Response"]:

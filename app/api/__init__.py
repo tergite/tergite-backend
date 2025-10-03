@@ -36,6 +36,7 @@ from app.services.booking.models import (
     NewUserInfo,
     User,
     UserProfile,
+    BookingsConfig,
 )
 from app.utils.exc import (
     BookingAlreadyActiveError,
@@ -422,6 +423,16 @@ async def view_bookings(
 
     data = booking.get_many_bookings(db_engine, *filters, skip=skip, limit=limit)
     return PaginatedListResponse(skip=skip, limit=limit, data=data)
+
+
+@app.get("/bookings/config", dependencies=[Depends(get_verified_mss_user_id)])
+async def view_bookings_config() -> BookingsConfig:
+    """Views the configurations for the bookings service
+
+    Returns:
+        the instance of the bookings configurations
+    """
+    return BookingsConfig.from_settings()
 
 
 @app.post("/jobs")
