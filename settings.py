@@ -182,7 +182,7 @@ LOG_LEVEL = config("LOG_LEVEL", default="ERROR").strip().upper()
 
 # setup logger for the app
 logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    level=getattr(logging, LOG_LEVEL, logging.ERROR),
     format="%(asctime)s [%(levelname)-8s] %(name)s: %(message)s",
     stream=sys.stdout,
 )
