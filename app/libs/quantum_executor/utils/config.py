@@ -13,7 +13,7 @@
 import json
 import re
 from os import PathLike
-from typing import Dict, List, Optional, Union, Mapping
+from typing import Dict, List, Mapping, Optional, Union
 
 import qblox_instruments
 import yaml

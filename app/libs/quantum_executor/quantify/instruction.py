@@ -37,12 +37,11 @@ from quantify_scheduler.operations.pulse_library import (
 )
 
 from app.libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
+from app.libs.quantum_executor.qiskit.functions import _delta_t_function
 from app.libs.quantum_executor.quantify.channel import (
     QuantifyChannel,
     QuantifyChannelRegistry,
 )
-
-from app.libs.quantum_executor.qiskit.functions import _delta_t_function
 
 QBLOX_TIMEGRID_INTERVAL = 4e-9
 """

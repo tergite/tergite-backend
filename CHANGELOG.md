@@ -7,6 +7,20 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Added
+
+- Added `isort` check in the CI files
+- Added `isort` in the `pre-commit-config.yaml` file
+
+### Changed
+
+- Changed `LOG_LEVEL` default value to 'ERROR'
+
+### Fixed
+
+- Fixed error "invalid value for log level" when starting BCC without specifying the `$UVICORN_LOG_LEVEL` env variable
+- Fix error failing qiskit-dynamics backend tests
+
 ## [2025.09.0] - 2025-10-02
 
 ### Added

@@ -25,6 +25,7 @@ import importlib
 import logging
 import os
 import shutil
+import sys
 from pathlib import Path
 from typing import (
     Any,
@@ -44,9 +45,6 @@ from redis.client import Redis
 from rq import SimpleWorker
 from sqlalchemy import create_engine
 from sqlmodel import SQLModel
-
-import logging, sys, os, pytest
-
 
 from ..libs.device_parameters import DeviceCalibration
 from ..libs.queues.dtos import Job

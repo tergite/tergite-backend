@@ -106,14 +106,17 @@ MAX_SLOTS_PER_DAY=1
 
 # use this set root logger log level
 # CRITICAL|ERROR|WARNING|INFO|DEBUG
-LOG_LEVEL=WARNING
+# default: ERROR
+LOG_LEVEL=ERROR
 
 # Enable logger worker for rq workers
 DEBUG=true
 
 # uvicorn’s log level
 # (valid: critical|error|warning|info|debug|trace)
+# default: info
 UVICORN_LOG_LEVEL=info
+
 # Maximum time in seconds that a booking can lie idle without a running job
 # Note that this must be an integer
 # Negative values not allowed. Negative values are automatically changed to 0

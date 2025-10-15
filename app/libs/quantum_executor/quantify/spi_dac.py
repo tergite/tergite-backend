@@ -28,22 +28,20 @@
 # This code was copied from tergite-autocalibration package
 # and modified to adapt and integrate into tergite-backend package in Jul 2025
 
+import logging
+import os
 import sys
 import time
 from pathlib import Path
-import logging
-import os
+from typing import Any, Dict, Tuple
 
 import numpy as np
 from qblox_instruments import SpiRack
 from qcodes import validators
 
-from typing import Tuple, Dict, Any
-
-
 import settings
-
 from app.libs.quantum_executor.utils.config import QuantifyMetadata
+
 from ..utils.config import CouplerMapEntry
 
 # TODO: 8. Make safety ranges configurable

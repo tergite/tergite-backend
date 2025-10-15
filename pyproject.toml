@@ -67,7 +67,7 @@ dependencies = [
     "tqdm>=4.66.1",
     "ruamel.yaml~=0.18.10",
     "jax>=0.5.1",
-    "qiskit-dynamics>=0.5.1",
+    "qiskit-dynamics>=0.5.1,<0.6.0",
     "cryptography~=45.0.2",
     # deps of deps
     # ------------
@@ -126,6 +126,7 @@ local_scheme = "no-local-version"
 
 [tool.isort]
 skip_gitignore = true
+profile = "black"
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"

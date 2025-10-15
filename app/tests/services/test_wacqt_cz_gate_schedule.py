@@ -12,22 +12,19 @@
 
 import math
 from pathlib import Path
+from types import SimpleNamespace
 
-import pytest
 import pandas as pd
-
+import pytest
+from qiskit.qobj import PulseQobj
 from quantify_scheduler.backends.graph_compilation import SerialCompiler
 from quantify_scheduler.device_under_test.quantum_device import QuantumDevice
 
-from qiskit.qobj import PulseQobj
-
-from app.tests.utils.fixtures import load_fixture, get_fixture_path
-
 # SUT pieces
 from app.libs.quantum_executor.quantify.experiment import QuantifyExperiment
-from app.libs.quantum_executor.utils.portclock import generate_hardware_map
 from app.libs.quantum_executor.utils.config import load_quantify_config
-from types import SimpleNamespace
+from app.libs.quantum_executor.utils.portclock import generate_hardware_map
+from app.tests.utils.fixtures import get_fixture_path, load_fixture
 
 
 def _normalize_timing_table(df: pd.DataFrame) -> pd.DataFrame:

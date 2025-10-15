@@ -58,6 +58,7 @@ ENV_FILE=$(var_or_default "$ENV_FILE" ".env")
 load_env "$ENV_FILE";
 
 DEFAULT_PREFIX=$(var_or_default "$DEFAULT_PREFIX" "qiskit_pulse_1q")
+UVICORN_LOG_LEVEL=$(var_or_default "$UVICORN_LOG_LEVEL" "info")
 PORT_NUMBER=$(var_or_default "$BCC_PORT" "8000")
 should_be_int "$PORT_NUMBER" "Config Error. Use BCC_PORT=<int> in the .env file.";
 
