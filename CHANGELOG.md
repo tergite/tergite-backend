@@ -7,6 +7,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Added
+
+- Added `isort` check in the CI files
+- Added `isort` in the `pre-commit-config.yaml` file
+
 ### Changed
 
 - Changed `LOG_LEVEL` default value to 'ERROR'
