@@ -31,12 +31,12 @@ import settings
 from app.services import booking, scheduler
 from app.services.booking.models import (
     Booking,
+    BookingsConfig,
     MSSTokenClaims,
     NewBookingInfo,
     NewUserInfo,
     User,
     UserProfile,
-    BookingsConfig,
 )
 from app.utils.exc import (
     BookingAlreadyActiveError,

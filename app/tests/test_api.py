@@ -56,11 +56,11 @@ from app.tests.conftest import (
 )
 from app.tests.utils.api import create_invalid_mss_headers, create_mss_headers
 from app.tests.utils.env import (
+    TEST_MAX_IDLE_TIME,
     TEST_MAX_SLOTS_PER_DAY,
-    TEST_RQ_MAX_QUEUE_WAIT_TIME,
     TEST_MAX_TIME_SLOT_LENGTH,
     TEST_MIN_TIME_SLOT_LENGTH,
-    TEST_MAX_IDLE_TIME,
+    TEST_RQ_MAX_QUEUE_WAIT_TIME,
 )
 from app.tests.utils.fixtures import load_fixture
 from app.tests.utils.records import order_by
@@ -579,6 +579,7 @@ def test_view_bookings_config(client):
             max_slots_per_day=TEST_MAX_SLOTS_PER_DAY,
             max_idle_time=TEST_MAX_IDLE_TIME,
         )
+
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
 def test_unauthenticated_view_bookings_configs(client):
