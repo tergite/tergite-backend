@@ -567,7 +567,7 @@ def test_unauthenticated_view_bookings(client, worker, redis_conn):
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
 def test_view_bookings_config(client):
-    """GET "/bookings/config" shows paginated list of all available bookings"""
+    """GET "/bookings/config" shows the configuration of the bookings service"""
     with client as client:
         user_id, _ = _create_user(client, user=USERS[0])
         headers = create_mss_headers(user_id)
