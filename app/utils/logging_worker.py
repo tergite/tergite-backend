@@ -1,5 +1,8 @@
+import logging
+import os
+import sys
+
 from rq import Worker
-import logging, os, sys
 
 
 class LoggingWorker(Worker):

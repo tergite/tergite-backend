@@ -11,14 +11,14 @@
 # that they have been altered from the originals.
 
 import logging
-import pytest
 from functools import wraps
 
-from ...libs.quantum_executor.quantify import spi_dac as spi_module
-from ...libs.quantum_executor.quantify.spi_dac import SpiDAC
+import pytest
 
 from app.tests.utils.fixtures import get_fixture_path
 
+from ...libs.quantum_executor.quantify import spi_dac as spi_module
+from ...libs.quantum_executor.quantify.spi_dac import SpiDAC
 
 TEST_LOGGER_NAME = "test.spi_dac.verbose"
 testlog = logging.getLogger(TEST_LOGGER_NAME)
