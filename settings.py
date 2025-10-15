@@ -13,8 +13,9 @@
 # Modified:
 # - Stefan Hill, 2024
 #
-
+import logging
 import os
+import sys
 from pathlib import Path
 from typing import List
 
@@ -178,3 +179,10 @@ REST_API_PORT = max(0, config("REST_API_PORT", cast=int, default=5000))
 CORS_ORIGINS: List[str] = config("CORS_ORIGINS", cast=CommaSeparatedStrings, default=[])
 
 LOG_LEVEL = config("LOG_LEVEL", default="ERROR").strip().upper()
+
+# setup logger for the app
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s [%(levelname)-8s] %(name)s: %(message)s",
+    stream=sys.stdout,
+)
