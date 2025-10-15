@@ -6,3 +6,9 @@ repos:
         language_version: python3.12
         # only run on Python files under the `app/` directory
         files: ^app/.*\.py$
+
+  - repo: https://github.com/pycqa/isort
+    rev: 6.0.0
+    hooks:
+      - id: isort
+        name: isort (python)
