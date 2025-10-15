@@ -176,3 +176,5 @@ JWT_TTL = max(0.0, config("JWT_TTL", cast=float, default=900))
 REST_API_PORT = max(0, config("REST_API_PORT", cast=int, default=5000))
 
 CORS_ORIGINS: List[str] = config("CORS_ORIGINS", cast=CommaSeparatedStrings, default=[])
+
+LOG_LEVEL = config("LOG_LEVEL", default="ERROR").strip().upper()

@@ -106,7 +106,8 @@ MAX_SLOTS_PER_DAY=1
 
 # use this set root logger log level
 # CRITICAL|ERROR|WARNING|INFO|DEBUG
-LOG_LEVEL=WARNING
+# default: ERROR
+LOG_LEVEL=ERROR
 
 # Enable logger worker for rq workers
 DEBUG=true

@@ -22,6 +22,7 @@ tests:
 
     # Check formatting
     - black --check app
+    - isort --check-only --profile black app
     # Run unit tests
     - pytest app
   cache:

@@ -7,6 +7,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Changed
+
+- Changed `LOG_LEVEL` default value to 'ERROR'
+
 ### Fixed
 
 - Fixed error "invalid value for log level" when starting BCC without specifying the `$UVICORN_LOG_LEVEL` env variable
