@@ -155,11 +155,3 @@ REST_API_PORT=5000
 # See https://fastapi.tiangolo.com/tutorial/cors/?h=cors#use-corsmiddleware
 # default: ""
 CORS_ORIGINS=""
-
-# the path to the script for starting the FastAPI app.
-# default: uvicorn
-START_SCRIPT=uvicorn
-
-# extra libraries to install in the virtual environment especially when another start script is supplied
-# default = ""
-EXTRA_PY_LIBS=""

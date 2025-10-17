@@ -152,14 +152,6 @@ rq worker -u "$REDIS_URL" "$WORKER_FLAG" "${DEFAULT_PREFIX}_postprocessing" &
 # REST-API
 extra_params=$([[ "$IS_SYSTEMD" = "true" ]] && echo "--proxy-headers" || echo "--reload")
 
-# install any extra libraries; especially if another start script is supplied
-if [ -n "$EXTRA_PY_LIBS" ]; then
-  echo "Installing extra python libraries $EXTRA_PY_LIBS";
-  python -m pip install "$EXTRA_PY_LIBS"
-fi
-
 # Then run uvicorn
-# we could provide a wrapper around uvicorn and pass its file path to START_SCRIPT env var
-# This is especially useful during tests.
-start_script=$(var_or_default "$START_SCRIPT" "uvicorn")
-python -m "$start_script" --host 0.0.0.0 --port "$PORT_NUMBER" --log-level "$UVICORN_LOG_LEVEL" app.api:app "$extra_params";
+python -m uvicorn --host 0.0.0.0 --port "$PORT_NUMBER" --log-level "$UVICORN_LOG_LEVEL" app.api:app "$extra_params"
+
