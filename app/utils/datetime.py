@@ -27,7 +27,7 @@ def get_relative_time(
     Returns:
         datetime a given number of seconds, microseconds etc. from now
     """
-    return get_utc_now() + timedelta(
+    return get_utc_now() + timedelta(  # @e2e-replace # don't alter, e2e need it
         days=days,
         seconds=seconds,
         microseconds=microseconds,

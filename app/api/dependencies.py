@@ -22,7 +22,6 @@ from fastapi.requests import Request
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import Engine
-from starlette.requests import Request
 
 import settings
 
