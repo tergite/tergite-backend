@@ -16,7 +16,14 @@
 from datetime import datetime
 from typing import Any, List, Optional, Self
 
-from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    ValidationInfo,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 from sqlmodel import Field, Relationship, SQLModel
 
 from app.utils.datetime import get_relative_time, get_utc_now, to_utc
@@ -80,6 +87,12 @@ class NewBookingInfo(BaseModel):
 
     start_utc: datetime
     end_utc: datetime
+    _total_duration: float = 0
+
+    @computed_field
+    def total_duration(self) -> float:
+        """the total duration of the booking"""
+        return self._total_duration
 
     @field_validator("start_utc", mode="after")
     @classmethod
@@ -103,6 +116,24 @@ class NewBookingInfo(BaseModel):
         if v < get_relative_time(seconds=-1):
             raise ValueError(f"end_utc ({v}) is in the past")
         return v
+
+    @model_validator(mode="after")
+    def validate_total_duration(self):
+        """Generate and validate the total duration of this booking"""
+        from settings import MAX_TIME_SLOT_LENGTH, MIN_TIME_SLOT_LENGTH
+
+        duration = (self.end_utc - self.start_utc).total_seconds()
+        if duration > MAX_TIME_SLOT_LENGTH:
+            raise ValueError(
+                f"duration is beyond the limit of {MAX_TIME_SLOT_LENGTH} seconds"
+            )
+        if duration < MIN_TIME_SLOT_LENGTH:
+            raise ValueError(
+                f"duration is too short compared to the minimum of {MIN_TIME_SLOT_LENGTH} seconds"
+            )
+
+        self._total_duration = duration
+        return self
 
 
 class Booking(SQLModel, table=True):
@@ -175,20 +206,11 @@ class Booking(SQLModel, table=True):
     @field_validator("total_duration", mode="after")
     @classmethod
     def validate_total_duration(cls, v: Any, info: ValidationInfo):
-        """Generate and validate the total duration of this booking"""
-        from settings import MAX_TIME_SLOT_LENGTH, MIN_TIME_SLOT_LENGTH
-
+        """Generate the total duration of this booking"""
         try:
+            # Proper validation against MIN_TIME_SLOT_LENGTH and MAX_TIME_SLOT_LENGTH
+            # is done in NewBookingInfo
             duration = (info.data["end_utc"] - info.data["start_utc"]).total_seconds()
-
-            if duration > MAX_TIME_SLOT_LENGTH:
-                raise ValueError(
-                    f"duration is beyond the limit of {MAX_TIME_SLOT_LENGTH} seconds"
-                )
-            if duration < MIN_TIME_SLOT_LENGTH:
-                raise ValueError(
-                    f"duration is too short compared to the minimum of {MIN_TIME_SLOT_LENGTH} seconds"
-                )
             return duration
         except KeyError:
             return 0
