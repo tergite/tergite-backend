@@ -26,6 +26,7 @@ from pydantic import (
 )
 from sqlmodel import Field, Relationship, SQLModel
 
+import settings
 from app.utils.datetime import get_relative_time, get_utc_now, to_utc
 from app.utils.strings import uuid_str
 
@@ -99,7 +100,7 @@ class NewBookingInfo(BaseModel):
     def validate_start_utc(cls, v: datetime):
         """Validate start_utc"""
         v = to_utc(v)
-        if v < get_relative_time(seconds=-1):
+        if v < get_relative_time(seconds=-1, baseline=settings.CURRENT_DATE):
             raise ValueError(f"start_utc ({v}) is in the past")
         return v
 
@@ -113,7 +114,7 @@ class NewBookingInfo(BaseModel):
             raise ValueError(
                 f"end_utc ({v}) comes earlier than start_utc ({start_utc})"
             )
-        if v < get_relative_time(seconds=-1):
+        if v < get_relative_time(seconds=-1, baseline=settings.CURRENT_DATE):
             raise ValueError(f"end_utc ({v}) is in the past")
         return v
 
@@ -218,13 +219,19 @@ class Booking(SQLModel, table=True):
     @property
     def is_active(self) -> bool:
         """Whether this booking must be running or not"""
-        now = get_utc_now()
+        now = settings.CURRENT_DATE
+        if not now:
+            now = get_utc_now()
+
         return self.start_utc <= now <= self.end_utc
 
     @property
     def is_complete(self) -> bool:
         """Whether this booking must have completed or not"""
-        now = get_utc_now()
+        now = settings.CURRENT_DATE
+        if not now:
+            now = get_utc_now()
+
         return self.end_utc < now
 
 

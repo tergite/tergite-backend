@@ -16,8 +16,9 @@
 import logging
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import redis
 from starlette.config import Config
@@ -179,6 +180,12 @@ REST_API_PORT = max(0, config("REST_API_PORT", cast=int, default=5000))
 CORS_ORIGINS: List[str] = config("CORS_ORIGINS", cast=CommaSeparatedStrings, default=[])
 
 LOG_LEVEL = config("LOG_LEVEL", default="ERROR").strip().upper()
+
+# a mock current date to make bookings act as if the date now is a given static value
+CURRENT_DATE: Optional[datetime] = None
+_CURRENT_DATE_STR = config("CURRENT_DATE", default="")
+if _CURRENT_DATE_STR and APP_SETTINGS != "production":
+    CURRENT_DATE = datetime.fromisoformat(_CURRENT_DATE_STR)
 
 # setup logger for the app
 logging.basicConfig(

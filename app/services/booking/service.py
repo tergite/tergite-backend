@@ -328,6 +328,7 @@ def create_mss_jwt_token(
     secret_key: str = settings.JWT_SECRET,
     ttl: float = settings.JWT_TTL,
     algorithm: str = "HS256",
+    current_timestamp: Optional[datetime] = settings.CURRENT_DATE,
 ) -> str:
     """Creates a JWT token that works for jobs submitted via MSS
 
@@ -340,11 +341,15 @@ def create_mss_jwt_token(
         secret_key: the key to use to sign the token
         ttl: the time to live for the token in seconds
         algorithm: the algorithm to use to sign the JWT
+        current_timestamp: the current timestamp; defaults to the value in settings
 
     Returns:
         the JWT token
     """
-    exp = get_utc_now() + timedelta(seconds=ttl)
+    if not current_timestamp:
+        current_timestamp = get_utc_now()
+
+    exp = current_timestamp + timedelta(seconds=ttl)
     payload = dict(job=job_id, exp=exp, sub=user.id)
     return jwt.encode(payload, secret_key, algorithm=algorithm)
 

@@ -1,7 +1,7 @@
 """Utilities for datetime"""
 
 from datetime import datetime, timedelta, timezone
-from typing import Tuple
+from typing import Optional, Tuple
 
 
 def get_utc_now() -> datetime:
@@ -21,13 +21,27 @@ def get_relative_time(
     minutes: float = 0,
     hours: float = 0,
     weeks: float = 0,
+    baseline: Optional[datetime] = None,
 ) -> datetime:
-    """Gets the datetime given number of seconds, microseconds etc. from now in UTC
+    """Gets the datetime given number of seconds, microseconds etc. from the baseline in UTC
+
+    Args:
+        days: the number of days
+        seconds: the number of seconds
+        microseconds: the number of microseconds
+        milliseconds: the number of milliseconds
+        minutes: the number of minutes
+        hours: the number of hours
+        weeks: the number of weeks
+        baseline: the starting point. It defaults to now in UTC
 
     Returns:
-        datetime a given number of seconds, microseconds etc. from now
+        datetime a given number of seconds, microseconds etc. from the baseline
     """
-    return get_utc_now() + timedelta(  # @e2e-replace # don't alter, e2e need it
+    if baseline is None:
+        baseline = get_utc_now()
+
+    return baseline + timedelta(
         days=days,
         seconds=seconds,
         microseconds=microseconds,
