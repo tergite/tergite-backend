@@ -10,6 +10,12 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 ### Added
 
 - Added the `/bookings/config` endpoint to return the configuration for the booking service
+- Added CURRENT_DATE environment variable for mocking global current timestamp in testing environments.
+
+### Fixed
+
+- Fixed AttributeError: module 'bcrypt' has no attribute '__about__'
+- Fixed 'SyntaxWarning: invalid escape sequence '\d''
 
 ## [2025.09.1] - 2025-10-15
 
