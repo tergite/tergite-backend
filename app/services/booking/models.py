@@ -16,9 +16,17 @@
 from datetime import datetime
 from typing import Any, List, Optional, Self
 
-from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    ValidationInfo,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 from sqlmodel import Field, Relationship, SQLModel
 
+import settings
 from app.utils.datetime import get_relative_time, get_utc_now, to_utc
 from app.utils.strings import uuid_str
 
@@ -80,13 +88,19 @@ class NewBookingInfo(BaseModel):
 
     start_utc: datetime
     end_utc: datetime
+    _total_duration: float = 0
+
+    @computed_field
+    def total_duration(self) -> float:
+        """the total duration of the booking"""
+        return self._total_duration
 
     @field_validator("start_utc", mode="after")
     @classmethod
     def validate_start_utc(cls, v: datetime):
         """Validate start_utc"""
         v = to_utc(v)
-        if v < get_relative_time(seconds=-1):
+        if v < get_relative_time(seconds=-1, baseline=settings.CURRENT_DATE):
             raise ValueError(f"start_utc ({v}) is in the past")
         return v
 
@@ -100,9 +114,27 @@ class NewBookingInfo(BaseModel):
             raise ValueError(
                 f"end_utc ({v}) comes earlier than start_utc ({start_utc})"
             )
-        if v < get_relative_time(seconds=-1):
+        if v < get_relative_time(seconds=-1, baseline=settings.CURRENT_DATE):
             raise ValueError(f"end_utc ({v}) is in the past")
         return v
+
+    @model_validator(mode="after")
+    def validate_total_duration(self):
+        """Generate and validate the total duration of this booking"""
+        from settings import MAX_TIME_SLOT_LENGTH, MIN_TIME_SLOT_LENGTH
+
+        duration = (self.end_utc - self.start_utc).total_seconds()
+        if duration > MAX_TIME_SLOT_LENGTH:
+            raise ValueError(
+                f"duration is beyond the limit of {MAX_TIME_SLOT_LENGTH} seconds"
+            )
+        if duration < MIN_TIME_SLOT_LENGTH:
+            raise ValueError(
+                f"duration is too short compared to the minimum of {MIN_TIME_SLOT_LENGTH} seconds"
+            )
+
+        self._total_duration = duration
+        return self
 
 
 class Booking(SQLModel, table=True):
@@ -175,20 +207,11 @@ class Booking(SQLModel, table=True):
     @field_validator("total_duration", mode="after")
     @classmethod
     def validate_total_duration(cls, v: Any, info: ValidationInfo):
-        """Generate and validate the total duration of this booking"""
-        from settings import MAX_TIME_SLOT_LENGTH, MIN_TIME_SLOT_LENGTH
-
+        """Generate the total duration of this booking"""
         try:
+            # Proper validation against MIN_TIME_SLOT_LENGTH and MAX_TIME_SLOT_LENGTH
+            # is done in NewBookingInfo
             duration = (info.data["end_utc"] - info.data["start_utc"]).total_seconds()
-
-            if duration > MAX_TIME_SLOT_LENGTH:
-                raise ValueError(
-                    f"duration is beyond the limit of {MAX_TIME_SLOT_LENGTH} seconds"
-                )
-            if duration < MIN_TIME_SLOT_LENGTH:
-                raise ValueError(
-                    f"duration is too short compared to the minimum of {MIN_TIME_SLOT_LENGTH} seconds"
-                )
             return duration
         except KeyError:
             return 0
@@ -196,11 +219,45 @@ class Booking(SQLModel, table=True):
     @property
     def is_active(self) -> bool:
         """Whether this booking must be running or not"""
-        now = get_utc_now()
+        now = settings.CURRENT_DATE
+        if not now:
+            now = get_utc_now()
+
         return self.start_utc <= now <= self.end_utc
 
     @property
     def is_complete(self) -> bool:
         """Whether this booking must have completed or not"""
-        now = get_utc_now()
+        now = settings.CURRENT_DATE
+        if not now:
+            now = get_utc_now()
+
         return self.end_utc < now
+
+
+class BookingsConfig(BaseModel):
+    """Configurations for the booking service"""
+
+    # Maximum time in seconds a booking is allowed to have
+    max_time_slot_length: float
+
+    # Minimum time in seconds a booking is allowed to have
+    min_time_slot_length: float
+
+    # Maximum number of bookings per day that a user can have
+    max_slots_per_day: int
+
+    # Maximum time in seconds that a booking can lie idle without a running job
+    max_idle_time: int
+
+    @classmethod
+    def from_settings(cls) -> "BookingsConfig":
+        """Creates this configuration from the settings"""
+        import settings
+
+        return cls(
+            max_time_slot_length=settings.MAX_TIME_SLOT_LENGTH,
+            min_time_slot_length=settings.MIN_TIME_SLOT_LENGTH,
+            max_slots_per_day=settings.MAX_SLOTS_PER_DAY,
+            max_idle_time=settings.MAX_IDLE_TIME,
+        )

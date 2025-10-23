@@ -6,7 +6,7 @@ COPY . /code/
 
 # Install PyQt5
 RUN apt-get update -y; \
-    apt-get install -y --no-install-recommends python3-pyqt5;\
+    apt-get install -y --no-install-recommends python3-pyqt5 curl;\
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*;
 

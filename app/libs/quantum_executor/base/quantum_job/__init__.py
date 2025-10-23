@@ -69,7 +69,7 @@ AcqParams = namedtuple("AcqParams", "qubits memory_slots")
 
 _KEY_DELIMITER = "~"
 _HDF5_JOB_RESULTS_PATH_REGEX = re.compile(
-    f"experiments/(.*)/slot{_KEY_DELIMITER}(\d+)/measurement"
+    rf"experiments/(.*)/slot{_KEY_DELIMITER}(\d+)/measurement"
 )
 _HDF5_QOBJ_METADATA_PATH = "header/qobj_metadata"
 _HDF5_QOBJ_DATA_PATH = "header/qobj_data"

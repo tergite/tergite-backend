@@ -155,3 +155,8 @@ REST_API_PORT=5000
 # See https://fastapi.tiangolo.com/tutorial/cors/?h=cors#use-corsmiddleware
 # default: ""
 CORS_ORIGINS=""
+
+# a mock current date to make bookings act as if the date now is a given static value
+# if empty, the right current date is used
+# default: ""
+CURRENT_DATE=""

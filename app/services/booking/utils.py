@@ -11,10 +11,7 @@
 # that they have been altered from the originals.
 #
 """Module containing utilities for the booking service"""
-
-from passlib.context import CryptContext
-
-password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+import bcrypt
 
 
 def hash_password(password: str) -> str:
@@ -26,7 +23,10 @@ def hash_password(password: str) -> str:
     Returns:
         the password hash
     """
-    return password_context.hash(password)
+    pwd_bytes = password.encode("utf-8")
+    salt = bcrypt.gensalt()
+    hashed_password = bcrypt.hashpw(password=pwd_bytes, salt=salt)
+    return hashed_password.decode("utf-8")
 
 
 def verify_password(password: str, password_hash: str) -> bool:
@@ -39,4 +39,6 @@ def verify_password(password: str, password_hash: str) -> bool:
     Returns:
         True if the password matches with password hash else False
     """
-    return password_context.verify(password, password_hash)
+    password_bytes = password.encode("utf-8")
+    password_hash_bytes = password_hash.encode("utf-8")
+    return bcrypt.checkpw(password=password_bytes, hashed_password=password_hash_bytes)

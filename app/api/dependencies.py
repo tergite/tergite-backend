@@ -22,7 +22,6 @@ from fastapi.requests import Request
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import Engine
-from starlette.requests import Request
 
 import settings
 
@@ -34,6 +33,7 @@ from ..services.scheduler import get_job
 from ..services.scheduler.queues import QueuePool
 from ..services.scheduler.utils import get_executor, reset_cached_executor
 from ..utils.api import get_request_logs_store, verify_mss_signature
+from ..utils.datetime import get_utc_now
 from ..utils.exc import (
     ConflictError,
     InvalidJobIdInUploadedFileError,
@@ -62,6 +62,7 @@ async def lifespan(_app: FastAPI):
         quantify_metadata_file=settings.QUANTIFY_METADATA_FILE,
         mss_url=settings.MSS_MACHINE_ROOT_URL,
     )
+    print(f"starting app at {get_utc_now()}")
     yield
 
     DB_ENGINE = None

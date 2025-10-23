@@ -9,8 +9,21 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- Added the `/bookings/config` endpoint to return the configuration for the booking service
+- Added CURRENT_DATE environment variable for mocking global current timestamp in testing environments.
+
+### Fixed
+
+- Fixed AttributeError: module 'bcrypt' has no attribute '__about__'
+- Fixed 'SyntaxWarning: invalid escape sequence '\d''
+
+## [2025.09.1] - 2025-10-15
+
+### Added
+
 - Added `isort` check in the CI files
 - Added `isort` in the `pre-commit-config.yaml` file
+- Added `CURRENT_DATE` environment variable to mock the global current timestamp, useful during tests
 
 ### Changed
 
@@ -19,7 +32,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 ### Fixed
 
 - Fixed error "invalid value for log level" when starting BCC without specifying the `$UVICORN_LOG_LEVEL` env variable
-- Fix error failing qiskit-dynamics backend tests
+- Fixed error failing qiskit-dynamics backend tests
+- Fixed AttributeError: module 'bcrypt' has no attribute '__about__' caused by the abandoned passlib library
 
 ## [2025.09.0] - 2025-10-02
 
