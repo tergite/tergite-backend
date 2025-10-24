@@ -33,6 +33,7 @@ MSS_MACHINE_ROOT_URL=http://host:port
 #
 # The public RSA key pem file for the MSS server, preferably used internally only for the stack
 # this is required if you are to use MSS so uncomment it
+# default (in the current folder): public-mss-key.pem
 # MSS_PUBLIC_KEY_PATH=
 #
 # The maximum time in seconds that a nonce from MSS can be valid when its timestamp is
@@ -145,10 +146,6 @@ JWT_SECRET="some-JWT-secret-probably-generated-with-openssl"
 # Negative values not allowed. Negative values are automatically changed to 0
 # default: 900
 JWT_TTL=900
-
-# the HTTP port to serve the RESTful API on
-# default: 5000
-REST_API_PORT=5000
 
 # the comma separated list of URLs where
 # Javascript can access this API without raising CORS errors
