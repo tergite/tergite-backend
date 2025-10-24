@@ -1260,6 +1260,30 @@ def test_cancel_future_booking(
         assert job_ids == expected_job_ids
 
 
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_cancel_future_booking_new_mss_user(
+    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture
+):
+    """POST '/booking/{id}/cancel' for a future booking, deletes the booking even if it was created without a preexisting user."""
+    with client as client:
+        booker_id = f"{uuid4()}"
+
+        booking_info = {"duration": 3, "starts_in": 2}
+        _, response = _create_booking(client, user_id=booker_id, booking=booking_info)
+        booking = Booking.model_validate(response.json())
+        assert response.status_code == 200
+
+        response = _cancel_booking(client, user_id=booker_id, booking_id=booking.id)
+        expected = {
+            "status": "success",
+            "detail": f"Booking of id {booking.id} cancelled",
+        }
+        got = response.json()
+
+        assert response.status_code == 200
+        assert got == expected
+
+
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
 def test_admin_cancel_future_booking(client):
     """Admin POST '/bookings/{id}/cancel' cancels any user's future booking"""
@@ -2651,6 +2675,8 @@ def _create_booking(
     client: "TestClient", user_id: str, booking: "BasicBookingInfo"
 ) -> Tuple["BasicBookingInfo", "Response"]:
     """Creates the booking and returns the actual booking details
+
+    It assumes the user is a valid user in MSS
 
     Actual booking details include actual duration and actual delay
 

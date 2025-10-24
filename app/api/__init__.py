@@ -357,6 +357,7 @@ async def create_booking(
     data: NewBookingInfo,
     user_id: str = Depends(get_verified_mss_user_id),
     queue_pool: QueuePool = Depends(get_queue_pool),
+    db_engine: Engine = Depends(get_db_engine),
 ) -> Booking:
     """Creates a booking for the user of the given token
 
@@ -364,10 +365,16 @@ async def create_booking(
         user_id: the MSS user_id as sent by MSS
         data: the information about the new booking
         queue_pool: the pool of queues to user
+        db_engine: the SQL database to submit data to
 
     Returns:
         the newly created booking
     """
+    user = get_user(db_engine, User.id == user_id)
+    if user is None:
+        # create a random user if the user does not exist
+        booking.create_random_user(db_engine, user_id)
+
     return scheduler.submit_booking(queue_pool, user_id, booking_info=data)
 
 

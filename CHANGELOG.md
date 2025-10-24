@@ -16,6 +16,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 - Fixed AttributeError: module 'bcrypt' has no attribute '__about__'
 - Fixed 'SyntaxWarning: invalid escape sequence '\d''
+- Fixed 'user of id ... not found' error when cancelling booking created by an MSS user
 
 ## [2025.09.1] - 2025-10-15
 
