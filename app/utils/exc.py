@@ -82,3 +82,7 @@ class JobAlreadyCancelled(BaseBccException):
 
 class InvalidJobIdInUploadedFileError(BaseBccException):
     pass
+
+
+class InvalidRequestError(BaseBccException):
+    """Exception when an invalid HTTP request is made"""
