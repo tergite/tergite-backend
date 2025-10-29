@@ -11,6 +11,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 - Added the `/bookings/config` endpoint to return the configuration for the booking service
 - Added CURRENT_DATE environment variable for mocking global current timestamp in testing environments.
+- Added filtering bookings at `/bookings` endpoint by `user_id`
 
 ### Fixed
 

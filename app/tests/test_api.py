@@ -502,7 +502,7 @@ def test_unauthenticated_create_booking(client, worker, redis_conn):
 
 @pytest.mark.parametrize("pagination,client", _VIEW_MANY_PARAMS)
 def test_view_bookings(client, pagination: "PaginationInfo"):
-    """GET "/bookings" shows paginated list of all available bookings"""
+    """GET "/bookings" shows paginated list of all available bookings, filtered accordingly"""
     with client as client:
         users = _create_many_users(client)
         curr_user = users[0]
@@ -527,7 +527,22 @@ def test_view_bookings(client, pagination: "PaginationInfo"):
             ({}, all_records),
             ({"min_start_utc": all_records[1]["start_utc"]}, all_records[1:]),
             ({"min_start_utc": all_records[2]["start_utc"]}, all_records[2:]),
+            (
+                {"min_start_utc": all_records[2]["start_utc"], "user_id": curr_user_id},
+                [v for v in all_records[2:] if v["user_id"] == curr_user_id],
+            ),
             ({"max_start_utc": all_records[1]["start_utc"]}, all_records[:2]),
+            (
+                {
+                    "max_start_utc": all_records[1]["start_utc"],
+                    "user_id": other_user_id,
+                },
+                [v for v in all_records[:2] if v["user_id"] == other_user_id],
+            ),
+            (
+                {"user_id": other_user_id},
+                [v for v in all_records if v["user_id"] == other_user_id],
+            ),
             (
                 {
                     "min_start_utc": all_records[1]["start_utc"],
@@ -541,7 +556,7 @@ def test_view_bookings(client, pagination: "PaginationInfo"):
         for user_id in user_ids:
             for filters, expected_all_records in filters_and_results:
                 response = _view_booking_list(
-                    client, user_id=user_id, skip=skip, limit=limit, **filters
+                    client, requester_id=user_id, skip=skip, limit=limit, **filters
                 )
                 actual_output = response.json()
                 expected = _paginate(expected_all_records, skip=skip, limit=limit)
@@ -2300,7 +2315,7 @@ def _view_job(
 
 def _view_booking_list(
     client: "TestClient",
-    user_id: str,
+    requester_id: str,
     skip: int = 0,
     limit: Optional[int] = None,
     is_admin: Optional[bool] = None,
@@ -2310,7 +2325,7 @@ def _view_booking_list(
 
     Args:
         client: the test client in which the tests run
-        user_id: the user ID for authentication
+        requester_id: the user ID for authentication
         skip: the number of records to skip
         limit: the maximum number of records to return
         is_admin: whether to access the bookings endpoint as admin
@@ -2319,7 +2334,7 @@ def _view_booking_list(
     Returns:
         the httpx.Response for the request
     """
-    headers = create_mss_headers(user_id, is_admin=is_admin)
+    headers = create_mss_headers(requester_id, is_admin=is_admin)
     params = {"skip": skip}
     if isinstance(limit, int):
         params["limit"] = limit

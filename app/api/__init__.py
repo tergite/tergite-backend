@@ -408,6 +408,7 @@ async def view_bookings(
     limit: Optional[int] = Query(default=None),
     min_start_utc: Optional[datetime] = Query(default=None),
     max_start_utc: Optional[datetime] = Query(default=None),
+    user_id: Optional[str] = Query(default=None),
     db_engine: Engine = Depends(get_db_engine),
 ) -> PaginatedListResponse[Booking]:
     """Views all available bookings
@@ -416,6 +417,7 @@ async def view_bookings(
         skip: number of records to ignore at the top of the returned results; default is 0
         limit: maximum number of records to return; default is None.
         db_engine: the SQL database engine to query
+        user_id: the unique identifier of the owner of the given bookings
         min_start_utc: the minimum start time in UTC
         max_start_utc: the maximum start time in UTC
 
@@ -427,6 +429,8 @@ async def view_bookings(
         filters.append(Booking.start_utc >= min_start_utc)
     if max_start_utc is not None:
         filters.append(Booking.start_utc <= max_start_utc)
+    if user_id is not None:
+        filters.append(Booking.user_id == user_id)
 
     data = booking.get_many_bookings(db_engine, *filters, skip=skip, limit=limit)
     return PaginatedListResponse(skip=skip, limit=limit, data=data)
