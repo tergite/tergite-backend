@@ -16,7 +16,7 @@
 #
 # - Martin Ahindura 2023
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Tuple
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, File, Query, UploadFile
@@ -43,6 +43,7 @@ from app.utils.exc import (
     BookingAlreadyCompleteError,
     ConflictError,
     InvalidJobIdInUploadedFileError,
+    InvalidRequestError,
     JobAlreadyCancelled,
     JobAlreadyCompleteError,
     MaxBookingsError,
@@ -66,6 +67,7 @@ from ..utils.api import (
     to_http_error,
 )
 from ..utils.redis_store import ItemNotFoundError
+from ..utils.sql_db import convert_http_sort_to_db_sort
 from ..utils.strings import uuid_str
 from .dependencies import (
     MSSAuthDetails,
@@ -97,6 +99,7 @@ app.add_exception_handler(ItemNotFoundError, to_http_error(404))
 app.add_exception_handler(JobAlreadyCompleteError, to_http_error(406))
 app.add_exception_handler(ConflictError, to_http_error(409))
 app.add_exception_handler(MaxBookingsError, to_http_error(400))
+app.add_exception_handler(InvalidRequestError, to_http_error(400))
 app.add_exception_handler(BookingAlreadyCompleteError, to_http_error(400))
 app.add_exception_handler(BookingAlreadyActiveError, to_http_error(400))
 app.add_exception_handler(ValidationError, to_http_error(422))
@@ -406,6 +409,7 @@ async def cancel_booking(
 async def view_bookings(
     skip: int = Query(default=0),
     limit: Optional[int] = Query(default=None),
+    sort: Tuple[str, ...] = Query(default=()),
     min_start_utc: Optional[datetime] = Query(default=None),
     max_start_utc: Optional[datetime] = Query(default=None),
     user_id: Optional[str] = Query(default=None),
@@ -416,6 +420,7 @@ async def view_bookings(
     Args:
         skip: number of records to ignore at the top of the returned results; default is 0
         limit: maximum number of records to return; default is None.
+        sort: fields to sort by; prepending "-" returns the records in descending order
         db_engine: the SQL database engine to query
         user_id: the unique identifier of the owner of the given bookings
         min_start_utc: the minimum start time in UTC
@@ -432,7 +437,10 @@ async def view_bookings(
     if user_id is not None:
         filters.append(Booking.user_id == user_id)
 
-    data = booking.get_many_bookings(db_engine, *filters, skip=skip, limit=limit)
+    sort = convert_http_sort_to_db_sort(Booking, http_sort=sort)
+    data = booking.get_many_bookings(
+        db_engine, *filters, skip=skip, limit=limit, sort=sort
+    )
     return PaginatedListResponse(skip=skip, limit=limit, data=data)
 
 

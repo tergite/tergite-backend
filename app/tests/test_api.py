@@ -505,58 +505,59 @@ def test_view_bookings(client, pagination: "PaginationInfo"):
     """GET "/bookings" shows paginated list of all available bookings, filtered accordingly"""
     with client as client:
         users = _create_many_users(client)
-        curr_user = users[0]
-        other_user = users[1]
-        curr_user_id = curr_user["id"]
-        other_user_id = other_user["id"]
+        usr1 = users[0]
+        usr2 = users[1]
+        usr_id1 = usr1["id"]
+        usr_id2 = usr2["id"]
 
         # create bookings, for each user only upto TEST_MAX_SLOTS_PER_DAY
-        user_ids = [curr_user_id, other_user_id]
-        all_records = []
+        user_ids = [usr_id1, usr_id2]
+        all_items = []
         booking_data_list = VALID_BOOKINGS[: 2 * TEST_MAX_SLOTS_PER_DAY]
         for idx, booking_info in enumerate(booking_data_list):
             ids_idx = idx % 2
             user_id = user_ids[ids_idx]
             _, response = _create_booking(client, user_id=user_id, booking=booking_info)
-            all_records.append(response.json())
+            all_items.append(response.json())
 
         limit = pagination["limit"]
         skip = pagination["skip"]
 
-        filters_and_results = [
-            ({}, all_records),
-            ({"min_start_utc": all_records[1]["start_utc"]}, all_records[1:]),
-            ({"min_start_utc": all_records[2]["start_utc"]}, all_records[2:]),
-            (
-                {"min_start_utc": all_records[2]["start_utc"], "user_id": curr_user_id},
-                [v for v in all_records[2:] if v["user_id"] == curr_user_id],
-            ),
-            ({"max_start_utc": all_records[1]["start_utc"]}, all_records[:2]),
-            (
-                {
-                    "max_start_utc": all_records[1]["start_utc"],
-                    "user_id": other_user_id,
-                },
-                [v for v in all_records[:2] if v["user_id"] == other_user_id],
-            ),
-            (
-                {"user_id": other_user_id},
-                [v for v in all_records if v["user_id"] == other_user_id],
-            ),
-            (
-                {
-                    "min_start_utc": all_records[1]["start_utc"],
-                    "max_start_utc": all_records[1]["start_utc"],
-                },
-                all_records[1:2],
-            ),
+        sort_by_start = lambda data, desc: order_by(data, "start_utc", desc)
+        sort_by_usr = lambda data: order_by(data, "user_id")
+        get_usr1_items = lambda data: [v for v in data if v["user_id"] == usr_id1]
+        usr2_items = [v for v in all_items if v["user_id"] == usr_id2]
+        rec2_start = all_items[1]["start_utc"]
+        rec3_start = all_items[2]["start_utc"]
+
+        min_start = "min_start_utc"
+        max_start = "max_start_utc"
+
+        # fmt: off
+        filters_sort_and_results = [
+            ({}, (), all_items),
+            ({}, ("-start_utc",), sort_by_start(all_items, desc=True)),
+            ({min_start: rec2_start}, (), all_items[1:]),
+            ({min_start: rec3_start}, (), all_items[2:]),
+            ({min_start: rec3_start, "user_id": usr_id1}, (), get_usr1_items(all_items[2:])),
+            ({max_start: rec2_start}, (), all_items[:2]),
+            ({max_start: rec2_start}, ("user_id",), sort_by_usr(all_items[:2])),
+            ({max_start: rec2_start, "user_id": usr_id2}, (), usr2_items[:2]),
+            ({"user_id": usr_id2}, (), usr2_items),
+            ({min_start: rec2_start, max_start: rec2_start}, (), all_items[1:2]),
         ]
+        # fmt: on
 
         # view bookings
         for user_id in user_ids:
-            for filters, expected_all_records in filters_and_results:
+            for filters, sort, expected_all_records in filters_sort_and_results:
                 response = _view_booking_list(
-                    client, requester_id=user_id, skip=skip, limit=limit, **filters
+                    client,
+                    requester_id=user_id,
+                    skip=skip,
+                    limit=limit,
+                    sort=sort,
+                    **filters,
                 )
                 actual_output = response.json()
                 expected = _paginate(expected_all_records, skip=skip, limit=limit)
@@ -2318,6 +2319,7 @@ def _view_booking_list(
     requester_id: str,
     skip: int = 0,
     limit: Optional[int] = None,
+    sort: Tuple[str, ...] = (),
     is_admin: Optional[bool] = None,
     **filters,
 ) -> "Response":
@@ -2328,6 +2330,7 @@ def _view_booking_list(
         requester_id: the user ID for authentication
         skip: the number of records to skip
         limit: the maximum number of records to return
+        sort: the columns to sort by, prepending "-" to mean descending order
         is_admin: whether to access the bookings endpoint as admin
         filters: additional filters to apply to the bookings
 
@@ -2335,7 +2338,7 @@ def _view_booking_list(
         the httpx.Response for the request
     """
     headers = create_mss_headers(requester_id, is_admin=is_admin)
-    params = {"skip": skip}
+    params = {"skip": skip, "sort": sort}
     if isinstance(limit, int):
         params["limit"] = limit
     params.update(filters)
