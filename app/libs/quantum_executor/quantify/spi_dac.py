@@ -37,7 +37,8 @@ from typing import Any, Dict, Tuple
 
 import numpy as np
 from qblox_instruments import SpiRack
-from qcodes import validators
+from qcodes import Instrument, validators
+from redis import Redis
 
 import settings
 from app.libs.quantum_executor.utils.config import QuantifyMetadata
@@ -113,9 +114,11 @@ class SpiDAC:
         couplers: list[str],
         metadata_path: str | Path = settings.QUANTIFY_METADATA_FILE,
         print_progress: bool = False,
+        connection: Redis = settings.REDIS_CONNECTION,
+        name: str = settings.DEFAULT_PREFIX,
     ):
         # set up redis connection
-        self._connection = settings.REDIS_CONNECTION
+        self._connection = connection
         self.print_progress = print_progress
         # grab spi metadata
         raw_port, self.is_dummy, self._coupler_map = _get_spi_metadata(metadata_path)
@@ -132,12 +135,25 @@ class SpiDAC:
             )
 
         # connect or build dummy
-        self.spi = SpiRack(settings.DEFAULT_PREFIX, self.port, is_dummy=self.is_dummy)
+        self.spi = SpiRack(name, self.port, is_dummy=self.is_dummy)
 
         # build DAC handles
         self.dacs_dictionary: Dict[str, Any] = {
             coupler: self.create_spi_dac(coupler) for coupler in couplers
         }
+
+    @classmethod
+    def exist(cls, name: str, instrument_class: type[Instrument] | None = None) -> bool:
+        """Checks if the SpiDAC of the given name and given instrument class exists
+
+        Args:
+            name: SPI rack name
+            instrument_class: Instrument class
+
+        Returns:
+            True if the SpiDAC of the given name exists
+        """
+        return SpiRack.exist(name, instrument_class)
 
     def create_spi_dac(self, coupler: str):
 

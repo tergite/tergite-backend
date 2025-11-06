@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import (
     Any,
     Dict,
+    Generator,
     List,
     NotRequired,
     Optional,
@@ -41,19 +42,21 @@ import pytest
 import redis
 from fastapi.testclient import TestClient
 from pytest_lazy_fixtures import lf as lazy_fixture
+from qblox_instruments import SpiRack
 from redis.client import Redis
 from rq import SimpleWorker
 from sqlalchemy import create_engine
 from sqlmodel import SQLModel
 
 from ..libs.device_parameters import DeviceCalibration
+from ..libs.quantum_executor.quantify.spi_dac import SpiDAC
 from ..libs.queues.dtos import Job
 from ..services.scheduler.queues import QueuePool
 from .utils.analysis import MockLinearDiscriminantAnalysis
-from .utils.api import create_invalid_mss_headers
 from .utils.executors import MockQiskitDynamicsExecutor, MockQuantifyExecutor
-from .utils.fixtures import load_fixture
+from .utils.fixtures import get_fixture_path, load_fixture
 from .utils.http import MockHttpResponse, MockHttpSession
+from .utils.mocks import make_attr_verbose
 from .utils.rq import get_rq_pool_worker
 
 _redis_connection = redis.Redis.from_url(TEST_RQ_REDIS_URL)
@@ -121,6 +124,8 @@ VALID_BOOKINGS: List["BasicBookingInfo"] = load_fixture("valid_bookings.json")
 INVALID_BOOKINGS: List["BasicBookingInfo"] = load_fixture("invalid_bookings.json")
 JOBS: List[Dict[str, Any]] = load_fixture("job_list.json")
 PAGINATION: List["PaginationInfo"] = load_fixture("pagination.json")
+SPI_DUMMY_METADATA_FILE = get_fixture_path("spi_dummy_quantify-metadata.yml")
+TEST_SPI_LOGGER_NAME = "test.spi_dac.verbose"
 
 JOBS_HASH_NAME = f"{Job.__module__}.{Job.__qualname__}".lower()
 
@@ -137,14 +142,14 @@ INVALID_CREATE_BOOKINGS_PARAMS = [
 
 
 @pytest.fixture
-def redis_client() -> Redis:
+def redis_client() -> Generator[Redis, Any, None]:
     """A mock redis client"""
     yield _redis_connection
     _redis_connection.flushall()
 
 
 @pytest.fixture
-def rq_worker(redis_client) -> SimpleWorker:
+def rq_worker(redis_client) -> Generator[SimpleWorker, Any, None]:
     """Get the rq worker for running async tasks asynchronously for the default backend"""
     queue_pool = QueuePool(
         prefix=TEST_DEFAULT_PREFIX, connection=redis_client, is_async=True
@@ -153,7 +158,7 @@ def rq_worker(redis_client) -> SimpleWorker:
 
 
 @pytest.fixture
-def rq_worker_for_simulator_1q(redis_client) -> SimpleWorker:
+def rq_worker_for_simulator_1q(redis_client) -> Generator[SimpleWorker, Any, None]:
     """Get the rq worker for running async tasks asynchronously for the 1 qubit simulator"""
     queue_pool = QueuePool(
         prefix=TEST_DEFAULT_PREFIX_SIM_1Q, connection=redis_client, is_async=True
@@ -162,7 +167,7 @@ def rq_worker_for_simulator_1q(redis_client) -> SimpleWorker:
 
 
 @pytest.fixture
-def rq_worker_for_simulator_2q(redis_client) -> SimpleWorker:
+def rq_worker_for_simulator_2q(redis_client) -> Generator[SimpleWorker, Any, None]:
     """Get the rq worker for running async tasks asynchronously for the 2 qubit simulator"""
     queue_pool = QueuePool(
         prefix=TEST_DEFAULT_PREFIX_SIM_2Q, connection=redis_client, is_async=True
@@ -174,6 +179,7 @@ def mock_post_requests(url: str, **kwargs):
     """Mock POST requests for testing"""
     if url == f"{TEST_MSS_MACHINE_ROOT_URL}/timelog":
         return MockHttpResponse(status_code=200)
+    return None
 
 
 def mock_mss_put_requests(url: str, **kwargs):
@@ -207,7 +213,7 @@ def mock_mss_post_requests(url: str, **kwargs):
 
 
 @pytest.fixture
-def quantify_rest_client(mocker, redis_client) -> TestClient:
+def quantify_rest_client(mocker, redis_client) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
     _patch_async_client(mocker)
     os.environ["EXECUTOR_TYPE"] = "quantify"
@@ -231,7 +237,7 @@ def quantify_rest_client(mocker, redis_client) -> TestClient:
 
 
 @pytest.fixture
-def qiskit_1q_rest_client(mocker) -> TestClient:
+def qiskit_1q_rest_client(mocker) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
     _patch_async_client(mocker)
     os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_1q"
@@ -252,7 +258,7 @@ def qiskit_1q_rest_client(mocker) -> TestClient:
 
 
 @pytest.fixture
-def qiskit_2q_rest_client(mocker) -> TestClient:
+def qiskit_2q_rest_client(mocker) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
     _patch_async_client_sim2q(mocker)
     os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_2q"
@@ -273,7 +279,7 @@ def qiskit_2q_rest_client(mocker) -> TestClient:
 
 
 @pytest.fixture
-def jobs_folder() -> Path:
+def jobs_folder() -> Generator[Path, Any, None]:
     """A temporary folder for the client where jobs can be saved"""
     folder_path = Path("./tmp/jobs")
     folder_path.mkdir(parents=True, exist_ok=True)
@@ -283,7 +289,7 @@ def jobs_folder() -> Path:
 
 
 @pytest.fixture
-def logfile_download_folder() -> Path:
+def logfile_download_folder() -> Generator[Path, Any, None]:
     """A temporary folder for the server where logfiles can be downloaded from"""
     folder_path = (
         Path(TEST_STORAGE_ROOT)
@@ -306,16 +312,110 @@ def storage_root():
 
 
 @pytest.fixture
-def app_token_header() -> Dict[str, str]:
+def app_token_header() -> Generator[Dict[str, str], Any, None]:
     """the authorization header with the app token"""
 
     yield {"Authorization": f"Bearer {TEST_APP_TOKEN_STRING}"}
 
 
 @pytest.fixture
-def invalid_mss_headers() -> Dict[str, str]:
-    """The headers from MSS that are wrongly formatted or something"""
-    yield create_invalid_mss_headers()
+def spi_dac_dummy(redis_client) -> Generator[SpiDAC, Any, None]:
+    """
+    Construct SpiDAC bound to the dummy SPI-Rack.
+    """
+    name = os.environ.get("DEFAULT_PREFIX", "quantify")
+    metadata_path = SPI_DUMMY_METADATA_FILE
+    couplers = ["u0"]
+
+    if SpiDAC.exist(name):
+        SpiRack.find_instrument(name).close()
+
+    sd = SpiDAC(
+        couplers=couplers,
+        metadata_path=metadata_path,
+        connection=redis_client,
+        name=name,
+    )
+    yield sd
+
+    try:
+        sd.close_spi_rack()
+    except:
+        pass
+
+
+@pytest.fixture
+def verbose_spi_dac_dummy(redis_client, mocker) -> Generator[SpiDAC, Any, None]:
+    """
+    Construct SpiDAC bound to the dummy SPI-Rack.
+    """
+    name = os.environ.get("DEFAULT_PREFIX", "quantify")
+    metadata_path = SPI_DUMMY_METADATA_FILE
+    couplers = ["u0"]
+
+    testlog = logging.getLogger(TEST_SPI_LOGGER_NAME)
+    testlog.setLevel(logging.DEBUG)
+
+    for fn in [
+        "__init__",
+        "create_spi_dac",
+        "set_dacs_zero",
+        "exist",
+        "set_parking_currents",
+        "set_dac_current",
+        "ramp_current_serially",
+        "ramp_current_simultaneusly",
+        "print_currents",
+        "close_spi_rack",
+    ]:
+        make_attr_verbose(SpiDAC, mock_fixture=mocker, logger=testlog, attr_name=fn)
+
+    if SpiDAC.exist(name):
+        SpiRack.find_instrument(name).close()
+
+    sd = SpiDAC(
+        couplers=couplers,
+        metadata_path=metadata_path,
+        connection=redis_client,
+        name=name,
+    )
+    yield sd
+
+    try:
+        sd.close_spi_rack()
+    except:
+        pass
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _configure_logging_for_tests():
+    """Configure logging for tests"""
+    if os.getenv("DEBUG", "").strip().lower() == "true":
+        root = logging.getLogger()
+        # Remove any preconfigured handlers (libraries may have added them)
+        for h in root.handlers[:]:
+            root.removeHandler(h)
+        # Use stderr (or sys.__stdout__) which we won't close
+        h = logging.StreamHandler(sys.__stderr__)
+        fmt = logging.Formatter("%(asctime)s [%(levelname)-8s] %(name)s: %(message)s")
+        h.setFormatter(fmt)
+        root.addHandler(h)
+        root.setLevel(
+            getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
+        )
+        yield
+        # No need to close sys.__stderr__; just flush
+        for h in root.handlers[:]:
+            try:
+                h.flush()
+            except:
+                pass
+    else:
+        # silence rq logs
+        logging.getLogger("rq").setLevel(logging.WARNING)
+        logging.getLogger("rq.worker").setLevel(logging.WARNING)
+        logging.getLogger("rq.queue").setLevel(logging.WARNING)
+        yield
 
 
 def _patch_async_client(mocker):
@@ -362,29 +462,6 @@ def _patch_async_client_sim2q(mocker):
         return_value=_mock_linear_discriminant_analysis_sim2q,
     )
     os.environ["BLACKLISTED"] = ""
-
-
-@pytest.fixture(autouse=True, scope="session")
-def _configure_logging_for_tests():
-    root = logging.getLogger()
-    # Remove any preconfigured handlers (libraries may have added them)
-    for h in root.handlers[:]:
-        root.removeHandler(h)
-    # Use stderr (or sys.__stdout__) which we won't close
-    h = logging.StreamHandler(sys.__stderr__)
-    fmt = logging.Formatter("%(asctime)s [%(levelname)-8s] %(name)s: %(message)s")
-    h.setFormatter(fmt)
-    root.addHandler(h)
-    root.setLevel(
-        getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
-    )
-    yield
-    # No need to close sys.__stderr__; just flush
-    for h in root.handlers[:]:
-        try:
-            h.flush()
-        except Exception:
-            pass
 
 
 def _clear_test_db(url: str = TEST_BOOKING_DB_URL):

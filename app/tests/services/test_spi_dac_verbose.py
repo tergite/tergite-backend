@@ -11,128 +11,30 @@
 # that they have been altered from the originals.
 
 import logging
-from functools import wraps
 
 import pytest
 
-from app.tests.utils.fixtures import get_fixture_path
-
-from ...libs.quantum_executor.quantify import spi_dac as spi_module
 from ...libs.quantum_executor.quantify.spi_dac import SpiDAC
-
-TEST_LOGGER_NAME = "test.spi_dac.verbose"
-testlog = logging.getLogger(TEST_LOGGER_NAME)
-testlog.setLevel(logging.DEBUG)
+from ..conftest import TEST_SPI_LOGGER_NAME
 
 
-@pytest.fixture
-def spi_metadata_path() -> str:
-    """Re-use committed dummy SPI metadata fixture."""
-    return get_fixture_path("spi_dummy_quantify-metadata.yml")
-
-
-@pytest.fixture
-def patched_settings(mocker, spi_metadata_path, redis_client):
-    """
-    Patch only what SpiDAC reads from settings:
-    - DEFAULT_PREFIX
-    - REDIS_CONNECTION (real test redis from conftest)
-    - QUANTIFY_METADATA_FILE (fixture path)
-    """
-    mocker.patch.object(spi_module.settings, "DEFAULT_PREFIX", "quantify", create=True)
-    mocker.patch.object(
-        spi_module.settings, "REDIS_CONNECTION", redis_client, create=True
-    )
-    mocker.patch.object(
-        spi_module.settings, "QUANTIFY_METADATA_FILE", spi_metadata_path, create=True
-    )
-    return spi_module.settings
-
-
-@pytest.fixture
-def verbose_wrappers(mocker):
-    """
-    Wrap core SpiDAC methods to log enter/exit/exception and keep references
-    to originals on the class as `__orig_<name>`. Also expose `__wrapped__`
-    via functools.wraps so tests can recover the original easily.
-    """
-
-    def wrap(name: str):
-        orig = getattr(SpiDAC, name)
-
-        @wraps(orig)
-        def _wrapped(self, *args, **kwargs):
-            testlog.debug(
-                "ENTER %s(is_dummy=%s) args=%r kwargs=%r",
-                name,
-                getattr(self, "is_dummy", None),
-                args,
-                kwargs,
-            )
-            try:
-                res = orig(self, *args, **kwargs)
-                testlog.debug("EXIT  %s -> %r", name, res)
-                return res
-            except Exception as e:
-                testlog.exception("EXC   %s: %s", name, e)
-                raise
-
-        # install wrapper and stash the original
-        mocker.patch.object(SpiDAC, name, _wrapped)
-        setattr(SpiDAC, f"__orig_{name}", orig)
-
-    for fn in [
-        "__init__",
-        "create_spi_dac",
-        "set_dacs_zero",
-        "set_parking_currents",
-        "set_dac_current",
-        "ramp_current_serially",
-        "ramp_current_simultaneusly",
-        "print_currents",
-        "close_spi_rack",
-    ]:
-        wrap(fn)
-
-
-@pytest.fixture
-def spi_dac_dummy(patched_settings, verbose_wrappers) -> SpiDAC:
-    sd = SpiDAC(couplers=["u0"], metadata_path=patched_settings.QUANTIFY_METADATA_FILE)
-    try:
-        yield sd
-    finally:
-        try:
-            sd.close_spi_rack()
-        except Exception:
-            pass
-
-
-def _get_orig_ramp():
-    # recover original function placed by verbose_wrappers
-    orig = getattr(SpiDAC, "__orig_ramp_current_serially", None)
-    if orig is None:
-        # fallback if wrappers changed
-        wrapped = getattr(SpiDAC, "ramp_current_serially", None)
-        if wrapped is not None and hasattr(wrapped, "__wrapped__"):
-            orig = wrapped.__wrapped__
-    return orig
-
-
-def test_verbose_happy_path(caplog, spi_dac_dummy, patched_settings, mocker):
+def test_verbose_happy_path(caplog, verbose_spi_dac_dummy, mocker, redis_client):
     """
     Log-heavy check of the nominal flow on dummy rack:
     - parking -> bias -> back to parking -> close
     - ensure dummy path *does not* call ramp_current_serially
     - ensure expected module logs are present
     """
+    spi_dac_dummy = verbose_spi_dac_dummy
+    testlog = logging.getLogger(TEST_SPI_LOGGER_NAME)
     caplog.set_level(logging.DEBUG)
 
     # Arrange parking
-    spi_module.settings.REDIS_CONNECTION.hset("couplers:u0", "parking_current", 1e-4)
+    redis_client.hset("couplers:u0", "parking_current", 1e-4)
 
     # Spy: catch accidental ramping even in dummy mode
     called_ramp = {"count": 0}
-    orig_ramp = _get_orig_ramp()
+    orig_ramp = _get_orig_ramp_current()
     assert orig_ramp is not None, "Failed to recover original ramp_current_serially"
 
     def ramp_spy(self, values):
@@ -181,14 +83,14 @@ def test_verbose_happy_path(caplog, spi_dac_dummy, patched_settings, mocker):
     entries = [
         r
         for r in caplog.records
-        if r.name == TEST_LOGGER_NAME
+        if r.name == TEST_SPI_LOGGER_NAME
         and r.levelno == logging.DEBUG
         and r.getMessage().startswith("ENTER")
     ]
     exits = [
         r
         for r in caplog.records
-        if r.name == TEST_LOGGER_NAME
+        if r.name == TEST_SPI_LOGGER_NAME
         and r.levelno == logging.DEBUG
         and r.getMessage().startswith("EXIT")
     ]
@@ -203,11 +105,27 @@ def test_verbose_happy_path(caplog, spi_dac_dummy, patched_settings, mocker):
     ), "Should not log 'Ramping finished' in dummy mode"
 
 
-def test_verbose_missing_parking_logs_error_and_raises(caplog, spi_dac_dummy):
+def test_verbose_missing_parking_logs_error_and_raises(caplog, verbose_spi_dac_dummy):
+    """FIXME: Add description of test"""
+    spi_dac_dummy = verbose_spi_dac_dummy
     caplog.set_level(logging.DEBUG)
     with pytest.raises(ValueError):
         spi_dac_dummy.set_parking_currents(["u0"])
     assert any(
-        r.name == TEST_LOGGER_NAME and "EXC   set_parking_currents" in r.getMessage()
+        r.name == TEST_SPI_LOGGER_NAME
+        and "EXC   set_parking_currents" in r.getMessage()
         for r in caplog.records
     )
+
+
+def _get_orig_ramp_current():
+    """
+    Gets the original ramp current from the ramp_current_serially.
+    """
+    orig = getattr(SpiDAC, "__orig_ramp_current_serially", None)
+    if orig is None:
+        # fallback if wrappers changed
+        wrapped = getattr(SpiDAC, "ramp_current_serially", None)
+        if wrapped is not None and hasattr(wrapped, "__wrapped__"):
+            orig = wrapped.__wrapped__
+    return orig

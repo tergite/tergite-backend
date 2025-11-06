@@ -811,11 +811,11 @@ def test_submit_jobs_in_idle_booking(
         first_non_booker_job = non_booker_jobs[0]
 
         # Assert that they are all complete and their booker jobs started before booking end_utc
-        # while non booker jobs started after end_utc
+        # and also non booker jobs started before end_utc
         # Note: Enqueue_at ignores microseconds
-        booking_end_timestamp = _drop_microsec(booking.end_utc)
-        last_booker_job_start = _drop_microsec(last_booker_job.start_utc)
-        first_non_booker_job_start = _drop_microsec(first_non_booker_job.start_utc)
+        booking_end_timestamp = booking.end_utc
+        last_booker_job_start = last_booker_job.start_utc
+        first_non_booker_job_start = first_non_booker_job.start_utc
 
         assert all([v.status == JobStatus.SUCCESSFUL for v in jobs_in_redis])
         assert last_booker_job_start < booking_end_timestamp
@@ -823,9 +823,9 @@ def test_submit_jobs_in_idle_booking(
             assert first_non_booker_job_start < booking_end_timestamp
 
 
-# _SIMPLE_UPLOAD_JOB_PARAMS[:-1] because the 2-qubit execution, processing takes long
+# _SIMPLE_UPLOAD_JOB_PARAMS[:-2] because the real simulator execution takes some time that is hard to precisely estimate
 @pytest.mark.parametrize(
-    "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-1]
+    "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-2]
 )
 def test_submit_jobs_in_idle_booking_before_another(
     client,
@@ -880,14 +880,10 @@ def test_submit_jobs_in_idle_booking_before_another(
         non_booker_jobs.sort(key=lambda v: v.start_utc)
         # Note: Enqueue_at ignores microseconds
         non_booker_job_ids_pre_2nd_slot = [
-            v.job_id
-            for v in non_booker_jobs
-            if _drop_microsec(v.start_utc) < _drop_microsec(next_slot.start_utc)
+            v.job_id for v in non_booker_jobs if v.start_utc < next_slot.start_utc
         ]
         non_booker_job_ids_post_2nd_slot = [
-            v.job_id
-            for v in non_booker_jobs
-            if _drop_microsec(v.start_utc) > _drop_microsec(next_slot.start_utc)
+            v.job_id for v in non_booker_jobs if v.start_utc > next_slot.start_utc
         ]
 
         # First booker job takes 0.2, waits for 1 second, releases the waitlist.
@@ -900,7 +896,7 @@ def test_submit_jobs_in_idle_booking_before_another(
         # job (duration=0.15) runs, time left is about 0.35
         #
         # first and fifth jobs are submitted by the owner of the booking;
-        # the fourth is too long for the current booking so it fails immediately.
+        # the fifth is too long for the current booking so it fails immediately.
         non_booker_pre_2dn_slot_durations = (1, 0.3, 0.15)
         booker_job_durations = (0.2, 2.9)
         expected_non_booker_job_ids_pre_2nd_slot = [
@@ -935,9 +931,9 @@ def test_submit_jobs_in_idle_booking_before_another(
         )
 
 
-# _SIMPLE_UPLOAD_JOB_PARAMS[:-1] because the 2-qubit execution, processing takes long
+# _SIMPLE_UPLOAD_JOB_PARAMS[:-1] because the real simulator execution takes some time that is hard to precisely estimate
 @pytest.mark.parametrize(
-    "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-1]
+    "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-2]
 )
 def test_submit_long_jobs_before_booking(
     client,
@@ -1383,10 +1379,8 @@ def test_cancel_active_booking(
         # Assert that they are all complete and their booker jobs started before booking end_utc
         # while non booker jobs started after end_utc
         # Note: Enqueue_at ignores microseconds
-        booking_end_timestamp = _drop_microsec(booking.end_utc)
-        last_booker_job_start = _drop_microsec(
-            last_booker_job.timestamps.execution.start_timestamp
-        )
+        booking_end_timestamp = booking.end_utc
+        last_booker_job_start = last_booker_job.timestamps.execution.start_timestamp
 
         assert all([v.status == JobStatus.SUCCESSFUL for v in jobs_in_redis])
         assert last_booker_job_start < booking_end_timestamp
