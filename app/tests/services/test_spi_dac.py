@@ -19,7 +19,7 @@ from qblox_instruments import SpiRack
 
 from ...libs.quantum_executor.quantify import spi_dac as spi_module
 from ...libs.quantum_executor.quantify.spi_dac import SpiDAC
-from ..conftest import SPI_QUANTIFY_METADATA_FILE
+from ..conftest import SPI_DUMMY_METADATA_FILE
 from ..utils.fixtures import get_fixture_path, load_fixture
 
 _SPI_HARDWARE_CONFIG = load_fixture("spi_hardware_quantify-metadata.yml", fmt="yaml")
@@ -27,7 +27,7 @@ _SPI_NO_COUPLER_CONFIG_PATH = get_fixture_path("spi_missing_coupler_metadata.yml
 
 
 def test_metadata_parsing_and_create_dummy_dac():
-    port, is_dummy, mapping = spi_module._get_spi_metadata(SPI_QUANTIFY_METADATA_FILE)
+    port, is_dummy, mapping = spi_module._get_spi_metadata(SPI_DUMMY_METADATA_FILE)
     assert is_dummy is True
     assert "u0" in mapping
     assert mapping["u0"].spi_module_number == 6

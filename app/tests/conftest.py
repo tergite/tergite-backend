@@ -124,7 +124,7 @@ VALID_BOOKINGS: List["BasicBookingInfo"] = load_fixture("valid_bookings.json")
 INVALID_BOOKINGS: List["BasicBookingInfo"] = load_fixture("invalid_bookings.json")
 JOBS: List[Dict[str, Any]] = load_fixture("job_list.json")
 PAGINATION: List["PaginationInfo"] = load_fixture("pagination.json")
-SPI_QUANTIFY_METADATA_FILE = get_fixture_path("spi_dummy_quantify-metadata.yml")
+SPI_DUMMY_METADATA_FILE = get_fixture_path("spi_dummy_quantify-metadata.yml")
 TEST_SPI_LOGGER_NAME = "test.spi_dac.verbose"
 
 JOBS_HASH_NAME = f"{Job.__module__}.{Job.__qualname__}".lower()
@@ -324,7 +324,7 @@ def spi_dac_dummy(redis_client) -> Generator[SpiDAC, Any, None]:
     Construct SpiDAC bound to the dummy SPI-Rack.
     """
     name = os.environ.get("DEFAULT_PREFIX", "quantify")
-    metadata_path = SPI_QUANTIFY_METADATA_FILE
+    metadata_path = SPI_DUMMY_METADATA_FILE
     couplers = ["u0"]
 
     if SpiDAC.exist(name):
@@ -350,7 +350,7 @@ def verbose_spi_dac_dummy(redis_client, mocker) -> Generator[SpiDAC, Any, None]:
     Construct SpiDAC bound to the dummy SPI-Rack.
     """
     name = os.environ.get("DEFAULT_PREFIX", "quantify")
-    metadata_path = SPI_QUANTIFY_METADATA_FILE
+    metadata_path = SPI_DUMMY_METADATA_FILE
     couplers = ["u0"]
 
     testlog = logging.getLogger(TEST_SPI_LOGGER_NAME)
