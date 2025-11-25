@@ -33,6 +33,7 @@ from quantify_scheduler.operations.pulse_library import (
     NumericalPulse,
     SetClockFrequency,
     ShiftClockPhase,
+    SoftSquarePulse,
     SquarePulse,
 )
 
@@ -745,7 +746,6 @@ class WacqtCZPulseInstruction(BaseInstruction):
 
         cz_freq = params.get("freq")
 
-        # TODO: Frequency setting is not needed for  a flux pulse
         setf = None
         if cz_freq is not None:
             setf = SetFreqInstruction(
@@ -767,35 +767,15 @@ class WacqtCZPulseInstruction(BaseInstruction):
         return [inst for inst in (setf, cz) if inst is not None]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
-        num_points = int(
-            self.parameters.get(
-                "n_pts", max(1, int(self.duration / QBLOX_TIMEGRID_INTERVAL))
-            )
-        )
-        samples = _cz_delta_samples(num_points, self.parameters)
-        t_samples = np.linspace(0, self.duration, num_points, endpoint=False).tolist()
-        return NumericalPulse(
-            samples=samples.tolist(),
-            t_samples=t_samples,
+        # TODO: assert duration == t_p or replace t_p, t_w, t_rf with one duration parameter
+        # TODO: check if need to provide reference_magnitude=self.parameters.get("reference_magnitude"),
+        return SoftSquarePulse(
+            duration=float(self.parameters.get("t_p")),
+            amp=float(self.parameters.get("delta_0")),
             port=self.port,
             clock=self.channel.clock,
             t0=self.t0,
-            interpolation="linear",
         )
-
-
-def _cz_delta_samples(n_samples: int, p: Dict[str, float]) -> np.ndarray:
-    """Return a real-valued delta(t) array (complex64) of length *n_samples*."""
-    t_gate = p["t_p"] + p["t_rf"] + 2 * p["t_w"]
-    t = np.linspace(0, t_gate, n_samples, endpoint=False)
-    delta_arr = _delta_t_function(
-        t,
-        t_w=p["t_w"],
-        t_rf=p["t_rf"],
-        t_p=p["t_p"],
-        delta_0=p["delta_0"],
-    )
-    return delta_arr.astype(np.complex64)
 
 
 def _generate_numerical_pulse(

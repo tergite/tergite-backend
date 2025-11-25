@@ -6,22 +6,28 @@
         "ref": "internal",
         "modules": {
           "2":  { "instrument_type": "QCM_RF"  },  
-          "3":  { "instrument_type": "QCM_RF"  },   
+           "3":  {
+            "instrument_type": "QCM_RF",
+            "complex_output_0": {
+              "downconverter_freq": 4.40e9
+            }
+          },
           "16": { "instrument_type": "QRM_RF"  }    
         }
       }
     },
     "hardware_options": {
       "modulation_frequencies": {
-        "q00:mw-q00.01":       { "lo_freq": 4.80e9 },
-        "q01:mw-q01.01":       { "lo_freq": 4.23e9 },
-  
-        "q00_q01:fl-q00_q01.cz": { "lo_freq": 3.90e9 },
-  
-        "q00:res-q00.ro":      { "lo_freq": 6.80e9 },
-        "q01:res-q01.ro":      { "lo_freq": 6.80e9 }
+        "q00:mw-q00.01":         { "interm_freq":  200e6 },
+        "q01:mw-q01.01":         { "interm_freq":  200e6 },
+
+        "q00_q01:fl-q00_q01.cz": { "interm_freq":      0 },
+
+        "q00:res-q00.ro":        { "interm_freq": -250e6 },
+        "q01:res-q01.ro":        { "interm_freq": -250e6 }
       }
     },
+
     "connectivity": {
       "graph": [
         ["cluster0.module2.complex_output_0", "q00:mw"],
