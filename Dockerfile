@@ -99,5 +99,7 @@ ENV MSS_PUBLIC_KEY_PATH="public-mss-key.pem"
 ENV MSS_NONCE_TTL=300
 # ENV JWT_SECRET=""
 # ENV CORS_ORIGINS="127.0.0.1,localhost"
+# ENV VAULT_ADDR
+# ENV VAULT_TOKEN
 
 ENTRYPOINT ["/code/start_bcc.sh"]
