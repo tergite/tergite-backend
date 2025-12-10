@@ -52,9 +52,6 @@ _JOB_UPLOAD_POOL_DIRNAME = config(
 _JOB_PRE_PROC_POOL_DIRNAME = config(
     "JOB_PRE_PROC_POOL_DIRNAME", cast=str, default="job_preproc_pool"
 )
-_JOB_EXECUTION_POOL_DIRNAME = config(
-    "JOB_EXECUTION_POOL_DIRNAME", cast=str, default="job_execution_pool"
-)
 _JOB_SUPERVISOR_LOG = config(
     "JOB_SUPERVISOR_LOG", cast=str, default="job_supervisor.log"
 )
