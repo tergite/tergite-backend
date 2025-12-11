@@ -14,7 +14,6 @@ STORAGE_ROOT=/tmp
 LOGFILE_DOWNLOAD_POOL_DIRNAME=logfile_download_pool
 JOB_UPLOAD_POOL_DIRNAME=job_upload_pool
 JOB_PRE_PROC_POOL_DIRNAME=job_preproc_pool
-JOB_EXECUTION_POOL_DIRNAME=job_execution_pool
 # Store the temporary data from the backend-specific executor class
 EXECUTOR_DATA_DIRNAME=executor_data
 

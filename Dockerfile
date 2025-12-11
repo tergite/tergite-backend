@@ -78,7 +78,6 @@ ENV LOGFILE_DOWNLOAD_POOL_DIRNAME="logfile_download_pool"
 ENV LOGFILE_UPLOAD_POOL_DIRNAME="logfile_upload_pool"
 ENV JOB_UPLOAD_POOL_DIRNAME="job_upload_pool"
 ENV JOB_PRE_PROC_POOL_DIRNAME="job_preproc_pool"
-ENV JOB_EXECUTION_POOL_DIRNAME="job_execution_pool"
 ENV EXECUTOR_DATA_DIRNAME="executor_data"
 ENV BCC_MACHINE_ROOT_URL="http://host.docker.internal:8000"
 ENV BCC_PORT=8000
@@ -99,5 +98,7 @@ ENV MSS_PUBLIC_KEY_PATH="public-mss-key.pem"
 ENV MSS_NONCE_TTL=300
 # ENV JWT_SECRET=""
 # ENV CORS_ORIGINS="127.0.0.1,localhost"
+# ENV VAULT_ADDR
+# ENV VAULT_TOKEN
 
 ENTRYPOINT ["/code/start_bcc.sh"]

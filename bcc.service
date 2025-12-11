@@ -7,6 +7,8 @@ User=YOUR_USER
 Group=www-data
 WorkingDirectory=YOUR_PATH_TO_BCC
 Environment="IS_SYSTEMD=true"
+# Environment="VAULT_ADDR=VAULT_ADDR_PLACEHOLDER"
+# Environment="VAULT_TOKEN=VAULT_TOKEN_PLACEHOLDER"
 Environment="CONDA_BIN_PATH=YOUR_CONDA_BIN_PATH"
 ExecStart=YOUR_PATH_TO_BCC/start_bcc.sh
 
