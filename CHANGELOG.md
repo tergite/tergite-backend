@@ -14,6 +14,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 ### Changed
 
 - Removed the automatic clearing of the redis database on every startup
+- Removed the JOB_EXECUTION_POOL_DIRNAME env variable
+
+### Fixed
+
+- Fixed 'Error 111 connecting to localhost:6379' when only RQ_REDIS_URL is provided
 
 ## [2025.09.1] - 2025-11-06
 
