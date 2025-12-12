@@ -160,8 +160,8 @@ def load_quantify_config(
     with open(file_path) as file:
         data = json.load(file)
 
-    new_config = QbloxHardwareCompilationConfig.from_old_style_hardware_config(data)
-    return QbloxHardwareCompilationConfig.model_validate(new_config)
+    # new_config = QbloxHardwareCompilationConfig.from_old_style_hardware_config(data)
+    return QbloxHardwareCompilationConfig.model_validate(data)
 
 
 def _create_cluster(name: str, conf: InstrumentConfig) -> qblox_instruments.Cluster:

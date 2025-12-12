@@ -146,8 +146,9 @@ def _add_instruction_to_channel_registry(
         native_config=native_config,
         channel_registry=channel_registry,
         hardware_map=hardware_map,
-    ):
-        instruction.register()
+    ):  
+        if instruction.name != "ResetClockPhase":
+            instruction.register()
 
 
 def _construct_schedule(
@@ -165,6 +166,7 @@ def _construct_schedule(
         timegrid_interval: the interval between grid lines in the time grid used by Q1ASM
     """
     raw_schedule = Schedule(name=header.name, repetitions=config.shots)
+    _add_clock_resources(schedule=raw_schedule, channel_registry=channel_registry)
 
     root_instruction = InitialObjectInstruction()
     raw_schedule.add(
@@ -176,13 +178,13 @@ def _construct_schedule(
         operation=root_instruction.to_operation(config=config),
     )
 
+
     for channel in channel_registry.values():  # type: QuantifyChannel
-        if len(channel.instructions) == 1 and channel.instructions[0].name == "delay":
+        # if len(channel.instructions) == 1 and channel.instructions[0].name == "delay":
             # if the channel contains a single instruction and that instruction is a delay,
             # then do not schedule any operations on that channel
-            print("\nNO DELAY\n")
-            continue
-
+            # print("\nNO DELAY\n")
+            # continue
         prev = root_instruction
         for curr in channel.instructions:
             rel_time = curr.t0 - prev.final_timestamp + timegrid_interval
@@ -209,26 +211,23 @@ def _construct_schedule(
                 operation=IdlePulse(duration=timegrid_interval),
             )
 
-    return _get_absolute_timed_schedule(
-        schedule=raw_schedule, channel_registry=channel_registry
-    )
+    return raw_schedule
 
-
-def _get_absolute_timed_schedule(
-    schedule: Schedule, channel_registry: QuantifyChannelRegistry
-) -> Schedule:
-    """Returns a new schedule with absolute timing
-
-    Args:
-        schedule: the raw schedule to compile
-        channel_registry: the iterable of QuantifyChannel's to which are attached ClockResource's
-
-    Returns:
-        the schedule with absolute time for each operation has been
-        determined.
+def _add_clock_resources(schedule: Schedule, channel_registry: QuantifyChannelRegistry) -> None:
     """
-    for channel in channel_registry.values():
-        clock = ClockResource(name=channel.clock, freq=channel.final_frequency)
-        schedule.add_resource(clock)
+    Adds all ClockResources before any operations are scheduled.
+    """
+    # (Optional) avoid duplicates if Schedule already contains resources
+    try:
+        existing = set(schedule.resources.keys())
+    except Exception:
+        existing = set()
 
-    return schedule
+    for channel in channel_registry.values():
+        clock_name = channel.clock
+        if clock_name in existing:
+            continue
+        schedule.add_resource(
+            ClockResource(name=clock_name, freq=float(channel.final_frequency))
+        )
+        existing.add(clock_name)
