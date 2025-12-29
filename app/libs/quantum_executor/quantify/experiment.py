@@ -66,6 +66,13 @@ _INSTRUCTION_PULSE_MAP: Dict[Tuple[str, Optional[str]], Type[BaseInstruction]] =
     ("parametric_pulse", "wacqt_cz_gate_pulse"): WacqtCZPulseInstruction,
 }
 
+_FREQ_CONTROL_NAMES = {"setf", "shiftf"}
+
+
+import math
+from typing import Dict, Optional
+
+_READOUT_GUARD_TIME = 20e-9  # 40 ns
 
 @dataclass(frozen=True)
 class QuantifyExperiment(NativeExperiment[Schedule]):
@@ -157,16 +164,16 @@ def _construct_schedule(
     config: PulseQobjConfig,
     timegrid_interval: float = QBLOX_TIMEGRID_INTERVAL,
 ) -> Schedule:
-    """Constructs a schedule given
-
-    Args:
-        channel_registry: the iterable of QuantifyChannel's to which are attached ClockResource's
-        header: the qobj experiment header
-        config: the pulse qobject config
-        timegrid_interval: the interval between grid lines in the time grid used by Q1ASM
-    """
     raw_schedule = Schedule(name=header.name, repetitions=config.shots)
-    _add_clock_resources(schedule=raw_schedule, channel_registry=channel_registry)
+    _add_phase_resets_first(raw_schedule, channel_registry)
+    # clocks first
+    _add_clock_resources_first(schedule=raw_schedule, channel_registry=channel_registry)
+    # enforce MW -> RO separation across channels
+    _enforce_drive_to_readout_guard_time(
+        channel_registry=channel_registry,
+        guard_time=40e-9,
+        grid=timegrid_interval,
+    )
 
     root_instruction = InitialObjectInstruction()
     raw_schedule.add(
@@ -178,29 +185,26 @@ def _construct_schedule(
         operation=root_instruction.to_operation(config=config),
     )
 
-
     for channel in channel_registry.values():  # type: QuantifyChannel
-        # if len(channel.instructions) == 1 and channel.instructions[0].name == "delay":
-            # if the channel contains a single instruction and that instruction is a delay,
-            # then do not schedule any operations on that channel
-            # print("\nNO DELAY\n")
-            # continue
         prev = root_instruction
-        for curr in channel.instructions:
-            rel_time = curr.t0 - prev.final_timestamp + timegrid_interval
-            ref_op = prev.label
 
+        for curr in channel.instructions:
+            # DO NOT schedule dynamic frequency commands as operations
+            if getattr(curr, "name", None) in _FREQ_CONTROL_NAMES:
+                # keep them in playback (already registered), but skip adding an op
+                continue
+
+            rel_time = curr.t0 - prev.final_timestamp + timegrid_interval
             raw_schedule.add(
-                ref_op=ref_op,
+                ref_op=prev.label,
                 ref_pt="end",
                 ref_pt_new="start",
                 rel_time=rel_time,
                 label=curr.label,
                 operation=curr.to_operation(config=config),
             )
-
-            # set the previous to the current
             prev = curr
+
         if len(channel.instructions) > 0:
             raw_schedule.add(
                 ref_op=prev.label,
@@ -212,6 +216,7 @@ def _construct_schedule(
             )
 
     return raw_schedule
+
 
 def _add_clock_resources(schedule: Schedule, channel_registry: QuantifyChannelRegistry) -> None:
     """
@@ -227,7 +232,162 @@ def _add_clock_resources(schedule: Schedule, channel_registry: QuantifyChannelRe
         clock_name = channel.clock
         if clock_name in existing:
             continue
-        schedule.add_resource(
-            ClockResource(name=clock_name, freq=float(channel.final_frequency))
-        )
+        
+        init_freq = _infer_initial_clock_frequency(channel)
+
+        schedule.add_resource(ClockResource(name=clock_name, freq=float(init_freq)))
         existing.add(clock_name)
+
+
+def _infer_initial_clock_frequency(channel: QuantifyChannel) -> float:
+    """
+    Infer initial clock frequency from earliest SetFreqInstruction ('setf') on that channel.
+    If none exists, return 0.0.
+    """
+    earliest_setf = None
+    for inst in channel.instructions:
+        if getattr(inst, "name", None) == "setf" and hasattr(inst, "frequency"):
+            if earliest_setf is None or inst.t0 < earliest_setf.t0:
+                earliest_setf = inst
+    return float(earliest_setf.frequency) if earliest_setf is not None else 0.0
+
+from quantify_scheduler.resources import ClockResource
+
+
+
+def _add_clock_resources_first(schedule: Schedule, channel_registry: QuantifyChannelRegistry) -> None:
+    try:
+        existing = set(schedule.resources.keys())
+    except Exception:
+        existing = set()
+
+    for channel in channel_registry.values():
+        if channel.clock in existing:
+            continue
+        init_freq = _infer_clock_freq_for_channel(channel)
+        schedule.add_resource(ClockResource(name=channel.clock, freq=init_freq))
+        existing.add(channel.clock)
+
+
+def _infer_clock_freq_for_channel(channel: QuantifyChannel) -> float:
+    """
+    For RF modules: ClockResource freq must be an ABSOLUTE RF frequency close to LO.
+    We therefore use the earliest 'setf' on that clock.
+
+    If there is no 'setf' we cannot safely infer an absolute frequency (shiftf is relative),
+    so we raise for non-baseband clocks.
+    """
+    # baseband clock can be 0
+    if channel.clock.endswith(".baseband") or channel.clock == "cl0.baseband":
+        return 0.0
+
+    setf_inst = None
+    for inst in channel.instructions:
+        if getattr(inst, "name", None) == "setf" and hasattr(inst, "frequency"):
+            try:
+                if setf_inst is None or inst.t0 < setf_inst.t0:
+                    setf_inst = inst
+            except:
+                print("Error")
+
+    if setf_inst is None:
+        raise ValueError(
+            f"Cannot infer absolute ClockResource frequency for clock '{channel.clock}': "
+            f"no 'setf' instruction found. Add a setf in qobj or provide a device-calibrated default."
+        )
+
+    return float(setf_inst.frequency)
+
+
+
+
+def _snap_up_to_grid(dt: float, grid: float) -> float:
+    """Snap a positive dt up to the next multiple of grid."""
+    if dt <= 0:
+        return 0.0
+    return math.ceil(dt / grid) * grid
+
+def _clock_qubit_id(clock: str) -> Optional[str]:
+    # q16.01, q16.ro, q16.ro1, q16.ro_2st_opt -> "q16"
+    if not clock.startswith("q"):
+        return None
+    return clock.split(".", 1)[0]
+
+def _is_drive_clock(clock: str) -> bool:
+    # qXX.01 or qXX.12
+    parts = clock.split(".")
+    return len(parts) == 2 and parts[1] in {"01", "12"}
+
+def _is_readout_clock(clock: str) -> bool:
+    # qXX.ro, qXX.ro1, qXX.ro_2st_opt, ...
+    parts = clock.split(".")
+    return len(parts) == 2 and parts[1].startswith("ro")
+
+def _enforce_drive_to_readout_guard_time(
+    channel_registry: QuantifyChannelRegistry,
+    guard_time: float = _READOUT_GUARD_TIME,
+    grid: float = QBLOX_TIMEGRID_INTERVAL,
+) -> None:
+    """
+    Ensure for each qubit: first readout op starts >= (last MW drive end + guard_time).
+    If not, shift ALL instructions on that readout clock forward (snapped to grid).
+    """
+    # 1) compute last MW drive end time per qubit
+    last_drive_end: Dict[str, float] = {}
+
+    for ch in channel_registry.values():
+        if not _is_drive_clock(ch.clock):
+            continue
+        q = _clock_qubit_id(ch.clock)
+        if q is None:
+            continue
+
+        # consider only "real" duration ops (pulses/delays) on the drive channel
+        ends = [
+            float(inst.final_timestamp)
+            for inst in ch.instructions
+            if getattr(inst, "duration", 0.0) and float(getattr(inst, "duration", 0.0)) > 0.0
+        ]
+        if not ends:
+            continue
+
+        last_drive_end[q] = max(last_drive_end.get(q, 0.0), max(ends))
+
+    # 2) shift readout channels if they start too early
+    for ro_ch in channel_registry.values():
+        if not _is_readout_clock(ro_ch.clock):
+            continue
+        q = _clock_qubit_id(ro_ch.clock)
+        if q is None or q not in last_drive_end:
+            continue
+
+        # earliest scheduled readout-related instruction time (ignore pure frequency controls)
+        ro_times = [
+            float(inst.t0)
+            for inst in ro_ch.instructions
+            if getattr(inst, "name", None) not in _FREQ_CONTROL_NAMES
+        ]
+        if not ro_times:
+            continue
+
+        ro_start = min(ro_times)
+        required_start = last_drive_end[q] + guard_time
+
+        if ro_start < required_start:
+            shift = _snap_up_to_grid(required_start - ro_start, grid)
+
+            # shift everything on that readout clock (including acquire) consistently
+            for inst in ro_ch.instructions:
+                inst.t0 = float(inst.t0) + shift
+
+
+from quantify_scheduler.operations.pulse_library import ResetClockPhase
+
+def _add_phase_resets_first(schedule: Schedule, channel_registry: QuantifyChannelRegistry) -> None:
+    # Reset phases for all drive clocks at the start (qXX.01 / qXX.12)
+    for ch in channel_registry.values():
+        if ch.clock.endswith(".01") or ch.clock.endswith(".12"):
+            schedule.add(
+                ResetClockPhase(clock=ch.clock),
+                label=f"reset_phase_{ch.clock}",
+            )

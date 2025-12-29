@@ -48,6 +48,38 @@ from app.libs.quantum_executor.quantify.channel import (
 
 QBLOX_TIMEGRID_INTERVAL = 4e-9
 DT_CONST = 1e-9
+
+def _qobj_freq_to_hz(freq: float) -> float:
+    """
+    Robust conversion:
+    - If it looks like GHz (e.g., 4-8), convert to Hz.
+    - If it looks like Hz already (e.g., 4e9), keep it.
+    """
+    f = float(freq)
+    return f * 1e9 if abs(f) < 1e6 else f
+
+
+def _prev_phase_before(inst: "BaseInstruction") -> float:
+    """
+    Find the phase that was active immediately before this instruction, based on
+    playback and registration order on the same channel.
+
+    IMPORTANT: We skip frequency-only instructions when reasoning about phase.
+    """
+    ch = inst.channel
+    if inst.position <= 0:
+        return 0.0
+
+    # Walk backwards to find previous instruction that affects phase
+    for pos in range(inst.position - 1, -1, -1):
+        try:
+            # phase playback at that position already includes that instruction's effect.
+            # But we want the phase AFTER that previous instruction, which is playback[pos].
+            return ch.get_phase_at_position(pos)
+        except Exception:
+            continue
+    return 0.0
+
 """
 Qblox instruments send pulses in a given equidistant time grid.
 See https://docs.qblox.com/en/main/cluster/q1_sequence_processor.html#acquisitions for example  
@@ -367,7 +399,7 @@ class SetFreqInstruction(BaseInstruction):
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
         channel = channel_registry.get(clock_name)
-        frequency = qobj_inst.frequency * 1e9
+        frequency = _qobj_freq_to_hz(qobj_inst.frequency)
         t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         return [
             SetFreqInstruction(
@@ -381,12 +413,12 @@ class SetFreqInstruction(BaseInstruction):
         ]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
-        op = SetClockFrequency(
+        # Frequency after this instruction (playback already computed)
+        freq_now = self.channel.get_freq_at_position(self.position)
+        return SetClockFrequency(
             clock=self.channel.clock,
-            clock_freq_new=self.frequency,
-            # t0=self.t0,
+            clock_freq_new=freq_now,
         )
-        return op
 
 
 class ShiftFreqInstruction(BaseInstruction):
@@ -413,7 +445,7 @@ class ShiftFreqInstruction(BaseInstruction):
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
         channel = channel_registry.get(clock_name)
-        frequency = qobj_inst.frequency * 1e9
+        frequency = _qobj_freq_to_hz(qobj_inst.frequency)
         return [
             ShiftFreqInstruction(
                 name=qobj_inst.name,
@@ -426,14 +458,12 @@ class ShiftFreqInstruction(BaseInstruction):
         ]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
-        # For a frequency shift, add the delta to the current final frequency.
-        new_freq = self.channel.final_frequency + self.frequency
-        op = SetClockFrequency(
+        # After shiftf, the playback contains the updated absolute frequency.
+        freq_now = self.channel.get_freq_at_position(self.position)
+        return SetClockFrequency(
             clock=self.channel.clock,
-            clock_freq_new=new_freq,
-            # t0=self.t0,
+            clock_freq_new=freq_now,
         )
-        return op
 
 
 class SetPhaseInstruction(BaseInstruction):
@@ -473,13 +503,18 @@ class SetPhaseInstruction(BaseInstruction):
         ]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
-        phase_delta = self.phase - self.channel.final_phase
-        op = ShiftClockPhase(
-            phase_shift=phase_delta,
-            clock=self.channel.clock,
-            # t0=self.t0,
-        )
-        return op
+        # phase after this instruction according to playback
+        target = self.channel.get_phase_at_position(self.position)
+
+        # phase before this instruction according to playback
+        prev = 0.0
+        if self.position > 0:
+            prev = self.channel.get_phase_at_position(self.position - 1)
+
+        # delta to apply now
+        delta = target - prev
+
+        return ShiftClockPhase(phase_shift=delta, clock=self.channel.clock)
 
 
 class ShiftPhaseInstruction(BaseInstruction):
@@ -516,14 +551,20 @@ class ShiftPhaseInstruction(BaseInstruction):
                 phase=qobj_inst.phase,
             )
         ]
-
+            
     def to_operation(self, config: PulseQobjConfig) -> Operation:
-        op = ShiftClockPhase(
-            phase_shift=self.phase,
+        """
+        Qiskit 'fc' is a relative frame change.
+        Your playback already accumulated it, so delta = new - prev.
+        """
+        prev_phase = _prev_phase_before(self)
+        new_phase = self.channel.get_phase_at_position(self.position)
+        delta = new_phase - prev_phase
+
+        return ShiftClockPhase(
+            phase_shift=delta,
             clock=self.channel.clock,
-            # t0=self.t0,
         )
-        return op
 
 
 class GaussPulseInstruction(BaseInstruction):
