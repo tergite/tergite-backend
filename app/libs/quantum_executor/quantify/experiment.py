@@ -15,6 +15,7 @@
 # Refactored by Stefan Hill (2024)
 # Refactored by Chalmers Next Labs 2025
 
+import math
 from dataclasses import dataclass
 from typing import Dict, Optional, Tuple, Type
 
@@ -25,7 +26,7 @@ from qiskit.qobj import (
     QobjExperimentHeader,
 )
 from quantify_scheduler import Schedule
-from quantify_scheduler.operations.pulse_library import IdlePulse
+from quantify_scheduler.operations.pulse_library import IdlePulse, ResetClockPhase
 from quantify_scheduler.resources import ClockResource
 
 from app.libs.quantum_executor.base.experiment import (
@@ -35,7 +36,9 @@ from app.libs.quantum_executor.base.experiment import (
 from app.libs.quantum_executor.quantify.channel import QuantifyChannel
 
 from ..base.quantum_job.dtos import NativeQobjConfig
-from .channel import QuantifyChannelRegistry
+
+
+from quantify_scheduler.operations.pulse_library import 
 from .instruction import (
     QBLOX_TIMEGRID_INTERVAL,
     AcquireInstruction,
@@ -69,10 +72,11 @@ _INSTRUCTION_PULSE_MAP: Dict[Tuple[str, Optional[str]], Type[BaseInstruction]] =
 _FREQ_CONTROL_NAMES = {"setf", "shiftf"}
 
 
-import math
-from typing import Dict, Optional
 
 _READOUT_GUARD_TIME = 20e-9  # 40 ns
+PLACEHOLDER_CLOCK_FREQ_HZ = 0.0  # safe placeholder when nothing runs on the channel
+
+
 
 @dataclass(frozen=True)
 class QuantifyExperiment(NativeExperiment[Schedule]):
@@ -218,26 +222,6 @@ def _construct_schedule(
     return raw_schedule
 
 
-def _add_clock_resources(schedule: Schedule, channel_registry: QuantifyChannelRegistry) -> None:
-    """
-    Adds all ClockResources before any operations are scheduled.
-    """
-    # (Optional) avoid duplicates if Schedule already contains resources
-    try:
-        existing = set(schedule.resources.keys())
-    except Exception:
-        existing = set()
-
-    for channel in channel_registry.values():
-        clock_name = channel.clock
-        if clock_name in existing:
-            continue
-        
-        init_freq = _infer_initial_clock_frequency(channel)
-
-        schedule.add_resource(ClockResource(name=clock_name, freq=float(init_freq)))
-        existing.add(clock_name)
-
 
 def _infer_initial_clock_frequency(channel: QuantifyChannel) -> float:
     """
@@ -269,34 +253,58 @@ def _add_clock_resources_first(schedule: Schedule, channel_registry: QuantifyCha
         existing.add(channel.clock)
 
 
-def _infer_clock_freq_for_channel(channel: QuantifyChannel) -> float:
+
+
+def _infer_clock_freq_for_channel(channel: "QuantifyChannel") -> float:
     """
     For RF modules: ClockResource freq must be an ABSOLUTE RF frequency close to LO.
     We therefore use the earliest 'setf' on that clock.
 
-    If there is no 'setf' we cannot safely infer an absolute frequency (shiftf is relative),
-    so we raise for non-baseband clocks.
+    Quick-fix behavior:
+    - If a setf has no t0, we still allow it (but can't order it by time).
+    - If there is no setf at all, return a placeholder instead of raising.
     """
     # baseband clock can be 0
     if channel.clock.endswith(".baseband") or channel.clock == "cl0.baseband":
         return 0.0
 
     setf_inst = None
-    for inst in channel.instructions:
-        if getattr(inst, "name", None) == "setf" and hasattr(inst, "frequency"):
-            try:
-                if setf_inst is None or inst.t0 < setf_inst.t0:
-                    setf_inst = inst
-            except:
-                print("Error")
+    earliest_t0 = None
 
+    for inst in getattr(channel, "instructions", ()):
+        if getattr(inst, "name", None) != "setf" or not hasattr(inst, "frequency"):
+            continue
+
+        t0 = getattr(inst, "t0", None)
+
+        # If t0 is missing/invalid, keep it as a fallback candidate
+        if t0 is None:
+            if setf_inst is None:
+                setf_inst = inst
+            continue
+
+        try:
+            t0_val = float(t0)
+        except (TypeError, ValueError):
+            if setf_inst is None:
+                setf_inst = inst
+            continue
+
+        if earliest_t0 is None or t0_val < earliest_t0:
+            earliest_t0 = t0_val
+            setf_inst = inst
+
+    # No setf: assume nothing runs on this channel -> placeholder
     if setf_inst is None:
-        raise ValueError(
-            f"Cannot infer absolute ClockResource frequency for clock '{channel.clock}': "
-            f"no 'setf' instruction found. Add a setf in qobj or provide a device-calibrated default."
+        log.debug(
+            "No 'setf' found for clock '%s'. Using placeholder freq=%s Hz.",
+            channel.clock,
+            PLACEHOLDER_CLOCK_FREQ_HZ,
         )
+        return PLACEHOLDER_CLOCK_FREQ_HZ
 
-    return float(setf_inst.frequency)
+    return float(getattr(setf_inst, "frequency"))
+
 
 
 
@@ -381,7 +389,6 @@ def _enforce_drive_to_readout_guard_time(
                 inst.t0 = float(inst.t0) + shift
 
 
-from quantify_scheduler.operations.pulse_library import ResetClockPhase
 
 def _add_phase_resets_first(schedule: Schedule, channel_registry: QuantifyChannelRegistry) -> None:
     # Reset phases for all drive clocks at the start (qXX.01 / qXX.12)

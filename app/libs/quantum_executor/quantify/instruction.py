@@ -259,7 +259,6 @@ class InitialObjectInstruction(BaseInstruction):
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
         # Use the new IdlePulse operation to represent a no-op delay
-        # op = IdlePulse(duration=self.duration)
         op = IdlePulse(duration=1000e-6)
         return op
 
