@@ -37,8 +37,9 @@ from app.libs.quantum_executor.quantify.channel import QuantifyChannel
 
 from ..base.quantum_job.dtos import NativeQobjConfig
 
+from .channel import QuantifyChannelRegistry
 
-from quantify_scheduler.operations.pulse_library import 
+
 from .instruction import (
     QBLOX_TIMEGRID_INTERVAL,
     AcquireInstruction,
