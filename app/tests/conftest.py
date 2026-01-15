@@ -5,7 +5,6 @@ from .utils.env import (
     TEST_DEFAULT_PREFIX_SIM_1Q,
     TEST_DEFAULT_PREFIX_SIM_2Q,
     TEST_LOGFILE_DOWNLOAD_POOL_DIRNAME,
-    TEST_MSS_MACHINE_ROOT_URL,
     TEST_QISKIT_1Q_SEED_FILE,
     TEST_QISKIT_2Q_SEED_FILE,
     TEST_QUANTIFY_SEED_FILE,
@@ -34,6 +33,7 @@ from typing import (
     List,
     NotRequired,
     Optional,
+    Tuple,
     TypedDict,
 )
 
@@ -48,15 +48,14 @@ from rq import SimpleWorker
 from sqlalchemy import create_engine
 from sqlmodel import SQLModel
 
-from ..libs.device_parameters import DeviceCalibration
 from ..libs.quantum_executor.quantify.spi_dac import SpiDAC
 from ..libs.queues.dtos import Job
 from ..services.scheduler.queues import QueuePool
 from .utils.analysis import MockLinearDiscriminantAnalysis
 from .utils.executors import MockQiskitDynamicsExecutor, MockQuantifyExecutor
 from .utils.fixtures import get_fixture_path, load_fixture
-from .utils.http import MockHttpResponse, MockHttpSession
 from .utils.mocks import make_attr_verbose
+from .utils.mss import MockWebsocket
 from .utils.rq import get_rq_pool_worker
 
 _redis_connection = redis.Redis.from_url(TEST_RQ_REDIS_URL)
@@ -99,6 +98,7 @@ CLIENT_AND_RQ_WORKER_TUPLES = [
         lazy_fixture("rq_worker_for_simulator_2q"),
     ),
 ]
+_PERMITTED_EVENTS_TO_MSS = ("initialized", "recalibrated", "job_updated")
 
 _mock_linear_discriminant_analysis = MockLinearDiscriminantAnalysis(
     result={
@@ -175,43 +175,6 @@ def rq_worker_for_simulator_2q(redis_client) -> Generator[SimpleWorker, Any, Non
     yield get_rq_pool_worker(queue_pool)
 
 
-def mock_post_requests(url: str, **kwargs):
-    """Mock POST requests for testing"""
-    if url == f"{TEST_MSS_MACHINE_ROOT_URL}/timelog":
-        return MockHttpResponse(status_code=200)
-    return None
-
-
-def mock_mss_put_requests(url: str, **kwargs):
-    """Mock PUT requests sent to MSS for testing"""
-    payload = kwargs.get("json", {})
-    is_jobs_update_url = url.startswith(f"{TEST_MSS_MACHINE_ROOT_URL}/jobs")
-
-    if is_jobs_update_url and "timestamps" in payload:
-        return MockHttpResponse(status_code=200)
-    if is_jobs_update_url and "result" in payload:
-        return MockHttpResponse(status_code=200)
-    if url.startswith(f"{TEST_MSS_MACHINE_ROOT_URL}/devices"):
-        return MockHttpResponse(status_code=200)
-
-    return MockHttpResponse(status_code=405)
-
-
-def mock_mss_post_requests(url: str, **kwargs):
-    """Mock POST requests sent to MSS for testing"""
-    payload = kwargs.get("json", [])
-
-    if url.startswith(f"{TEST_MSS_MACHINE_ROOT_URL}/calibrations"):
-        try:
-            _parsed_payload = [DeviceCalibration(**props) for props in payload]
-            return MockHttpResponse(status_code=200)
-        except Exception as exp:
-            logging.error(exp)
-            return MockHttpResponse(status_code=400)
-
-    return MockHttpResponse(status_code=405)
-
-
 @pytest.fixture
 def quantify_rest_client(mocker, redis_client) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
@@ -234,6 +197,17 @@ def quantify_rest_client(mocker, redis_client) -> Generator[TestClient, Any, Non
 
     yield TestClient(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
+
+
+@pytest.fixture
+def mock_mss_websockets(mocker) -> Generator[MockWebsocket, Any, None]:
+    """A mock websocket for connecting to MSS"""
+    mss_websocket = MockWebsocket(message_types=_PERMITTED_EVENTS_TO_MSS)
+    mocker.patch(
+        "websocket.create_connection", side_effect=mss_websocket.init_connection
+    )
+    yield mss_websocket
+    mss_websocket.close()
 
 
 @pytest.fixture
@@ -260,7 +234,7 @@ def qiskit_1q_rest_client(mocker) -> Generator[TestClient, Any, None]:
 @pytest.fixture
 def qiskit_2q_rest_client(mocker) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
-    _patch_async_client_sim2q(mocker)
+    _patch_async_client(mocker)
     os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_2q"
     os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_2Q
     os.environ["BACKEND_SETTINGS"] = TEST_SIMQ2_BACKEND_SETTINGS_FILE
@@ -418,12 +392,14 @@ def _configure_logging_for_tests():
         yield
 
 
-def _patch_async_client(mocker):
-    """Patches the async client"""
-    mss_client = MockHttpSession(
-        put=mock_mss_put_requests,
-        post=mock_mss_post_requests,
-    )
+def _patch_async_client(mocker, *extra_patches: Tuple[str, Dict[str, Any]]):
+    """Patches the async client
+
+    Args:
+        mocker: the pytest mocker object
+        extra_patches: extra patches to patch with the mocker object
+    """
+    mss_websocket = MockWebsocket(message_types=_PERMITTED_EVENTS_TO_MSS)
 
     mocker.patch(
         "app.services.scheduler.utils.QuantifyExecutor", new=MockQuantifyExecutor
@@ -432,36 +408,21 @@ def _patch_async_client(mocker):
         "app.services.scheduler.utils.QiskitDynamicsExecutor",
         new=MockQiskitDynamicsExecutor,
     )
-    mocker.patch("requests.post", side_effect=mock_post_requests)
-    mocker.patch("requests.Session", return_value=mss_client)
+    mocker.patch(
+        "websocket.create_connection", side_effect=mss_websocket.init_connection
+    )
     mocker.patch(
         "app.libs.quantum_executor.qiskit.backends.one_qubit.LinearDiscriminantAnalysis",
         return_value=_mock_linear_discriminant_analysis,
     )
-    os.environ["BLACKLISTED"] = ""
-
-
-def _patch_async_client_sim2q(mocker):
-    """Patches the async client"""
-    mss_client = MockHttpSession(
-        put=mock_mss_put_requests,
-        post=mock_mss_post_requests,
-    )
-
-    mocker.patch(
-        "app.services.scheduler.utils.QuantifyExecutor", new=MockQuantifyExecutor
-    )
-    mocker.patch(
-        "app.services.scheduler.utils.QiskitDynamicsExecutor",
-        new=MockQiskitDynamicsExecutor,
-    )
-    mocker.patch("requests.post", side_effect=mock_post_requests)
-    mocker.patch("requests.Session", return_value=mss_client)
     mocker.patch(
         "app.libs.quantum_executor.qiskit.backends.two_qubit.LinearDiscriminantAnalysis",
         return_value=_mock_linear_discriminant_analysis_sim2q,
     )
     os.environ["BLACKLISTED"] = ""
+
+    for url, kwargs in extra_patches:
+        mocker.patch(url, **kwargs)
 
 
 def _clear_test_db(url: str = TEST_BOOKING_DB_URL):

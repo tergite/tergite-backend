@@ -3,6 +3,7 @@
 # (C) Copyright Abdullah-Al Amin 2023
 # (C) Copyright Martin Ahindura 2024
 # (C) Copyright Adilet Tuleouv 2024
+# (C) Copyright Chalmers Next Labs AB 2026
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -21,7 +22,6 @@
 from typing import Dict, Optional, Tuple
 
 from redis import Redis
-from requests import Session
 
 import settings
 
@@ -30,7 +30,10 @@ from .dtos import (
     BackendConfig,
     Device,
     DeviceCalibration,
+    DeviceEvent,
+    DeviceEventName,
 )
+from .mss_client import MssClient, get_default_mss_client
 
 _BACKEND_CONFIGS_CACHE: Dict[Tuple[str, str], BackendConfig] = {}
 _DEVICES_STORE_CACHE: Dict[str, Collection[Device]] = {}
@@ -68,15 +71,14 @@ def clear_config_caches():
 
 
 def initialize_backend(
-    redis: Redis, backend_config: BackendConfig, mss_client: Session, mss_url: str
+    redis: Redis, backend_config: BackendConfig, mss_client: MssClient
 ):
     """Runs a number of operations to initialize the backend
 
     Args:
         redis: connection to redis
         backend_config: the configuration of the backend
-        mss_client: the requests Session to make requests to MSS with
-        mss_url: the URL to MSS
+        mss_client: the client connected to MSS
 
     Raises:
         ValueError: error message from MSS when it attempts to update mss
@@ -99,7 +101,6 @@ def initialize_backend(
         mss_client,
         device_info=device_info,
         calibration_info=calib_info,
-        mss_url=mss_url,
     )
 
 
@@ -164,10 +165,9 @@ def get_device_calibration_info(
 
 
 def send_backend_info_to_mss(
-    mss_client: Session,
+    mss_client: MssClient,
     device_info: Device,
     calibration_info: DeviceCalibration,
-    mss_url: str = settings.MSS_MACHINE_ROOT_URL,
 ):
     """
     Sends this backend's information to MSS
@@ -176,19 +176,23 @@ def send_backend_info_to_mss(
         mss_client: the requests Session to run the queries
         device_info: the static device info to send to the MSS
         calibration_info: the dynamic device properties to send to MSS
-        mss_url: the URL to MSS
 
     Raises:
         ValueError: error message from MSS
     """
-    device_info = device_info.model_dump()
-    calibration_info = calibration_info.model_dump()
+    initialization_event = DeviceEvent(
+        name=DeviceEventName.INITIALIZED,
+        data=device_info,
+    )
+    recalibration_event = DeviceEvent(
+        name=DeviceEventName.RECALIBRATED,
+        data=calibration_info,
+    )
 
-    responses = [
-        mss_client.put(f"{mss_url}/devices/", json=device_info),
-        mss_client.post(f"{mss_url}/calibrations/", json=calibration_info),
-    ]
+    mss_client.send_event(
+        initialization_event, error_prefix="error sending initialization info: "
+    )
 
-    error_message = ",".join([v.text for v in responses if not v.ok])
-    if error_message != "":
-        raise ValueError(error_message)
+    mss_client.send_event(
+        recalibration_event, error_prefix="error sending recalibration info: "
+    )

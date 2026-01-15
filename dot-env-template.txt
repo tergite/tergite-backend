@@ -27,7 +27,7 @@ BCC_PORT=8000
 
 # (4) MSS
 # This is to configure port and URL for the frontend machine.
-# Running it locally:
+# default = ws://localhost:8002
 MSS_MACHINE_ROOT_URL=http://host:port
 #
 # The public RSA key pem file for the MSS server, preferably used internally only for the stack
@@ -40,6 +40,14 @@ MSS_MACHINE_ROOT_URL=http://host:port
 # Note that this may have issues if any of the system clocks of BCC or MSS are not at the correct time
 # default: 300
 MSS_NONCE_TTL=300
+#
+# The endpoint for sending device events to the MSS
+# default = ws://localhost:8002; got from MSS_MACHINE_ROOT_URL
+MSS_DEVICE_EVENTS_ENDPOINT=ws://host:port/devices/ws/{DEFAULT_PREFIX}
+#
+# The timeout in seconds for the socket connection to MSS
+# default = 5
+MSS_CONNECTION_TIMEOUT=5
 
 # (5) Instrument interfacing and simulators
 # This is to configure the hardware or simulated measurement instruments.
@@ -72,10 +80,14 @@ QUANTIFY_CONFIG_FILE="quantify-config.json"
 QUANTIFY_METADATA_FILE="quantify-metadata.yml"
 
 # (6) Authentication
-# The app token used to authenticate this BCC with MSS.
-# A system user (user with the system role) should log in to QAL 9000, generate an app token
-# and set it here.
-MSS_APP_TOKEN=
+# The private key for authenticating this backend to MSS
+#
+# Default: "private-bcc-key.pem"
+PRIVATE_KEY_FILE="private-bcc-key.pem"
+#
+# The password for the private key
+# PRIVATE_KEY_PASSWORD=
+
 
 # (7) Operation mode
 # APP_SETTINGS reflect which environment the app is to run in.

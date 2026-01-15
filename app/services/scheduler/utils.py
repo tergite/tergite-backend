@@ -14,26 +14,23 @@
 #
 """Utility functions for the scheduler service"""
 
-from json import JSONDecodeError
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-import requests
 from numpy import typing as npt
-from pydantic import BaseModel
 from redis import Redis
 from sklearn.utils.extmath import safe_sparse_dot
 
 import settings
-from settings import (
-    BCC_MACHINE_ROOT_URL,
-    MSS_MACHINE_ROOT_URL,
-)
 
 from ...libs.device_parameters import (
     DeviceCalibration,
+    DeviceEvent,
+    DeviceEventName,
+    MssClient,
     get_backend_config,
+    get_default_mss_client,
     initialize_backend,
 )
 from ...libs.quantum_executor.base.executor import QuantumExecutor
@@ -51,7 +48,7 @@ from ...libs.queues.dtos import (
     Stage,
     Timestamps,
 )
-from ...utils.api import get_mss_client
+from ...utils.api import GeneralMessage
 from ...utils.datetime import utc_now_str
 from ...utils.redis_store import Collection
 
@@ -110,7 +107,6 @@ def get_executor(
     executor_type: str = settings.EXECUTOR_TYPE,
     quantify_config_file: str = settings.QUANTIFY_CONFIG_FILE,
     quantify_metadata_file: str = settings.QUANTIFY_METADATA_FILE,
-    mss_url: str = settings.MSS_MACHINE_ROOT_URL,
     should_restore_currents: bool = settings.SHOULD_RESTORE_CURRENTS,
 ) -> QuantumExecutor:
     """Gets the executor for running jobs
@@ -122,7 +118,7 @@ def get_executor(
         executor_type: the executor type to return
         quantify_config_file: the path to the configuration file of the executor
         quantify_metadata_file: the path to the metadata file of the executor
-        mss_url: the URL to MSS
+        should_restore_currents: whether the executor should restore SPI currents
 
     Returns:
         An initialized quantum executor
@@ -157,8 +153,7 @@ def get_executor(
 
         initialize_backend(
             redis,
-            mss_client=get_mss_client(),
-            mss_url=mss_url,
+            mss_client=get_default_mss_client(),
             backend_config=backend_config,
         )
 
@@ -306,46 +301,33 @@ def update_job_results(
         {
             "status": JobStatus.SUCCESSFUL,
             "result": JobResult(memory=data),
-            "download_url": f"{BCC_MACHINE_ROOT_URL}/logfiles/{job_id}",
+            "download_url": f"{settings.BCC_MACHINE_ROOT_URL}/logfiles/{job_id}",
             "updated_at": utc_now_str(),
         },
     )
 
 
-def update_job_in_mss(
-    mss_client: requests.Session, job_id: str, payload: Union[dict, Job]
-) -> requests.Response:
+def update_job_in_mss(mss_client: MssClient, payload: Job) -> GeneralMessage:
     """Updates the job in MSS with the given payload
 
     Args:
-        mss_client: the requests.Session that can query MSS
-        job_id: the ID of the job
+        mss_client: the client connected to MSS
         payload: the new updates to apply to the given job in MSS
 
     Returns:
-        the requests.Response received after request to MSS
+        the GeneralMessage received after request to MSS
 
     Raises:
         RuntimeError: Public API returned {resp.status_code}
     """
-    data = payload
-    if isinstance(payload, BaseModel):
-        data = payload.model_dump(exclude_unset=True, mode="json")
-
-    url = f"{MSS_MACHINE_ROOT_URL}/jobs/{job_id}"
-    resp = mss_client.put(url, json=data)
-
-    if not resp.ok:
-        try:
-            message = resp.json()
-        except JSONDecodeError:
-            message = resp.text
-
-        log_job_msg(
-            f"failed to submit job to MSS\nstatus:{resp.status_code}\nresponse:{message}",
-            level=LogLevel.ERROR,
+    job_update_event = DeviceEvent(name=DeviceEventName.JOB_UPDATED, data=payload)
+    try:
+        resp = mss_client.send_event(
+            job_update_event, error_prefix="error sending job to MSS: "
         )
-        raise RuntimeError(f"Public API returned {resp.status_code}")
+    except ValueError as exp:
+        log_job_msg(f"{exp}", level=LogLevel.ERROR)
+        raise RuntimeError(f"Public API returned an error: {exp}")
 
     return resp
 

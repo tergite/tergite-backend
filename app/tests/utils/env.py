@@ -53,6 +53,9 @@ TEST_QISKIT_2Q_SEED_FILE = get_fixture_path("qiskit_pulse_2q.seed.toml")
 TEST_MSS_PUBLIC_KEY_PATH = get_fixture_path("mss_public_key.pem")
 TEST_MSS_PRIVATE_KEY_PATH = get_fixture_path("mss_private_key.pem")
 
+TEST_PRIVATE_KEY_FILE = get_fixture_path("private-bcc-key.pem")
+TEST_PUBLIC_KEY_FILE = get_fixture_path("public-bcc-key.pem")
+
 TEST_MAX_TIME_SLOT_LENGTH = 3600
 TEST_MIN_TIME_SLOT_LENGTH = 2
 TEST_MAX_IDLE_TIME = 1
@@ -62,6 +65,7 @@ TEST_BOOKING_DB_URL = f"sqlite:///{_PATH_TO_TEST_SQL_DB}"
 TEST_JWT_SECRET = "78e79946910251b0db6237d5eb38ece76225cf613da22b79ff4fe76d534c14fc"
 TEST_JWT_TTL = 120
 TEST_MSS_NONCE_TTL = 200
+TEST_BCC_NONCE_TTL = 200
 TEST_CORS_ORIGINS = "testclient,localhost,127.0.0.1"
 
 REDIS_PORT = os.getenv("REDIS_PORT", "6379")
@@ -115,6 +119,7 @@ def setup_test_env():
     environ["JOBS_REDIS_URL"] = f"{TEST_JOBS_REDIS_URL}"
     environ["MSS_PUBLIC_KEY_PATH"] = f"{TEST_MSS_PUBLIC_KEY_PATH}"
     environ["MSS_NONCE_TTL"] = f"{TEST_MSS_NONCE_TTL}"
+    environ["PRIVATE_KEY_FILE"] = f"{TEST_PRIVATE_KEY_FILE}"
     environ["CORS_ORIGINS"] = f"{TEST_CORS_ORIGINS}"
     environ["LOG_LEVEL"] = f"{TEST_LOG_LEVEL}"
     environ["DEBUG"] = f"{TEST_DEBUG}"

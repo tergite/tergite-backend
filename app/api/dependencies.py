@@ -25,6 +25,7 @@ from sqlalchemy import Engine
 
 import settings
 
+from ..libs.device_parameters import get_default_mss_client
 from ..libs.queues.dtos import JobFile
 from ..services.booking.models import MSSTokenClaims
 from ..services.booking.service import get_user_job_id_pair_from_token
@@ -55,18 +56,19 @@ async def lifespan(_app: FastAPI):
 
     DB_ENGINE = get_bookings_sql_engine(settings.BOOKING_DB_URL)
     QUEUE_POOL = QueuePool.from_settings()
+    default_mss_client = get_default_mss_client()
     get_executor(
         redis=settings.REDIS_CONNECTION,
         executor_type=settings.EXECUTOR_TYPE,
         quantify_config_file=settings.QUANTIFY_CONFIG_FILE,
         quantify_metadata_file=settings.QUANTIFY_METADATA_FILE,
-        mss_url=settings.MSS_MACHINE_ROOT_URL,
     )
     print(f"starting app at {get_utc_now()}")
     yield
 
     DB_ENGINE = None
     reset_cached_executor()
+    default_mss_client.close()
 
 
 def get_queue_pool() -> QueuePool:

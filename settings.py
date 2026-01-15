@@ -87,9 +87,23 @@ CALIBRATION_SEED = config(
 )
 
 # Connectivity settings
-MSS_MACHINE_ROOT_URL = config(
+MSS_MACHINE_ROOT_URL: URL = config(
     "MSS_MACHINE_ROOT_URL", cast=URL, default="http://localhost:8002"
 )
+
+# The MSS domain, stripping the ':None' if no port is passed
+_MSS_DOMAIN_NAME = (
+    f"{MSS_MACHINE_ROOT_URL.hostname}:{MSS_MACHINE_ROOT_URL.port}".rstrip(":None")
+)
+
+# The endpoint for sending device events
+MSS_DEVICE_EVENTS_ENDPOINT: URL = config(
+    "MSS_DEVICE_EVENTS_ENDPOINT",
+    cast=URL,
+    default=f"ws://{_MSS_DOMAIN_NAME}/devices/ws/{DEFAULT_PREFIX}",
+)
+MSS_CONNECTION_TIMEOUT = config("MSS_CONNECTION_TIMEOUT", cast=float, default=5)
+
 BCC_MACHINE_ROOT_URL = config(
     "BCC_MACHINE_ROOT_URL", cast=URL, default="http://localhost:8000"
 )
@@ -97,7 +111,6 @@ BCC_PORT = config("BCC_PORT", cast=int, default=8000)
 
 # Authentication
 
-MSS_APP_TOKEN = config("MSS_APP_TOKEN", cast=str, default="")
 # MSS public key for encrypting/verifying messages for/from MSS only
 MSS_PUBLIC_KEY_PATH = config(
     "MSS_PUBLIC_KEY_PATH", cast=Path, default=_ROOT_PATH / "public-mss-key.pem"
@@ -107,6 +120,14 @@ if not MSS_PUBLIC_KEY_PATH.exists():
 
 # time-to-live for the nonce; defaults to 5 minutes
 MSS_NONCE_TTL = config("MSS_NONCE_TTL", cast=float, default=300)
+
+PRIVATE_KEY_FILE = config(
+    "PRIVATE_KEY_FILE", cast=Path, default=_ROOT_PATH / "private-bcc-key.pem"
+).resolve()
+if not PRIVATE_KEY_FILE.exists():
+    raise ValueError(f"private key file '{PRIVATE_KEY_FILE}' does not exist")
+
+PRIVATE_KEY_PASSWORD = config("PRIVATE_KEY_PASSWORD", default=None, cast=bytes)
 
 
 # -----------------------
@@ -163,7 +184,7 @@ IS_ASYNC = config("IS_ASYNC", cast=bool, default="True")
 # default: "sqlite:///booking_db.db"
 BOOKING_DB_URL = config("BOOKING_DB_URL", default="sqlite:///booking_db.db")
 
-# default: "redis://localhost:6379"
+# default: "redis://localhost:6379/0"
 _REDIS_URL = f"redis://{REDIS_USER or ''}:{REDIS_PASSWORD or ''}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
 RQ_REDIS_URL = config("RQ_REDIS_URL", default=_REDIS_URL)
 # FIXME: Get rid of this when all queues are shifted over to scheduler

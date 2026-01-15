@@ -31,6 +31,7 @@ from typing import (
 )
 
 import requests
+import websockets
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
@@ -38,6 +39,7 @@ from fastapi import HTTPException, Request, Response, UploadFile
 from fastapi.exception_handlers import http_exception_handler
 from pydantic import BaseModel, ConfigDict, Field
 from redis import Redis
+from websockets import ClientConnection
 
 import settings
 
@@ -97,6 +99,7 @@ class GeneralMessage(TypedDict):
 
     status: Literal["success", "error", "cancelled", "failed"]
     detail: NotRequired[str]
+    data: NotRequired[dict | list]
 
 
 class TokenResponse(TypedDict):
@@ -149,20 +152,6 @@ class PaginatedListResponse(BaseModel, Generic[ITEM]):
                 for item in self.data
             ],
         }
-
-
-def get_mss_client(app_token: str = settings.MSS_APP_TOKEN) -> requests.Session:
-    """Returns an MSS client to be used to make HTTP queries to MSS
-
-    Args:
-        app_token: the app token to use when making authenticated requests
-
-    Returns:
-        the requests.Session that can query MSS
-    """
-    session = requests.Session()
-    session.headers.update({"Authorization": f"Bearer {app_token}"})
-    return session
 
 
 def save_uploaded_file(file: UploadFile, target: Path) -> Path:

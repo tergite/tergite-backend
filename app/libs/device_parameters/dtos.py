@@ -12,16 +12,31 @@
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
-
+from enum import Enum
 from os import PathLike
-from typing import Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar, Union
+from typing import (
+    Any,
+    Dict,
+    Generic,
+    List,
+    Literal,
+    Optional,
+    Protocol,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import toml
-from pydantic import BaseModel, Extra, model_validator
+from pydantic import BaseModel, Extra, field_validator, model_validator
+from pydantic_core.core_schema import ValidationInfo
 
 from app.utils.datetime import utc_now_str
 from app.utils.redis_store import Schema
 
+from ...utils.api import GeneralMessage
+from ..queues.dtos import Job
 from .utils import attach_units_many
 
 _CalibValueType = TypeVar("_CalibValueType", int, float, str)
@@ -452,3 +467,57 @@ class BackendConfig(BaseModel):
             raise ValueError("Calibration config is required for simulators.")
 
         return self
+
+
+class DeviceEventName(str, Enum):
+    INITIALIZED = "initialized"
+    RECALIBRATED = "recalibrated"
+    JOB_UPDATED = "job_updated"
+
+
+type DeviceEventData = Union[Device, DeviceCalibration, Job]
+"""Data type for the data attached to device events"""
+
+
+class DeviceEventHandler(Protocol):
+    """The signature of all event handlers for device events"""
+
+    async def __call__(
+        self, device: str, data: DeviceEventData, **kwargs
+    ) -> GeneralMessage:
+        """Handles the given device event
+
+        Args:
+            device: The device where the event occurred
+            data: The data associated with the event
+
+        Returns:
+            the general message showing the output from the handler
+        """
+
+
+class DeviceEvent(BaseModel):
+    """The schema for device events"""
+
+    __status_data_map__: Dict[DeviceEventName, Type[DeviceEventData]] = {
+        DeviceEventName.INITIALIZED: Device,
+        DeviceEventName.RECALIBRATED: DeviceCalibration,
+        DeviceEventName.JOB_UPDATED: Job,
+    }
+
+    name: DeviceEventName
+    data: DeviceEventData
+
+    @field_validator("data", mode="after")
+    @classmethod
+    def validate_data(
+        cls, value: DeviceEventData, info: ValidationInfo
+    ) -> DeviceEventData:
+        """Validates the data depending on the name type"""
+        expected_data_cls = cls.__status_data_map__[info.data["name"]]
+        if not isinstance(value, expected_data_cls):
+            raise ValueError(
+                f"data must be of type {expected_data_cls.__name__}, was {type(value)}"
+            )
+
+        return value
