@@ -23,6 +23,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 ### Fixed
 
 - Fixed 'Error 111 connecting to localhost:6379' when only RQ_REDIS_URL is provided
+- Fixed KeyError 'edges' due to new version of networkx
 
 ## [2025.09.1] - 2025-11-06
 
