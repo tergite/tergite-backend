@@ -10,11 +10,14 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 ### Added
 
 - Added decryption of `.env` file in the `bcc_start.sh` script
+- [BREAKING] Added the `PRIVATE_KEY_FILE`, `PRIVATE_KEY_PASSWORD` environment variables
 
 ### Changed
 
 - Removed the automatic clearing of the redis database on every startup
 - Removed the JOB_EXECUTION_POOL_DIRNAME env variable
+- [BREAKING] Removed the `MSS_APP_TOKEN` environment variable
+- Changed connection to MSS to use RSA-secured websockets instead of RESTful HTTP requests
 
 ### Fixed
 
