@@ -24,7 +24,7 @@ tests:
     - black --check app
     - isort --check-only app
     # Run unit tests
-    - pytest app
+    - pytest ${PYTEST_ARGS:-app}
   cache:
     paths:
       - .cache/pip

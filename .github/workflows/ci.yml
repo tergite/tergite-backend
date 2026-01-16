@@ -43,7 +43,7 @@ jobs:
           pip install ."[dev]"
           black --check app
           isort --check-only app
-          pytest app
+          pytest ${{ vars.PYTEST_ARGS || 'app' }}
         env:
           REDIS_HOST: localhost
           REDIS_PORT: 6379
