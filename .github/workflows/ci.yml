@@ -43,7 +43,13 @@ jobs:
           pip install ."[dev]"
           black --check app
           isort --check-only app
-          pytest ${{ vars.PYTEST_ARGS || 'app' }}
+          PYTEST_ARGS=${{ vars.PYTEST_ARGS }}
+          echo "PYTEST_ARGS=$PYTEST_ARGS"
+          if [ -z "$PYTEST_ARGS" ]; then 
+            pytest -n 4 --dist=loadscope app; 
+          else 
+            pytest $PYTEST_ARGS; 
+          fi
         env:
           REDIS_HOST: localhost
           REDIS_PORT: 6379

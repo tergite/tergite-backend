@@ -122,7 +122,7 @@ pre-commit install
 - Run the tests by running the command below at the root of the project. 
 
 ```shell
-pytest app
+pytest -n auto --dist=loadscope app
 ```
 
 ## How to Run With Systemd

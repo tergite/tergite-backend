@@ -61,7 +61,6 @@ from .utils.rq import get_rq_pool_worker
 _redis_connection = redis.Redis.from_url(TEST_RQ_REDIS_URL)
 
 MOCK_NOW = "2023-11-27T12:46:48.851656+00:00"
-TEST_APP_TOKEN_STRING = "eecbf107ad103f70187923f49c1a1141219da95f1ab3906f"
 
 FASTAPI_CLIENTS = [
     lazy_fixture("quantify_rest_client"),
@@ -252,7 +251,7 @@ def qiskit_2q_rest_client(mocker) -> Generator[TestClient, Any, None]:
     _redis_connection.flushall()
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def jobs_folder() -> Generator[Path, Any, None]:
     """A temporary folder for the client where jobs can be saved"""
     folder_path = Path("./tmp/jobs")
@@ -262,7 +261,7 @@ def jobs_folder() -> Generator[Path, Any, None]:
     shutil.rmtree(folder_path, ignore_errors=True)
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def logfile_download_folder() -> Generator[Path, Any, None]:
     """A temporary folder for the server where logfiles can be downloaded from"""
     folder_path = (
@@ -276,20 +275,13 @@ def logfile_download_folder() -> Generator[Path, Any, None]:
     shutil.rmtree(folder_path, ignore_errors=True)
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def storage_root():
     """root where files are stored temporarily"""
     path = Path(TEST_STORAGE_ROOT)
     path.mkdir(parents=True, exist_ok=True)
     yield path
     shutil.rmtree(path, ignore_errors=True)
-
-
-@pytest.fixture
-def app_token_header() -> Generator[Dict[str, str], Any, None]:
-    """the authorization header with the app token"""
-
-    yield {"Authorization": f"Bearer {TEST_APP_TOKEN_STRING}"}
 
 
 @pytest.fixture
@@ -364,7 +356,12 @@ def verbose_spi_dac_dummy(redis_client, mocker) -> Generator[SpiDAC, Any, None]:
 @pytest.fixture(autouse=True, scope="session")
 def _configure_logging_for_tests():
     """Configure logging for tests"""
-    if os.getenv("DEBUG", "").strip().lower() == "true":
+    is_debug = os.getenv("DEBUG", "").strip().lower() == "true"
+    if not is_debug:
+        yield
+        return
+
+    if is_debug:
         root = logging.getLogger()
         # Remove any preconfigured handlers (libraries may have added them)
         for h in root.handlers[:]:
@@ -385,6 +382,7 @@ def _configure_logging_for_tests():
             except:
                 pass
     else:
+        # FIXME: This never runs
         # silence rq logs
         logging.getLogger("rq").setLevel(logging.WARNING)
         logging.getLogger("rq.worker").setLevel(logging.WARNING)

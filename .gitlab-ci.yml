@@ -23,8 +23,15 @@ tests:
     # Check formatting
     - black --check app
     - isort --check-only app
+
     # Run unit tests
-    - pytest ${PYTEST_ARGS:-app}
+    - echo "PYTEST_ARGS=$PYTEST_ARGS"
+    - |
+      if [ -z "$PYTEST_ARGS" ]; then 
+        pytest -n 4 --dist=loadscope app; 
+      else 
+        pytest $PYTEST_ARGS; 
+      fi
   cache:
     paths:
       - .cache/pip
