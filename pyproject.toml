@@ -102,6 +102,7 @@ dev = [
     "requests-mock>=1.11.0",
     "pytest-mock~=3.14.1",
     "pytest-xdist~=3.8.0",
+    "psutil~=7.0.0",
     # deps of deps
     # -----------
     # Adding these here to constrain their versions to

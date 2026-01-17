@@ -44,9 +44,12 @@ jobs:
           black --check app
           isort --check-only app
           PYTEST_ARGS=${{ vars.PYTEST_ARGS }}
+          CPU_COUNT=$(python -c "import os; print(os.cpu_count())")
+          WORKER_COUNT=$(python -c "import os; print(min(os.cpu_count(), 4))")
+          echo "CPUs - $CPU_COUNT, WORKERS - $WORKER_COUNT"
           echo "PYTEST_ARGS=$PYTEST_ARGS"
           if [ -z "$PYTEST_ARGS" ]; then 
-            pytest -n 4 --dist=loadscope app; 
+            pytest -n "$WORKER_COUNT" --dist=loadscope app; 
           else 
             pytest $PYTEST_ARGS; 
           fi
