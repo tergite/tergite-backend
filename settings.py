@@ -92,9 +92,11 @@ MSS_MACHINE_ROOT_URL: URL = config(
 )
 
 # The MSS domain, stripping the ':None' if no port is passed
-_MSS_DOMAIN_NAME = (
-    f"{MSS_MACHINE_ROOT_URL.hostname}:{MSS_MACHINE_ROOT_URL.port}".rstrip(":None")
-)
+_MSS_PORT_EXT = ""
+if MSS_MACHINE_ROOT_URL.port is not None:
+    _MSS_PORT_EXT = f":{MSS_MACHINE_ROOT_URL.port}"
+
+_MSS_DOMAIN_NAME = f"{MSS_MACHINE_ROOT_URL.hostname}{_MSS_PORT_EXT}"
 
 # The endpoint for sending device events
 MSS_DEVICE_EVENTS_ENDPOINT: URL = config(
