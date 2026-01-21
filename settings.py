@@ -127,8 +127,12 @@ PRIVATE_KEY_FILE = config(
 if not PRIVATE_KEY_FILE.exists():
     raise ValueError(f"private key file '{PRIVATE_KEY_FILE}' does not exist")
 
-PRIVATE_KEY_PASSWORD = config("PRIVATE_KEY_PASSWORD", default=None, cast=bytes)
-
+PRIVATE_KEY_PASSWORD: Optional[bytes] = None
+_PRIVATE_KEY_PASSWORD_STR: Optional[str] = config(
+    "PRIVATE_KEY_PASSWORD", default=None, cast=str
+)
+if _PRIVATE_KEY_PASSWORD_STR is not None:
+    PRIVATE_KEY_PASSWORD = _PRIVATE_KEY_PASSWORD_STR.encode("utf-8")
 
 # -----------------------
 # Hardware configurations
