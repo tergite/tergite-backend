@@ -75,34 +75,28 @@ JOB_SUPERVISOR_LOG = STORAGE_ROOT / STORAGE_PREFIX_DIRNAME / _JOB_SUPERVISOR_LOG
 
 # Definition of backend property names
 BACKEND_SETTINGS = config(
-    "BACKEND_SETTINGS",
-    cast=str,
-    default=_ROOT_PATH / "backend_config.toml",
+    "BACKEND_SETTINGS", cast=str, default=_ROOT_PATH / "backend_config.toml"
 )
 
 CALIBRATION_SEED = config(
-    "CALIBRATION_SEED",
-    cast=str,
-    default=_ROOT_PATH / "calibration.seed.toml",
+    "CALIBRATION_SEED", cast=str, default=_ROOT_PATH / "calibration.seed.toml"
 )
 
 # Connectivity settings
 MSS_MACHINE_ROOT_URL: URL = config(
     "MSS_MACHINE_ROOT_URL", cast=URL, default="http://localhost:8002"
 )
-
 # The MSS domain, stripping the ':None' if no port is passed
-_MSS_PORT_EXT = ""
-if MSS_MACHINE_ROOT_URL.port is not None:
-    _MSS_PORT_EXT = f":{MSS_MACHINE_ROOT_URL.port}"
-
+_MSS_PORT_EXT = f":{MSS_MACHINE_ROOT_URL.port}" if MSS_MACHINE_ROOT_URL.port else ""
 _MSS_DOMAIN_NAME = f"{MSS_MACHINE_ROOT_URL.hostname}{_MSS_PORT_EXT}"
+_MSS_WS_SCHEME = "wss" if MSS_MACHINE_ROOT_URL.is_secure else "ws"
+_DEFAULT_MSS_WS_URL = (
+    f"{_MSS_WS_SCHEME}://{_MSS_DOMAIN_NAME}/devices/ws/{DEFAULT_PREFIX}"
+)
 
 # The endpoint for sending device events
 MSS_DEVICE_EVENTS_ENDPOINT: URL = config(
-    "MSS_DEVICE_EVENTS_ENDPOINT",
-    cast=URL,
-    default=f"ws://{_MSS_DOMAIN_NAME}/devices/ws/{DEFAULT_PREFIX}",
+    "MSS_DEVICE_EVENTS_ENDPOINT", cast=URL, default=_DEFAULT_MSS_WS_URL
 )
 MSS_CONNECTION_TIMEOUT = config("MSS_CONNECTION_TIMEOUT", cast=float, default=5)
 
