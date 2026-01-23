@@ -17,7 +17,6 @@ from app.tests.utils.env import (
     TEST_BROKEN_QUANTIFY_CONFIG_FILE,
     TEST_BROKEN_QUANTIFY_METADATA_FILE,
     TEST_DEFAULT_PREFIX_SIM_1Q,
-    TEST_MSS_APP_TOKEN,
     TEST_QUANTIFY_CONFIG_FILE,
     TEST_QUANTIFY_METADATA_FILE,
     TEST_QUANTIFY_SEED_FILE,
@@ -25,7 +24,6 @@ from app.tests.utils.env import (
 )
 from app.tests.utils.fixtures import get_fixture_path
 from app.tests.utils.modules import remove_modules
-from app.tests.utils.mss import MockWebsocket
 
 _QUANTIFY_CONFIG_FILE = get_fixture_path("generic-quantify-config.json")
 _QUANTIFY_METADATA_FILE = get_fixture_path("generic-quantify-config.yml")

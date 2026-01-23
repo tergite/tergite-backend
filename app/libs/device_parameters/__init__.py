@@ -19,7 +19,7 @@
 # - Stefan Hill, 2024
 # - Adilet Tuleuov, 2025
 #
-from typing import Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, Optional, Tuple
 
 from redis import Redis
 
@@ -30,10 +30,10 @@ from .dtos import (
     BackendConfig,
     Device,
     DeviceCalibration,
-    DeviceEvent,
-    DeviceEventName,
 )
-from .mss_client import MssClient, get_default_mss_client
+
+if TYPE_CHECKING:
+    from ...services.external.mss.service import MssClientPipe
 
 _BACKEND_CONFIGS_CACHE: Dict[Tuple[str, str], BackendConfig] = {}
 _DEVICES_STORE_CACHE: Dict[str, Collection[Device]] = {}
@@ -71,14 +71,14 @@ def clear_config_caches():
 
 
 def initialize_backend(
-    redis: Redis, backend_config: BackendConfig, mss_client: MssClient
+    redis: Redis, backend_config: BackendConfig, mss_client_pipe: "MssClientPipe"
 ):
     """Runs a number of operations to initialize the backend
 
     Args:
         redis: connection to redis
         backend_config: the configuration of the backend
-        mss_client: the client connected to MSS
+        mss_client_pipe: the pipe connected to the MSS client
 
     Raises:
         ValueError: error message from MSS when it attempts to update mss
@@ -98,9 +98,7 @@ def initialize_backend(
 
     # update MSS of this backend's configuration
     send_backend_info_to_mss(
-        mss_client,
-        device_info=device_info,
-        calibration_info=calib_info,
+        mss_client_pipe, device_info=device_info, calibration_info=calib_info
     )
 
 
@@ -165,7 +163,7 @@ def get_device_calibration_info(
 
 
 def send_backend_info_to_mss(
-    mss_client: MssClient,
+    mss_client_pipe: "MssClientPipe",
     device_info: Device,
     calibration_info: DeviceCalibration,
 ):
@@ -173,13 +171,15 @@ def send_backend_info_to_mss(
     Sends this backend's information to MSS
 
     Args:
-        mss_client: the requests Session to run the queries
+        mss_client_pipe: the pipe connected to the MSS client
         device_info: the static device info to send to the MSS
         calibration_info: the dynamic device properties to send to MSS
 
     Raises:
         ValueError: error message from MSS
     """
+    from ...services.external.mss.dtos import DeviceEvent, DeviceEventName
+
     initialization_event = DeviceEvent(
         name=DeviceEventName.INITIALIZED,
         data=device_info,
@@ -189,10 +189,10 @@ def send_backend_info_to_mss(
         data=calibration_info,
     )
 
-    mss_client.send_event(
+    mss_client_pipe.send_event(
         initialization_event, error_prefix="error sending initialization info: "
     )
 
-    mss_client.send_event(
+    mss_client_pipe.send_event(
         recalibration_event, error_prefix="error sending recalibration info: "
     )

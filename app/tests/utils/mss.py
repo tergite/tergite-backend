@@ -14,77 +14,84 @@
 """Utilities for stuff related to MSS connection"""
 import json
 import logging
-from typing import Dict, List, Optional, Tuple, Union
+import re
+from datetime import datetime
 
-import websocket
-from websocket import ABNF
+import websockets
+from cryptography.exceptions import InvalidSignature
+
+_MESSAGE_TYPES = ("initialized", "recalibrated", "job_updated", "ping")
+_WS_PATH_PATTERN = re.compile(r"/devices/ws/(?P<name>[a-zA-Z0-9_-]+)")
 
 
-class MockWebsocket(websocket.WebSocket):
-    """A mock of the websocket.WebSocket"""
+async def mock_mss_websocket_handler(websocket: websockets.ServerConnection):
+    """A mock handler for the websockets at MSS
 
-    def __init__(self, message_types: tuple[str, ...], **kwargs):
-        super().__init__(**kwargs)
-        self.__message_types = message_types
-        self.__url: Optional[str] = None
-        self.__conn_kwargs: Dict[str, str] = {}
-        self.__outbox: List[Tuple[Union[bytes, str], int]] = []
-        self.__inbox: List[str] = []
+    Args:
+        websocket: The websocket ServerConnection object
+    """
+    if not _WS_PATH_PATTERN.match(websocket.request.path):
+        await websocket.close(code=1000, reason="Invalid Path")
+        return
 
-    def connect(self, url: str, **kwargs):
-        """Connects to the given url"""
-        if self.connected:
-            raise RuntimeError("Connection already established")
+    headers = websocket.request.headers
+    try:
+        _verify_headers(headers)
+    except websockets.WebSocketException as exp:
+        await websocket.close(code=1008, reason=f"{exp}")
+        return
 
-        self.__url = url
-        self.__conn_kwargs = kwargs
-        self.__outbox = []
-        self.__inbox = []
-        self.connected = True
+    try:
+        payload = await websocket.recv()
+    except websockets.ConnectionClosed:
+        return
 
-    def init_connection(self, url: str, **kwargs):
-        """Initializes a new connection and returns itself
+    try:
+        payload_json = json.loads(payload)
+        if payload_json["name"] not in _MESSAGE_TYPES:
+            raise ValueError(f"'{payload_json['name']}' event is not permitted")
 
-        Args:
-            url: The url to connect to
-            **kwargs: Additional arguments to pass to the websocket constructor
+        response_json = {"status": "success", "data": payload_json["data"]}
+    except (json.JSONDecodeError, ValueError) as exp:
+        logging.error(exp)
+        response_json = {"status": "error", "detail": "unexpected server error"}
 
-        Returns:
-            the WebSocket instance
-        """
-        self.connect(url, **kwargs)
-        return self
+    await websocket.send(json.dumps(response_json))
 
-    def send(self, payload: Union[bytes, str], opcode: int = ABNF.OPCODE_TEXT) -> int:
-        """Send a payload and returns the frame length"""
-        if not self.connected:
-            raise websocket.WebSocketConnectionClosedException(
-                "socket is already closed."
+
+def _verify_headers(headers):
+    """Verifies that the headers are correct
+
+    Args:
+        headers: The headers to verify
+
+    Raises:
+        websockets.WebSocketException: unauthorized
+    """
+    bcc_nonce_ttl = 300
+    try:
+        name = headers["x-id"]
+        nonce = headers["x-request-id"]
+        timestamp = headers["x-timestamp"]
+        signature = headers["x-signature"]
+
+        message = f"{name}-{nonce}-{timestamp}"
+        # verify_ws_signature(
+        #         signature=signature,
+        #         message=message,
+        #         key_path=backend_conf.public_key_path,
+        # )
+
+        current_timestamp = datetime.now().timestamp()
+        timestamp_float = float(timestamp)
+        time_difference = current_timestamp - timestamp_float
+        if time_difference > bcc_nonce_ttl:
+            raise ValueError(
+                f"nonce of timestamp {timestamp} is {time_difference}s older than {bcc_nonce_ttl} seconds"
             )
+        elif time_difference < 0:
+            raise ValueError(f"timestamp {timestamp} is in the future")
 
-        self.__outbox.append((payload, opcode))
-        try:
-            payload_json = json.loads(payload)
-            if payload_json["name"] not in self.__message_types:
-                raise ValueError(f"'{payload_json['name']}' event is not permitted")
-
-            response_json = {"status": "success", "data": payload_json["data"]}
-        except (json.JSONDecodeError, ValueError) as exp:
-            logging.error(exp)
-            response_json = {"status": "error", "detail": "unexpected server error"}
-
-        self.__inbox.append(json.dumps(response_json))
-        # FIXME: Just mocking frame length by getting number of items in payload
-        return len(payload)
-
-    def recv(self) -> Union[bytes, str]:
-        """Receive a payload and returns the opcode"""
-        if not self.connected:
-            raise websocket.WebSocketConnectionClosedException(
-                "socket is already closed."
-            )
-        return self.__inbox.pop()
-
-    def shutdown(self):
-        """Shutdown the connection"""
-        self.connected = False
+    except (KeyError, InvalidSignature, ValueError, AttributeError) as exp:
+        logging.error(exp)
+        raise websockets.WebSocketException("unauthorized")

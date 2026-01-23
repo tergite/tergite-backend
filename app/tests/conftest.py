@@ -1,3 +1,8 @@
+import asyncio
+
+import websockets
+from starlette.datastructures import URL
+
 from .utils.env import (
     TEST_BACKEND_SETTINGS_FILE,
     TEST_BOOKING_DB_URL,
@@ -5,6 +10,7 @@ from .utils.env import (
     TEST_DEFAULT_PREFIX_SIM_1Q,
     TEST_DEFAULT_PREFIX_SIM_2Q,
     TEST_LOGFILE_DOWNLOAD_POOL_DIRNAME,
+    TEST_MSS_MACHINE_ROOT_URL,
     TEST_QISKIT_1Q_SEED_FILE,
     TEST_QISKIT_2Q_SEED_FILE,
     TEST_QUANTIFY_SEED_FILE,
@@ -55,7 +61,7 @@ from .utils.analysis import MockLinearDiscriminantAnalysis
 from .utils.executors import MockQiskitDynamicsExecutor, MockQuantifyExecutor
 from .utils.fixtures import get_fixture_path, load_fixture
 from .utils.mocks import make_attr_verbose
-from .utils.mss import MockWebsocket
+from .utils.mss import mock_mss_websocket_handler
 from .utils.rq import get_rq_pool_worker
 
 _redis_connection = redis.Redis.from_url(TEST_RQ_REDIS_URL)
@@ -175,7 +181,9 @@ def rq_worker_for_simulator_2q(redis_client) -> Generator[SimpleWorker, Any, Non
 
 
 @pytest.fixture
-def quantify_rest_client(mocker, redis_client) -> Generator[TestClient, Any, None]:
+def quantify_rest_client(
+    mocker, redis_client, mock_mss_websockets
+) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
     _patch_async_client(mocker)
     os.environ["EXECUTOR_TYPE"] = "quantify"
@@ -199,18 +207,21 @@ def quantify_rest_client(mocker, redis_client) -> Generator[TestClient, Any, Non
 
 
 @pytest.fixture
-def mock_mss_websockets(mocker) -> Generator[MockWebsocket, Any, None]:
+async def mock_mss_websockets():
     """A mock websocket for connecting to MSS"""
-    mss_websocket = MockWebsocket(message_types=_PERMITTED_EVENTS_TO_MSS)
-    mocker.patch(
-        "websocket.create_connection", side_effect=mss_websocket.init_connection
-    )
-    yield mss_websocket
-    mss_websocket.close()
+    mss_url = URL(TEST_MSS_MACHINE_ROOT_URL)
+    async with websockets.serve(
+        mock_mss_websocket_handler, mss_url.hostname, mss_url.port
+    ) as server:
+        # Get the actual port assigned by the OS
+        host, port, *rest = server.sockets[0].getsockname()
+        yield f"ws://{host}:{port}"
 
 
 @pytest.fixture
-def qiskit_1q_rest_client(mocker) -> Generator[TestClient, Any, None]:
+def qiskit_1q_rest_client(
+    mocker, mock_mss_websockets
+) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
     _patch_async_client(mocker)
     os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_1q"
@@ -231,7 +242,9 @@ def qiskit_1q_rest_client(mocker) -> Generator[TestClient, Any, None]:
 
 
 @pytest.fixture
-def qiskit_2q_rest_client(mocker) -> Generator[TestClient, Any, None]:
+def qiskit_2q_rest_client(
+    mocker, mock_mss_websockets
+) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
     _patch_async_client(mocker)
     os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_2q"
@@ -397,7 +410,6 @@ def _patch_async_client(mocker, *extra_patches: Tuple[str, Dict[str, Any]]):
         mocker: the pytest mocker object
         extra_patches: extra patches to patch with the mocker object
     """
-    mss_websocket = MockWebsocket(message_types=_PERMITTED_EVENTS_TO_MSS)
 
     mocker.patch(
         "app.services.scheduler.utils.QuantifyExecutor", new=MockQuantifyExecutor
@@ -406,9 +418,7 @@ def _patch_async_client(mocker, *extra_patches: Tuple[str, Dict[str, Any]]):
         "app.services.scheduler.utils.QiskitDynamicsExecutor",
         new=MockQiskitDynamicsExecutor,
     )
-    mocker.patch(
-        "websocket.create_connection", side_effect=mss_websocket.init_connection
-    )
+
     mocker.patch(
         "app.libs.quantum_executor.qiskit.backends.one_qubit.LinearDiscriminantAnalysis",
         return_value=_mock_linear_discriminant_analysis,

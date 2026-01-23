@@ -21,7 +21,6 @@ This module implements the executor.
 
 import logging
 import os
-import re
 from datetime import datetime
 from typing import List, Optional, Union
 
@@ -45,7 +44,6 @@ from app.libs.quantum_executor.utils.config import (
 )
 from app.libs.quantum_executor.utils.logger import ExperimentLogger
 from app.libs.quantum_executor.utils.portclock import generate_hardware_map
-from settings import REDIS_CONNECTION
 
 from .spi_dac import SpiDAC
 

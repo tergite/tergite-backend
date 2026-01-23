@@ -26,11 +26,7 @@ import settings
 
 from ...libs.device_parameters import (
     DeviceCalibration,
-    DeviceEvent,
-    DeviceEventName,
-    MssClient,
     get_backend_config,
-    get_default_mss_client,
     initialize_backend,
 )
 from ...libs.quantum_executor.base.executor import QuantumExecutor
@@ -51,6 +47,8 @@ from ...libs.queues.dtos import (
 from ...utils.api import GeneralMessage
 from ...utils.datetime import utc_now_str
 from ...utils.redis_store import Collection
+from ..external.mss.dtos import DeviceEvent, DeviceEventName, EventResponse
+from ..external.mss.service import MssClientPipe, get_default_mss_client_pipe
 
 _STAGE_TIMESTAMPS_MAP: Dict[Stage, Tuple[Tuple[JobStage, JobEvent], ...]] = {
     Stage.REG_Q: (),
@@ -153,8 +151,8 @@ def get_executor(
 
         initialize_backend(
             redis,
-            mss_client=get_default_mss_client(),
             backend_config=backend_config,
+            mss_client_pipe=get_default_mss_client_pipe(),
         )
 
     return _EXECUTOR
@@ -307,22 +305,22 @@ def update_job_results(
     )
 
 
-def update_job_in_mss(mss_client: MssClient, payload: Job) -> GeneralMessage:
+def update_job_in_mss(mss_client_pipe: MssClientPipe, payload: Job) -> EventResponse:
     """Updates the job in MSS with the given payload
 
     Args:
-        mss_client: the client connected to MSS
+        mss_client_pipe: the pipe connected to the MSS client
         payload: the new updates to apply to the given job in MSS
 
     Returns:
-        the GeneralMessage received after request to MSS
+        the response received after request to MSS
 
     Raises:
         RuntimeError: Public API returned {resp.status_code}
     """
     job_update_event = DeviceEvent(name=DeviceEventName.JOB_UPDATED, data=payload)
     try:
-        resp = mss_client.send_event(
+        resp = mss_client_pipe.send_event(
             job_update_event, error_prefix="error sending job to MSS: "
         )
     except ValueError as exp:
