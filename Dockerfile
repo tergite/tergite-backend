@@ -82,7 +82,6 @@ ENV EXECUTOR_DATA_DIRNAME="executor_data"
 ENV BCC_MACHINE_ROOT_URL="http://host.docker.internal:8000"
 ENV BCC_PORT=8000
 ENV MSS_MACHINE_ROOT_URL="http://host.docker.internal:8002"
-ENV MSS_PORT=8002
 ENV EXECUTOR_TYPE="qiskit_pulse_1q"
 ENV CALIBRATION_SEED="calibration.seed.toml"
 ENV QUANTIFY_CONFIG_FILE="quantify-config.json"
