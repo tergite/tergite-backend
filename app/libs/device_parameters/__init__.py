@@ -33,7 +33,11 @@ from .dtos import (
 )
 
 if TYPE_CHECKING:
-    from ...services.external.mss.service import MssClientPipe
+    from ...services.external.mss.service import (
+        AsyncMssClientPipe,
+        BaseMssClientPipe,
+        MssClientPipe,
+    )
 
 _BACKEND_CONFIGS_CACHE: Dict[Tuple[str, str], BackendConfig] = {}
 _DEVICES_STORE_CACHE: Dict[str, Collection[Device]] = {}
@@ -70,6 +74,31 @@ def clear_config_caches():
     _CALIB_STORE_CACHE.clear()
 
 
+async def async_initialize_backend(
+    redis: Redis, backend_config: BackendConfig, mss_client_pipe: "AsyncMssClientPipe"
+):
+    """Runs a number of operations to initialize the backend asynchronously
+
+    Args:
+        redis: connection to redis
+        backend_config: the configuration of the backend
+        mss_client_pipe: the pipe to the MSS client
+
+    Raises:
+        ValueError: error message from MSS when it attempts to update mss
+        ItemNotFoundError:
+    """
+    device_info = _save_device_info(redis, backend_config=backend_config)
+    calib_info = _save_calibration_info(redis, backend_config=backend_config)
+
+    # update MSS of this backend's configuration
+    await async_send_backend_info_to_mss(
+        mss_client_pipe,
+        device_info=device_info,
+        calibration_info=calib_info,
+    )
+
+
 def initialize_backend(
     redis: Redis, backend_config: BackendConfig, mss_client_pipe: "MssClientPipe"
 ):
@@ -78,27 +107,19 @@ def initialize_backend(
     Args:
         redis: connection to redis
         backend_config: the configuration of the backend
-        mss_client_pipe: the pipe connected to the MSS client
+        mss_client_pipe: the pipe to the MSS client
 
     Raises:
         ValueError: error message from MSS when it attempts to update mss
         ItemNotFoundError:
     """
-    devices_db = Collection[Device](redis, schema=Device)
-    calib_db = Collection[DeviceCalibration](redis, schema=DeviceCalibration)
-
-    device_info = Device.from_config(backend_config)
-    devices_db.insert(device_info)
-
-    try:
-        calib_info = DeviceCalibration.from_config(backend_config)
-        calib_db.insert(calib_info)
-    except ValueError:
-        calib_info = calib_db.get_one(device_info.name)
-
+    device_info = _save_device_info(redis, backend_config=backend_config)
+    calib_info = _save_calibration_info(redis, backend_config=backend_config)
     # update MSS of this backend's configuration
     send_backend_info_to_mss(
-        mss_client_pipe, device_info=device_info, calibration_info=calib_info
+        mss_client_pipe,
+        device_info=device_info,
+        calibration_info=calib_info,
     )
 
 
@@ -162,6 +183,42 @@ def get_device_calibration_info(
     return calib_store.get_one(device_name)
 
 
+async def async_send_backend_info_to_mss(
+    mss_client_pipe: "AsyncMssClientPipe",
+    device_info: Device,
+    calibration_info: DeviceCalibration,
+):
+    """
+    Sends this backend's information to MSS
+
+    Args:
+        mss_client_pipe: the pipe connected to the MSS client
+        device_info: the static device info to send to the MSS
+        calibration_info: the dynamic device properties to send to MSS
+
+    Raises:
+        ValueError: error message from MSS
+    """
+    from ...services.external.mss.dtos import DeviceEvent, DeviceEventName
+
+    initialization_event = DeviceEvent(
+        name=DeviceEventName.INITIALIZED,
+        data=device_info,
+    )
+    recalibration_event = DeviceEvent(
+        name=DeviceEventName.RECALIBRATED,
+        data=calibration_info,
+    )
+
+    await mss_client_pipe.send_event(
+        initialization_event, error_prefix="error sending initialization info: "
+    )
+
+    await mss_client_pipe.send_event(
+        recalibration_event, error_prefix="error sending recalibration info: "
+    )
+
+
 def send_backend_info_to_mss(
     mss_client_pipe: "MssClientPipe",
     device_info: Device,
@@ -196,3 +253,42 @@ def send_backend_info_to_mss(
     mss_client_pipe.send_event(
         recalibration_event, error_prefix="error sending recalibration info: "
     )
+
+
+def _save_device_info(redis: Redis, backend_config: BackendConfig) -> Device:
+    """Saves the device information in redis given backend config
+
+    Args:
+        redis: connection to redis
+        backend_config: the configuration of the backend
+
+    Returns:
+        the saved device information
+    """
+    devices_db = Collection[Device](redis, schema=Device)
+    device_info = Device.from_config(backend_config)
+    devices_db.insert(device_info)
+    return device_info
+
+
+def _save_calibration_info(
+    redis: Redis, backend_config: BackendConfig
+) -> DeviceCalibration:
+    """Saves the calibration information in redis given backend config
+
+    Args:
+        redis: connection to redis
+        backend_config: the configuration of the backend
+
+    Returns:
+        the saved calibration information
+    """
+    calib_db = Collection[DeviceCalibration](redis, schema=DeviceCalibration)
+
+    try:
+        calib_info = DeviceCalibration.from_config(backend_config)
+        calib_db.insert(calib_info)
+    except ValueError:
+        device_info = Device.from_config(backend_config)
+        calib_info = calib_db.get_one(device_info.name)
+    return calib_info

@@ -14,14 +14,112 @@
 """Utilities for stuff related to MSS connection"""
 import json
 import logging
+import random
 import re
+import struct
 from datetime import datetime
+from typing import AsyncIterable, Awaitable, Dict, Iterable, List, Optional, Union
 
 import websockets
 from cryptography.exceptions import InvalidSignature
+from websockets import ClientProtocol, HeadersLike
+from websockets.http11 import USER_AGENT
+from websockets.uri import parse_uri
 
-_MESSAGE_TYPES = ("initialized", "recalibrated", "job_updated", "ping")
+_MESSAGE_TYPES = ("initialized", "recalibrated", "job_updated")
 _WS_PATH_PATTERN = re.compile(r"/devices/ws/(?P<name>[a-zA-Z0-9_-]+)")
+type Data = Union[bytes, str]
+
+_default_protocol = ClientProtocol(uri=parse_uri("ws://localhost:8000"))
+
+
+class MockWebsocket(websockets.ClientConnection):
+    """A mock of the websocket.WebSocket"""
+
+    def __init__(self, protocol=_default_protocol, *args, **kwargs):
+        super().__init__(protocol, *args, **kwargs)
+        self.__message_types = _MESSAGE_TYPES
+        self.__url: Optional[str] = None
+        self.__conn_kwargs: Dict[str, str] = {}
+        self.__outbox: List[Union[bytes, str]] = []
+        self.__inbox: List[str] = []
+        self.__pings: List[datetime] = []
+        self._connected = False
+
+    async def handshake(
+        self,
+        additional_headers: HeadersLike | None = None,
+        user_agent_header: str | None = USER_AGENT,
+    ) -> None:
+        """Handshake the websocket"""
+        if self._connected:
+            raise RuntimeError("Connection already established")
+
+        # self.transport.close()
+
+        _verify_headers(additional_headers)
+
+        self.__outbox = []
+        self.__inbox = []
+        self.__pings = []
+        self._connected = True
+
+    async def ping(self, data: Data | None = None) -> Awaitable[float]:
+        """Pretends to send pings"""
+        self.__pings.append(datetime.now())
+
+        async def get_latency():
+            return 4
+
+        return get_latency()
+
+    async def send(
+        self,
+        message: Data | Iterable[Data] | AsyncIterable[Data],
+        text: bool | None = None,
+    ) -> None:
+        """Send a payload and returns the frame length"""
+        if not self._connected:
+            raise websockets.ConnectionClosed(
+                rcvd=websockets.Close(code=1008, reason="socket is already closed."),
+                sent=None,
+            )
+
+        self.__outbox.append(message)
+        event_id: str = "unknown"
+        try:
+            payload_json = json.loads(message)
+            event_id = payload_json["id"]
+            if payload_json["name"] not in self.__message_types:
+                raise ValueError(f"'{payload_json['name']}' event is not permitted")
+
+            response_json = {
+                "status": "success",
+                "data": payload_json["data"],
+                "id": event_id,
+            }
+        except (json.JSONDecodeError, ValueError) as exp:
+            logging.error(exp)
+            response_json = {
+                "status": "error",
+                "detail": "unexpected server error",
+                "id": event_id,
+            }
+
+        self.__inbox.append(json.dumps(response_json))
+
+    async def recv(self, decode: bool | None = None) -> Union[bytes, str]:
+        """Receive a payload and returns the opcode"""
+        if not self._connected:
+            raise websockets.ConnectionClosed(
+                rcvd=websockets.Close(code=1008, reason="socket is already closed."),
+                sent=None,
+            )
+        return self.__inbox.pop()
+
+    async def close(self, code: int = 1000, reason: str = ""):
+        """Shutdown the connection"""
+        self._connected = False
 
 
 async def mock_mss_websocket_handler(websocket: websockets.ServerConnection):

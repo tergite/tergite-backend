@@ -11,7 +11,6 @@ from app.libs.quantum_executor.utils.config import (
     QuantifyMetadata,
     load_quantify_config,
 )
-from app.tests.conftest import _PERMITTED_EVENTS_TO_MSS, FASTAPI_CLIENTS
 from app.tests.utils.env import (
     TEST_BACKEND_SETTINGS_FILE,
     TEST_BROKEN_QUANTIFY_CONFIG_FILE,
@@ -73,7 +72,7 @@ async def test_no_mss_connected():
 
 
 @pytest.mark.asyncio
-async def test_calibration_seed_required_for_simulator(mock_mss_websockets):
+async def test_calibration_seed_required_for_simulator(patched_mss_websockets):
     """Raises validation errors if calibration seed is not set for simulator."""
     remove_modules(["os", "app", "settings"])
 
@@ -97,7 +96,7 @@ async def test_calibration_seed_required_for_simulator(mock_mss_websockets):
 
 
 @pytest.mark.asyncio
-async def test_calibration_seed_broken_for_simulator(mock_mss_websockets):
+async def test_calibration_seed_broken_for_simulator(patched_mss_websockets):
     """Raises validation errors if calibration seed provided is broken for simulator only."""
     remove_modules(["os", "app", "settings"])
 
@@ -121,7 +120,7 @@ async def test_calibration_seed_broken_for_simulator(mock_mss_websockets):
 
 
 @pytest.mark.asyncio
-async def test_quantify_metadata_is_broken(mock_mss_websockets):
+async def test_quantify_metadata_is_broken(patched_mss_websockets):
     """Raises validation errors if quantify metadata conf file is broken"""
     remove_modules(["os", "app", "settings"])
 
@@ -144,7 +143,7 @@ async def test_quantify_metadata_is_broken(mock_mss_websockets):
 
 
 @pytest.mark.asyncio
-async def test_quantify_config_is_broken(mock_mss_websockets):
+async def test_quantify_config_is_broken(patched_mss_websockets):
     """Raises validation errors if quantify config file is broken"""
     remove_modules(["os", "app", "settings"])
 

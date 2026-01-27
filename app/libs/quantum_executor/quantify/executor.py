@@ -76,7 +76,7 @@ class QuantifyExecutor(QuantumExecutor):
             coupling_dict=coupling_dict,
             quantify_config=self.quantify_config,
         )
-        super().__init__(hardware_map=self.hardware_map)
+        super().__init__(hardware_map=self.hardware_map, backend_config=backend_config)
 
         self._couplers = sorted(backend_config.device_config.coupling_dict.keys())
 

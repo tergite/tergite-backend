@@ -52,7 +52,7 @@ class QiskitDynamicsExecutor(QuantumExecutor):
             backend_cls: the class of the backend
             kwargs: extra key-word args to pass to the backend on initialisation
         """
-        super().__init__()
+        super().__init__(backend_config=backend_config, **kwargs)
         self.backend = backend_cls(backend_config=backend_config, **kwargs)
 
     def _run_native(
@@ -108,12 +108,19 @@ class QiskitDynamicsExecutor(QuantumExecutor):
             an instance of this class that has one-qubit
         """
         # TODO: Use measurement level provided by the client request if discriminator is not provided
-        return cls(
+        instance = cls(
             backend_config=backend_config,
             backend_cls=QiskitPulse1Q,
             meas_level=1,
             meas_return="single",
         )
+
+        # train the discriminators and update the backend config
+        instance.backend_config.calibration_config.discriminators = (
+            instance.backend.train_discriminator()
+        )
+
+        return instance
 
     @classmethod
     def new_two_qubit(cls, backend_config: BackendConfig):
@@ -125,12 +132,17 @@ class QiskitDynamicsExecutor(QuantumExecutor):
         Returns:
             an instance of this class that has two coupled qubits
         """
-        return cls(
+        instance = cls(
             backend_config=backend_config,
             backend_cls=QiskitPulse2Q,
             meas_level=1,
             meas_return="single",
         )
+        # train the discriminators and update the backend config
+        instance.backend_config.calibration_config.discriminators = (
+            instance.backend.train_discriminator()
+        )
+        return instance
 
 
 class _QiskitDynMeasReturn(str, enum.Enum):

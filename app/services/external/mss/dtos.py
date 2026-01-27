@@ -26,10 +26,9 @@ class DeviceEventName(str, Enum):
     INITIALIZED = "initialized"
     RECALIBRATED = "recalibrated"
     JOB_UPDATED = "job_updated"
-    PING = "ping"
 
 
-type DeviceEventData = Union[Device, DeviceCalibration, Job, dict]
+type DeviceEventData = Union[Device, DeviceCalibration, Job]
 """Data type for the data attached to device events"""
 
 
@@ -39,24 +38,6 @@ class EventResponse(GeneralMessage):
     id: str
 
 
-class DeviceEventHandler(Protocol):
-    """The signature of all event handlers for device events"""
-
-    async def __call__(
-        self, device: str, data: DeviceEventData, **kwargs
-    ) -> GeneralMessage:
-        """Handles the given device event
-
-        Args:
-            event_id: The id of the event to handle
-            device: The device where the event occurred
-            data: The data associated with the event
-
-        Returns:
-            the general message showing the output from the handler
-        """
-
-
 class DeviceEvent(BaseModel):
     """The schema for device events"""
 
@@ -64,7 +45,6 @@ class DeviceEvent(BaseModel):
         DeviceEventName.INITIALIZED: Device,
         DeviceEventName.RECALIBRATED: DeviceCalibration,
         DeviceEventName.JOB_UPDATED: Job,
-        DeviceEventName.PING: dict,
     }
 
     id: str = Field(default_factory=uuid_str)

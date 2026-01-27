@@ -56,7 +56,7 @@ from ..booking import get_active_booking
 from ..booking.models import Booking
 from ..booking.service import get_booking, get_next_booking
 from ..booking.store import get_bookings_sql_engine
-from ..external.mss.service import get_default_mss_client_pipe
+from ..external.mss.service import MssClientPipe
 from .store import get_jobs_store
 from .utils import (
     apply_linear_discriminator,
@@ -318,7 +318,7 @@ def postprocess(
     quantum_job = read_job_from_hdf5(new_file)
 
     try:
-        with get_default_mss_client_pipe() as mss_client_pipe:
+        with MssClientPipe() as mss_client_pipe:
             if quantum_job.meas_level == MeasLvl.DISCRIMINATED:
                 calibration = get_device_calibration_info()
                 discriminator = functools.partial(
@@ -356,7 +356,7 @@ def postprocessing_success_callback(
     jobs_store = get_jobs_store(context["jobs_store_url"])
 
     job = update_job_stage(jobs_store, job_id=job_id, stage=Stage.FINAL_Q)
-    with get_default_mss_client_pipe() as mss_client_pipe:
+    with MssClientPipe() as mss_client_pipe:
         if job.status == JobStatus.SUCCESSFUL:
             job = update_job_stage(jobs_store, job_id=job_id, stage=Stage.FINAL_W)
             print(f"Job with ID {job_id} has finished")
@@ -383,7 +383,7 @@ def postprocessing_failure_callback(
         value: the value passed to the callback from the handler
         traceback: the error traceback
     """
-    with get_default_mss_client_pipe() as mss_client_pipe:
+    with MssClientPipe() as mss_client_pipe:
         if isinstance(value, PostProcessingError):
             jobs_store = Collection[Job](_rq_connection, schema=Job)
             job_id = value.job_id

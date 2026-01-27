@@ -11,11 +11,14 @@
 # that they have been altered from the originals.
 
 """Utility for the client that connects to MSS server"""
+import abc
+import asyncio
 import base64
 import json
 import logging
 import time
 import uuid
+from abc import ABC
 from pathlib import Path
 from types import TracebackType
 from typing import Any, Dict, Optional
@@ -25,7 +28,9 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from redis import Redis
-from redis.client import PubSub, PubSubWorkerThread
+from redis.asyncio import Redis as AsyncRedis
+from redis.asyncio.client import PubSub as AsyncPubSub
+from redis.client import PubSub
 from websockets import ClientConnection
 
 import settings
@@ -64,41 +69,34 @@ def get_outbox_channel_name(device: str = settings.DEFAULT_PREFIX) -> str:
     return f"{device}:mss:outbox"
 
 
-def get_default_mss_client_pipe() -> "MssClientPipe":
-    """Gets the default MSS client pipe"""
-    global _MSS_CLIENT_PIPE
-
-    if _MSS_CLIENT_PIPE is None:
-        _MSS_CLIENT_PIPE = MssClientPipe()
-    return _MSS_CLIENT_PIPE
-
-
-class MssClientPipe:
+class BaseMssClientPipe(ABC):
     """The pipe for sending messages and receiving messages from MSS"""
 
     def __init__(
         self,
         device: str = settings.DEFAULT_PREFIX,
-        redis_connection: Redis = settings.REDIS_CONNECTION,
         timeout: float = 120,
+        redis_url: str = settings.RQ_REDIS_URL,
+        **kwargs,
     ):
         """
         Args:
             device: The name of this device
-            redis_connection: The redis connection where the PubSub is
+            redis_url: The URL to the redis connection where the PubSub is
             timeout: The timeout for receiving a response from the pipe
+            is_async: Whether the pipe is asynchronous or not
         """
         self._device = device
         self._outbox_name: str = get_outbox_channel_name(device)
         self._inbox_name: str = get_inbox_channel_name(device)
-        self._redis: Redis = redis_connection
         self._timeout: float = timeout
+        self._redis_url: str = redis_url
 
-        self.inbox: PubSub = self._redis.pubsub(ignore_subscribe_messages=True)
-        self.inbox.subscribe(self._inbox_name)
-
+    @abc.abstractmethod
     def send_event(self, payload: DeviceEvent, error_prefix: str = "") -> EventResponse:
         """Sends an event payload to MSS
+
+        Call this only in synchronous code
 
         Args:
             payload: the payload to send to MSS
@@ -110,19 +108,53 @@ class MssClientPipe:
         Raises:
             ValueError: {error_prefix}{error message}
             TimeoutError: {error_prefix}response took longer than timeout
+            RuntimeError: loop is already running
+        """
+
+    @abc.abstractmethod
+    def close(self) -> None:
+        """Close the pipe connection to the MSS client"""
+
+
+class MssClientPipe(BaseMssClientPipe):
+    """Pipe to MSS client that is synchronous, to be used on the RQ side mainly"""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._redis: Redis = Redis.from_url(self._redis_url)
+        self._inbox: PubSub = self._redis.pubsub(ignore_subscribe_messages=True)
+
+    def send_event(self, payload: DeviceEvent, error_prefix: str = "") -> EventResponse:
+        """Sends an event payload to MSS
+
+        Args:
+            payload: the payload to send to MSS
+            error_prefix: Optional prefix to prepend to error messages
+
+        Returns:
+            the event response
+
+        Raises:
+            ValueError: {error_prefix}{error message}
+            TimeoutError: {error_prefix}response took longer than timeout
         """
         event_id = payload.id
-        self._redis.publish(self._outbox_name, payload.model_dump_json())
-        start_time = time.time()
+        event_json = payload.model_dump_json()
+        self._inbox.subscribe(self._inbox_name)
+        self._redis.publish(self._outbox_name, event_json)
 
+        start_time = time.time()
         while True:
             if time.time() - start_time > self._timeout:
                 raise TimeoutError(
                     f"{error_prefix}response took longer than timeout {self._timeout}s"
                 )
 
-            response_str = self.inbox.get_message(timeout=self._timeout)
-            response = json.loads(response_str)  # type: EventResponse
+            channel_resp = self._inbox.get_message(timeout=self._timeout)
+            if channel_resp is None:
+                continue
+
+            response = json.loads(channel_resp["data"])  # type: EventResponse
             # ignore responses that are not for this event
             if response["id"] != event_id:
                 continue
@@ -130,7 +162,97 @@ class MssClientPipe:
             if response["status"] != "success":
                 raise ValueError(f"{error_prefix}{response['detail']}")
 
-        return response
+            return response
+
+    def close(self) -> None:
+        """Close the pipe connection to the MSS client"""
+        self._inbox.unsubscribe()
+        self._inbox.close()
+        self._redis.close()
+
+    def __enter__(self) -> "MssClientPipe":
+        self._inbox.subscribe(self._inbox_name)
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.close()
+
+
+class AsyncMssClientPipe(BaseMssClientPipe):
+    """Pipe to MSS client that is asynchronous, to be used on the FastAPI side"""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._redis: AsyncRedis = AsyncRedis.from_url(self._redis_url)
+        self._inbox: AsyncPubSub = self._redis.pubsub(ignore_subscribe_messages=True)
+
+    async def send_event(
+        self, payload: DeviceEvent, error_prefix: str = ""
+    ) -> EventResponse:
+        """Sends an event payload to MSS asynchronously
+
+        Args:
+            payload: the payload to send to MSS
+            error_prefix: Optional prefix to prepend to error messages
+
+        Returns:
+            the event response
+
+        Raises:
+            ValueError: {error_prefix}{error message}
+            TimeoutError: {error_prefix}response took longer than timeout
+        """
+        event_id = payload.id
+        event_json = payload.model_dump_json()
+        await self._inbox.subscribe(self._inbox_name)
+        await self._redis.publish(self._outbox_name, event_json)
+
+        start_time = time.time()
+        while True:
+            # to allow other tasks to run, we wait
+            await asyncio.sleep(0.01)
+
+            if time.time() - start_time > self._timeout:
+                raise TimeoutError(
+                    f"{error_prefix}response took longer than timeout {self._timeout}s"
+                )
+
+            channel_resp = await self._inbox.get_message(timeout=self._timeout)
+            if channel_resp is None:
+                continue
+
+            response = json.loads(channel_resp["data"])  # type: EventResponse
+            # ignore responses that are not for this event
+            if response["id"] != event_id:
+                continue
+
+            if response["status"] != "success":
+                raise ValueError(f"{error_prefix}{response['detail']}")
+
+            return response
+
+    async def close(self) -> None:
+        """Close the pipe connection to the MSS client asynchronously"""
+        await self._inbox.unsubscribe()
+        await self._inbox.aclose()
+        await self._redis.aclose()
+
+    async def __aenter__(self) -> "AsyncMssClientPipe":
+        await self._inbox.subscribe(self._inbox_name)
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        await self.close()
 
 
 class AsyncMssClient(websockets.connect):
@@ -143,7 +265,7 @@ class AsyncMssClient(websockets.connect):
         private_key_file=settings.PRIVATE_KEY_FILE,
         key_password: Optional[bytes] = settings.PRIVATE_KEY_PASSWORD,
         open_timeout: float = settings.MSS_CONNECTION_TIMEOUT,
-        redis_connection: Redis = settings.REDIS_CONNECTION,
+        redis_url: str = settings.RQ_REDIS_URL,
         **kwargs: Any,
     ):
         """
@@ -153,7 +275,7 @@ class AsyncMssClient(websockets.connect):
             private_key_file: the path to the private key file; default = settings.PRIVATE_KEY_FILE
             key_password: the password for the private key file; defaults = settings.PRIVATE_KEY_PASSWORD
             open_timeout: the timeout for opening the websocket in seconds; default = settings.MSS_CONNECTION_TIMEOUT
-            redis_connection: the redis connection to use for PubSub; default = settings.REDIS_CONNECTION
+            redis_url: the redis URL connection to use for PubSub; default = settings.RQ_REDIS_URL
             kwargs: additional options to pass to websockets.connect
         """
         auth_headers = _create_headers(
@@ -171,26 +293,25 @@ class AsyncMssClient(websockets.connect):
 
         self._outbox_pubsub: str = get_outbox_channel_name(device)
         self._inbox_pubsub: str = get_inbox_channel_name(device)
-        self._redis: Redis = redis_connection
-        self.outbox = self._redis.pubsub(ignore_subscribe_messages=True)
+        self._redis: AsyncRedis = AsyncRedis.from_url(url=redis_url)
+        self.outbox: AsyncPubSub = self._redis.pubsub(ignore_subscribe_messages=True)
+
+    async def _outbox_handler(self, msg: dict) -> None:
+        """Handles messages sent to the outbox
+
+        Args:
+            msg: the message to process
+        """
+        await self.connection.send(msg["data"])
+        response_str = await self.connection.recv()
+        await self._redis.publish(self._inbox_pubsub, response_str)
 
     async def __aenter__(self) -> ClientConnection:
-        def outbox_handler(msg: dict):
-            self.connection.send(msg["data"])
-            response_str = self.connection.recv()
-            self._redis.publish(self._inbox_pubsub, response_str)
+        await self.outbox.subscribe(**{self._outbox_pubsub: self._outbox_handler})
+        loop = asyncio.get_running_loop()
 
-        def outbox_exception_handler(
-            exp: Exception, pubsub: PubSub, thread: PubSubWorkerThread
-        ):
-            logging.error(exp)
-            pubsub.unsubscribe()
-            thread.stop()
-            raise exp
-
-        self.outbox.subscribe(**{self._outbox_pubsub: outbox_handler})
-        self.__outbox_thread = self.outbox.run_in_thread(
-            sleep_time=0.001, exception_handler=outbox_exception_handler
+        self.__outbox_task = loop.create_task(
+            self.outbox.run(exception_handler=_pubsub_exception_handler)
         )
         return await super().__aenter__()
 
@@ -200,9 +321,21 @@ class AsyncMssClient(websockets.connect):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        self.outbox.unsubscribe()
-        self.__outbox_thread.stop()
+        await self.outbox.unsubscribe()
+        self.__outbox_task.cancel()
         await super().__aexit__(exc_type, exc_value, traceback)
+
+
+async def _pubsub_exception_handler(e: BaseException, pubsub: AsyncPubSub):
+    """Handles exceptions raised by PubSub
+
+    Args:
+        e: the exception raised
+        pubsub: the PubSub instance
+    """
+    logging.error(e)
+    await pubsub.unsubscribe()
+    raise e
 
 
 def _create_headers(

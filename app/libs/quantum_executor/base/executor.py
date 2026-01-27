@@ -27,6 +27,7 @@ from quantify_core.data.handling import create_exp_folder, gen_tuid
 from quantify_core.data.types import TUID
 
 import settings
+from app.libs.device_parameters import BackendConfig
 from app.libs.quantum_executor.base.experiment import NativeExperiment
 from app.libs.quantum_executor.base.quantum_job import (
     save_job_in_hdf5,
@@ -42,9 +43,12 @@ class QuantumExecutor(abc.ABC):
     def __init__(
         self,
         hardware_map: Optional[Dict[str, Tuple[str, str]]] = None,
+        backend_config: Optional[BackendConfig] = None,
+        **kwargs,
     ):
         dh.set_datadir(settings.EXECUTOR_DATA_DIR)
         self.hardware_map = hardware_map
+        self.backend_config = backend_config
 
     @abc.abstractmethod
     def _to_native_experiments(

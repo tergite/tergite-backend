@@ -29,10 +29,14 @@ from ..libs.queues.dtos import JobFile
 from ..services.booking.models import MSSTokenClaims
 from ..services.booking.service import get_user_job_id_pair_from_token
 from ..services.booking.store import get_bookings_sql_engine
-from ..services.external.mss.service import AsyncMssClient
+from ..services.external.mss.service import AsyncMssClient, AsyncMssClientPipe
 from ..services.scheduler import get_job
 from ..services.scheduler.queues import QueuePool
-from ..services.scheduler.utils import get_executor, reset_cached_executor
+from ..services.scheduler.utils import (
+    async_get_executor,
+    get_executor,
+    reset_cached_executor,
+)
 from ..utils.api import get_request_logs_store, verify_mss_signature
 from ..utils.datetime import get_utc_now
 from ..utils.exc import (
@@ -59,12 +63,14 @@ async def lifespan(app: FastAPI):
 
     async with AsyncMssClient() as mss_client:
         app.state.MSS_CLIENT = mss_client
-        get_executor(
-            redis=settings.REDIS_CONNECTION,
-            executor_type=settings.EXECUTOR_TYPE,
-            quantify_config_file=settings.QUANTIFY_CONFIG_FILE,
-            quantify_metadata_file=settings.QUANTIFY_METADATA_FILE,
-        )
+        async with AsyncMssClientPipe() as mss_client_pipe:
+            await async_get_executor(
+                redis=settings.REDIS_CONNECTION,
+                executor_type=settings.EXECUTOR_TYPE,
+                quantify_config_file=settings.QUANTIFY_CONFIG_FILE,
+                quantify_metadata_file=settings.QUANTIFY_METADATA_FILE,
+                mss_client_pipe=mss_client_pipe,
+            )
         print(f"starting app at {get_utc_now()}")
         yield
 
