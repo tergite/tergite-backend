@@ -6,6 +6,7 @@ variables:
   PYTHON_VERSION: "3.12"
   REDIS_PORT: 6378
   TEST_RQ_MAX_QUEUE_WAIT_TIME: 45
+  FF_NETWORK_PER_BUILD: 1
 
 tests:
   stage: tests
