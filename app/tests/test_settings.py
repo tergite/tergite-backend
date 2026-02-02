@@ -58,6 +58,8 @@ async def test_no_mss_connected():
 
     os.environ["EXECUTOR_TYPE"] = "quantify"
     os.environ["BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
+    mss_port = os.getenv("UNAVAILABLE_MSS_PORT", "5050")
+    os.environ["MSS_MACHINE_ROOT_URL"] = f"http://localhost:{mss_port}"
 
     from sqlmodel import SQLModel
 
