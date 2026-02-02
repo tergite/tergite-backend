@@ -49,36 +49,6 @@ from app.libs.quantum_executor.quantify.channel import (
 QBLOX_TIMEGRID_INTERVAL = 4e-9
 DT_CONST = 1e-9
 
-def _qobj_freq_to_hz(freq: float) -> float:
-    """
-    Robust conversion:
-    - If it looks like GHz (e.g., 4-8), convert to Hz.
-    - If it looks like Hz already (e.g., 4e9), keep it.
-    """
-    f = float(freq)
-    return f * 1e9 if abs(f) < 1e6 else f
-
-
-def _prev_phase_before(inst: "BaseInstruction") -> float:
-    """
-    Find the phase that was active immediately before this instruction, based on
-    playback and registration order on the same channel.
-
-    IMPORTANT: We skip frequency-only instructions when reasoning about phase.
-    """
-    ch = inst.channel
-    if inst.position <= 0:
-        return 0.0
-
-    # Walk backwards to find previous instruction that affects phase
-    for pos in range(inst.position - 1, -1, -1):
-        try:
-            # phase playback at that position already includes that instruction's effect.
-            # But we want the phase AFTER that previous instruction, which is playback[pos].
-            return ch.get_phase_at_position(pos)
-        except Exception:
-            continue
-    return 0.0
 
 """
 Qblox instruments send pulses in a given equidistant time grid.
@@ -319,8 +289,7 @@ class AcquireInstruction(BaseInstruction):
                 duration=self.duration,
                 acq_channel=int(self.channel.clock.split(".")[0][1:]),
                 acq_index=acq_index,
-                bin_mode=self.bin_mode,
-                # t0=self.t0
+                bin_mode=self.bin_mode
             )
         elif self.protocol == "trace":
             op = Trace(
@@ -328,8 +297,7 @@ class AcquireInstruction(BaseInstruction):
                 clock=self.channel.clock,
                 duration=self.duration,
                 acq_channel=int(self.channel.clock.split(".")[0][1:]),
-                acq_index=acq_index,
-                t0=self.t0,
+                acq_index=acq_index
             )
         else:
             raise RuntimeError(f"Unknown acquisition protocol {self.protocol}.")
@@ -398,16 +366,15 @@ class SetFreqInstruction(BaseInstruction):
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
         channel = channel_registry.get(clock_name)
-        frequency = _qobj_freq_to_hz(qobj_inst.frequency)
+        frequency_hz = qobj_inst.frequency * 1e9
         t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         return [
             SetFreqInstruction(
                 name=qobj_inst.name,
-                t0=t0,
                 channel=channel,
                 port=port_name,
                 duration=0.0,
-                frequency=frequency,
+                frequency=frequency_hz,
             )
         ]
 
@@ -444,11 +411,10 @@ class ShiftFreqInstruction(BaseInstruction):
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
         channel = channel_registry.get(clock_name)
-        frequency = _qobj_freq_to_hz(qobj_inst.frequency)
+        frequency = qobj_inst.frequency
         return [
             ShiftFreqInstruction(
                 name=qobj_inst.name,
-                t0=t0,
                 channel=channel,
                 port=port_name,
                 duration=0.0,
@@ -493,11 +459,10 @@ class SetPhaseInstruction(BaseInstruction):
         return [
             SetPhaseInstruction(
                 name=qobj_inst.name,
-                t0=t0,
                 channel=channel,
                 port=port_name,
                 duration=0.0,
-                phase=qobj_inst.phase,
+                phase=qobj_inst.phase*180/np.pi,
             )
         ]
 
@@ -543,25 +508,19 @@ class ShiftPhaseInstruction(BaseInstruction):
         return [
             ShiftPhaseInstruction(
                 name=qobj_inst.name,
-                t0=t0,
                 channel=channel,
                 port=port_name,
                 duration=0.0,
-                phase=qobj_inst.phase,
+                phase=qobj_inst.phase*180/np.pi,
             )
         ]
             
     def to_operation(self, config: PulseQobjConfig) -> Operation:
         """
-        Qiskit 'fc' is a relative frame change.
-        Your playback already accumulated it, so delta = new - prev.
+        Send shift clock phase command in degree.
         """
-        prev_phase = _prev_phase_before(self)
-        new_phase = self.channel.get_phase_at_position(self.position)
-        delta = new_phase - prev_phase
-
         return ShiftClockPhase(
-            phase_shift=delta,
+            phase_shift=self.phase,
             clock=self.channel.clock,
         )
 
@@ -602,7 +561,6 @@ class GaussPulseInstruction(BaseInstruction):
         # Extract parameters, with defaults as needed.
         G_amp = self.parameters.get("amp")
         phase = self.parameters.get("phase", 0.0)
-        sigma = self.parameters.get("sigma", self.duration / 4)
         op = DRAGPulse(
             G_amp=G_amp.real,
             D_amp=0,
@@ -610,7 +568,6 @@ class GaussPulseInstruction(BaseInstruction):
             port=self.port,
             clock=self.channel.clock,
             phase=phase,
-            # t0=self.t0,
             reference_magnitude=self.parameters.get("reference_magnitude"),
         )
         return op
@@ -658,7 +615,6 @@ class SquarePulseInstruction(BaseInstruction):
             duration=self.duration,
             port=self.port,
             clock=self.channel.clock,
-            # t0=self.t0,
             reference_magnitude=self.parameters.get("reference_magnitude")
         )
         return op
@@ -792,37 +748,23 @@ class WacqtCZPulseInstruction(BaseInstruction):
         clock, port = hardware_map[qobj_inst.ch]
         channel = channel_registry.get(clock)
 
-        cz_freq = params.get("freq")
-
-        setf = None
-        if cz_freq is not None:
-            setf = SetFreqInstruction(
-                name="setf",
-                # t0=t0,
+        return [
+            cls(
+                t0=t0,
                 channel=channel,
                 port=port,
-                duration=0.0,
-                frequency=float(cz_freq),
+                duration=duration,
+                parameters=params,
             )
-        cz = cls(
-            t0=t0,
-            channel=channel,
-            port=port,
-            duration=duration,
-            parameters=params,
-        )
-
-        return [inst for inst in (setf, cz) if inst is not None]
+        ]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
         # TODO: assert duration == t_p or replace t_p, t_w, t_rf with one duration parameter
-        # TODO: check if need to provide reference_magnitude=self.parameters.get("reference_magnitude"),
         return SoftSquarePulse(
             duration=float(self.parameters.get("t_p")),
             amp=float(self.parameters.get("delta_0")),
             port=self.port,
-            clock=self.channel.clock,
-            # t0=self.t0,
+            clock=self.channel.clock
         )
 
 
@@ -848,7 +790,6 @@ def _generate_numerical_pulse(
         t_samples=t_samples,
         port=instruction.port,
         clock=instruction.channel.clock,
-        # t0=instruction.t0,
         interpolation="linear",
     )
     return op

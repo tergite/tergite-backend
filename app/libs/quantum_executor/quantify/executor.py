@@ -128,7 +128,12 @@ class QuantifyExecutor(QuantumExecutor):
     def _save_default_current_value_to_redis(self) -> None:
         # Persist the parking current (0 A) in Redis for each coupler
         for cplr in self._couplers:
-            self.spi_dac._connection.hset(f"couplers:{cplr}", "parking_current", 1e-4)
+            # Instead of setting default parking values to constant, get current for every coupler and save it
+            # self.spi_dac._connection.hset(f"couplers:{cplr}", "parking_current", 1e-4)
+
+            dac = self.spi_dac.dacs_dictionary[cplr]
+            current_val = dac.current() # important: current stays at Ampers
+            self.spi_dac._connection.hset(f"couplers:{cplr}", "parking_current", current_val)
 
     def _run_native(
         self,
@@ -154,9 +159,12 @@ class QuantifyExecutor(QuantumExecutor):
         self.spi_dac = SpiDAC(
             couplers=self._couplers, metadata_path=QUANTIFY_METADATA_FILE
         )
-        self._save_default_current_value_to_redis()
-        self.spi_dac.set_parking_currents(self._couplers)
-
+        
+        RESTORE_CURRENTS = False 
+        # save instanteneous current values for every coupler in redis
+        if RESTORE_CURRENTS:
+            self._save_default_current_value_to_redis()
+        
         bias_currents = self._extract_bias(experiment)
         if bias_currents:
             print("Bias currents requested: %s", bias_currents)
@@ -173,7 +181,9 @@ class QuantifyExecutor(QuantumExecutor):
         t4 = datetime.now()
         print(t4 - t3, "DURATION OF MEASURING")
 
-        self.spi_dac.set_parking_currents(self._couplers)
+        # return currents to their original values 
+        if RESTORE_CURRENTS:
+            self.spi_dac.set_parking_currents(self._couplers)
         self.spi_dac.close_spi_rack()
 
         return QExperimentResult.from_xarray(results)

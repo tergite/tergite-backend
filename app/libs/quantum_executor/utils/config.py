@@ -185,6 +185,7 @@ def _create_cluster(name: str, conf: InstrumentConfig) -> qblox_instruments.Clus
             for idx, conf in conf.modules.items()
         }
 
+
     return qblox_instruments.Cluster(
         name=name,
         identifier=conf.ip_address,
