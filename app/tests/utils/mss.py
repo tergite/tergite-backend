@@ -83,7 +83,15 @@ class MockWebsocket(websockets.ClientConnection):
                 sent=None,
             )
 
-        # FIXME: Mock when text = False or True
+        if not text:
+            raise websockets.ConnectionClosed(
+                rcvd=websockets.Close(
+                    code=1008,
+                    reason=f"invalid data type: websocket only supports text data",
+                ),
+                sent=None,
+            )
+
         self.__outbox.append(message)
         event_id: str = "unknown"
         try:
