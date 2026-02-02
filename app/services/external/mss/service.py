@@ -302,8 +302,8 @@ class AsyncMssClient(websockets.connect):
         Args:
             msg: the message to process
         """
-        await self.connection.send(msg["data"])
-        response_str = await self.connection.recv()
+        await self.connection.send(msg["data"], text=True)
+        response_str = await self.connection.recv(decode=False)
         await self._redis.publish(self._inbox_pubsub, response_str)
 
     async def __aenter__(self) -> ClientConnection:

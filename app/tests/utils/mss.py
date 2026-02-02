@@ -14,9 +14,7 @@
 """Utilities for stuff related to MSS connection"""
 import json
 import logging
-import random
 import re
-import struct
 from datetime import datetime
 from typing import AsyncIterable, Awaitable, Dict, Iterable, List, Optional, Union
 
@@ -85,6 +83,7 @@ class MockWebsocket(websockets.ClientConnection):
                 sent=None,
             )
 
+        # FIXME: Mock when text = False or True
         self.__outbox.append(message)
         event_id: str = "unknown"
         try:
