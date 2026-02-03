@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Dict, Iterable, Mapping, Optional, Set, Tuple, Type, List
+from typing import Dict, Iterable, List, Mapping, Optional, Set, Tuple, Type
 
 from qiskit.qobj import (
     PulseQobjConfig,
@@ -39,10 +39,7 @@ from app.libs.quantum_executor.base.experiment import (
 from app.libs.quantum_executor.quantify.channel import QuantifyChannel
 
 from ..base.quantum_job.dtos import NativeQobjConfig
-
 from .channel import QuantifyChannelRegistry
-
-
 from .instruction import (
     QBLOX_TIMEGRID_INTERVAL,
     AcquireInstruction,

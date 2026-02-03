@@ -28,15 +28,15 @@ from quantify_scheduler.operations.acquisition_library import (
     Trace,
 )
 from quantify_scheduler.operations.pulse_library import (
+    DRAGPulse,
     GaussPulse,
     IdlePulse,
     NumericalPulse,
+    ResetClockPhase,
     SetClockFrequency,
     ShiftClockPhase,
     SoftSquarePulse,
-    DRAGPulse,
     SquarePulse,
-    ResetClockPhase,
 )
 
 from app.libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
