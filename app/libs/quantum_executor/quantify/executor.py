@@ -132,8 +132,10 @@ class QuantifyExecutor(QuantumExecutor):
             # self.spi_dac._connection.hset(f"couplers:{cplr}", "parking_current", 1e-4)
 
             dac = self.spi_dac.dacs_dictionary[cplr]
-            current_val = dac.current() # important: current stays at Ampers
-            self.spi_dac._connection.hset(f"couplers:{cplr}", "parking_current", current_val)
+            current_val = dac.current()  # important: current stays at Ampers
+            self.spi_dac._connection.hset(
+                f"couplers:{cplr}", "parking_current", current_val
+            )
 
     def _run_native(
         self,
@@ -159,12 +161,12 @@ class QuantifyExecutor(QuantumExecutor):
         self.spi_dac = SpiDAC(
             couplers=self._couplers, metadata_path=QUANTIFY_METADATA_FILE
         )
-        
-        RESTORE_CURRENTS = False 
+
+        RESTORE_CURRENTS = False
         # save instanteneous current values for every coupler in redis
         if RESTORE_CURRENTS:
             self._save_default_current_value_to_redis()
-        
+
         bias_currents = self._extract_bias(experiment)
         if bias_currents:
             print("Bias currents requested: %s", bias_currents)
@@ -181,7 +183,7 @@ class QuantifyExecutor(QuantumExecutor):
         t4 = datetime.now()
         print(t4 - t3, "DURATION OF MEASURING")
 
-        # return currents to their original values 
+        # return currents to their original values
         if RESTORE_CURRENTS:
             self.spi_dac.set_parking_currents(self._couplers)
         self.spi_dac.close_spi_rack()

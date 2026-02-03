@@ -76,6 +76,7 @@ _INSTRUCTION_PULSE_MAP: Dict[Tuple[str, Optional[str]], Type[BaseInstruction]] =
 FREQ_CONTROL_INSTRUCTIONS = (SetFreqInstruction, ShiftFreqInstruction)
 PLACEHOLDER_CLOCK_FREQ_HZ = 0.0
 
+
 @dataclass(frozen=True)
 class _ClockInitCandidate:
     t0: float
@@ -86,7 +87,6 @@ class _ClockInitCandidate:
 class _ChannelPlan:
     schedulable: List[BaseInstruction]
     had_any_instructions: bool
-
 
 
 @dataclass(frozen=True)
@@ -168,10 +168,9 @@ def _add_instruction_to_channel_registry(
         native_config=native_config,
         channel_registry=channel_registry,
         hardware_map=hardware_map,
-    ):  
+    ):
         if instruction.name != "ResetClockPhase":
             instruction.register()
-
 
 
 def _construct_schedule(
@@ -206,10 +205,10 @@ def _construct_schedule(
     init_freq_by_clock: Dict[str, Optional[_ClockInitCandidate]] = {}
     channel_plans: List[_ChannelPlan] = []
 
-    # get clock frequencies and list of instructions 
+    # get clock frequencies and list of instructions
     for channel in channel_registry.values():  # QuantifyChannel
         clock = channel.clock
-        
+
         if _is_drive_clock(clock):
             drive_clocks.add(clock)
 
@@ -227,7 +226,9 @@ def _construct_schedule(
                 if best is None or cand.t0 < best.t0:
                     best = cand
 
-            if (not include_dynamic_frequency_ops) and isinstance(inst, FREQ_CONTROL_INSTRUCTIONS):
+            if (not include_dynamic_frequency_ops) and isinstance(
+                inst, FREQ_CONTROL_INSTRUCTIONS
+            ):
                 continue
 
             schedulable.append(inst)
@@ -235,7 +236,9 @@ def _construct_schedule(
         init_freq_by_clock[clock] = best
 
         channel_plans.append(
-            _ChannelPlan(clock=clock, schedulable=schedulable, had_any_instructions=had_any)
+            _ChannelPlan(
+                clock=clock, schedulable=schedulable, had_any_instructions=had_any
+            )
         )
 
     # add clock resources first
@@ -243,7 +246,7 @@ def _construct_schedule(
         if _is_baseband_clock(clock):
             freq_hz = 0.0
         else:
-            freq_hz = (cand.freq_hz if cand is not None else PLACEHOLDER_CLOCK_FREQ_HZ)
+            freq_hz = cand.freq_hz if cand is not None else PLACEHOLDER_CLOCK_FREQ_HZ
 
         schedule.add_resource(ClockResource(name=clock, freq=freq_hz))
 
@@ -272,7 +275,7 @@ def _construct_schedule(
     tg = float(timegrid_interval)
 
     for plan in channel_plans:
-        prev: BaseInstruction = root_instruction 
+        prev: BaseInstruction = root_instruction
 
         for curr in plan.schedulable:
             # These MUST exist for schedulable instructions

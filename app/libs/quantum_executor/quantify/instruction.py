@@ -36,7 +36,7 @@ from quantify_scheduler.operations.pulse_library import (
     SoftSquarePulse,
     DRAGPulse,
     SquarePulse,
-    ResetClockPhase
+    ResetClockPhase,
 )
 
 from app.libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
@@ -289,7 +289,7 @@ class AcquireInstruction(BaseInstruction):
                 duration=self.duration,
                 acq_channel=int(self.channel.clock.split(".")[0][1:]),
                 acq_index=acq_index,
-                bin_mode=self.bin_mode
+                bin_mode=self.bin_mode,
             )
         elif self.protocol == "trace":
             op = Trace(
@@ -297,7 +297,7 @@ class AcquireInstruction(BaseInstruction):
                 clock=self.channel.clock,
                 duration=self.duration,
                 acq_channel=int(self.channel.clock.split(".")[0][1:]),
-                acq_index=acq_index
+                acq_index=acq_index,
             )
         else:
             raise RuntimeError(f"Unknown acquisition protocol {self.protocol}.")
@@ -462,7 +462,7 @@ class SetPhaseInstruction(BaseInstruction):
                 channel=channel,
                 port=port_name,
                 duration=0.0,
-                phase=qobj_inst.phase*180/np.pi,
+                phase=qobj_inst.phase * 180 / np.pi,
             )
         ]
 
@@ -511,10 +511,10 @@ class ShiftPhaseInstruction(BaseInstruction):
                 channel=channel,
                 port=port_name,
                 duration=0.0,
-                phase=qobj_inst.phase*180/np.pi,
+                phase=qobj_inst.phase * 180 / np.pi,
             )
         ]
-            
+
     def to_operation(self, config: PulseQobjConfig) -> Operation:
         """
         Send shift clock phase command in degree.
@@ -594,18 +594,18 @@ class SquarePulseInstruction(BaseInstruction):
         channel = channel_registry.get(clock_name)
 
         reset_clock = ResetClockPhase(
-                clock=clock_name,
-            )
+            clock=clock_name,
+        )
 
         square = cls(
-                name=qobj_inst.name,
-                t0=t0,
-                channel=channel,
-                port=port_name,
-                duration=duration,
-                pulse_shape=qobj_inst.pulse_shape,
-                parameters=qobj_inst.parameters,
-            )
+            name=qobj_inst.name,
+            t0=t0,
+            channel=channel,
+            port=port_name,
+            duration=duration,
+            pulse_shape=qobj_inst.pulse_shape,
+            parameters=qobj_inst.parameters,
+        )
         return [inst for inst in (reset_clock, square) if inst is not None]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
@@ -615,7 +615,7 @@ class SquarePulseInstruction(BaseInstruction):
             duration=self.duration,
             port=self.port,
             clock=self.channel.clock,
-            reference_magnitude=self.parameters.get("reference_magnitude")
+            reference_magnitude=self.parameters.get("reference_magnitude"),
         )
         return op
 
@@ -764,7 +764,7 @@ class WacqtCZPulseInstruction(BaseInstruction):
             duration=float(self.parameters.get("t_p")),
             amp=float(self.parameters.get("delta_0")),
             port=self.port,
-            clock=self.channel.clock
+            clock=self.channel.clock,
         )
 
 
