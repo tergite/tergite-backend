@@ -73,6 +73,14 @@ _INSTRUCTION_PULSE_MAP: Dict[Tuple[str, Optional[str]], Type[BaseInstruction]] =
 FREQ_CONTROL_INSTRUCTIONS = (SetFreqInstruction, ShiftFreqInstruction)
 PLACEHOLDER_CLOCK_FREQ_HZ = 0.0
 
+def _is_drive_clock(clock: str) -> bool:
+    # qXX.01 or qXX.12
+    parts = clock.split(".")
+    return len(parts) == 2 and parts[1] in {"01", "12"}
+
+def _is_baseband_clock(clock: str) -> bool:
+    # baseband clock can be 0
+    return clock.endswith(".baseband") or clock == "cl0.baseband"
 
 @dataclass(frozen=True)
 class _ClockInitCandidate:
@@ -82,6 +90,7 @@ class _ClockInitCandidate:
 
 @dataclass(frozen=True)
 class _ChannelPlan:
+    clock: str
     schedulable: List[BaseInstruction]
     had_any_instructions: bool
 
@@ -98,6 +107,7 @@ class QuantifyExperiment(NativeExperiment[Schedule]):
         qobj_config: PulseQobjConfig,
         native_config: NativeQobjConfig,
         hardware_map: Optional[Dict[str, Tuple[str, str]]],
+        include_dynamic_frequency_ops: bool = False,
     ) -> "QuantifyExperiment":
         """Converts PulseQobjExperiment to native experiment
 
@@ -124,7 +134,10 @@ class QuantifyExperiment(NativeExperiment[Schedule]):
             )
 
         schedule = _construct_schedule(
-            channel_registry=channel_registry, header=header, config=qobj_config
+            channel_registry=channel_registry, 
+            header=header, 
+            config=qobj_config, 
+            include_dynamic_frequency_op=include_dynamic_frequency_ops
         )
         duration = 0
         if isinstance(schedule.duration, (float, int)):
@@ -261,7 +274,7 @@ def _construct_schedule(
     # Phase resets at the very start (after resources exist).
     for clock in drive_clocks:
         schedule.add(
-            ref_op=root.label,
+            ref_op=root_instruction.label,
             ref_pt="start",
             ref_pt_new="start",
             rel_time=0.0,
@@ -269,14 +282,14 @@ def _construct_schedule(
             operation=ResetClockPhase(clock=clock),
         )
 
-    tg = float(timegrid_interval)
+    timegrid_interval = float(timegrid_interval)
 
     for plan in channel_plans:
         prev: BaseInstruction = root_instruction
 
         for curr in plan.schedulable:
             # These MUST exist for schedulable instructions
-            rel_time = curr.t0 - prev.final_timestamp + tg
+            rel_time = curr.t0 - prev.final_timestamp + timegrid_interval
 
             schedule.add(
                 ref_op=prev.label,
@@ -295,7 +308,7 @@ def _construct_schedule(
                 ref_op=prev.label,
                 ref_pt="end",
                 ref_pt_new="start",
-                rel_time=tg,
+                rel_time=timegrid_interval,
                 label=f"{prev.label}__tail_idle",
                 operation=IdlePulse(duration=tg),
             )

@@ -262,6 +262,19 @@ def get_acquisition_parameters_from_experiment(
     return AcqParams(qubits=qubits, memory_slot=memory_slot)
 
 
+def _parse_exp_index_from_name(expt_name: str, delimiter: str = "~") -> Optional[int]:
+    """
+    Your backend uses get_experiment_name(name, idx) => f"{name}~{idx}"
+    This extracts that trailing idx. Returns None if parsing fails.
+    """
+    if delimiter not in expt_name:
+        return None
+    try:
+        _, idx_str = expt_name.rsplit(delimiter, 1)
+        return int(idx_str)
+    except Exception:
+        return None
+
 def discriminate_results(
     job: QuantumJob,
     discriminator: Callable[[int, npt.NDArray[np.complexfloating]], int],
@@ -301,6 +314,14 @@ def discriminate_results(
 
     # loop over experiments, where each experiment is produced by one circuit
     for exp_index, expt_dataset in enumerate(job.raw_results.values()):
+        
+        exp_obj = qobj.experiments[exp_index]
+        reg_len = getattr(exp_obj.header, "memory_slots", None)
+        if reg_len is None:
+            reg_len = getattr(qobj.config, "memory_slots", None)
+        if reg_len is None:
+            reg_len = max(acq.memory_slots) + 1
+        reg_len = int(reg_len)
 
         # map qubit -> classical slot
         # get acquisition instruction params
@@ -308,7 +329,7 @@ def discriminate_results(
         meas_map = dict(zip(acq.qubits, acq.memory_slots))
 
         no_of_repetitions: int = expt_dataset.sizes["repetition"]
-        register = np.zeros((full_register_length, no_of_repetitions), dtype=np.int8)
+        register = np.zeros((reg_len, no_of_repetitions), dtype=np.int8)
 
         # process each acquisition
         for channel, acquisitions in expt_dataset.items():
@@ -327,17 +348,23 @@ def discriminate_results(
 
             iq_values: npt.NDArray[np.complexfloating] = acquisitions.data[:, 0]
             disc_res = discriminator(qubit_idx, iq_values)
+            slot = meas_map[qubit_idx]
+            if slot >= reg_len:
+                raise ValueError(
+                    f"Acquire maps qubit {qubit_idx} to memory_slot {slot}, "
+                    f"but reg_len is {reg_len}. (Circuit/Qobj mismatch)"
+                )
 
             # support scalar and vector output
             if np.isscalar(disc_res):
-                register[meas_map[qubit_idx], :] = disc_res
+                register[slot :] = disc_res
             else:
                 if len(disc_res) != no_of_repetitions:
                     raise ValueError(
                         f"Discriminator for qubit {qubit_idx} "
                         f"returned {len(disc_res)} values, expected {no_of_repetitions}"
                     )
-                register[meas_map[qubit_idx], :] = disc_res
+                register[slot, :] = disc_res
 
         # convert to hex per repetition
         bitarrays_per_rep = register.transpose()
@@ -370,27 +397,60 @@ def xarray_to_list(job: QuantumJob) -> IQMemory:
             "xarray_to_list: Can't find Quantum job experiment results `job.raw_results`."
         )
 
+    qobj = job.qobj
     experiments_mem: IQMemory = []
 
     # sort experiments by name
-    for _, dataset in sorted(job.raw_results.items(), key=lambda kv: kv[0]):
+    for expt_name, dataset in sorted(job.raw_results.items(), key=lambda kv: kv[0]):
         if not isinstance(dataset, xr.Dataset):
             raise TypeError(
                 "xarray_to_list: expected an xarray.Dataset in raw_results values"
             )
+        
+        # get qobj experiment index first 
+        exp_index = _parse_exp_index_from_name(expt_name, delimiter="~")
+        if exp_index is None:
+            # for debugging purposes keep this, otherwise raise ValueError
+            exp_index = len(experiments_mem)
 
-        # Sort acquisition-channel keys numerically
-        channel_keys = sorted(dataset.data_vars.keys(), key=lambda k: int(k))
+        
+        # get acquisition mapping from qobj
+        acq = get_acquisition_parameters_from_experiment(exp_index=exp_index, qobj=qobj, mode="object")
+        meas_map: Dict[int, int] = dict(zip(acq.qubits, acq.memory_slots))
+
+        # invert: memory_slot -> qubit
+        slot_to_qubit: Dict[int, int] = {}
+        for q, s in meas_map.items():
+            if s in slot_to_qubit:
+                raise ValueError(
+                    f"xarray_to_list: multiple qubits map to the same memory_slot={s} "
+                    f"(qubits {slot_to_qubit[s]} and {q})."
+                )
+            slot_to_qubit[s] = q
+        
+        # slot order defines output order (clbit order)
+        slot_order = sorted(slot_to_qubit.keys())
 
         # Number of shots / repetitions (may be 1 for averaged data)
         number_of_repeatitions = dataset.sizes.get("repetition", 1)
-
+        
         exp_mem: List[List[IQPoint]] = []
-        for rep_idx in range(number_of_repeatitions):
+        for rep_idx in range(number_if_repeatitions):
             repeatition_vals: List[IQPoint] = []
-            for channel in channel_keys:
+            for slot in slot_order:
+                q = slot_to_qubit[slot]
+
+                key_slot = str(slot)
+
+                if key_slot not in dataset.data_vars:
+                    raise KeyError(
+                        f"xarray_to_list: cannot find dataset variable for qubit={q} or slot={slot}. "
+                        f"Available keys: {list(dataset.data_vars.keys())}"
+                    )
+                
+
                 # get numpy view
-                arr = dataset[channel].data
+                arr = dataset[key_slot].data
                 # slice the repetition dimension
                 # (repetition, acq_index_N)
                 if arr.ndim == 2:

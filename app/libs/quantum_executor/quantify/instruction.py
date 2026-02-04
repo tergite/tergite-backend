@@ -375,6 +375,7 @@ class SetFreqInstruction(BaseInstruction):
                 port=port_name,
                 duration=0.0,
                 frequency=frequency_hz,
+                t0=t0,
             )
         ]
 
@@ -419,6 +420,7 @@ class ShiftFreqInstruction(BaseInstruction):
                 port=port_name,
                 duration=0.0,
                 frequency=frequency,
+                t0=t0,
             )
         ]
 
@@ -456,13 +458,15 @@ class SetPhaseInstruction(BaseInstruction):
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
         channel = channel_registry.get(clock_name)
+        phase_degree = qobj_inst.phase * 180 / np.pi
         return [
             SetPhaseInstruction(
                 name=qobj_inst.name,
                 channel=channel,
                 port=port_name,
                 duration=0.0,
-                phase=qobj_inst.phase * 180 / np.pi,
+                phase=phase_degree,
+                t0=t0,
             )
         ]
 
@@ -505,13 +509,15 @@ class ShiftPhaseInstruction(BaseInstruction):
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
         channel = channel_registry.get(clock_name)
+        phase_degree = qobj_inst.phase * 180 / np.pi
         return [
             ShiftPhaseInstruction(
                 name=qobj_inst.name,
                 channel=channel,
                 port=port_name,
                 duration=0.0,
-                phase=qobj_inst.phase * 180 / np.pi,
+                phase=phase_degree,
+                t0=t0,
             )
         ]
 
@@ -561,13 +567,16 @@ class GaussPulseInstruction(BaseInstruction):
         # Extract parameters, with defaults as needed.
         G_amp = self.parameters.get("amp")
         phase = self.parameters.get("phase", 0.0)
+        motzoi = self.parameters.get("motzoi", 0.0)
+        sigma = self.parameters.get("sigma", self.duration / 4)
         op = DRAGPulse(
             G_amp=G_amp.real,
-            D_amp=0,
+            D_amp=motzoi,
             duration=self.duration,
             port=self.port,
             clock=self.channel.clock,
             phase=phase,
+            sigma=sigma,
             reference_magnitude=self.parameters.get("reference_magnitude"),
         )
         return op
