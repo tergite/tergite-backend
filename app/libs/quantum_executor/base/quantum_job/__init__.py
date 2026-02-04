@@ -275,6 +275,7 @@ def _parse_exp_index_from_name(expt_name: str, delimiter: str = "~") -> Optional
     except Exception:
         return None
 
+
 def discriminate_results(
     job: QuantumJob,
     discriminator: Callable[[int, npt.NDArray[np.complexfloating]], int],
@@ -314,7 +315,7 @@ def discriminate_results(
 
     # loop over experiments, where each experiment is produced by one circuit
     for exp_index, expt_dataset in enumerate(job.raw_results.values()):
-        
+
         exp_obj = qobj.experiments[exp_index]
         reg_len = getattr(exp_obj.header, "memory_slots", None)
         if reg_len is None:
@@ -357,7 +358,7 @@ def discriminate_results(
 
             # support scalar and vector output
             if np.isscalar(disc_res):
-                register[slot :] = disc_res
+                register[slot:] = disc_res
             else:
                 if len(disc_res) != no_of_repetitions:
                     raise ValueError(
@@ -406,16 +407,17 @@ def xarray_to_list(job: QuantumJob) -> IQMemory:
             raise TypeError(
                 "xarray_to_list: expected an xarray.Dataset in raw_results values"
             )
-        
-        # get qobj experiment index first 
+
+        # get qobj experiment index first
         exp_index = _parse_exp_index_from_name(expt_name, delimiter="~")
         if exp_index is None:
             # for debugging purposes keep this, otherwise raise ValueError
             exp_index = len(experiments_mem)
 
-        
         # get acquisition mapping from qobj
-        acq = get_acquisition_parameters_from_experiment(exp_index=exp_index, qobj=qobj, mode="object")
+        acq = get_acquisition_parameters_from_experiment(
+            exp_index=exp_index, qobj=qobj, mode="object"
+        )
         meas_map: Dict[int, int] = dict(zip(acq.qubits, acq.memory_slots))
 
         # invert: memory_slot -> qubit
@@ -427,13 +429,13 @@ def xarray_to_list(job: QuantumJob) -> IQMemory:
                     f"(qubits {slot_to_qubit[s]} and {q})."
                 )
             slot_to_qubit[s] = q
-        
+
         # slot order defines output order (clbit order)
         slot_order = sorted(slot_to_qubit.keys())
 
         # Number of shots / repetitions (may be 1 for averaged data)
         number_of_repeatitions = dataset.sizes.get("repetition", 1)
-        
+
         exp_mem: List[List[IQPoint]] = []
         for rep_idx in range(number_if_repeatitions):
             repeatition_vals: List[IQPoint] = []
@@ -447,7 +449,6 @@ def xarray_to_list(job: QuantumJob) -> IQMemory:
                         f"xarray_to_list: cannot find dataset variable for qubit={q} or slot={slot}. "
                         f"Available keys: {list(dataset.data_vars.keys())}"
                     )
-                
 
                 # get numpy view
                 arr = dataset[key_slot].data

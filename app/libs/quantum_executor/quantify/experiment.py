@@ -73,14 +73,17 @@ _INSTRUCTION_PULSE_MAP: Dict[Tuple[str, Optional[str]], Type[BaseInstruction]] =
 FREQ_CONTROL_INSTRUCTIONS = (SetFreqInstruction, ShiftFreqInstruction)
 PLACEHOLDER_CLOCK_FREQ_HZ = 0.0
 
+
 def _is_drive_clock(clock: str) -> bool:
     # qXX.01 or qXX.12
     parts = clock.split(".")
     return len(parts) == 2 and parts[1] in {"01", "12"}
 
+
 def _is_baseband_clock(clock: str) -> bool:
     # baseband clock can be 0
     return clock.endswith(".baseband") or clock == "cl0.baseband"
+
 
 @dataclass(frozen=True)
 class _ClockInitCandidate:
@@ -134,10 +137,10 @@ class QuantifyExperiment(NativeExperiment[Schedule]):
             )
 
         schedule = _construct_schedule(
-            channel_registry=channel_registry, 
-            header=header, 
-            config=qobj_config, 
-            include_dynamic_frequency_op=include_dynamic_frequency_ops
+            channel_registry=channel_registry,
+            header=header,
+            config=qobj_config,
+            include_dynamic_frequency_op=include_dynamic_frequency_ops,
         )
         duration = 0
         if isinstance(schedule.duration, (float, int)):
