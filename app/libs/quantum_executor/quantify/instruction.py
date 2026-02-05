@@ -568,7 +568,11 @@ class GaussPulseInstruction(BaseInstruction):
         G_amp = self.parameters.get("amp")
         phase = self.parameters.get("phase", 0.0)
         motzoi = self.parameters.get("motzoi", 0.0)
-        sigma = self.parameters.get("sigma", self.duration / 4)
+        sigma = self.parameters.get("sigma", None)
+        if sigma is None:
+            sigma_s = self.duration / 4
+        else:
+            sigma_s = _map_to_qblox_timegrid(float(sigma) * DT_CONST)
         op = DRAGPulse(
             G_amp=G_amp.real,
             D_amp=motzoi,
@@ -770,7 +774,7 @@ class WacqtCZPulseInstruction(BaseInstruction):
     def to_operation(self, config: PulseQobjConfig) -> Operation:
         # TODO: assert duration == t_p or replace t_p, t_w, t_rf with one duration parameter
         return SoftSquarePulse(
-            duration=float(self.parameters.get("t_p")),
+            duration=self.duration,
             amp=float(self.parameters.get("delta_0")),
             port=self.port,
             clock=self.channel.clock,

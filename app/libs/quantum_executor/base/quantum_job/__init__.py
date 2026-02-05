@@ -28,6 +28,7 @@ from typing import (
     TypeAlias,
     TypeVar,
     Union,
+    Optional
 )
 
 import h5py
@@ -317,8 +318,12 @@ def discriminate_results(
     for exp_index, expt_dataset in enumerate(job.raw_results.values()):
 
         exp_obj = qobj.experiments[exp_index]
-        reg_len = getattr(exp_obj.header, "memory_slots", None)
+        header = getattr(exp_obj, "header", None)
+        reg_len = getattr(header, "memory_slots", None)
+        acq = get_acquisition_parameters_from_experiment(exp_index=exp_index, qobj=qobj)
+        
         if reg_len is None:
+            print(qobj)
             reg_len = getattr(qobj.config, "memory_slots", None)
         if reg_len is None:
             reg_len = max(acq.memory_slots) + 1
@@ -326,8 +331,8 @@ def discriminate_results(
 
         # map qubit -> classical slot
         # get acquisition instruction params
-        acq = get_acquisition_parameters_from_experiment(exp_index=exp_index, qobj=qobj)
         meas_map = dict(zip(acq.qubits, acq.memory_slots))
+        slot_to_qubit = dict(zip(acq.memory_slots, acq.qubits))
 
         no_of_repetitions: int = expt_dataset.sizes["repetition"]
         register = np.zeros((reg_len, no_of_repetitions), dtype=np.int8)
@@ -340,16 +345,17 @@ def discriminate_results(
                     f"Experiment data contain more than one measurement per channel."
                     f"Instead {acquisitions.shape[1]} measurements found for qubit channel {channel}"
                 )
-            qubit_idx = int(channel)
+            slot = int(channel)
 
-            # check if acquisition index is in acq_qubits
-            # ignore unused channels
-            if qubit_idx not in meas_map:
+            if slot not in slot_to_qubit:
                 continue
+
+            qubit_idx = slot_to_qubit[slot]
 
             iq_values: npt.NDArray[np.complexfloating] = acquisitions.data[:, 0]
             disc_res = discriminator(qubit_idx, iq_values)
-            slot = meas_map[qubit_idx]
+            
+
             if slot >= reg_len:
                 raise ValueError(
                     f"Acquire maps qubit {qubit_idx} to memory_slot {slot}, "
@@ -358,7 +364,7 @@ def discriminate_results(
 
             # support scalar and vector output
             if np.isscalar(disc_res):
-                register[slot:] = disc_res
+                register[slot, :] = disc_res
             else:
                 if len(disc_res) != no_of_repetitions:
                     raise ValueError(
@@ -437,7 +443,7 @@ def xarray_to_list(job: QuantumJob) -> IQMemory:
         number_of_repeatitions = dataset.sizes.get("repetition", 1)
 
         exp_mem: List[List[IQPoint]] = []
-        for rep_idx in range(number_if_repeatitions):
+        for rep_idx in range(number_of_repeatitions):
             repeatition_vals: List[IQPoint] = []
             for slot in slot_order:
                 q = slot_to_qubit[slot]

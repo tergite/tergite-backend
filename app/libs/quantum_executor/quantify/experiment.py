@@ -140,7 +140,7 @@ class QuantifyExperiment(NativeExperiment[Schedule]):
             channel_registry=channel_registry,
             header=header,
             config=qobj_config,
-            include_dynamic_frequency_op=include_dynamic_frequency_ops,
+            include_dynamic_frequency_ops=include_dynamic_frequency_ops,
         )
         duration = 0
         if isinstance(schedule.duration, (float, int)):
@@ -313,7 +313,7 @@ def _construct_schedule(
                 ref_pt_new="start",
                 rel_time=timegrid_interval,
                 label=f"{prev.label}__tail_idle",
-                operation=IdlePulse(duration=tg),
+                operation=IdlePulse(duration=timegrid_interval),
             )
 
     return schedule
