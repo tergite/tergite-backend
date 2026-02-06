@@ -22,13 +22,13 @@ from typing import (
     List,
     Literal,
     Match,
+    Optional,
     Sequence,
     Tuple,
     Type,
     TypeAlias,
     TypeVar,
     Union,
-    Optional,
 )
 
 import h5py
