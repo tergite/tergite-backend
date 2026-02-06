@@ -28,7 +28,7 @@ from typing import (
     TypeAlias,
     TypeVar,
     Union,
-    Optional
+    Optional,
 )
 
 import h5py
@@ -321,7 +321,7 @@ def discriminate_results(
         header = getattr(exp_obj, "header", None)
         reg_len = getattr(header, "memory_slots", None)
         acq = get_acquisition_parameters_from_experiment(exp_index=exp_index, qobj=qobj)
-        
+
         if reg_len is None:
             print(qobj)
             reg_len = getattr(qobj.config, "memory_slots", None)
@@ -354,7 +354,6 @@ def discriminate_results(
 
             iq_values: npt.NDArray[np.complexfloating] = acquisitions.data[:, 0]
             disc_res = discriminator(qubit_idx, iq_values)
-            
 
             if slot >= reg_len:
                 raise ValueError(

@@ -40,6 +40,7 @@ def _make_iq_dataset(slots: Dict[int, np.ndarray]) -> xr.Dataset:
 
     return xr.Dataset(data_vars)
 
+
 def _dummy_qobj(*, qubits: List[int], slots: Optional[List[int]] = None):
     """
     Minimal qobj stub for xarray_to_list:
@@ -57,6 +58,7 @@ def _dummy_qobj(*, qubits: List[int], slots: Optional[List[int]] = None):
     )
     experiment = SimpleNamespace(instructions=[acquire_inst])
     return SimpleNamespace(experiments=[experiment])
+
 
 def _stub_job(raw_results, qobj=None):
     if qobj is None:
@@ -125,6 +127,7 @@ def test_xarray_to_list_unexpected_ndim():
 
     with pytest.raises(ValueError, match="unexpected ndarray shape"):
         xarray_to_list(_stub_job(raw_results))
+
 
 def test_xarray_to_list_orders_by_memory_slot_not_qubit_order():
     """
