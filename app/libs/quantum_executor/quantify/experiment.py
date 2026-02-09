@@ -101,10 +101,13 @@ class _ChannelPlan:
 
 @dataclass
 class _State:
-    dispatch_tick: int          # how many timing instructions have been "issued" on this channel
-    sync_tick: int              # accumulated global wait applied to this channel
-    last_label: str             # last EMITTED op label (for tail idle)
+    dispatch_tick: (
+        int  # how many timing instructions have been "issued" on this channel
+    )
+    sync_tick: int  # accumulated global wait applied to this channel
+    last_label: str  # last EMITTED op label (for tail idle)
     has_emitted: bool
+
 
 @dataclass(frozen=True)
 class QuantifyExperiment(NativeExperiment[Schedule]):
@@ -342,7 +345,7 @@ def _construct_schedule(
     last_slot_by_clock: Dict[str, int] = {}
     slots: Set[int] = set()
     clocks_in_order: List[str] = [p.clock for p in channel_plans]
-    slot_map:  Dict[int, List[Tuple[BaseInstruction, bool]]] = defaultdict(list)
+    slot_map: Dict[int, List[Tuple[BaseInstruction, bool]]] = defaultdict(list)
 
     for plan in channel_plans:
         slot_map = defaultdict(list)
@@ -352,7 +355,9 @@ def _construct_schedule(
             max_slot = max(max_slot, s)
             slots.add(s)
             emit = True
-            if (not include_dynamic_frequency_ops) and isinstance(inst, FREQ_CONTROL_INSTRUCTIONS):
+            if (not include_dynamic_frequency_ops) and isinstance(
+                inst, FREQ_CONTROL_INSTRUCTIONS
+            ):
                 emit = False
 
             slot_map[s].append((inst, emit))
@@ -362,7 +367,6 @@ def _construct_schedule(
 
     sorted_slots = sorted(slots)
 
-    
     state: Dict[str, _State] = {
         clock: _State(
             dispatch_tick=0,
@@ -378,20 +382,24 @@ def _construct_schedule(
     # barrier aligns "ready" time = slot + sync + dispatch (before paying +1 for the op)
     for slot in sorted_slots:
 
-        active_clocks = [c for c in clocks_in_order if last_slot_by_clock.get(c, -1) >= slot]
+        active_clocks = [
+            c for c in clocks_in_order if last_slot_by_clock.get(c, -1) >= slot
+        ]
         if not active_clocks:
             break
 
         # barrier: align all active channels
-        barrier = max(slot + state[c].sync_tick + state[c].dispatch_tick for c in active_clocks)
+        barrier = max(
+            slot + state[c].sync_tick + state[c].dispatch_tick for c in active_clocks
+        )
 
         # bring all active clocks up to barrier by increasing their sync_tick
         for c in active_clocks:
             st = state[c]
             ready = slot + st.sync_tick + st.dispatch_tick
             if ready < barrier:
-                st.sync_tick += (barrier - ready)
-        
+                st.sync_tick += barrier - ready
+
         # emit (or skip) all instructions at this slot
         for c in active_clocks:
             st = state[c]
