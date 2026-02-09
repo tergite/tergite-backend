@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import math
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Mapping, Optional, Set, Tuple, Type
 
@@ -96,6 +97,14 @@ class _ChannelPlan:
     clock: str
     schedulable: List[BaseInstruction]
     had_any_instructions: bool
+
+
+@dataclass
+class _State:
+    prev_label: str
+    prev_final_tick: int  # t0 + duration
+    cursor_end_tick: int  # schedule-time of last emitted op
+    pending_sync_tick: int  # accumulated global waiting to apply at next op
 
 
 @dataclass(frozen=True)
@@ -213,7 +222,7 @@ def _construct_schedule(
 
     schedule = Schedule(name=header.name, repetitions=config.shots)
 
-    # Single pass over channel_registry: collect what we need
+    # Single pass over channel_registry: collect channel_plans and initial clock frequency for each channel
     drive_clocks: Set[str] = set()
     init_freq_by_clock: Dict[str, Optional[_ClockInitCandidate]] = {}
     channel_plans: List[_ChannelPlan] = []
@@ -265,13 +274,14 @@ def _construct_schedule(
 
     # add schedule operations
     root_instruction = InitialObjectInstruction()
+    root_op = root_instruction.to_operation(config=config)
     schedule.add(
         ref_op=None,
         ref_pt="end",
         ref_pt_new="start",
         rel_time=0.0,
         label=root_instruction.label,
-        operation=root_instruction.to_operation(config=config),
+        operation=root_op,
     )
 
     # Phase resets at the very start (after resources exist).
@@ -287,33 +297,154 @@ def _construct_schedule(
 
     timegrid_interval = float(timegrid_interval)
 
+    """
+    tl;dr: We keep track timegrid shifts and synchronize it accross the channels
+
+    As we add timegrid_interval to our original scheduled operations.
+    We shift the start time of the next operation, 
+        therefore breaking alignment/barriers accross the channels
+    We need to compensate for that by keeping track of a "global clock".
+    
+    A few things to consider like including dynamic frequency ops in schedule plan 
+        and float operations accumulating small errors.
+
+    Plan: 
+
+    grid_ticks function converts float to int in nanoseconds
+
+    Convert channel plan to group by time slot: 
+        by_clock[clock][slot_tick]  
+    Build a gloal slot list:
+        slots = sorted(union of all slot_ticks accross all clocks)
+    
+    maintain per clock state: 
+        prev_label - last scheduled op 
+        prev_final_tick - original planned (Qobj) time of last scheduled op 
+        cursor_end_tick - actual schedule time when channel is free next 
+        pending_sync_tick - extra global delay accumulated while channel was idle  
+
+    Per slot S:
+        1. Compute barrier_ready_tick 
+            - ready_tick(clock) = cursor_end_tick + pending_sync_tick 
+            - barrier = max(ready_tick(clock) for clocks that still have future work)
+        2. For each clock:
+            - slack = barrier - ready_tick(clock)
+            - if clock has instruction at slot S:
+                * apply (pending_sync + slack) once to  the first instruction rel_time 
+                * clear pending_sync_tick = 0
+                * update cursor_end_tick, prev_final_tick, prev_label 
+            - if no instructons at this slot:
+                *  accumulate pending_sync_tick += slack
+    """
+
+    def to_tick(t: float) -> int:
+        return int(round(t / timegrid_interval))
+
+    def from_tick(k: int) -> float:
+        return k * timegrid_interval
+
+    root_end_tick = to_tick(float(getattr(root_op, "duration", 0.0) or 0.0))
+
+    # Group instructions by (clock, slot_tick)
+    by_clock_slot: Dict[str, Dict[int, List[BaseInstruction]]] = {}
+    slots: Set[int] = set()
+    clocks_in_order: List[str] = []
+    slot_map: Dict[int, List[BaseInstruction]] = defaultdict(list)
+
     for plan in channel_plans:
-        prev: BaseInstruction = root_instruction
+        clocks_in_order.append(plan.clock)
+        slot_map = defaultdict(list)
+        for inst in plan.schedulable:
+            s = to_tick(inst.t0)
+            slot_map[s].append(inst)
+            slots.add(s)
+        by_clock_slot[plan.clock] = slot_map
 
-        for curr in plan.schedulable:
-            # These MUST exist for schedulable instructions
-            rel_time = curr.t0 - prev.final_timestamp + timegrid_interval
+    sorted_slots = sorted(slots)
 
-            schedule.add(
-                ref_op=prev.label,
-                ref_pt="end",
-                ref_pt_new="start",
-                rel_time=rel_time,
-                label=curr.label,
-                operation=curr.to_operation(config=config),
-            )
-            prev = curr
+    has_any_sched: Dict[str, bool] = {
+        plan.clock: bool(plan.schedulable) for plan in channel_plans
+    }
 
+    state: Dict[str, _State] = {
+        clock: _State(
+            prev_label=root_instruction.label,
+            prev_final_tick=0,
+            cursor_end_tick=root_end_tick,
+            pending_sync_tick=0,
+        )
+        for clock in clocks_in_order
+    }
+
+    # Iterate global slots in increasing Qobj time
+    for slot in sorted_slots:
+
+        active_clocks = clocks_in_order
+
+        # barrier: align all active channels
+        barrier_tick = max(
+            state[c].cursor_end_tick + state[c].pending_sync_tick for c in active_clocks
+        )
+
+        for clock in active_clocks:
+            st = state[clock]
+            ready = st.cursor_end_tick + st.pending_sync_tick
+            slack = barrier_tick - ready
+            if slack < 0:
+                slack = 0
+
+            insts = by_clock_slot[clock].get(slot)
+            if not insts:
+                # no op, carry the required waiting forward
+                st.pending_sync_tick += slack
+                continue
+
+            # Has ops at this slot: apply (pending + slack) once, then clear pending
+            extra_sync = st.pending_sync_tick + slack
+            st.pending_sync_tick = 0
+
+            first = True
+            for inst in insts:
+                curr_t0_tick = slot
+                dur_tick = to_tick(inst.duration)
+                prev_final = st.prev_final_tick
+
+                base_rel_tick = (curr_t0_tick - prev_final) + 1
+                rel_tick = base_rel_tick + (extra_sync if first else 0)
+                first = False
+
+                if rel_tick < 0:
+                    raise ValueError(
+                        f"Negative rel_time on clock={clock}. "
+                        f"slot={slot} prev_final={prev_final} rel_tick={rel_tick} "
+                        f"(inst={inst})"
+                    )
+
+                schedule.add(
+                    ref_op=st.prev_label,
+                    ref_pt="end",
+                    ref_pt_new="start",
+                    rel_time=from_tick(rel_tick),
+                    label=inst.label,
+                    operation=inst.to_operation(config=config),
+                )
+
+                # advance per-channel schedule-time cursor
+                st.cursor_end_tick = st.cursor_end_tick + rel_tick + dur_tick
+                st.prev_final_tick = curr_t0_tick + dur_tick
+                st.prev_label = inst.label
+
+    for plan in channel_plans:
         # tail idle if the channel had ANY instructions,
         # even if all were filtered out as freq-control ops.
         if plan.had_any_instructions:
+            st = state[plan.clock]
             schedule.add(
-                ref_op=prev.label,
+                ref_op=st.prev_label,
                 ref_pt="end",
                 ref_pt_new="start",
                 rel_time=timegrid_interval,
-                label=f"{prev.label}__tail_idle",
+                label=f"{st.prev_label}__tail_idle",
                 operation=IdlePulse(duration=timegrid_interval),
             )
-
     return schedule

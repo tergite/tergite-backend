@@ -159,7 +159,6 @@ def _compile_schedule_from_qobj(qobj_dict: dict, quantify_config_path: Path):
     # 6) Compile and normalize timing table
     compiled = compiler.compile(schedule=expt.schedule, config=comp_cfg)
     df = _timing_table_df(compiled)
-    df.to_csv("actual.csv", index=False)
     return compiled, _normalize_timing_table(pd.DataFrame(df))
 
 
