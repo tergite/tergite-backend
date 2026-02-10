@@ -46,8 +46,10 @@ from app.libs.quantum_executor.quantify.channel import (
     QuantifyChannelRegistry,
 )
 
+
 QBLOX_TIMEGRID_INTERVAL = 4e-9
 DT_CONST = 1e-9
+INITIAL_RESET_VALUE = 150e-6
 
 
 """
@@ -203,7 +205,7 @@ class InitialObjectInstruction(BaseInstruction):
         self,
         channel: QuantifyChannel = QuantifyChannel(clock="cl0.baseband"),
         t0=0.0,
-        duration=0.0,
+        duration=INITIAL_RESET_VALUE,
         **kwargs,
     ):
         kwargs["name"] = "initial_object"
@@ -229,7 +231,7 @@ class InitialObjectInstruction(BaseInstruction):
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
         # Use the new IdlePulse operation to represent a no-op delay
-        op = IdlePulse(duration=1000e-6)
+        op = IdlePulse(duration=self.duration)
         return op
 
 

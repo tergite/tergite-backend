@@ -45,7 +45,7 @@ from app.libs.quantum_executor.utils.config import (
 )
 from app.libs.quantum_executor.utils.logger import ExperimentLogger
 from app.libs.quantum_executor.utils.portclock import generate_hardware_map
-from settings import QUANTIFY_METADATA_FILE, REDIS_CONNECTION
+from settings import QUANTIFY_METADATA_FILE, REDIS_CONNECTION, SHOULD_RESTORE_CURRENTS
 
 from .spi_dac import SpiDAC
 
@@ -162,9 +162,8 @@ class QuantifyExecutor(QuantumExecutor):
             couplers=self._couplers, metadata_path=QUANTIFY_METADATA_FILE
         )
 
-        RESTORE_CURRENTS = False
         # save instanteneous current values for every coupler in redis
-        if RESTORE_CURRENTS:
+        if SHOULD_RESTORE_CURRENTS:
             self._save_default_current_value_to_redis()
 
         bias_currents = self._extract_bias(experiment)
@@ -184,7 +183,7 @@ class QuantifyExecutor(QuantumExecutor):
         print(t4 - t3, "DURATION OF MEASURING")
 
         # return currents to their original values
-        if RESTORE_CURRENTS:
+        if SHOULD_RESTORE_CURRENTS:
             self.spi_dac.set_parking_currents(self._couplers)
         self.spi_dac.close_spi_rack()
 

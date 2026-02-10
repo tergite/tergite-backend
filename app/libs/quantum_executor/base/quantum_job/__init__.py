@@ -323,7 +323,6 @@ def discriminate_results(
         acq = get_acquisition_parameters_from_experiment(exp_index=exp_index, qobj=qobj)
 
         if reg_len is None:
-            print(qobj)
             reg_len = getattr(qobj.config, "memory_slots", None)
         if reg_len is None:
             reg_len = max(acq.memory_slots) + 1
@@ -416,8 +415,10 @@ def xarray_to_list(job: QuantumJob) -> IQMemory:
         # get qobj experiment index first
         exp_index = _parse_exp_index_from_name(expt_name, delimiter="~")
         if exp_index is None:
-            # for debugging purposes keep this, otherwise raise ValueError
-            exp_index = len(experiments_mem)
+            raise ValueError(
+                f"Wrong experiment name format from Quantify experiment file {expt_name}."
+                f"Expected: \"name{delimiter}idx\""
+            )
 
         # get acquisition mapping from qobj
         acq = get_acquisition_parameters_from_experiment(
