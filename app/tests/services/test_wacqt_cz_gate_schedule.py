@@ -182,7 +182,6 @@ def test_compiled_schedule_matches_fixture():
     expected_df_raw = pd.read_csv(expected_table_path)
     expected_df = _normalize_timing_table(expected_df_raw)
 
-
     # Allow tiny numeric jitter (floats) with atol = 1e-12 s
     pd.testing.assert_frame_equal(
         actual_df.reset_index(drop=True),

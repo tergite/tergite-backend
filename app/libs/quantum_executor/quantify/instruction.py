@@ -46,7 +46,6 @@ from app.libs.quantum_executor.quantify.channel import (
     QuantifyChannelRegistry,
 )
 
-
 QBLOX_TIMEGRID_INTERVAL = 4e-9
 DT_CONST = 1e-9
 INITIAL_RESET_VALUE = 150e-6
