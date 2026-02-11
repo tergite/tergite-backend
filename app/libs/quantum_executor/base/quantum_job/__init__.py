@@ -413,11 +413,11 @@ def xarray_to_list(job: QuantumJob) -> IQMemory:
             )
 
         # get qobj experiment index first
-        exp_index = _parse_exp_index_from_name(expt_name, delimiter="~")
+        exp_index = _parse_exp_index_from_name(expt_name, delimiter=_KEY_DELIMITER)
         if exp_index is None:
             raise ValueError(
                 f"Wrong experiment name format from Quantify experiment file {expt_name}."
-                f'Expected: "name{delimiter}idx"'
+                f'Expected: "name{_KEY_DELIMITER}idx"'
             )
 
         # get acquisition mapping from qobj
