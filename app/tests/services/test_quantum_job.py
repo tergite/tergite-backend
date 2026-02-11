@@ -96,7 +96,7 @@ def _dummy_qobj(mem_slots: int, qubits: List[int], slots: List[int] | None = Non
 def test_discriminate_various_subsets(mem_slots, channels, byteorder, expected_hex):
     # build raw xarray dataset with one experiment called "exp"
     ds = _make_qdataset(channels)
-    raw_results = {"exp": ds}
+    raw_results = {"exp~0": ds}
 
     # minimal dummy PulseQobj with matching acquire information
     qobj = _dummy_qobj(mem_slots, sorted(channels.keys()))
@@ -124,7 +124,7 @@ def test_discriminate_various_subsets(mem_slots, channels, byteorder, expected_h
 def test_discriminate_compacted_mapping():
     # slot 0 contains bits for qubit 1, slot 1 contains bits for qubit 3
     ds = _make_qdataset({0: np.array([0, 1]), 1: np.array([1, 0])})
-    raw_results = {"exp": ds}
+    raw_results = {"exp~0": ds}
 
     qobj = _dummy_qobj(mem_slots=4, qubits=[1, 3], slots=[0, 1])
 

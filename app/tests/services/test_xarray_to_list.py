@@ -77,7 +77,7 @@ def test_xarray_to_list_multi_rep_multi_channel():
     ch2 = np.array([[5 + 5j], [7 + 7j], [3 + 6j]])  # qubit 2
 
     # IMPORTANT: dataset keys are slots, not qubit indices
-    raw_results = {"exp": _make_iq_dataset({0: ch0, 1: ch2})}
+    raw_results = {"exp~0": _make_iq_dataset({0: ch0, 1: ch2})}
     qobj = _dummy_qobj(qubits=[0, 2], slots=[0, 1])
 
     got = xarray_to_list(_stub_job(raw_results, qobj=qobj))
@@ -96,7 +96,7 @@ def test_xarray_to_list_averaged_data():
     slot0 = np.array([1 + 0j])
     slot1 = np.array([3 + 0j])
 
-    raw_results = {"exp": _make_iq_dataset({0: slot0, 1: slot1})}
+    raw_results = {"exp~0": _make_iq_dataset({0: slot0, 1: slot1})}
     qobj = _dummy_qobj(qubits=[0, 1], slots=[0, 1])
 
     got = xarray_to_list(_stub_job(raw_results, qobj=qobj))
@@ -114,7 +114,7 @@ def test_xarray_to_list_none_raw_results():
 
 
 def test_xarray_to_list_non_dataset_value():
-    raw_results = {"exp": "not a dataset"}
+    raw_results = {"exp~0": "not a dataset"}
     with pytest.raises(TypeError, match="xarray.Dataset"):
         xarray_to_list(_stub_job(raw_results))
 
@@ -122,7 +122,7 @@ def test_xarray_to_list_non_dataset_value():
 def test_xarray_to_list_unexpected_ndim():
     # more than 2 dimensions, so should raise ValueError
     bad_arr = np.zeros((1, 1, 1), dtype=np.complex128)
-    raw_results = {"exp": _make_iq_dataset({0: bad_arr})}
+    raw_results = {"exp~0": _make_iq_dataset({0: bad_arr})}
     qobj = _dummy_qobj(qubits=[0], slots=[0])
 
     with pytest.raises(ValueError, match="unexpected ndarray shape"):
@@ -138,7 +138,7 @@ def test_xarray_to_list_orders_by_memory_slot_not_qubit_order():
     slot0 = np.array([[10 + 1j], [11 + 2j]])  # 2 reps
     slot3 = np.array([[20 + 3j], [21 + 4j]])
 
-    raw_results = {"exp": _make_iq_dataset({3: slot3, 0: slot0})}
+    raw_results = {"exp~0": _make_iq_dataset({3: slot3, 0: slot0})}
     qobj = _dummy_qobj(qubits=[7, 2], slots=[3, 0])  # intentionally unsorted
 
     got = xarray_to_list(_stub_job(raw_results, qobj=qobj))
