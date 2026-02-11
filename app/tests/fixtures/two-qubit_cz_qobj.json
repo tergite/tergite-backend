@@ -223,8 +223,8 @@
                         },
                         {
                             "name": "acquire",
-                            "t0": 462,
-                            "duration": 250,
+                            "t0": 164,
+                            "duration": 300,
                             "qubits": [
                                 0,
                                 1

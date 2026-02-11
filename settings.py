@@ -128,6 +128,9 @@ QUANTIFY_METADATA_FILE = config(
     "QUANTIFY_METADATA_FILE", cast=Path, default=_ROOT_PATH / "quantify-metadata.yml"
 )
 
+# If set to true, it should write currents to redis and return them to previous values during circuit execution
+SHOULD_RESTORE_CURRENTS = config("SHOULD_RESTORE_CURRENTS", cast=bool, default=False)
+
 # -------------
 # Redis config
 # -------------

@@ -28,11 +28,14 @@ from quantify_scheduler.operations.acquisition_library import (
     Trace,
 )
 from quantify_scheduler.operations.pulse_library import (
+    DRAGPulse,
     GaussPulse,
     IdlePulse,
     NumericalPulse,
+    ResetClockPhase,
     SetClockFrequency,
     ShiftClockPhase,
+    SoftSquarePulse,
     SquarePulse,
 )
 
@@ -44,6 +47,10 @@ from app.libs.quantum_executor.quantify.channel import (
 )
 
 QBLOX_TIMEGRID_INTERVAL = 4e-9
+DT_CONST = 1e-9
+INITIAL_RESET_VALUE = 150e-6
+
+
 """
 Qblox instruments send pulses in a given equidistant time grid.
 See https://docs.qblox.com/en/main/cluster/q1_sequence_processor.html#acquisitions for example  
@@ -197,7 +204,7 @@ class InitialObjectInstruction(BaseInstruction):
         self,
         channel: QuantifyChannel = QuantifyChannel(clock="cl0.baseband"),
         t0=0.0,
-        duration=0.0,
+        duration=INITIAL_RESET_VALUE,
         **kwargs,
     ):
         kwargs["name"] = "initial_object"
@@ -210,8 +217,8 @@ class InitialObjectInstruction(BaseInstruction):
         channel_registry: QuantifyChannelRegistry,
         **kwargs,
     ) -> List["InitialObjectInstruction"]:
-        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * 1e-9)
-        duration = _map_to_qblox_timegrid(qobj_inst.duration * 1e-9)
+        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
+        duration = _map_to_qblox_timegrid(qobj_inst.duration * DT_CONST)
         channel = channel_registry.get(qobj_inst.ch)
         return [
             cls(
@@ -253,8 +260,8 @@ class AcquireInstruction(BaseInstruction):
         **kwargs,
     ) -> List["AcquireInstruction"]:
         name = qobj_inst.name
-        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * 1e-9)
-        duration = _map_to_qblox_timegrid(qobj_inst.duration * 1e-9)
+        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
+        duration = _map_to_qblox_timegrid(qobj_inst.duration * DT_CONST)
         acquire_instructions = []
         for n, qubit_idx in enumerate(qobj_inst.qubits):
             qobj_channel = f"m{qubit_idx}"
@@ -284,7 +291,6 @@ class AcquireInstruction(BaseInstruction):
                 acq_channel=int(self.channel.clock.split(".")[0][1:]),
                 acq_index=acq_index,
                 bin_mode=self.bin_mode,
-                t0=self.t0,
             )
         elif self.protocol == "trace":
             op = Trace(
@@ -293,7 +299,6 @@ class AcquireInstruction(BaseInstruction):
                 duration=self.duration,
                 acq_channel=int(self.channel.clock.split(".")[0][1:]),
                 acq_index=acq_index,
-                t0=self.t0,
             )
         else:
             raise RuntimeError(f"Unknown acquisition protocol {self.protocol}.")
@@ -320,8 +325,8 @@ class DelayInstruction(BaseInstruction):
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
         channel = channel_registry.get(clock_name)
-        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * 1e-9)
-        duration = _map_to_qblox_timegrid(qobj_inst.duration * 1e-9)
+        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
+        duration = _map_to_qblox_timegrid(qobj_inst.duration * DT_CONST)
         return [
             cls(
                 name=qobj_inst.name,
@@ -362,26 +367,26 @@ class SetFreqInstruction(BaseInstruction):
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
         channel = channel_registry.get(clock_name)
-        frequency = qobj_inst.frequency * 1e9
-        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * 1e-9)
+        frequency_hz = qobj_inst.frequency * 1e9
+        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         return [
             SetFreqInstruction(
                 name=qobj_inst.name,
-                t0=t0,
                 channel=channel,
                 port=port_name,
                 duration=0.0,
-                frequency=frequency,
+                frequency=frequency_hz,
+                t0=t0,
             )
         ]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
-        op = SetClockFrequency(
+        # Frequency after this instruction (playback already computed)
+        freq_now = self.channel.get_freq_at_position(self.position)
+        return SetClockFrequency(
             clock=self.channel.clock,
-            clock_freq_new=self.frequency,
-            t0=self.t0,
+            clock_freq_new=freq_now,
         )
-        return op
 
 
 class ShiftFreqInstruction(BaseInstruction):
@@ -404,31 +409,29 @@ class ShiftFreqInstruction(BaseInstruction):
         hardware_map: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> List["ShiftFreqInstruction"]:
-        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * 1e-9)
+        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
         channel = channel_registry.get(clock_name)
-        frequency = qobj_inst.frequency * 1e9
+        frequency = qobj_inst.frequency
         return [
             ShiftFreqInstruction(
                 name=qobj_inst.name,
-                t0=t0,
                 channel=channel,
                 port=port_name,
                 duration=0.0,
                 frequency=frequency,
+                t0=t0,
             )
         ]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
-        # For a frequency shift, add the delta to the current final frequency.
-        new_freq = self.channel.final_frequency + self.frequency
-        op = SetClockFrequency(
+        # After shiftf, the playback contains the updated absolute frequency.
+        freq_now = self.channel.get_freq_at_position(self.position)
+        return SetClockFrequency(
             clock=self.channel.clock,
-            clock_freq_new=new_freq,
-            t0=self.t0,
+            clock_freq_new=freq_now,
         )
-        return op
 
 
 class SetPhaseInstruction(BaseInstruction):
@@ -452,29 +455,35 @@ class SetPhaseInstruction(BaseInstruction):
         hardware_map: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> List["SetPhaseInstruction"]:
-        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * 1e-9)
+        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
         channel = channel_registry.get(clock_name)
+        phase_degree = qobj_inst.phase * 180 / np.pi
         return [
             SetPhaseInstruction(
                 name=qobj_inst.name,
-                t0=t0,
                 channel=channel,
                 port=port_name,
                 duration=0.0,
-                phase=qobj_inst.phase,
+                phase=phase_degree,
+                t0=t0,
             )
         ]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
-        phase_delta = self.phase - self.channel.final_phase
-        op = ShiftClockPhase(
-            phase_shift=phase_delta,
-            clock=self.channel.clock,
-            t0=self.t0,
-        )
-        return op
+        # phase after this instruction according to playback
+        target = self.channel.get_phase_at_position(self.position)
+
+        # phase before this instruction according to playback
+        prev = 0.0
+        if self.position > 0:
+            prev = self.channel.get_phase_at_position(self.position - 1)
+
+        # delta to apply now
+        delta = target - prev
+
+        return ShiftClockPhase(phase_shift=delta, clock=self.channel.clock)
 
 
 class ShiftPhaseInstruction(BaseInstruction):
@@ -497,28 +506,30 @@ class ShiftPhaseInstruction(BaseInstruction):
         hardware_map: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> List["ShiftPhaseInstruction"]:
-        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * 1e-9)
+        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
         channel = channel_registry.get(clock_name)
+        phase_degree = qobj_inst.phase * 180 / np.pi
         return [
             ShiftPhaseInstruction(
                 name=qobj_inst.name,
-                t0=t0,
                 channel=channel,
                 port=port_name,
                 duration=0.0,
-                phase=qobj_inst.phase,
+                phase=phase_degree,
+                t0=t0,
             )
         ]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
-        op = ShiftClockPhase(
+        """
+        Send shift clock phase command in degree.
+        """
+        return ShiftClockPhase(
             phase_shift=self.phase,
             clock=self.channel.clock,
-            t0=self.t0,
         )
-        return op
 
 
 class GaussPulseInstruction(BaseInstruction):
@@ -536,8 +547,8 @@ class GaussPulseInstruction(BaseInstruction):
         hardware_map: Optional[Dict[str, Any]] = None,
     ) -> List["GaussPulseInstruction"]:
         # Map timing and channel information as appropriate.
-        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * 1e-9)
-        duration = _map_to_qblox_timegrid(qobj_inst.parameters["duration"] * 1e-9)
+        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
+        duration = _map_to_qblox_timegrid(qobj_inst.parameters["duration"] * DT_CONST)
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
         channel = channel_registry.get(clock_name)
@@ -557,15 +568,20 @@ class GaussPulseInstruction(BaseInstruction):
         # Extract parameters, with defaults as needed.
         G_amp = self.parameters.get("amp")
         phase = self.parameters.get("phase", 0.0)
-        sigma = self.parameters.get("sigma", self.duration / 4)
-        op = GaussPulse(
-            G_amp=G_amp,
-            phase=phase,
+        motzoi = self.parameters.get("motzoi", 0.0)
+        sigma = self.parameters.get("sigma", None)
+        if sigma is None:
+            sigma_s = self.duration / 4
+        else:
+            sigma_s = _map_to_qblox_timegrid(float(sigma) * DT_CONST)
+        op = DRAGPulse(
+            G_amp=G_amp.real,
+            D_amp=motzoi,
             duration=self.duration,
             port=self.port,
             clock=self.channel.clock,
+            phase=phase,
             sigma=sigma,
-            t0=self.t0,
             reference_magnitude=self.parameters.get("reference_magnitude"),
         )
         return op
@@ -585,22 +601,26 @@ class SquarePulseInstruction(BaseInstruction):
         channel_registry: QuantifyChannelRegistry,
         hardware_map: Optional[Dict[str, Any]] = None,
     ) -> List["SquarePulseInstruction"]:
-        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * 1e-9)
-        duration = _map_to_qblox_timegrid(qobj_inst.parameters["duration"] * 1e-9)
+        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
+        duration = _map_to_qblox_timegrid(qobj_inst.parameters["duration"] * DT_CONST)
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
         channel = channel_registry.get(clock_name)
-        return [
-            cls(
-                name=qobj_inst.name,
-                t0=t0,
-                channel=channel,
-                port=port_name,
-                duration=duration,
-                pulse_shape=qobj_inst.pulse_shape,
-                parameters=qobj_inst.parameters,
-            )
-        ]
+
+        reset_clock = ResetClockPhase(
+            clock=clock_name,
+        )
+
+        square = cls(
+            name=qobj_inst.name,
+            t0=t0,
+            channel=channel,
+            port=port_name,
+            duration=duration,
+            pulse_shape=qobj_inst.pulse_shape,
+            parameters=qobj_inst.parameters,
+        )
+        return [inst for inst in (reset_clock, square) if inst is not None]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
         amp = self.parameters.get("amp")
@@ -609,7 +629,6 @@ class SquarePulseInstruction(BaseInstruction):
             duration=self.duration,
             port=self.port,
             clock=self.channel.clock,
-            t0=self.t0,
             reference_magnitude=self.parameters.get("reference_magnitude"),
         )
         return op
@@ -637,8 +656,8 @@ class ParamPulseInstruction(BaseInstruction):
         hardware_map: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> List["ParamPulseInstruction"]:
-        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * 1e-9)
-        duration = _map_to_qblox_timegrid(qobj_inst.parameters["duration"] * 1e-9)
+        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
+        duration = _map_to_qblox_timegrid(qobj_inst.parameters["duration"] * DT_CONST)
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
         channel = channel_registry.get(clock_name)
@@ -676,14 +695,14 @@ class PulseLibInstruction(BaseInstruction):
         channel_registry: QuantifyChannelRegistry,
         hardware_map: Optional[Dict[str, Any]] = None,
     ) -> List["PulseLibInstruction"]:
-        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * 1e-9)
+        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
         channel = channel_registry.get(clock_name)
         name = qobj_inst.name
         # FIXME: pulse_library seems to be a list but is accessed as a dict
         pulse_duration = config.pulse_library[name].shape[0]
-        duration = _map_to_qblox_timegrid(pulse_duration * 1e-9)
+        duration = _map_to_qblox_timegrid(pulse_duration * DT_CONST)
         return [
             cls(
                 name=name,
@@ -737,65 +756,30 @@ class WacqtCZPulseInstruction(BaseInstruction):
         if not (is_name_ok and shape_ok):
             return []
         params = {k.lower(): v for k, v in qobj_inst.parameters.items()}
-        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * 1e-9)
-        duration = _map_to_qblox_timegrid(params["duration"] * 1e-9)
+        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
+        duration = _map_to_qblox_timegrid(params["duration"] * DT_CONST)
 
         clock, port = hardware_map[qobj_inst.ch]
         channel = channel_registry.get(clock)
 
-        cz_freq = params.get("freq")
-
-        # TODO: Frequency setting is not needed for  a flux pulse
-        setf = None
-        if cz_freq is not None:
-            setf = SetFreqInstruction(
-                name="setf",
+        return [
+            cls(
                 t0=t0,
                 channel=channel,
                 port=port,
-                duration=0.0,
-                frequency=float(cz_freq),
+                duration=duration,
+                parameters=params,
             )
-        cz = cls(
-            t0=t0,
-            channel=channel,
-            port=port,
-            duration=duration,
-            parameters=params,
-        )
-
-        return [inst for inst in (setf, cz) if inst is not None]
+        ]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
-        num_points = int(
-            self.parameters.get(
-                "n_pts", max(1, int(self.duration / QBLOX_TIMEGRID_INTERVAL))
-            )
-        )
-        samples = _cz_delta_samples(num_points, self.parameters)
-        t_samples = np.linspace(0, self.duration, num_points, endpoint=False).tolist()
-        return NumericalPulse(
-            samples=samples.tolist(),
-            t_samples=t_samples,
+        # TODO: assert duration == t_p or replace t_p, t_w, t_rf with one duration parameter
+        return SoftSquarePulse(
+            duration=self.duration,
+            amp=float(self.parameters.get("delta_0")),
             port=self.port,
             clock=self.channel.clock,
-            t0=self.t0,
-            interpolation="linear",
         )
-
-
-def _cz_delta_samples(n_samples: int, p: Dict[str, float]) -> np.ndarray:
-    """Return a real-valued delta(t) array (complex64) of length *n_samples*."""
-    t_gate = p["t_p"] + p["t_rf"] + 2 * p["t_w"]
-    t = np.linspace(0, t_gate, n_samples, endpoint=False)
-    delta_arr = _delta_t_function(
-        t,
-        t_w=p["t_w"],
-        t_rf=p["t_rf"],
-        t_p=p["t_p"],
-        delta_0=p["delta_0"],
-    )
-    return delta_arr.astype(np.complex64)
 
 
 def _generate_numerical_pulse(
@@ -820,7 +804,6 @@ def _generate_numerical_pulse(
         t_samples=t_samples,
         port=instruction.port,
         clock=instruction.channel.clock,
-        t0=instruction.t0,
         interpolation="linear",
     )
     return op

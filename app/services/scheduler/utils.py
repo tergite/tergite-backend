@@ -111,6 +111,7 @@ def get_executor(
     quantify_config_file: str = settings.QUANTIFY_CONFIG_FILE,
     quantify_metadata_file: str = settings.QUANTIFY_METADATA_FILE,
     mss_url: str = settings.MSS_MACHINE_ROOT_URL,
+    should_restore_currents: bool = settings.SHOULD_RESTORE_CURRENTS,
 ) -> QuantumExecutor:
     """Gets the executor for running jobs
 
@@ -135,6 +136,7 @@ def get_executor(
                 quantify_config_file=quantify_config_file,
                 quantify_metadata_file=quantify_metadata_file,
                 backend_config=backend_config,
+                should_restore_currents=should_restore_currents,
             )
 
         if executor_type == "qiskit_pulse_1q":

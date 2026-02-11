@@ -33,6 +33,7 @@ class QubitProps(BaseModel):
     frequency: float
     pi_pulse_amplitude: float
     pi_pulse_duration: float
+    pi_pulse_motzoi: float
     pulse_type: str
     pulse_sigma: float
     t1_decoherence: float
