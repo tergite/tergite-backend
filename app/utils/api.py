@@ -42,6 +42,7 @@ import settings
 
 from .datetime import utc_now_str
 from .model import IncEx
+from .redis import get_redis_connection
 from .redis_store import Collection, Schema
 
 ITEM = TypeVar("ITEM", bound=BaseModel)
@@ -206,7 +207,7 @@ def get_request_logs_store() -> Collection[RequestLog]:
     """
     global _REQUEST_LOGS_STORE
     if _REQUEST_LOGS_STORE is None:
-        connection = Redis.from_url(url=settings.RQ_REDIS_URL)
+        connection = get_redis_connection(url=settings.RQ_REDIS_URL)
         _REQUEST_LOGS_STORE = Collection(connection=connection, schema=RequestLog)
 
     return _REQUEST_LOGS_STORE
