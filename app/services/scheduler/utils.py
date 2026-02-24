@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 from numpy import typing as npt
-from redis import Redis, SSLConnection, UnixDomainSocketConnection
+from redis import Redis
 from sklearn.utils.extmath import safe_sparse_dot
 
 import settings
@@ -388,19 +388,19 @@ def _get_redis_url(redis: Redis) -> str:
         ValueError: unix connection is not supported
     """
     conn_kwargs = redis.connection_pool.connection_kwargs
-
-    if conn_kwargs["connection_class"] == UnixDomainSocketConnection:
-        raise ValueError("unix connection is not supported")
-
     auth_str = ""
     scheme = "redis"
     db = conn_kwargs["db"]
     host = conn_kwargs["host"]
     port = conn_kwargs["port"]
-    if conn_kwargs["username"] and conn_kwargs["password"]:
-        # Not general enough but sufficient
-        auth_str = f"{conn_kwargs['username']}:{conn_kwargs['password']}@"
-    if conn_kwargs["connection_class"] == SSLConnection:
+    if "username" in conn_kwargs:
+        auth_str = f"{conn_kwargs['username']}"
+    if "password" in conn_kwargs:
+        auth_str = f":{conn_kwargs['password']}"
+    if auth_str != "":
+        auth_str = f"{auth_str}@"
+
+    if conn_kwargs.get("ssl"):
         scheme = "rediss"
 
     return f"{scheme}://{auth_str}{host}:{port}/{db}"
