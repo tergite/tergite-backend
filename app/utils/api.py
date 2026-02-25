@@ -208,7 +208,12 @@ def get_request_logs_store() -> Collection[RequestLog]:
     global _REQUEST_LOGS_STORE
     if _REQUEST_LOGS_STORE is None:
         connection = get_redis_connection(url=settings.RQ_REDIS_URL)
-        _REQUEST_LOGS_STORE = Collection(connection=connection, schema=RequestLog)
+        _REQUEST_LOGS_STORE = Collection(
+            connection=connection,
+            schema=RequestLog,
+            default_ttl=settings.REQUEST_LOG_TTL,
+            cleanup_interval=settings.REQUEST_LOG_CLEAN_INTERVAL,
+        )
 
     return _REQUEST_LOGS_STORE
 
