@@ -11,6 +11,7 @@
 # that they have been altered from the originals.
 #
 """Module containing tests for the store library"""
+import time
 from datetime import datetime, timezone
 from typing import Dict, List, Tuple, Type, Union
 from uuid import uuid4
@@ -94,6 +95,47 @@ def test_update_by_single_key(redis_client, payload, freezer):
         **original_item.model_dump(),
         "status": "successful",
     }
+
+
+@pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
+def test_update_ttl(redis_client, payload):
+    """Calling update(ttl=ttl) updates the item and its ttl if it exists already"""
+    auth_logs = Collection(
+        redis_client, schema=AuthLog, partial_schema=PartialAuthLog, cleanup_interval=1
+    )
+    payload = with_current_timestamps([payload], fields=["updated_at", "created_at"])[0]
+
+    original_item = AuthLog(**{"status": "pending", **payload})
+    _insert_into_redis(redis_client, [original_item])
+    original_item_in_db = _get_redis_value(redis_client, original_item)
+    key = _get_redis_key(original_item)
+
+    ttl = 1
+    new_update = {
+        "status": "successful",
+        "job_id": payload["job_id"],
+        "app_token": payload["app_token"],
+    }
+    new_item = auth_logs.update(key, PartialAuthLog(**new_update), ttl=ttl)
+    new_item_in_db = _get_redis_value(redis_client, original_item)
+
+    time.sleep(ttl)
+
+    with pytest.raises(ItemNotFoundError):
+        auth_logs.get_one(key)
+
+    # a mutation to force cleanup
+    auth_logs.delete_many(())
+
+    new_item_in_db_after_ttl = _get_redis_value(redis_client, original_item)
+
+    assert original_item_in_db == original_item.model_dump_json()
+    assert new_item_in_db == new_item.model_dump_json()
+    assert new_item.model_dump() == {
+        **original_item.model_dump(),
+        "status": "successful",
+    }
+    assert new_item_in_db_after_ttl is None
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
@@ -299,7 +341,7 @@ def test_update_invalid_model(redis_client, payload, freezer):
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_update_indexes(redis_client, payload, freezer):
+def test_update_indexes(redis_client, payload):
     """Calling update() updates the redis index keys"""
     auth_logs = Collection(redis_client, schema=AuthLog)
 
@@ -328,59 +370,107 @@ def test_update_indexes(redis_client, payload, freezer):
     new_first_status_idx_key = f"{status_idx_prefix}{new_first_item.status}"
     second_status_idx_key = f"{status_idx_prefix}{second_item.status}"
 
-    assert redis_client.smembers(new_first_status_idx_key) == {first_key_bytes}
-    assert redis_client.smembers(second_status_idx_key) == {second_key_bytes}
+    assert redis_client.zrange(new_first_status_idx_key, 0, -1) == [first_key_bytes]
+    assert redis_client.zrange(second_status_idx_key, 0, -1) == [second_key_bytes]
 
     # job_id changed
     new_first_job_id_idx_key = f"{job_id_idx_prefix}{new_first_item.job_id}"
     old_first_job_id_idx_key = f"{job_id_idx_prefix}{first_item.job_id}"
     second_job_id_idx_key = f"{job_id_idx_prefix}{second_item.job_id}"
 
-    assert redis_client.smembers(new_first_job_id_idx_key) == {first_key_bytes}
-    assert redis_client.smembers(second_job_id_idx_key) == {second_key_bytes}
-    assert redis_client.smembers(old_first_job_id_idx_key) == set()
+    assert redis_client.zrange(new_first_job_id_idx_key, 0, -1) == [first_key_bytes]
+    assert redis_client.zrange(second_job_id_idx_key, 0, -1) == [second_key_bytes]
+    assert redis_client.zrange(old_first_job_id_idx_key, 0, -1) == []
 
     # app_token did not change, and was same in both
     app_token_idx_key = f"{app_token_idx_prefix}{new_first_item.app_token}"
-    assert redis_client.smembers(app_token_idx_key) == {
-        first_key_bytes,
-        second_key_bytes,
-    }
+    assert redis_client.zrange(app_token_idx_key, 0, -1) == sorted(
+        [
+            first_key_bytes,
+            second_key_bytes,
+        ]
+    )
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_insert(redis_client, payload, freezer):
-    """Calling insert() replaces the entire item with a new one"""
-    auth_logs = Collection(redis_client, schema=AuthLog)
+def test_insert(redis_client, payload):
+    """Calling insert() replaces the entire item with a new one, the optional TTL expiring"""
+    auth_logs = Collection(redis_client, schema=AuthLog, cleanup_interval=0.1)
 
-    original_item = AuthLog(**{"status": "pending", **payload})
-    _insert_into_redis(redis_client, [original_item])
-    original_item_in_db = _get_redis_value(redis_client, original_item)
+    basic_payload = {"status": "pending", **payload}
+    persistent_item = AuthLog(**basic_payload)
+    timestamped_item = AuthLog(**{**basic_payload, "job_id": f"per{payload["job_id"]}"})
 
-    new_item = AuthLog(**{**payload, "status": "successful", "created_at": "belle"})
-    auth_logs.insert(new_item)
-    new_item_in_db = _get_redis_value(redis_client, original_item)
+    _insert_into_redis(redis_client, [persistent_item, timestamped_item])
+    persistent_item_in_db = _get_redis_value(redis_client, persistent_item)
+    timestamped_item_in_db = _get_redis_value(redis_client, timestamped_item)
 
-    assert original_item_in_db == original_item.model_dump_json()
-    assert new_item_in_db == new_item.model_dump_json()
+    ttl = 0.3
+    new_persistent_item = persistent_item.model_copy(
+        update={"status": "successful", "created_at": "belle"}
+    )
+    new_timestamped_item = timestamped_item.model_copy(
+        update={"status": "failed", "created_at": "beue"}
+    )
+    auth_logs.insert(new_persistent_item)
+    auth_logs.insert(new_timestamped_item, ttl=ttl)
+
+    time.sleep(ttl)
+
+    new_persistent_item_from_api = auth_logs.get_one(
+        (persistent_item.job_id, persistent_item.app_token)
+    )
+    with pytest.raises(ItemNotFoundError):
+        auth_logs.get_one((timestamped_item.job_id, timestamped_item.app_token))
+
+    # do a mutation like delete_many to force cleanup of raw db stuff
+    auth_logs.delete_many(())
+
+    new_persistent_item_in_db = _get_redis_value(redis_client, persistent_item)
+    new_timestamped_item_in_db = _get_redis_value(redis_client, timestamped_item)
+
+    assert persistent_item_in_db == persistent_item.model_dump_json()
+    assert timestamped_item_in_db == timestamped_item.model_dump_json()
+
+    assert new_persistent_item_from_api == new_persistent_item
+    assert new_persistent_item_in_db == new_persistent_item.model_dump_json()
+    assert new_timestamped_item_in_db is None
 
 
-def test_insert_index(redis_client, freezer):
+def test_insert_index(redis_client):
     """Calling insert() inserts some indexes"""
-    auth_logs = Collection(redis_client, schema=AuthLog)
-    items = [AuthLog(**{"status": "pending", **payload}) for payload in _AUTH_LOG_LIST]
+    auth_logs = Collection(redis_client, schema=AuthLog, cleanup_interval=0.1)
+    item_ttl_pairs = [
+        (AuthLog(**{"status": "pending", **payload}), None if i % 2 else 0.2)
+        for i, payload in enumerate(_AUTH_LOG_LIST)
+    ]
 
     expected_indexes = {}
-    for item in items:
-        auth_logs.insert(item)
+    persistent_indexes = {}
+    for item, ttl in item_ttl_pairs:
+        auth_logs.insert(item, ttl=ttl)
         redis_item_key = _get_redis_key(item).encode()
         idx_keys = _get_redis_index_keys(item)
         for idx_key in idx_keys:
-            original = expected_indexes.setdefault(idx_key, set())
-            original.add(redis_item_key)
+            original = expected_indexes.setdefault(idx_key, [])
+            original.append(redis_item_key)
+            if ttl is None:
+                original = persistent_indexes.setdefault(idx_key, [])
+                original.append(redis_item_key)
 
     for idx_key, expected in expected_indexes.items():
-        assert redis_client.smembers(idx_key) == expected
+        got = redis_client.zrange(idx_key, 0, -1)
+        assert sorted(got) == sorted(expected)
+
+    time.sleep(0.2)
+    # do a mutation call
+
+    # do a mutation like delete_many to force cleanup of indexes
+    auth_logs.delete_many(())
+
+    for idx_key, expected in persistent_indexes.items():
+        got = redis_client.zrange(idx_key, 0, -1)
+        assert sorted(got) == sorted(expected)
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
@@ -597,7 +687,7 @@ def test_delete_many_by_key_dicts(redis_client, bounds: Tuple[int, int], freezer
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_delete_indexes(redis_client, payload, freezer):
+def test_delete_indexes(redis_client, payload):
     """Calling delete() updates the redis index keys"""
     auth_logs = Collection(redis_client, schema=AuthLog)
 
@@ -625,19 +715,19 @@ def test_delete_indexes(redis_client, payload, freezer):
     first_status_idx_key = f"{status_idx_prefix}{first_item.status}"
     second_status_idx_key = f"{status_idx_prefix}{second_item.status}"
 
-    assert redis_client.smembers(first_status_idx_key) == set()
-    assert redis_client.smembers(second_status_idx_key) == {second_key_bytes}
+    assert redis_client.zrange(first_status_idx_key, 0, -1) == []
+    assert redis_client.zrange(second_status_idx_key, 0, -1) == [second_key_bytes]
 
     # job_id changed
     first_job_id_idx_key = f"{job_id_idx_prefix}{first_item.job_id}"
     second_job_id_idx_key = f"{job_id_idx_prefix}{second_item.job_id}"
 
-    assert redis_client.smembers(first_job_id_idx_key) == set()
-    assert redis_client.smembers(second_job_id_idx_key) == {second_key_bytes}
+    assert redis_client.zrange(first_job_id_idx_key, 0, -1) == []
+    assert redis_client.zrange(second_job_id_idx_key, 0, -1) == [second_key_bytes]
 
     # app_token was same in both
     app_token_idx_key = f"{app_token_idx_prefix}{first_item.app_token}"
-    assert redis_client.smembers(app_token_idx_key) == {second_key_bytes}
+    assert redis_client.zrange(app_token_idx_key, 0, -1) == [second_key_bytes]
 
 
 def test_clear(redis_client, freezer):
@@ -654,7 +744,7 @@ def test_clear(redis_client, freezer):
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_clear_indexes(redis_client, payload, freezer):
+def test_clear_indexes(redis_client, payload):
     """Calling clear() removes all the redis index keys"""
     auth_logs = Collection(redis_client, schema=AuthLog)
 
@@ -679,19 +769,19 @@ def test_clear_indexes(redis_client, payload, freezer):
     first_status_idx_key = f"{status_idx_prefix}{first_item.status}"
     second_status_idx_key = f"{status_idx_prefix}{second_item.status}"
 
-    assert redis_client.smembers(first_status_idx_key) == set()
-    assert redis_client.smembers(second_status_idx_key) == set()
+    assert redis_client.zrange(first_status_idx_key, 0, -1) == []
+    assert redis_client.zrange(second_status_idx_key, 0, -1) == []
 
     # job_id changed
     first_job_id_idx_key = f"{job_id_idx_prefix}{first_item.job_id}"
     second_job_id_idx_key = f"{job_id_idx_prefix}{second_item.job_id}"
 
-    assert redis_client.smembers(first_job_id_idx_key) == set()
-    assert redis_client.smembers(second_job_id_idx_key) == set()
+    assert redis_client.zrange(first_job_id_idx_key, 0, -1) == []
+    assert redis_client.zrange(second_job_id_idx_key, 0, -1) == []
 
     # app_token was same in both
     app_token_idx_key = f"{app_token_idx_prefix}{first_item.app_token}"
-    assert redis_client.smembers(app_token_idx_key) == set()
+    assert redis_client.zrange(app_token_idx_key, 0, -1) == []
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)

@@ -11,14 +11,18 @@
 # that they have been altered from the originals.
 #
 """Module containing the source code for storing data"""
+import math
 from contextlib import suppress
+from datetime import timedelta
 from functools import cached_property
 from typing import (
     Any,
     Callable,
     Dict,
+    Final,
     Generic,
     List,
+    Literal,
     Optional,
     Sequence,
     Set,
@@ -31,14 +35,45 @@ from typing import (
 from pydantic import BaseModel
 from redis import Redis
 from redis.client import Pipeline
-from typing_extensions import Literal
 
+from app.utils.datetime import get_relative_time, get_utc_now
 from app.utils.exc import ItemNotFoundError
 from app.utils.model import create_partial_schema
 
 IncEx = Union[Set[str], Set[int], Dict[int, Any], Dict[str, Any], None]
 _KEY_SEPARATOR = "@@@"
 _IDX_SEPARATOR = "::"
+_UNDEFINED: Final = object()
+
+_TTL_Type = Union[int, None, Type[_UNDEFINED]]
+
+_SORTED_SET_MOVE_LUA = """
+-- v0.0.1
+-- Script to move a member from one sorted set to another
+--
+-- KEYS[1] = old_set_key
+-- KEYS[2] = new_set_key
+-- ARGV[1] = member
+
+local redis_call = redis.call
+local to_num = tonumber
+
+local old_set = KEYS[1]
+local new_set = KEYS[2]
+local member = ARGV[1]
+local default_score = to_num(ARGV[2])
+
+local score = redis_call("ZSCORE", old_set, member)
+if not score then
+    score = default_score
+else
+    score = to_num(score)
+    redis_call("ZREM", old_set, member)
+end
+    
+redis_call("ZADD", new_set, score, member)
+return score
+"""
 
 
 class Schema(BaseModel):
@@ -112,19 +147,26 @@ _AnyT = TypeVar("_AnyT")
 
 
 class Collection(Generic[T]):
-    """A synchronous collection of items of similar types"""
+    """A synchronous collection of items of similar types
+
+    Note that cleanup of expired indexes to get recover space
+    runs only after calls that could mutate the collection e.g.
+    update, insert, delete_many
+    """
 
     def __init__(
         self,
         connection: Redis,
         schema: Type[T],
         partial_schema: Optional[Type[T]] = None,
+        cleanup_interval: float = 3600,
     ):
         """
         Args:
             connection: the redis connection to which this collection is attached
             schema: the schema for all items in the collection
             partial_schema: the schema for partial updates; default: None
+            cleanup_interval: the interval between cleaning up indexes; default: 3600 (seconds)
         """
         if partial_schema is None:
             partial_schema = create_partial_schema(
@@ -136,6 +178,9 @@ class Collection(Generic[T]):
         self._partial_schema = partial_schema
         self._hashmap_name = f"{schema.__module__}.{schema.__qualname__}".lower()
         self._index_prefix = f"__index__{self._hashmap_name}_"
+        self._zset_move = connection.register_script(_SORTED_SET_MOVE_LUA)
+        self.__last_cleanup_timestamp = get_utc_now().timestamp()
+        self.__cleanup_interval = cleanup_interval
 
     @cached_property
     def _index_fields(self) -> Tuple[str, ...]:
@@ -227,6 +272,9 @@ class Collection(Generic[T]):
         Raises:
             ValidationError: item does not match the given schema
         """
+        if len(keys) == 0:
+            return []
+
         redis_keys = [self._schema.construct_redis_key(key) for key in keys]
         raw_data = self._connection.hmget(self._hashmap_name, redis_keys)
         return [
@@ -264,20 +312,26 @@ class Collection(Generic[T]):
             raise ValueError(f"the fields {non_indexed_fields} are not indexed")
 
         index_keys = self._get_index_keys_from_dict(filters)
-
-        matched_keys = self._connection.sinter(index_keys)
-        matched_keys = _paginate(list(matched_keys), skip=skip, limit=limit)
+        matched_key_score_pairs = self._connection.zinter(
+            index_keys, aggregate="MAX", withscores=True
+        )
+        current_timestamp = get_utc_now().timestamp()
+        matched_keys = [
+            k for (k, v) in matched_key_score_pairs if v >= current_timestamp
+        ]
+        matched_keys = _paginate(matched_keys, skip=skip, limit=limit)
         if len(matched_keys) == 0:
             return []
 
         raw_data = self._connection.hmget(self._hashmap_name, matched_keys)
         return [self._schema.model_validate_json(item) for item in raw_data]
 
-    def insert(self, payload: T):
+    def insert(self, payload: T, ttl: _TTL_Type = None) -> T:
         """Inserts the item identified by the primary key, replacing it if it exists
 
         Args:
             payload: the item to update or insert
+            ttl: time to live for this item; default: None (i.e. never expires)
 
         Returns:
             the current item in the collection
@@ -292,9 +346,15 @@ class Collection(Generic[T]):
         data = payload.model_dump_json()
         pipe = self._connection.pipeline()
 
+        # attempt cleanup of indexes
+        self._cleanup_expired_indexes(pipe)
+
         # insert the record and its indexes
         pipe.hset(self._hashmap_name, key, data)
-        self._insert_indexes(pipe, payload)
+        if isinstance(ttl, (int, float)):
+            pipe.hexpire(self._hashmap_name, timedelta(seconds=ttl), key)
+
+        self._insert_indexes(pipe, payload, ttl=ttl)
         pipe.execute()
 
         return payload
@@ -303,12 +363,14 @@ class Collection(Generic[T]):
         self,
         key: Union[str, Tuple[Any, ...], Dict[str, Any]],
         updates: Union[Dict[str, Any], T],
+        ttl: Union[int, None, Type[_UNDEFINED]] = _UNDEFINED,
     ) -> T:
         """Updates the item identified by the primary key with the new updates
 
         Args:
             key: the unique key that identifies that item
             updates: the new fields and values to add.
+            ttl: time to live for this item; default: _UNDEFINED (i.e. don't alter)
 
         Returns:
             the item after updating
@@ -328,9 +390,19 @@ class Collection(Generic[T]):
         redis_key = self._schema.construct_redis_key(key)
         pipe = self._connection.pipeline()
 
+        # attempt cleanup of indexes
+        self._cleanup_expired_indexes(pipe)
+
         # update record and indexes
         pipe.hset(self._hashmap_name, redis_key, updated_item.model_dump_json())
-        self._update_indexes(pipe, original=old_item, updates=updates_dict)
+
+        # ttl=_UNDEFINED means no alteration, ttl=None means persist forever
+        if ttl is None:
+            pipe.hpersist(self._hashmap_name, redis_key)
+        elif isinstance(ttl, (int, float)):
+            pipe.hexpire(self._hashmap_name, timedelta(seconds=ttl), redis_key)
+
+        self._update_indexes(pipe, original=old_item, updates=updates_dict, ttl=ttl)
         pipe.execute()
         return updated_item
 
@@ -352,7 +424,11 @@ class Collection(Generic[T]):
         redis_keys = [self._schema.construct_redis_key(key) for key in keys]
 
         pipe = self._connection.pipeline()
-        pipe.hdel(self._hashmap_name, *redis_keys)
+        if len(redis_keys) > 0:
+            pipe.hdel(self._hashmap_name, *redis_keys)
+
+        # attempt cleanup of indexes
+        self._cleanup_expired_indexes(pipe)
 
         # delete the index entries for the deleted items
         self._delete_indexes(pipe, old_items)
@@ -366,18 +442,26 @@ class Collection(Generic[T]):
         pipe.delete(self._hashmap_name, *all_index_keys)
         pipe.execute()
 
-    def _insert_indexes(self, conn: Union[Pipeline, Redis], record: T):
+    def _insert_indexes(
+        self, conn: Union[Pipeline, Redis], record: T, ttl: _TTL_Type
+    ) -> None:
         """Inserts the index entries for the given record
 
         Args:
             conn: the redis connection or pipeline
             record: the item whose indexes are to be inserted
+            ttl: time to live for this item
         """
         record_key = _get_redis_key(self._schema, record)
         idx_keys = self._get_index_keys(record)
 
+        # by default, items last forever
+        expiry_timestamp = math.inf
+        if isinstance(ttl, (int, float)):
+            expiry_timestamp = get_relative_time(seconds=ttl).timestamp()
+
         for idx_key in idx_keys:
-            conn.sadd(idx_key, record_key)
+            conn.zadd(idx_key, {record_key: expiry_timestamp})
 
     def _delete_indexes(self, conn: Union[Pipeline, Redis], records: List[T]):
         """Deletes the index entries associated with the given records
@@ -391,10 +475,14 @@ class Collection(Generic[T]):
             key = _get_redis_key(self._schema, item)
 
             for idx_key in idx_keys:
-                conn.srem(idx_key, key)
+                conn.zrem(idx_key, key)
 
     def _update_indexes(
-        self, conn: Union[Pipeline, Redis], original: T, updates: Dict[str, Any]
+        self,
+        conn: Union[Pipeline, Redis],
+        original: T,
+        updates: Dict[str, Any],
+        ttl: _TTL_Type,
     ):
         """Updates the index entries of the old item with updates from partial_update
 
@@ -402,19 +490,35 @@ class Collection(Generic[T]):
             conn: the redis connection or pipeline
             original: the original record
             updates: the partial updates potentially containing new index entries
+            ttl: time to live for this item; default is _UNDEFINED (i.e. don't alter)
         """
         record_key = _get_redis_key(self._schema, original)
 
         old_idx_keys = self._get_index_keys(original)
         new_idx_keys = self._get_index_keys_from_dict(updates)
         old_idx_keys_mapper = {_get_index_prop(k): k for k in old_idx_keys}
+        is_ttl_unaltered = ttl is _UNDEFINED
+
+        new_expiry = math.inf
+        if isinstance(ttl, (int, float)):
+            new_expiry = get_relative_time(seconds=ttl).timestamp()
 
         for new_idx_key in new_idx_keys:
             prop = _get_index_prop(new_idx_key)
             old_idx_key = old_idx_keys_mapper[prop]
             # update = remove (old) + insert (new)
-            conn.srem(old_idx_key, record_key)
-            conn.sadd(new_idx_key, record_key)
+            if is_ttl_unaltered:
+                # since we may be working on a pipeline, we use a lua script
+                # to get the old score and copy it to the new set.
+                # A pipeline cannot give us usable intermediate values but a script can.
+                self._zset_move(
+                    keys=[old_idx_key, new_idx_key],
+                    args=[record_key, new_expiry],
+                    client=conn,
+                )
+            else:
+                conn.zrem(old_idx_key, record_key)
+                conn.zadd(new_idx_key, {record_key: new_expiry})
 
     def _get_all_index_keys(self) -> List[str]:
         """Gets all the index keys for the collection
@@ -428,7 +532,7 @@ class Collection(Generic[T]):
 
         while True:
             cursor, idx_keys = self._connection.scan(
-                cursor, match=index_pattern, _type="SET"
+                cursor, match=index_pattern, _type="ZSET"
             )
             all_index_keys.extend(idx_keys)
             if cursor == 0:
@@ -477,6 +581,23 @@ class Collection(Generic[T]):
                 )
 
         return index_keys
+
+    def _cleanup_expired_indexes(self, conn: Union[Pipeline, Redis]):
+        """Cleanups the indexes that have expired
+
+        Args:
+            conn: the redis connection or pipeline
+        """
+        current_timestamp = get_utc_now().timestamp()
+        elapsed_time = current_timestamp - self.__last_cleanup_timestamp
+
+        if elapsed_time > self.__cleanup_interval:
+            idx_keys = self._get_all_index_keys()
+
+            for idx_key in idx_keys:
+                conn.zremrangebyscore(idx_key, 0, current_timestamp)
+
+            self.__last_cleanup_timestamp = current_timestamp
 
 
 def _get_redis_key(schema: Type[Schema], item: Any) -> str:
