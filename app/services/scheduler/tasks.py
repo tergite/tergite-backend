@@ -50,14 +50,13 @@ from ...libs.queues.dtos import (
 )
 from ...utils.datetime import get_utc_now
 from ...utils.exc import JobAlreadyCancelled, PostProcessingError
-from ...utils.redis_store import Collection
 from ...utils.rq import cancel_rq_job
 from ..booking import get_active_booking
 from ..booking.models import Booking
 from ..booking.service import get_booking, get_next_booking
 from ..booking.store import get_bookings_sql_engine
 from ..external.mss.service import MssClientPipe
-from .store import get_jobs_store
+from .store import get_jobs_store, init_jobs_store
 from .utils import (
     apply_linear_discriminator,
     decompress_qobj,
@@ -393,7 +392,7 @@ def postprocessing_failure_callback(
     """
     with MssClientPipe() as mss_client_pipe:
         if isinstance(value, PostProcessingError):
-            jobs_store = Collection[Job](_rq_connection, schema=Job)
+            jobs_store = init_jobs_store(_rq_connection)
             job_id = value.job_id
 
             logging.error(value.exp)

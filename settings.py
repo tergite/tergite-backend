@@ -125,6 +125,14 @@ REQUEST_LOG_CLEAN_INTERVAL = config(
     "REQUEST_LOG_CLEAN_INTERVAL", cast=float, default=3600 * 5
 )
 
+# time to live for the jobs store; defaults to 2 weeks
+JOBS_STORE_TTL = config("JOBS_STORE_TTL", cast=float, default=3600 * 24 * 14)
+
+# time interval between consecutive cleanups of expired indexes; defaults to 5 hours
+JOBS_STORE_CLEAN_INTERVAL = config(
+    "JOBS_STORE_CLEAN_INTERVAL", cast=float, default=3600 * 5
+)
+
 PRIVATE_KEY_FILE = config(
     "PRIVATE_KEY_FILE", cast=Path, default=_ROOT_PATH / "private-bcc-key.pem"
 ).resolve()

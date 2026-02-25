@@ -461,7 +461,7 @@ def test_update_indexes(redis_client, payload):
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
 def test_insert(redis_client, payload):
     """Calling insert() replaces the entire item with a new one, the optional TTL expiring"""
-    auth_logs = Collection(redis_client, schema=AuthLog, cleanup_interval=0.1)
+    auth_logs = Collection(redis_client, schema=AuthLog, cleanup_interval=0.3)
 
     basic_payload = {"status": "pending", **payload}
     persistent_item = AuthLog(**basic_payload)
@@ -471,7 +471,7 @@ def test_insert(redis_client, payload):
     persistent_item_in_db = _get_redis_value(redis_client, persistent_item)
     timestamped_item_in_db = _get_redis_value(redis_client, timestamped_item)
 
-    ttl = 0.3
+    ttl = 0.5
     new_persistent_item = persistent_item.model_copy(
         update={"status": "successful", "created_at": "belle"}
     )
