@@ -160,6 +160,7 @@ class Collection(Generic[T]):
         schema: Type[T],
         partial_schema: Optional[Type[T]] = None,
         cleanup_interval: float = 3600,
+        default_ttl: _TTL_Type = _UNDEFINED,
     ):
         """
         Args:
@@ -167,6 +168,7 @@ class Collection(Generic[T]):
             schema: the schema for all items in the collection
             partial_schema: the schema for partial updates; default: None
             cleanup_interval: the interval between cleaning up indexes; default: 3600 (seconds)
+            default_ttl: the default TTL for this collection; default: _UNDEFINED (never expires)
         """
         if partial_schema is None:
             partial_schema = create_partial_schema(
@@ -175,6 +177,7 @@ class Collection(Generic[T]):
 
         self._connection = connection
         self._schema = schema
+        self._default_ttl = default_ttl
         self._partial_schema = partial_schema
         self._hashmap_name = f"{schema.__module__}.{schema.__qualname__}".lower()
         self._index_prefix = f"__index__{self._hashmap_name}_"
@@ -326,12 +329,15 @@ class Collection(Generic[T]):
         raw_data = self._connection.hmget(self._hashmap_name, matched_keys)
         return [self._schema.model_validate_json(item) for item in raw_data]
 
-    def insert(self, payload: T, ttl: _TTL_Type = None) -> T:
+    def insert(self, payload: T, ttl: _TTL_Type = _UNDEFINED) -> T:
         """Inserts the item identified by the primary key, replacing it if it exists
+
+        TTL=None ensures that the inserted item never expires.
+        If TTL is not passed, the default TTL of this collection will be used.
 
         Args:
             payload: the item to update or insert
-            ttl: time to live for this item; default: None (i.e. never expires)
+            ttl: time to live for this item; defaults to self._default_ttl
 
         Returns:
             the current item in the collection
@@ -340,6 +346,9 @@ class Collection(Generic[T]):
             ValidationError: payload does not satisfy the schema of the collection
             AttributeError: some primary key fields were not set
         """
+        if ttl is _UNDEFINED:
+            ttl = self._default_ttl
+
         key = _get_redis_key(self._schema, payload)
 
         self._schema.model_validate(payload, from_attributes=True)
@@ -363,7 +372,7 @@ class Collection(Generic[T]):
         self,
         key: Union[str, Tuple[Any, ...], Dict[str, Any]],
         updates: Union[Dict[str, Any], T],
-        ttl: Union[int, None, Type[_UNDEFINED]] = _UNDEFINED,
+        ttl: _TTL_Type = _UNDEFINED,
     ) -> T:
         """Updates the item identified by the primary key with the new updates
 
@@ -379,6 +388,9 @@ class Collection(Generic[T]):
             ValidationError: updates does not satisfy the partial schema of the collection
             ItemNotFound: '{key}' not found
         """
+        if ttl is _UNDEFINED:
+            ttl = self._default_ttl
+
         parsed_updates = self._partial_schema.model_validate(updates)
         updates_dict = parsed_updates.model_dump(
             exclude_unset=True, exclude_defaults=True
@@ -454,11 +466,14 @@ class Collection(Generic[T]):
         """
         record_key = _get_redis_key(self._schema, record)
         idx_keys = self._get_index_keys(record)
+        effective_ttl = ttl
+        if effective_ttl is _UNDEFINED:
+            effective_ttl = self._default_ttl
 
         # by default, items last forever
         expiry_timestamp = math.inf
-        if isinstance(ttl, (int, float)):
-            expiry_timestamp = get_relative_time(seconds=ttl).timestamp()
+        if isinstance(effective_ttl, (int, float)):
+            expiry_timestamp = get_relative_time(seconds=effective_ttl).timestamp()
 
         for idx_key in idx_keys:
             conn.zadd(idx_key, {record_key: expiry_timestamp})
@@ -511,6 +526,7 @@ class Collection(Generic[T]):
                 # since we may be working on a pipeline, we use a lua script
                 # to get the old score and copy it to the new set.
                 # A pipeline cannot give us usable intermediate values but a script can.
+                # if old member is non-existent, we set the score to the default
                 self._zset_move(
                     keys=[old_idx_key, new_idx_key],
                     args=[record_key, new_expiry],

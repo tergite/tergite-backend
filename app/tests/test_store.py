@@ -139,6 +139,72 @@ def test_update_ttl(redis_client, payload):
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
+def test_update_with_default_ttl(redis_client, payload):
+    """Calling update() updates the item and if it exists already in collection with default TTL"""
+    ttl = 0.5
+    auth_logs = Collection(
+        redis_client,
+        schema=AuthLog,
+        partial_schema=PartialAuthLog,
+        cleanup_interval=1,
+        default_ttl=ttl,
+    )
+    payload = with_current_timestamps([payload], fields=["updated_at", "created_at"])[0]
+
+    original_item = AuthLog(**{"status": "pending", **payload})
+    _insert_into_redis(redis_client, [original_item])
+    key = _get_redis_key(original_item)
+
+    new_update = {
+        "status": "successful",
+        "job_id": payload["job_id"],
+        "app_token": payload["app_token"],
+    }
+    auth_logs.update(key, PartialAuthLog(**new_update))
+
+    time.sleep(ttl)
+
+    with pytest.raises(ItemNotFoundError):
+        auth_logs.get_one(key)
+
+
+@pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
+def test_update_ttl_with_default_ttl(redis_client, payload):
+    """Calling update(ttl=ttl) updates the item and ttl and if it exists already in collection with default TTL"""
+    ttl = 0.5
+    auth_logs = Collection(
+        redis_client,
+        schema=AuthLog,
+        partial_schema=PartialAuthLog,
+        cleanup_interval=1,
+        default_ttl=ttl,
+    )
+    payload = with_current_timestamps([payload], fields=["updated_at", "created_at"])[0]
+
+    original_item = AuthLog(**{"status": "pending", **payload})
+    _insert_into_redis(redis_client, [original_item])
+    key = _get_redis_key(original_item)
+
+    new_update = {
+        "status": "successful",
+        "job_id": payload["job_id"],
+        "app_token": payload["app_token"],
+    }
+    new_item = auth_logs.update(key, PartialAuthLog(**new_update), ttl=None)
+
+    time.sleep(ttl)
+    assert auth_logs.get_one(key) == new_item
+
+    custom_ttl = 0.3
+    auth_logs.update(key, PartialAuthLog(**new_update), ttl=custom_ttl)
+
+    time.sleep(custom_ttl)
+
+    with pytest.raises(ItemNotFoundError):
+        auth_logs.get_one(key)
+
+
+@pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
 def test_dict_update_by_single_key(redis_client, payload, freezer):
     """Calling update() with a raw redis key, and dict updates, changes the item if it exists already"""
     auth_logs = Collection(redis_client, schema=AuthLog)
@@ -435,6 +501,47 @@ def test_insert(redis_client, payload):
     assert new_persistent_item_from_api == new_persistent_item
     assert new_persistent_item_in_db == new_persistent_item.model_dump_json()
     assert new_timestamped_item_in_db is None
+
+
+@pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
+def test_insert_default_ttl(redis_client, payload):
+    """Calling insert() replaces the entire item with a new one in a collection with default TTL"""
+    default_ttl = 1
+    auth_logs = Collection(
+        redis_client, schema=AuthLog, cleanup_interval=0.1, default_ttl=default_ttl
+    )
+
+    basic_payload = {"status": "pending", **payload}
+    persistent_item = AuthLog(**basic_payload)
+    default_ttl_item = AuthLog(**{**basic_payload, "job_id": f"per{payload["job_id"]}"})
+    custom_ttl_item = AuthLog(**{**basic_payload, "job_id": f"yul{payload["job_id"]}"})
+
+    persistent_item_key = _get_redis_key(persistent_item)
+    default_ttl_item_key = _get_redis_key(default_ttl_item)
+    custom_ttl_item_key = _get_redis_key(custom_ttl_item)
+
+    custom_ttl = 0.3
+    auth_logs.insert(persistent_item, ttl=None)
+    auth_logs.insert(default_ttl_item)
+    auth_logs.insert(custom_ttl_item, ttl=custom_ttl)
+
+    time.sleep(custom_ttl)
+
+    with pytest.raises(ItemNotFoundError):
+        auth_logs.get_one(custom_ttl_item_key)
+
+    assert auth_logs.get_one(default_ttl_item_key) == default_ttl_item
+    assert auth_logs.get_one(persistent_item_key) == persistent_item
+
+    time.sleep(default_ttl - custom_ttl)
+
+    with pytest.raises(ItemNotFoundError):
+        auth_logs.get_one(default_ttl_item_key)
+
+    with pytest.raises(ItemNotFoundError):
+        auth_logs.get_one(custom_ttl_item_key)
+
+    assert auth_logs.get_one(persistent_item_key) == persistent_item
 
 
 def test_insert_index(redis_client):
