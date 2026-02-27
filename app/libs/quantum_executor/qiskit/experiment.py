@@ -51,6 +51,7 @@ _INSTRUCTION_PULSE_MAP: Dict[
     ("delay", None): Delay,
     ("parametric_pulse", "constant"): Acquire,
     ("parametric_pulse", "gaussian"): GaussianPlay,
+    ("parametric_pulse", "drag"): GaussianPlay,
     ("parametric_pulse", "wacqt_cz_gate_pulse"): WacqtCZPlay,
 }
 

@@ -64,6 +64,7 @@ _INSTRUCTION_PULSE_MAP: Dict[Tuple[str, Optional[str]], Type[BaseInstruction]] =
     ("delay", None): DelayInstruction,
     ("acquire", None): AcquireInstruction,
     ("parametric_pulse", "gaussian"): GaussPulseInstruction,
+    ("parametric_pulse", "drag"): GaussPulseInstruction,
     ("parametric_pulse", "constant"): SquarePulseInstruction,
     ("parametric_pulse", "wacqt_cz"): WacqtCZPulseInstruction,
     ("parametric_pulse", "wacqt_cz_gate_pulse"): WacqtCZPulseInstruction,
@@ -331,7 +332,7 @@ def _construct_schedule(
     """
 
     def to_tick(t: float) -> int:
-        return int(round(t / timegrid_interval))
+        return int(math.floor(t / timegrid_interval + 0.5 + 1e-12))
 
     def from_tick(k: int) -> float:
         return k * timegrid_interval

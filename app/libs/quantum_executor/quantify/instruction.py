@@ -47,7 +47,7 @@ from app.libs.quantum_executor.quantify.channel import (
 
 QBLOX_TIMEGRID_INTERVAL = 4e-9
 DT_CONST = 1e-9
-INITIAL_RESET_VALUE = 150e-6
+INITIAL_RESET_VALUE = 1500e-6
 
 
 """
@@ -458,7 +458,9 @@ class SetPhaseInstruction(BaseInstruction):
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
         channel = channel_registry.get(clock_name)
-        phase_degree = qobj_inst.phase * 180 / np.pi
+        # phase_degree = qobj_inst.phase * 180 / np.pi
+        phase_degree = math.degrees(float(qobj_inst.phase))
+        phase_degree = round(phase_degree, 12)
         return [
             SetPhaseInstruction(
                 name=qobj_inst.name,
@@ -567,12 +569,7 @@ class GaussPulseInstruction(BaseInstruction):
         # Extract parameters, with defaults as needed.
         G_amp = self.parameters.get("amp")
         phase = self.parameters.get("phase", 0.0)
-        motzoi = self.parameters.get("motzoi", 0.0)
-        sigma = self.parameters.get("sigma", None)
-        if sigma is None:
-            sigma_s = self.duration / 4
-        else:
-            sigma_s = _map_to_qblox_timegrid(float(sigma) * DT_CONST)
+        motzoi = self.parameters.get("beta", 0.0)
         op = DRAGPulse(
             G_amp=G_amp.real,
             D_amp=motzoi,
@@ -580,7 +577,6 @@ class GaussPulseInstruction(BaseInstruction):
             port=self.port,
             clock=self.channel.clock,
             phase=phase,
-            sigma=sigma,
             reference_magnitude=self.parameters.get("reference_magnitude"),
         )
         return op
@@ -827,5 +823,5 @@ def _map_to_qblox_timegrid(
         the timestamp or duration within the qblox time grid that corresponds to the given timestamp
     """
 
-    time_to_next_gridline = (grid_interval - raw_time) % grid_interval
-    return raw_time + time_to_next_gridline
+    ticks = int(round(raw_time / grid_interval))
+    return ticks * grid_interval
