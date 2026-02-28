@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import (
     Any,
     Callable,
+    Dict,
     List,
     Literal,
     Match,
@@ -261,7 +262,7 @@ def get_acquisition_parameters_from_experiment(
         return _collect_from_dict(acq_instrs)
 
     # FIXME: Unresolved references 'qubits', 'memory_slot'
-    return AcqParams(qubits=qubits, memory_slot=memory_slot)
+    return AcqParams(qubits=[], memory_slots=[])
 
 
 def _parse_exp_index_from_name(expt_name: str, delimiter: str = "~") -> Optional[int]:

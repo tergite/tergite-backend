@@ -478,7 +478,9 @@ def _get_next_timestamps(job: Job, next_stage: Stage, current_time: str) -> Time
 
 
 def _init_executor(
-    executor_type: str, quantify_config_file: str, quantify_metadata_file: str,
+    executor_type: str,
+    quantify_config_file: str,
+    quantify_metadata_file: str,
     should_restore_currents: bool = settings.SHOULD_RESTORE_CURRENTS,
 ) -> QuantumExecutor:
     """Initializes the executor
