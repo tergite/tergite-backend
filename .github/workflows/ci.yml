@@ -49,7 +49,7 @@ jobs:
           echo "CPUs - $CPU_COUNT, WORKERS - $WORKER_COUNT"
           echo "PYTEST_ARGS=$PYTEST_ARGS"
           if [ -z "$PYTEST_ARGS" ]; then 
-            pytest -n "$WORKER_COUNT" --dist=loadscope app; 
+            pytest app; 
           else 
             pytest $PYTEST_ARGS; 
           fi
