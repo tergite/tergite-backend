@@ -29,7 +29,9 @@ from pydantic import ValidationError
 from qiskit.qobj import PulseQobj
 from rq import Repeat, get_current_job
 
-from ...libs.device_parameters import get_device_calibration_info
+from ...libs.device_parameters import (
+    get_device_calibration_info,
+)
 from ...libs.qiskit_providers.utils import json_decoder
 from ...libs.quantum_executor.base.quantum_job import (
     MeasLvl,
@@ -46,7 +48,6 @@ from ...libs.queues.dtos import (
     Stage,
     StorageID,
 )
-from ...utils.api import get_mss_client
 from ...utils.datetime import get_utc_now
 from ...utils.exc import JobAlreadyCancelled, PostProcessingError
 from ...utils.redis_store import Collection
@@ -55,6 +56,7 @@ from ..booking import get_active_booking
 from ..booking.models import Booking
 from ..booking.service import get_booking, get_next_booking
 from ..booking.store import get_bookings_sql_engine
+from ..external.mss.service import MssClientPipe
 from .store import get_jobs_store
 from .utils import (
     apply_linear_discriminator,
@@ -316,7 +318,7 @@ def postprocess(
     quantum_job = read_job_from_hdf5(new_file)
 
     try:
-        with get_mss_client() as mss_client:
+        with MssClientPipe() as mss_client_pipe:
             if quantum_job.meas_level == MeasLvl.DISCRIMINATED:
                 calibration = get_device_calibration_info()
                 discriminator = functools.partial(
@@ -325,11 +327,11 @@ def postprocess(
 
                 memory = discriminate_results(quantum_job, discriminator=discriminator)
                 job = update_job_results(jobs_store, job_id=job_id, data=memory)
-                update_job_in_mss(mss_client, job_id=job_id, payload=job)
+                update_job_in_mss(mss_client_pipe, payload=job)
             elif quantum_job.meas_level == MeasLvl.INTEGRATED:
                 memory = xarray_to_list(quantum_job)
                 job = update_job_results(jobs_store, job_id=job_id, data=memory)
-                update_job_in_mss(mss_client, job_id=job_id, payload=job)
+                update_job_in_mss(mss_client_pipe, payload=job)
             else:
                 raise NotImplementedError(
                     f"meas_level {job.meas_level} is not supported"
@@ -354,14 +356,14 @@ def postprocessing_success_callback(
     jobs_store = get_jobs_store(context["jobs_store_url"])
 
     job = update_job_stage(jobs_store, job_id=job_id, stage=Stage.FINAL_Q)
-    with get_mss_client() as mss_client:
+    with MssClientPipe() as mss_client_pipe:
         if job.status == JobStatus.SUCCESSFUL:
             job = update_job_stage(jobs_store, job_id=job_id, stage=Stage.FINAL_W)
             print(f"Job with ID {job_id} has finished")
         else:
             print(f"Job {job_id}, has failed: aborting. Status: {job.status}")
 
-        update_job_in_mss(mss_client, job_id=job_id, payload=job)
+        update_job_in_mss(mss_client_pipe, payload=job)
 
 
 def postprocessing_failure_callback(
@@ -381,7 +383,7 @@ def postprocessing_failure_callback(
         value: the value passed to the callback from the handler
         traceback: the error traceback
     """
-    with get_mss_client() as mss_client:
+    with MssClientPipe() as mss_client_pipe:
         if isinstance(value, PostProcessingError):
             jobs_store = Collection[Job](_rq_connection, schema=Job)
             job_id = value.job_id
@@ -392,7 +394,7 @@ def postprocessing_failure_callback(
                 job_id=job_id,
                 reason="error during post processing",
             )
-            update_job_in_mss(mss_client, job_id=job_id, payload=job)
+            update_job_in_mss(mss_client_pipe, payload=job)
 
 
 def _is_job_shorter(storage_id: StorageID, duration: float) -> bool:

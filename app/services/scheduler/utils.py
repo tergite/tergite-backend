@@ -14,25 +14,19 @@
 #
 """Utility functions for the scheduler service"""
 
-from json import JSONDecodeError
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-import requests
 from numpy import typing as npt
-from pydantic import BaseModel
-from redis import Redis
+from redis import Redis, SSLConnection, UnixDomainSocketConnection
 from sklearn.utils.extmath import safe_sparse_dot
 
 import settings
-from settings import (
-    BCC_MACHINE_ROOT_URL,
-    MSS_MACHINE_ROOT_URL,
-)
 
 from ...libs.device_parameters import (
     DeviceCalibration,
+    async_initialize_backend,
     get_backend_config,
     initialize_backend,
 )
@@ -51,9 +45,13 @@ from ...libs.queues.dtos import (
     Stage,
     Timestamps,
 )
-from ...utils.api import get_mss_client
 from ...utils.datetime import utc_now_str
 from ...utils.redis_store import Collection
+from ..external.mss.dtos import DeviceEvent, DeviceEventName, EventResponse
+from ..external.mss.service import (
+    AsyncMssClientPipe,
+    MssClientPipe,
+)
 
 _STAGE_TIMESTAMPS_MAP: Dict[Stage, Tuple[Tuple[JobStage, JobEvent], ...]] = {
     Stage.REG_Q: (),
@@ -110,7 +108,7 @@ def get_executor(
     executor_type: str = settings.EXECUTOR_TYPE,
     quantify_config_file: str = settings.QUANTIFY_CONFIG_FILE,
     quantify_metadata_file: str = settings.QUANTIFY_METADATA_FILE,
-    mss_url: str = settings.MSS_MACHINE_ROOT_URL,
+    mss_client_pipe: Optional[MssClientPipe] = None,
     should_restore_currents: bool = settings.SHOULD_RESTORE_CURRENTS,
 ) -> QuantumExecutor:
     """Gets the executor for running jobs
@@ -122,45 +120,87 @@ def get_executor(
         executor_type: the executor type to return
         quantify_config_file: the path to the configuration file of the executor
         quantify_metadata_file: the path to the metadata file of the executor
-        mss_url: the URL to MSS
+        mss_client_pipe: the pipe to the MSS client to use to connect rq to MSS websocket connection
+        should_restore_currents: whether the executor should restore SPI currents
 
     Returns:
         An initialized quantum executor
     """
     global _EXECUTOR
     if _EXECUTOR is None:
-        backend_config = get_backend_config()
+        _EXECUTOR = _init_executor(
+            executor_type=executor_type,
+            quantify_config_file=quantify_config_file,
+            quantify_metadata_file=quantify_metadata_file,
+            should_restore_currents=should_restore_currents,
+        )
 
-        if executor_type == "quantify":
-            _EXECUTOR = QuantifyExecutor(
-                quantify_config_file=quantify_config_file,
-                quantify_metadata_file=quantify_metadata_file,
-                backend_config=backend_config,
-                should_restore_currents=should_restore_currents,
-            )
-
-        if executor_type == "qiskit_pulse_1q":
-            _EXECUTOR = QiskitDynamicsExecutor.new_one_qubit(
-                backend_config=backend_config
-            )
-            backend_config.calibration_config.discriminators = (
-                _EXECUTOR.backend.train_discriminator()
-            )
-
-        if executor_type == "qiskit_pulse_2q":
-            _EXECUTOR = QiskitDynamicsExecutor.new_two_qubit(
-                backend_config=backend_config
-            )
-            backend_config.calibration_config.discriminators = (
-                _EXECUTOR.backend.train_discriminator()
-            )
+        is_client_pipe_private = mss_client_pipe is None
+        if is_client_pipe_private:
+            redis_url = _get_redis_url(redis)
+            device = _EXECUTOR.backend_config.general_config.name
+            mss_client_pipe = MssClientPipe(redis_url=redis_url, device=device)
 
         initialize_backend(
             redis,
-            mss_client=get_mss_client(),
-            mss_url=mss_url,
-            backend_config=backend_config,
+            backend_config=_EXECUTOR.backend_config,
+            mss_client_pipe=mss_client_pipe,
         )
+
+        # cleanup if needed
+        if is_client_pipe_private:
+            mss_client_pipe.close()
+
+    return _EXECUTOR
+
+
+async def async_get_executor(
+    redis: Redis = settings.REDIS_CONNECTION,
+    executor_type: str = settings.EXECUTOR_TYPE,
+    quantify_config_file: str = settings.QUANTIFY_CONFIG_FILE,
+    quantify_metadata_file: str = settings.QUANTIFY_METADATA_FILE,
+    mss_client_pipe: Optional[AsyncMssClientPipe] = None,
+    should_restore_currents: bool = settings.SHOULD_RESTORE_CURRENTS,
+) -> QuantumExecutor:
+    """Gets the executor for running jobs
+
+    It also initializes the backend before returning the executor
+
+    Args:
+        redis: the connection to the redis database
+        executor_type: the executor type to return
+        quantify_config_file: the path to the configuration file of the executor
+        quantify_metadata_file: the path to the metadata file of the executor
+        mss_client_pipe: the pipe to the MSS client to use to connect rq to MSS websocket connection
+        should_restore_currents: whether the executor should restore SPI currents
+
+    Returns:
+        An initialized quantum executor
+    """
+    global _EXECUTOR
+    if _EXECUTOR is None:
+        _EXECUTOR = _init_executor(
+            executor_type=executor_type,
+            quantify_config_file=quantify_config_file,
+            quantify_metadata_file=quantify_metadata_file,
+            should_restore_currents=should_restore_currents,
+        )
+
+        is_client_pipe_private = mss_client_pipe is None
+        if is_client_pipe_private:
+            redis_url = _get_redis_url(redis)
+            device = _EXECUTOR.backend_config.general_config.name
+            mss_client_pipe = AsyncMssClientPipe(redis_url=redis_url, device=device)
+
+        await async_initialize_backend(
+            redis,
+            backend_config=_EXECUTOR.backend_config,
+            mss_client_pipe=mss_client_pipe,
+        )
+
+        # cleanup if needed
+        if is_client_pipe_private:
+            await mss_client_pipe.close()
 
     return _EXECUTOR
 
@@ -306,46 +346,33 @@ def update_job_results(
         {
             "status": JobStatus.SUCCESSFUL,
             "result": JobResult(memory=data),
-            "download_url": f"{BCC_MACHINE_ROOT_URL}/logfiles/{job_id}",
+            "download_url": f"{settings.BCC_MACHINE_ROOT_URL}/logfiles/{job_id}",
             "updated_at": utc_now_str(),
         },
     )
 
 
-def update_job_in_mss(
-    mss_client: requests.Session, job_id: str, payload: Union[dict, Job]
-) -> requests.Response:
+def update_job_in_mss(mss_client_pipe: MssClientPipe, payload: Job) -> EventResponse:
     """Updates the job in MSS with the given payload
 
     Args:
-        mss_client: the requests.Session that can query MSS
-        job_id: the ID of the job
+        mss_client_pipe: the pipe connected to the MSS client
         payload: the new updates to apply to the given job in MSS
 
     Returns:
-        the requests.Response received after request to MSS
+        the response received after request to MSS
 
     Raises:
         RuntimeError: Public API returned {resp.status_code}
     """
-    data = payload
-    if isinstance(payload, BaseModel):
-        data = payload.model_dump(exclude_unset=True, mode="json")
-
-    url = f"{MSS_MACHINE_ROOT_URL}/jobs/{job_id}"
-    resp = mss_client.put(url, json=data)
-
-    if not resp.ok:
-        try:
-            message = resp.json()
-        except JSONDecodeError:
-            message = resp.text
-
-        log_job_msg(
-            f"failed to submit job to MSS\nstatus:{resp.status_code}\nresponse:{message}",
-            level=LogLevel.ERROR,
+    job_update_event = DeviceEvent(name=DeviceEventName.JOB_UPDATED, data=payload)
+    try:
+        resp = mss_client_pipe.send_event(
+            job_update_event, error_prefix="error sending job to MSS: "
         )
-        raise RuntimeError(f"Public API returned {resp.status_code}")
+    except ValueError as exp:
+        log_job_msg(f"{exp}", level=LogLevel.ERROR)
+        raise RuntimeError(f"Public API returned an error: {exp}")
 
     return resp
 
@@ -448,3 +475,67 @@ def _get_next_timestamps(job: Job, next_stage: Stage, current_time: str) -> Time
     }
 
     return timestamps.with_updates(new_timestamps)
+
+
+def _init_executor(
+    executor_type: str,
+    quantify_config_file: str,
+    quantify_metadata_file: str,
+    should_restore_currents: bool = settings.SHOULD_RESTORE_CURRENTS,
+) -> QuantumExecutor:
+    """Initializes the executor
+
+    Args:
+        executor_type: the executor type to return
+        quantify_config_file: the path to the configuration file of the executor
+        quantify_metadata_file: the path to the metadata file of the executor
+        should_restore_currents: whether the executor should restore SPI currents
+
+    Returns:
+        An initialized quantum executor
+    """
+    backend_config = get_backend_config()
+
+    if executor_type == "qiskit_pulse_1q":
+        return QiskitDynamicsExecutor.new_one_qubit(backend_config=backend_config)
+
+    elif executor_type == "qiskit_pulse_2q":
+        return QiskitDynamicsExecutor.new_two_qubit(backend_config=backend_config)
+
+    return QuantifyExecutor(
+        quantify_config_file=quantify_config_file,
+        quantify_metadata_file=quantify_metadata_file,
+        backend_config=backend_config,
+        should_restore_currents=should_restore_currents,
+    )
+
+
+def _get_redis_url(redis: Redis) -> str:
+    """Gets the redis URL from the redis connection
+
+    Args:
+        redis: the redis connection
+
+    Returns:
+        the redis URL  "redis(s)://username:password@host:port/dbname"
+
+    Raises:
+        ValueError: unix connection is not supported
+    """
+    conn_kwargs = redis.connection_pool.connection_kwargs
+
+    if conn_kwargs["connection_class"] == UnixDomainSocketConnection:
+        raise ValueError("unix connection is not supported")
+
+    auth_str = ""
+    scheme = "redis"
+    db = conn_kwargs["db"]
+    host = conn_kwargs["host"]
+    port = conn_kwargs["port"]
+    if conn_kwargs["username"] and conn_kwargs["password"]:
+        # Not general enough but sufficient
+        auth_str = f"{conn_kwargs['username']}:{conn_kwargs['password']}@"
+    if conn_kwargs["connection_class"] == SSLConnection:
+        scheme = "rediss"
+
+    return f"{scheme}://{auth_str}{host}:{port}/{db}"

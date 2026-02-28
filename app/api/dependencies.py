@@ -29,9 +29,14 @@ from ..libs.queues.dtos import JobFile
 from ..services.booking.models import MSSTokenClaims
 from ..services.booking.service import get_user_job_id_pair_from_token
 from ..services.booking.store import get_bookings_sql_engine
+from ..services.external.mss.service import AsyncMssClient, AsyncMssClientPipe
 from ..services.scheduler import get_job
 from ..services.scheduler.queues import QueuePool
-from ..services.scheduler.utils import get_executor, reset_cached_executor
+from ..services.scheduler.utils import (
+    async_get_executor,
+    get_executor,
+    reset_cached_executor,
+)
 from ..utils.api import get_request_logs_store, verify_mss_signature
 from ..utils.datetime import get_utc_now
 from ..utils.exc import (
@@ -49,24 +54,28 @@ QUEUE_POOL = QueuePool.from_settings()
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI):
+async def lifespan(app: FastAPI):
     """Handles functions to run before and after the application"""
     global DB_ENGINE, QUEUE_POOL
 
     DB_ENGINE = get_bookings_sql_engine(settings.BOOKING_DB_URL)
     QUEUE_POOL = QueuePool.from_settings()
-    get_executor(
-        redis=settings.REDIS_CONNECTION,
-        executor_type=settings.EXECUTOR_TYPE,
-        quantify_config_file=settings.QUANTIFY_CONFIG_FILE,
-        quantify_metadata_file=settings.QUANTIFY_METADATA_FILE,
-        mss_url=settings.MSS_MACHINE_ROOT_URL,
-    )
-    print(f"starting app at {get_utc_now()}")
-    yield
 
-    DB_ENGINE = None
-    reset_cached_executor()
+    async with AsyncMssClient() as mss_client:
+        app.state.MSS_CLIENT = mss_client
+        async with AsyncMssClientPipe() as mss_client_pipe:
+            await async_get_executor(
+                redis=settings.REDIS_CONNECTION,
+                executor_type=settings.EXECUTOR_TYPE,
+                quantify_config_file=settings.QUANTIFY_CONFIG_FILE,
+                quantify_metadata_file=settings.QUANTIFY_METADATA_FILE,
+                mss_client_pipe=mss_client_pipe,
+            )
+        print(f"starting app at {get_utc_now()}")
+        yield
+
+        DB_ENGINE = None
+        reset_cached_executor()
 
 
 def get_queue_pool() -> QueuePool:

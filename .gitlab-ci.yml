@@ -6,6 +6,7 @@ variables:
   PYTHON_VERSION: "3.12"
   REDIS_PORT: 6378
   TEST_RQ_MAX_QUEUE_WAIT_TIME: 45
+  FF_NETWORK_PER_BUILD: 1
 
 tests:
   stage: tests
@@ -23,8 +24,18 @@ tests:
     # Check formatting
     - black --check app
     - isort --check-only app
+
     # Run unit tests
-    - pytest app
+    - CPU_COUNT=$(python -c "import os; print(os.cpu_count())")
+    - WORKER_COUNT=$(python -c "import os; print(min(os.cpu_count(), 4))")
+    - echo "CPUs - $CPU_COUNT, WORKERS - $WORKER_COUNT"
+    - echo "PYTEST_ARGS=$PYTEST_ARGS"
+    - |
+      if [ -z "$PYTEST_ARGS" ]; then 
+        pytest app; 
+      else 
+        pytest $PYTEST_ARGS; 
+      fi
   cache:
     paths:
       - .cache/pip

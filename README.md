@@ -46,9 +46,21 @@ pip install ."[dev]"
   and copy the public key certificate to the backend machine in this root folder.
 
 ```shell
+## use param -aes-256-cbc for password-protection
 openssl genpkey -algorithm RSA -out private-mss-key.pem -pkeyopt rsa_keygen_bits:4096
 openssl rsa -pubout -in private-mss-key.pem -out public-mss-key.pem
 # scp public-mss-key.pem backend-host:~/tergite-backend/
+```
+
+- If you don't have a key certificate pair for BCC, generate them her 
+  and copy the public key certificate to the MSS machine in this `bcc_certs` folder and update its `mss-config.toml`
+
+```shell
+## use param -aes-256-cbc for password-protection
+openssl genpkey -algorithm RSA -out private-bcc-key.pem -pkeyopt rsa_keygen_bits:4096
+openssl rsa -pubout -in private-bcc-key.pem -out public-bcc-key.pem
+# scp public-bcc-key.pem backend-host:~/tergite-frontend/bcc_certs
+# then update the public_key_path for the backend in mss-config.toml of MSS
 ```
 
 - Copy the `dot-env-template.txt` file to `.env` and update the environment variables there appropriately.

@@ -1,3 +1,13 @@
+import asyncio
+import socket
+
+import websockets
+from pytest_mock import MockerFixture
+from starlette.datastructures import URL
+from websockets import ClientProtocol
+
+import app
+
 from .utils.env import (
     TEST_BACKEND_SETTINGS_FILE,
     TEST_BOOKING_DB_URL,
@@ -29,11 +39,13 @@ import sys
 from pathlib import Path
 from typing import (
     Any,
+    AsyncGenerator,
     Dict,
     Generator,
     List,
     NotRequired,
     Optional,
+    Tuple,
     TypedDict,
 )
 
@@ -48,21 +60,19 @@ from rq import SimpleWorker
 from sqlalchemy import create_engine
 from sqlmodel import SQLModel
 
-from ..libs.device_parameters import DeviceCalibration
 from ..libs.quantum_executor.quantify.spi_dac import SpiDAC
 from ..libs.queues.dtos import Job
 from ..services.scheduler.queues import QueuePool
 from .utils.analysis import MockLinearDiscriminantAnalysis
 from .utils.executors import MockQiskitDynamicsExecutor, MockQuantifyExecutor
 from .utils.fixtures import get_fixture_path, load_fixture
-from .utils.http import MockHttpResponse, MockHttpSession
 from .utils.mocks import make_attr_verbose
+from .utils.mss import MockWebsocket, mock_mss_websocket_handler
 from .utils.rq import get_rq_pool_worker
 
 _redis_connection = redis.Redis.from_url(TEST_RQ_REDIS_URL)
 
 MOCK_NOW = "2023-11-27T12:46:48.851656+00:00"
-TEST_APP_TOKEN_STRING = "eecbf107ad103f70187923f49c1a1141219da95f1ab3906f"
 
 FASTAPI_CLIENTS = [
     lazy_fixture("quantify_rest_client"),
@@ -175,43 +185,6 @@ def rq_worker_for_simulator_2q(redis_client) -> Generator[SimpleWorker, Any, Non
     yield get_rq_pool_worker(queue_pool)
 
 
-def mock_post_requests(url: str, **kwargs):
-    """Mock POST requests for testing"""
-    if url == f"{TEST_MSS_MACHINE_ROOT_URL}/timelog":
-        return MockHttpResponse(status_code=200)
-    return None
-
-
-def mock_mss_put_requests(url: str, **kwargs):
-    """Mock PUT requests sent to MSS for testing"""
-    payload = kwargs.get("json", {})
-    is_jobs_update_url = url.startswith(f"{TEST_MSS_MACHINE_ROOT_URL}/jobs")
-
-    if is_jobs_update_url and "timestamps" in payload:
-        return MockHttpResponse(status_code=200)
-    if is_jobs_update_url and "result" in payload:
-        return MockHttpResponse(status_code=200)
-    if url.startswith(f"{TEST_MSS_MACHINE_ROOT_URL}/devices"):
-        return MockHttpResponse(status_code=200)
-
-    return MockHttpResponse(status_code=405)
-
-
-def mock_mss_post_requests(url: str, **kwargs):
-    """Mock POST requests sent to MSS for testing"""
-    payload = kwargs.get("json", [])
-
-    if url.startswith(f"{TEST_MSS_MACHINE_ROOT_URL}/calibrations"):
-        try:
-            _parsed_payload = [DeviceCalibration(**props) for props in payload]
-            return MockHttpResponse(status_code=200)
-        except Exception as exp:
-            logging.error(exp)
-            return MockHttpResponse(status_code=400)
-
-    return MockHttpResponse(status_code=405)
-
-
 @pytest.fixture
 def quantify_rest_client(mocker, redis_client) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
@@ -234,6 +207,13 @@ def quantify_rest_client(mocker, redis_client) -> Generator[TestClient, Any, Non
 
     yield TestClient(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
+
+
+@pytest.fixture
+def patched_mss_websockets(mocker) -> Generator[MockerFixture, Any, None]:
+    """Patch the websocket used to connect to MSS"""
+    mocker.patch("websockets.connect.create_connection", side_effect=MockWebsocket)
+    yield mocker
 
 
 @pytest.fixture
@@ -260,7 +240,7 @@ def qiskit_1q_rest_client(mocker) -> Generator[TestClient, Any, None]:
 @pytest.fixture
 def qiskit_2q_rest_client(mocker) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
-    _patch_async_client_sim2q(mocker)
+    _patch_async_client(mocker)
     os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_2q"
     os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_2Q
     os.environ["BACKEND_SETTINGS"] = TEST_SIMQ2_BACKEND_SETTINGS_FILE
@@ -278,7 +258,7 @@ def qiskit_2q_rest_client(mocker) -> Generator[TestClient, Any, None]:
     _redis_connection.flushall()
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def jobs_folder() -> Generator[Path, Any, None]:
     """A temporary folder for the client where jobs can be saved"""
     folder_path = Path("./tmp/jobs")
@@ -288,7 +268,7 @@ def jobs_folder() -> Generator[Path, Any, None]:
     shutil.rmtree(folder_path, ignore_errors=True)
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def logfile_download_folder() -> Generator[Path, Any, None]:
     """A temporary folder for the server where logfiles can be downloaded from"""
     folder_path = (
@@ -302,20 +282,13 @@ def logfile_download_folder() -> Generator[Path, Any, None]:
     shutil.rmtree(folder_path, ignore_errors=True)
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def storage_root():
     """root where files are stored temporarily"""
     path = Path(TEST_STORAGE_ROOT)
     path.mkdir(parents=True, exist_ok=True)
     yield path
     shutil.rmtree(path, ignore_errors=True)
-
-
-@pytest.fixture
-def app_token_header() -> Generator[Dict[str, str], Any, None]:
-    """the authorization header with the app token"""
-
-    yield {"Authorization": f"Bearer {TEST_APP_TOKEN_STRING}"}
 
 
 @pytest.fixture
@@ -390,7 +363,16 @@ def verbose_spi_dac_dummy(redis_client, mocker) -> Generator[SpiDAC, Any, None]:
 @pytest.fixture(autouse=True, scope="session")
 def _configure_logging_for_tests():
     """Configure logging for tests"""
-    if os.getenv("DEBUG", "").strip().lower() == "true":
+    is_debug = os.getenv("DEBUG", "").strip().lower() == "true"
+    if not is_debug:
+        # silence rq logs
+        logging.getLogger("rq").setLevel(logging.WARNING)
+        logging.getLogger("rq.worker").setLevel(logging.WARNING)
+        logging.getLogger("rq.queue").setLevel(logging.WARNING)
+        yield
+        return
+
+    if is_debug:
         root = logging.getLogger()
         # Remove any preconfigured handlers (libraries may have added them)
         for h in root.handlers[:]:
@@ -410,20 +392,16 @@ def _configure_logging_for_tests():
                 h.flush()
             except:
                 pass
-    else:
-        # silence rq logs
-        logging.getLogger("rq").setLevel(logging.WARNING)
-        logging.getLogger("rq.worker").setLevel(logging.WARNING)
-        logging.getLogger("rq.queue").setLevel(logging.WARNING)
-        yield
 
 
-def _patch_async_client(mocker):
-    """Patches the async client"""
-    mss_client = MockHttpSession(
-        put=mock_mss_put_requests,
-        post=mock_mss_post_requests,
-    )
+def _patch_async_client(mocker, *extra_patches: Tuple[str, Dict[str, Any]]):
+    """Patches the async client
+
+    Args:
+        mocker: the pytest mocker object
+        extra_patches: extra patches to patch with the mocker object
+    """
+    mocker.patch("websockets.connect.create_connection", side_effect=MockWebsocket)
 
     mocker.patch(
         "app.services.scheduler.utils.QuantifyExecutor", new=MockQuantifyExecutor
@@ -432,36 +410,18 @@ def _patch_async_client(mocker):
         "app.services.scheduler.utils.QiskitDynamicsExecutor",
         new=MockQiskitDynamicsExecutor,
     )
-    mocker.patch("requests.post", side_effect=mock_post_requests)
-    mocker.patch("requests.Session", return_value=mss_client)
     mocker.patch(
         "app.libs.quantum_executor.qiskit.backends.one_qubit.LinearDiscriminantAnalysis",
         return_value=_mock_linear_discriminant_analysis,
     )
-    os.environ["BLACKLISTED"] = ""
-
-
-def _patch_async_client_sim2q(mocker):
-    """Patches the async client"""
-    mss_client = MockHttpSession(
-        put=mock_mss_put_requests,
-        post=mock_mss_post_requests,
-    )
-
-    mocker.patch(
-        "app.services.scheduler.utils.QuantifyExecutor", new=MockQuantifyExecutor
-    )
-    mocker.patch(
-        "app.services.scheduler.utils.QiskitDynamicsExecutor",
-        new=MockQiskitDynamicsExecutor,
-    )
-    mocker.patch("requests.post", side_effect=mock_post_requests)
-    mocker.patch("requests.Session", return_value=mss_client)
     mocker.patch(
         "app.libs.quantum_executor.qiskit.backends.two_qubit.LinearDiscriminantAnalysis",
         return_value=_mock_linear_discriminant_analysis_sim2q,
     )
     os.environ["BLACKLISTED"] = ""
+
+    for url, kwargs in extra_patches:
+        mocker.patch(url, **kwargs)
 
 
 def _clear_test_db(url: str = TEST_BOOKING_DB_URL):

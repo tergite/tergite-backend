@@ -11,13 +11,11 @@ from app.libs.quantum_executor.utils.config import (
     QuantifyMetadata,
     load_quantify_config,
 )
-from app.tests.conftest import FASTAPI_CLIENTS
 from app.tests.utils.env import (
     TEST_BACKEND_SETTINGS_FILE,
     TEST_BROKEN_QUANTIFY_CONFIG_FILE,
     TEST_BROKEN_QUANTIFY_METADATA_FILE,
     TEST_DEFAULT_PREFIX_SIM_1Q,
-    TEST_MSS_APP_TOKEN,
     TEST_QUANTIFY_CONFIG_FILE,
     TEST_QUANTIFY_METADATA_FILE,
     TEST_QUANTIFY_SEED_FILE,
@@ -40,16 +38,6 @@ def test_load_quantify_config_files():
     assert conf
 
 
-@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
-def test_authenticated_mss_client(client):
-    """The MSS client used to make requests to MSS is authenticated"""
-    from app.utils.api import get_mss_client
-
-    mss_client = get_mss_client()
-    authorization_header = mss_client.headers.get("Authorization")
-    assert authorization_header == f"Bearer {TEST_MSS_APP_TOKEN}"
-
-
 def test_redis_connection(redis_client):
     """The global redis client as be found in settings"""
     from settings import REDIS_CONNECTION
@@ -70,12 +58,14 @@ async def test_no_mss_connected():
 
     os.environ["EXECUTOR_TYPE"] = "quantify"
     os.environ["BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
+    mss_port = os.getenv("UNAVAILABLE_MSS_PORT", "5050")
+    os.environ["MSS_MACHINE_ROOT_URL"] = f"http://localhost:{mss_port}"
 
     from sqlmodel import SQLModel
 
     SQLModel.metadata.clear()
 
-    with pytest.raises(requests.exceptions.ConnectionError):
+    with pytest.raises(ConnectionRefusedError):
         from app.api import app
 
         # just to run the startup events
@@ -84,7 +74,7 @@ async def test_no_mss_connected():
 
 
 @pytest.mark.asyncio
-async def test_calibration_seed_required_for_simulator():
+async def test_calibration_seed_required_for_simulator(patched_mss_websockets):
     """Raises validation errors if calibration seed is not set for simulator."""
     remove_modules(["os", "app", "settings"])
 
@@ -108,7 +98,7 @@ async def test_calibration_seed_required_for_simulator():
 
 
 @pytest.mark.asyncio
-async def test_calibration_seed_broken_for_simulator():
+async def test_calibration_seed_broken_for_simulator(patched_mss_websockets):
     """Raises validation errors if calibration seed provided is broken for simulator only."""
     remove_modules(["os", "app", "settings"])
 
@@ -132,7 +122,7 @@ async def test_calibration_seed_broken_for_simulator():
 
 
 @pytest.mark.asyncio
-async def test_quantify_metadata_is_broken():
+async def test_quantify_metadata_is_broken(patched_mss_websockets):
     """Raises validation errors if quantify metadata conf file is broken"""
     remove_modules(["os", "app", "settings"])
 
@@ -155,7 +145,7 @@ async def test_quantify_metadata_is_broken():
 
 
 @pytest.mark.asyncio
-async def test_quantify_config_is_broken():
+async def test_quantify_config_is_broken(patched_mss_websockets):
     """Raises validation errors if quantify config file is broken"""
     remove_modules(["os", "app", "settings"])
 

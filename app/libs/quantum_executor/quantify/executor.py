@@ -21,7 +21,6 @@ This module implements the executor.
 
 import logging
 import os
-import re
 from datetime import datetime
 from typing import List, Optional, Union
 
@@ -45,7 +44,6 @@ from app.libs.quantum_executor.utils.config import (
 )
 from app.libs.quantum_executor.utils.logger import ExperimentLogger
 from app.libs.quantum_executor.utils.portclock import generate_hardware_map
-from settings import REDIS_CONNECTION
 
 from .spi_dac import SpiDAC
 
@@ -78,7 +76,7 @@ class QuantifyExecutor(QuantumExecutor):
             coupling_dict=coupling_dict,
             quantify_config=self.quantify_config,
         )
-        super().__init__(hardware_map=self.hardware_map)
+        super().__init__(hardware_map=self.hardware_map, backend_config=backend_config)
 
         self._couplers = sorted(backend_config.device_config.coupling_dict.keys())
 

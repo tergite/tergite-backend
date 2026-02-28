@@ -10,15 +10,20 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 ### Added
 
 - Added decryption of `.env` file in the `bcc_start.sh` script
+- [BREAKING] Added the `PRIVATE_KEY_FILE`, `PRIVATE_KEY_PASSWORD` environment variables
+- Added `PYTEST_ARGS` CI environment variable for use in CI
 
 ### Changed
 
 - Removed the automatic clearing of the redis database on every startup
 - Removed the JOB_EXECUTION_POOL_DIRNAME env variable
+- [BREAKING] Removed the `MSS_APP_TOKEN` environment variable
+- Changed connection to MSS to use RSA-secured websockets instead of RESTful HTTP requests
 
 ### Fixed
 
 - Fixed 'Error 111 connecting to localhost:6379' when only RQ_REDIS_URL is provided
+- Fixed KeyError 'edges' due to new version of networkx
 
 ## [2025.09.1] - 2025-11-06
 
