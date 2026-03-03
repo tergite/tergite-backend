@@ -11,13 +11,16 @@
 # that they have been altered from the originals.
 
 import json
+import logging
+import os
 import re
 from os import PathLike
-from typing import Dict, List, Mapping, Optional, Union
+from pathlib import Path
+from typing import Dict, List, Optional, Union
 
 import qblox_instruments
 import yaml
-from pydantic import BaseModel, Field, RootModel, field_validator
+from pydantic import BaseModel, Field, RootModel, field_validator, model_validator
 from quantify_scheduler.backends.qblox_backend import QbloxHardwareCompilationConfig
 
 ALLOWED_TOP_LEVEL_INSTRUMENTS = {
@@ -37,6 +40,8 @@ _QBLOX_CLUSTER_TYPE_MAP: Dict[str, qblox_instruments.ClusterType] = {
 
 # Regex pattern for cluster names
 CLUSTER_NAME_REGEX = re.compile(r"^cluster[A-Za-z0-9]+$", re.IGNORECASE)
+SPI_RACK_INSTRUMENT_TYPE = "SPI-Rack"
+CLUSTER_INSTRUMENT_TYPE = "Cluster"
 
 
 class CouplerMapEntry(BaseModel):
@@ -70,8 +75,6 @@ class InstrumentConfig(BaseModel):
     instrument_type: str = Field(..., description="Top-level instrument type.")
     ref: Optional[str] = None
     modules: Optional[Dict[str, ModuleConfig]] = None
-
-    # New fields for Cluster instruments
     ip_address: Optional[str] = Field(
         None, description="IP address for a Cluster instrument."
     )
@@ -79,7 +82,6 @@ class InstrumentConfig(BaseModel):
         None, description="Indicates if the cluster is a dummy cluster."
     )
     port: Optional[str] = None
-    coupler_spi_mapping: Optional[Dict[str, CouplerMapEntry]] = None
 
     class Config:
         extra = "allow"
@@ -93,6 +95,39 @@ class InstrumentConfig(BaseModel):
         return v
 
 
+class SpiRackConfig(InstrumentConfig):
+    """A subset of the configuration expected for each SPI-Rack device."""
+
+    port: Optional[str] = None
+    is_dummy: bool = False
+    coupler_spi_mapping: Dict[str, CouplerMapEntry] = {}
+    parking_current: float = 1e-4
+
+    class Config:
+        extra = "allow"
+
+    @model_validator(mode="after")
+    def check_port_availability(self):
+        """Check that port is reachable on the current machine
+
+        This depends on the current operating system
+
+        * On Windows we do no checks for
+        * On POSIX we only check that the device node exists under ``/dev``.
+
+        Raises:
+            ValueError: Couldn't find the serial port {port} of the SPI rack.
+        """
+        if self.is_dummy:
+            logging.warning(f"SPI port {self.port} configured for dummy device.")
+        elif self.port is None or (os.name != "nt" and not Path(self.port).exists()):
+            raise ValueError(
+                f"Couldn't find the serial port {self.port} of the SPI rack."
+            )
+
+        return self
+
+
 class QuantifyMetadata(RootModel[Dict[str, InstrumentConfig]]):
     """
     Quantify-specific metadata got from quantify-metadata.yml
@@ -103,7 +138,7 @@ class QuantifyMetadata(RootModel[Dict[str, InstrumentConfig]]):
         cls, v: Dict[str, InstrumentConfig]
     ) -> Dict[str, InstrumentConfig]:
         for name, instr in v.items():
-            if instr.instrument_type == "Cluster":
+            if instr.instrument_type == CLUSTER_INSTRUMENT_TYPE:
                 # Validate that for each Cluster instrument the name matches the expected pattern.
                 if not CLUSTER_NAME_REGEX.match(name):
                     raise ValueError(
@@ -112,9 +147,11 @@ class QuantifyMetadata(RootModel[Dict[str, InstrumentConfig]]):
                 # Validate that for each Cluster instrument has an ip address.
                 if not instr.ip_address:
                     raise ValueError(f"Cluster '{name}' must specify an ip_address.")
-            elif instr.instrument_type == "SPI-Rack":
+            elif instr.instrument_type == SPI_RACK_INSTRUMENT_TYPE:
                 if not instr.port:
-                    raise ValueError(f"SPI-Rack '{name}' must specify a serial 'port'.")
+                    raise ValueError(
+                        f"{SPI_RACK_INSTRUMENT_TYPE} '{name}' must specify a serial 'port'."
+                    )
         return v
 
     @classmethod

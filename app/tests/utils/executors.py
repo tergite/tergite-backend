@@ -13,7 +13,6 @@
 """Test utilities for the executors"""
 
 import time
-from abc import ABC
 from datetime import datetime
 from pathlib import Path
 from typing import Tuple

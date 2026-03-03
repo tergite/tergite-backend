@@ -61,6 +61,7 @@ MSS_CONNECTION_TIMEOUT=5
 # Default is "quantify".
 # Note: - 'quantify' can be the real instruments or dummy clusters
 #       - 'qiskit_pulse_1q' is a one-qubit simulator based on qiskit-dynamics library
+#       - 'qiskit_pulse_2q' is a two-qubit simulator based on qiskit-dynamics library
 EXECUTOR_TYPE=qiskit_pulse_1q
 # Sometimes we may need to seed the database with some calibration data.
 # It is actually optional for real devices but for simulators, it is a hard requirement

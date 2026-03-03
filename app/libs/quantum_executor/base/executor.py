@@ -12,13 +12,12 @@
 # that they have been altered from the originals.
 
 import abc
-import json
 import pickle
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from traceback import format_exc
-from typing import Dict, List, Optional, Tuple, Type
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from qiskit.qobj import PulseQobj

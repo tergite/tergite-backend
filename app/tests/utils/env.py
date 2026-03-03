@@ -48,7 +48,6 @@ TEST_SIMQ1_BACKEND_SETTINGS_FILE = get_fixture_path("backend_config.simq1.toml")
 TEST_SIMQ2_BACKEND_SETTINGS_FILE = get_fixture_path("backend_config.simq2.toml")
 
 TEST_QUANTIFY_SEED_FILE = get_fixture_path("dummy_quantify.seed.toml")
-
 TEST_QISKIT_1Q_SEED_FILE = get_fixture_path("qiskit_pulse_1q.seed.toml")
 TEST_QISKIT_2Q_SEED_FILE = get_fixture_path("qiskit_pulse_2q.seed.toml")
 TEST_MSS_PUBLIC_KEY_PATH = get_fixture_path("mss_public_key.pem")
@@ -93,6 +92,7 @@ def setup_test_env():
     environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX
     environ["STORAGE_ROOT"] = TEST_STORAGE_ROOT
     environ["BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
+    environ["CALIBRATION_SEED"] = TEST_QUANTIFY_SEED_FILE
 
     environ["QUANTIFY_CONFIG_FILE"] = TEST_QUANTIFY_CONFIG_FILE
     environ["QUANTIFY_METADATA_FILE"] = TEST_QUANTIFY_METADATA_FILE

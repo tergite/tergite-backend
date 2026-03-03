@@ -29,9 +29,6 @@ def test_verbose_happy_path(caplog, verbose_spi_dac_dummy, mocker, redis_client)
     testlog = logging.getLogger(TEST_SPI_LOGGER_NAME)
     caplog.set_level(logging.DEBUG)
 
-    # Arrange parking
-    redis_client.hset("couplers:u0", "parking_current", 1e-4)
-
     # Spy: catch accidental ramping even in dummy mode
     called_ramp = {"count": 0}
     orig_ramp = _get_orig_ramp_current()
@@ -45,27 +42,27 @@ def test_verbose_happy_path(caplog, verbose_spi_dac_dummy, mocker, redis_client)
     mocker.patch.object(SpiDAC, "ramp_current_serially", ramp_spy)
 
     testlog.info("=== SET TO PARKING ===")
-    spi_dac_dummy.set_parking_currents(["u0"])
+    spi_dac_dummy.reset_to_parking_current()
 
     testlog.info("=== SET TO BIAS 2 mA ===")
-    spi_dac_dummy.set_dac_current({"u0": 2e-3})
+    spi_dac_dummy.ramp_to_target_currents({"u0": 2e-3})
 
     testlog.info("=== BACK TO PARKING ===")
-    spi_dac_dummy.set_parking_currents(["u0"])
+    spi_dac_dummy.reset_to_parking_current()
 
     # Close & verify we really call underlying close()
     closed = {"hit": False}
-    orig_close = spi_dac_dummy.spi.close
+    orig_close = spi_dac_dummy.spi_rack.close
 
     def close_probe():
         closed["hit"] = True
         testlog.debug("close() invoked on SpiRack")
         return orig_close()
 
-    setattr(spi_dac_dummy.spi, "close", close_probe)
+    setattr(spi_dac_dummy.spi_rack, "close", close_probe)
 
     testlog.info("=== CLOSE RACK ===")
-    spi_dac_dummy.close_spi_rack()
+    spi_dac_dummy.close()
 
     # Assertions guided by logs
     assert (
@@ -110,10 +107,10 @@ def test_verbose_missing_parking_logs_error_and_raises(caplog, verbose_spi_dac_d
     spi_dac_dummy = verbose_spi_dac_dummy
     caplog.set_level(logging.DEBUG)
     with pytest.raises(ValueError):
-        spi_dac_dummy.set_parking_currents(["u0"])
+        spi_dac_dummy.reset_to_parking_current()
     assert any(
         r.name == TEST_SPI_LOGGER_NAME
-        and "EXC   set_parking_currents" in r.getMessage()
+        and "EXC   reset_to_parking_current" in r.getMessage()
         for r in caplog.records
     )
 

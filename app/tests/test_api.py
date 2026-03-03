@@ -37,7 +37,6 @@ from pydantic import ValidationError
 from pytest_mock import MockerFixture
 from redis import Redis
 from rq import SimpleWorker
-from scipy.stats import expon
 
 from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps
 from app.services.booking.models import Booking
