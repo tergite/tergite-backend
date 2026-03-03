@@ -27,7 +27,7 @@ from typing import (
 )
 
 import toml
-from pydantic import BaseModel, Extra, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from app.utils.datetime import utc_now_str
 from app.utils.redis_store import Schema
@@ -98,6 +98,7 @@ class Device(Schema):
     """The schema for device information"""
 
     __primary_key_fields__ = ("name",)
+    model_config = ConfigDict(extra="allow")
 
     name: str
     version: str
@@ -123,9 +124,6 @@ class Device(Schema):
     gates: Optional[Dict[str, Any]] = None
     is_active: Optional[bool] = None
     qubit_ids_coupler_map: List[Tuple[Tuple[int, int], int]] = []
-
-    class Config:
-        extra = Extra.allow
 
     @classmethod
     def from_config(cls, conf: "BackendConfig") -> "Device":
@@ -157,16 +155,20 @@ class Device(Schema):
         )
 
 
-class CalibrationValue(BaseModel, Generic[_CalibValueType], extra=Extra.allow):
+class CalibrationValue(BaseModel, Generic[_CalibValueType]):
     """A calibration value"""
+
+    model_config = ConfigDict(extra="allow")
 
     value: Union[float, str, int]
     date: Optional[str] = None
     unit: str = ""
 
 
-class QubitCalibration(BaseModel, extra=Extra.allow):
+class QubitCalibration(BaseModel):
     """Schema for the calibration data of the qubit"""
+
+    model_config = ConfigDict(extra="allow")
 
     t1_decoherence: Optional[CalibrationValue[float]] = None
     t2_decoherence: Optional[CalibrationValue[float]] = None
@@ -208,8 +210,10 @@ class QubitCalibration(BaseModel, extra=Extra.allow):
         return results
 
 
-class ResonatorCalibration(BaseModel, extra=Extra.allow):
+class ResonatorCalibration(BaseModel):
     """Schema for the calibration data of the resonator"""
+
+    model_config = ConfigDict(extra="allow")
 
     acq_delay: Optional[CalibrationValue[float]] = None
     acq_integration_time: Optional[CalibrationValue[float]] = None
@@ -247,8 +251,10 @@ class ResonatorCalibration(BaseModel, extra=Extra.allow):
         return results
 
 
-class CouplerCalibration(BaseModel, extra=Extra.allow):
+class CouplerCalibration(BaseModel):
     """Schema for the calibration data of the coupler"""
+
+    model_config = ConfigDict(extra="allow")
 
     frequency: Optional[CalibrationValue[float]] = None
     frequency_detuning: Optional[CalibrationValue[float]] = None

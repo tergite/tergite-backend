@@ -13,11 +13,11 @@
 # that they have been altered from the originals.
 
 import abc
+import math
 from typing import Any, Dict, List, Optional
 from uuid import uuid4 as uuid
 
 import numpy as np
-from qiskit.pulse.library import discrete as qiskit_discrete_lib
 from qiskit.qobj import PulseQobjConfig, PulseQobjInstruction
 
 # Instead of constructing bare Operation objects, we now import the new API classes:
@@ -39,7 +39,6 @@ from quantify_scheduler.operations.pulse_library import (
 )
 
 from app.libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
-from app.libs.quantum_executor.qiskit.functions import _delta_t_function
 from app.libs.quantum_executor.quantify.channel import (
     QuantifyChannel,
     QuantifyChannelRegistry,
@@ -627,53 +626,6 @@ class SquarePulseInstruction(BaseInstruction):
             reference_magnitude=self.parameters.get("reference_magnitude"),
         )
         return op
-
-
-class ParamPulseInstruction(BaseInstruction):
-    """Instructions from PulseQobjInstruction with name 'parametric_pulse'"""
-
-    __slots__ = ()
-
-    def __init__(self, **kwargs):
-        kwargs["name"] = "parametric_pulse"
-        super().__init__(**kwargs)
-
-    @property
-    def pretty_name(self) -> str:
-        return self.pulse_shape
-
-    @classmethod
-    def list_from_qobj_inst(
-        cls,
-        qobj_inst: PulseQobjInstruction,
-        config: PulseQobjConfig,
-        channel_registry: QuantifyChannelRegistry,
-        hardware_map: Optional[Dict[str, Any]] = None,
-        **kwargs,
-    ) -> List["ParamPulseInstruction"]:
-        t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
-        duration = _map_to_qblox_timegrid(qobj_inst.parameters["duration"] * DT_CONST)
-        qobj_channel = qobj_inst.ch
-        clock_name, port_name = hardware_map[qobj_channel]
-        channel = channel_registry.get(clock_name)
-        return [
-            cls(
-                name=qobj_inst.name,
-                t0=t0,
-                channel=channel,
-                port=port_name,
-                duration=duration,
-                pulse_shape=qobj_inst.pulse_shape,
-                parameters=qobj_inst.parameters,
-            )
-        ]
-
-    def to_operation(self, config: PulseQobjConfig) -> Operation:
-        wf_fn = getattr(qiskit_discrete_lib, str.lower(self.pulse_shape))
-        waveform = wf_fn(**self.parameters).samples
-        return _generate_numerical_pulse(
-            channel=self.channel, instruction=self, waveform=waveform
-        )
 
 
 class PulseLibInstruction(BaseInstruction):

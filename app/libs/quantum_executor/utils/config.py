@@ -20,7 +20,14 @@ from typing import Dict, List, Optional, Union
 
 import qblox_instruments
 import yaml
-from pydantic import BaseModel, Field, RootModel, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    RootModel,
+    field_validator,
+    model_validator,
+)
 from quantify_scheduler.backends.qblox_backend import QbloxHardwareCompilationConfig
 
 ALLOWED_TOP_LEVEL_INSTRUMENTS = {
@@ -50,11 +57,10 @@ class CouplerMapEntry(BaseModel):
 
 
 class ModuleConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     instrument_type: str = Field(..., description="Module instrument type.")
     # Additional module-specific fields can be provided.
-
-    class Config:
-        extra = "allow"
 
     @field_validator("instrument_type")
     def validate_module_instrument_type(cls, v):
@@ -72,6 +78,8 @@ class InstrumentConfig(BaseModel):
     are expected along with an optional 'modules' dictionary.
     """
 
+    model_config = ConfigDict(extra="allow")
+
     instrument_type: str = Field(..., description="Top-level instrument type.")
     ref: Optional[str] = None
     modules: Optional[Dict[str, ModuleConfig]] = None
@@ -82,9 +90,6 @@ class InstrumentConfig(BaseModel):
         None, description="Indicates if the cluster is a dummy cluster."
     )
     port: Optional[str] = None
-
-    class Config:
-        extra = "allow"
 
     @field_validator("instrument_type")
     def validate_instrument_type(cls, v):

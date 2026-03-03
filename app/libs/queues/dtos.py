@@ -203,7 +203,7 @@ class TimestampPair(BaseModel):
         return self._finish_timestamp
 
     @finish_timestamp.setter
-    def set_start_timestamp(self, value: Optional[datetime]):
+    def set_finish_timestamp(self, value: Optional[datetime]):
         """Sets the start timestamp of the pair"""
         self._finish_timestamp = value
 

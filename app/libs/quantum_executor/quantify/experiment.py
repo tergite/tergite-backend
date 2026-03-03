@@ -16,8 +16,7 @@
 # Refactored by Chalmers Next Labs 2025
 
 
-from __future__ import annotations
-
+import math
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple, Type
