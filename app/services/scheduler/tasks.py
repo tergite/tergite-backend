@@ -61,8 +61,8 @@ from .store import get_jobs_store
 from .utils import (
     apply_linear_discriminator,
     decompress_qobj,
-    get_executor,
     get_rq_job_id,
+    init_executor,
     log_job_failure,
     move_file,
     update_job_in_mss,
@@ -97,6 +97,7 @@ def preprocess(
     job_id = job.job_id
     jobs_store = get_jobs_store(url=context["jobs_store_url"])
     results_folder = Path(context["preprocessing_folder"])
+    executor_options = context["executor_options"]
 
     try:
         with job_file.open() as file:
@@ -111,7 +112,7 @@ def preprocess(
         # --- In-place decode complex values
         # [[a,b],[c,d],...] -> [a + ib,c + id,...]
         json_decoder.decode_pulse_qobj(qobj)
-        executor = get_executor()
+        executor = init_executor(executor_options)
         duration, _ = executor.preprocess(
             PulseQobj.from_dict(qobj), job_id=job_id, results_folder=results_folder
         )
@@ -250,13 +251,14 @@ def execute(
     is_async = context["is_async"]
     jobs_store = get_jobs_store(url=context["jobs_store_url"])
     preprocessing_dir = Path(context["preprocessing_folder"])
+    executor_options = context["executor_options"]
 
     try:
         update_job_stage(jobs_store, job_id=job_id, stage=Stage.EXEC_W)
 
         # Just a locking mechanism to ensure jobs don't interfere with each other
         with get_executor_lock():
-            executor = get_executor()
+            executor = init_executor(executor_options)
             results_file = executor.run(job_id, inputs_folder=preprocessing_dir)
 
         job: Job = jobs_store.get_one((job_id,))
@@ -308,38 +310,44 @@ def postprocess(
 
     job_id = job.job_id
     working_folder = Path(context["postprocessing_folder"])
+    backend_name = context["executor_options"].backend_name
 
-    jobs_store = get_jobs_store(url=context["jobs_store_url"])
-    new_file = move_file(results_file_path, new_folder=working_folder, ext=".hdf5")
-    logging.info(f"Moved the logfile to {str(new_file)}")
+    with redis.from_url(context["jobs_store_url"]) as redis_conn:
+        jobs_store = Collection(connection=redis_conn, schema=Job)
+        new_file = move_file(results_file_path, new_folder=working_folder, ext=".hdf5")
+        logging.info(f"Moved the logfile to {str(new_file)}")
 
-    update_job_stage(jobs_store, job_id=job_id, stage=Stage.PST_PROC_W)
+        update_job_stage(jobs_store, job_id=job_id, stage=Stage.PST_PROC_W)
 
-    quantum_job = read_job_from_hdf5(new_file)
+        quantum_job = read_job_from_hdf5(new_file)
 
-    try:
-        with MssClientPipe() as mss_client_pipe:
-            if quantum_job.meas_level == MeasLvl.DISCRIMINATED:
-                calibration = get_device_calibration_info()
-                discriminator = functools.partial(
-                    apply_linear_discriminator, calibration
-                )
+        try:
+            with MssClientPipe() as mss_client_pipe:
+                if quantum_job.meas_level == MeasLvl.DISCRIMINATED:
+                    calibration = get_device_calibration_info(
+                        redis_conn, backend_name=backend_name
+                    )
+                    discriminator = functools.partial(
+                        apply_linear_discriminator, calibration
+                    )
 
-                memory = discriminate_results(quantum_job, discriminator=discriminator)
-                job = update_job_results(jobs_store, job_id=job_id, data=memory)
-                update_job_in_mss(mss_client_pipe, payload=job)
-            elif quantum_job.meas_level == MeasLvl.INTEGRATED:
-                memory = xarray_to_list(quantum_job)
-                job = update_job_results(jobs_store, job_id=job_id, data=memory)
-                update_job_in_mss(mss_client_pipe, payload=job)
-            else:
-                raise NotImplementedError(
-                    f"meas_level {job.meas_level} is not supported"
-                )
+                    memory = discriminate_results(
+                        quantum_job, discriminator=discriminator
+                    )
+                    job = update_job_results(jobs_store, job_id=job_id, data=memory)
+                    update_job_in_mss(mss_client_pipe, payload=job)
+                elif quantum_job.meas_level == MeasLvl.INTEGRATED:
+                    memory = xarray_to_list(quantum_job)
+                    job = update_job_results(jobs_store, job_id=job_id, data=memory)
+                    update_job_in_mss(mss_client_pipe, payload=job)
+                else:
+                    raise NotImplementedError(
+                        f"meas_level {job.meas_level} is not supported"
+                    )
 
-        return job.job_id, context
-    except Exception as exp:
-        raise PostProcessingError(exp=exp, job_id=job.job_id)
+            return job.job_id, context
+        except Exception as exp:
+            raise PostProcessingError(exp=exp, job_id=job.job_id)
 
 
 def postprocessing_success_callback(

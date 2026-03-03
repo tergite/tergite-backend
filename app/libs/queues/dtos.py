@@ -11,10 +11,12 @@
 # that they have been altered from the originals.
 #
 """Shared Data Transfer Objects"""
+import dataclasses
 import json
 from datetime import datetime
 from enum import Enum, unique
 from functools import cached_property
+from os import PathLike
 from typing import (
     Any,
     Dict,
@@ -42,11 +44,14 @@ from pydantic_core import CoreSchema, core_schema
 from pydantic_core.core_schema import SerializationInfo
 from qiskit.qobj import PulseQobj
 
+import settings
+
 from ...utils.datetime import get_utc_now, to_utc, utc_now_str
 from ...utils.exc import JobAlreadyCompleteError
 from ...utils.model import PartialMeta
 from ...utils.redis_store import Schema
 from ...utils.strings import uuid_str
+from ..device_parameters import BackendConfig
 from ..qiskit_providers.utils.json_encoder import IQXJsonEncoder
 
 _STORAGE_ID_SEPARATOR = ":::"
@@ -466,6 +471,27 @@ class LogLevel(Enum):
     ERROR = 2
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class ExecutorOptions:
+    """Key word args necessary for initializing an executor
+
+    Attributes:
+        executor_type: the executor type to return
+        quantify_config_file: the path to the quantify configuration file of the executor
+        quantify_metadata_file: the path to the quantify metadata file of the executor
+        backend_config: the backend configuration of the executor
+        backend_name: name of backend
+        should_restore_currents: whether the executor should restore SPI currents
+    """
+
+    executor_type: str
+    backend_name: str
+    backend_config: BackendConfig
+    quantify_config_file: Optional[PathLike] = None
+    quantify_metadata_file: Optional[PathLike] = None
+    should_restore_currents: bool = settings.SHOULD_RESTORE_CURRENTS
+
+
 class QueueContext(TypedDict):
     """Options passed to all queue callback creators
 
@@ -487,6 +513,7 @@ class QueueContext(TypedDict):
     job_upload_folder: str
     max_idle_time: int
     is_async: bool
+    executor_options: ExecutorOptions
 
 
 _STAGE_VERBOSE_NAME_MAP: Dict[Stage, str] = {

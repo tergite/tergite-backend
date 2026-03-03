@@ -15,6 +15,7 @@
 # Modified:
 #
 # - Martin Ahindura 2023
+import copy
 from datetime import datetime
 from typing import Optional, Tuple
 from uuid import UUID
@@ -24,6 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.requests import Request
 from fastapi.responses import FileResponse
 from pydantic import ValidationError
+from redis import Redis
 from sqlalchemy import Engine
 from typing_extensions import Annotated
 
@@ -53,7 +55,7 @@ from app.utils.exc import (
 )
 
 from ..libs import device_parameters as props_lib
-from ..libs.queues.dtos import Job, JobStatus
+from ..libs.queues.dtos import Job, JobStatus, QueueContext
 from ..services.booking import get_user
 from ..services.scheduler.queues import QueuePool
 from ..utils.api import (
@@ -71,10 +73,13 @@ from ..utils.sql_db import convert_http_sort_to_db_sort
 from ..utils.strings import uuid_str
 from .dependencies import (
     MSSAuthDetails,
+    get_backend_name,
     get_bearer_token,
+    get_cached_queue_context,
     get_db_engine,
     get_mss_token_claims_dep,
     get_queue_pool,
+    get_redis_connection,
     get_unverified_mss_is_admin,
     get_verified_mss_admin_user_id,
     get_verified_mss_details,
@@ -196,15 +201,21 @@ async def download_logfile(logfile_id: UUID):
 
 
 @app.get("/static-properties", dependencies=[Depends(get_verified_mss_user_id)])
-async def get_static_properties():
+async def get_static_properties(
+    redis: Redis = Depends(get_redis_connection),
+    backend_name: str = Depends(get_backend_name),
+):
     """Retrieves the device properties that are not changing"""
-    return props_lib.get_device_info()
+    return props_lib.get_device_info(redis, backend_name)
 
 
 @app.get("/dynamic-properties", dependencies=[Depends(get_verified_mss_user_id)])
-async def get_dynamic_properties():
+async def get_dynamic_properties(
+    redis: Redis = Depends(get_redis_connection),
+    backend_name: str = Depends(get_backend_name),
+):
     """Retrieves the device properties that are changing with time i.e. calibration data"""
-    return props_lib.get_device_calibration_info()
+    return props_lib.get_device_calibration_info(redis, backend_name)
 
 
 @app.get("/me")
@@ -230,12 +241,14 @@ async def view_profile(
 @app.delete("/me")
 async def delete_profile(
     user_id: str = Depends(get_verified_mss_user_id),
+    context: QueueContext = Depends(get_cached_queue_context),
     queue_pool: QueuePool = Depends(get_queue_pool),
 ) -> GeneralMessage:
     """Deletes the profile of the current user
 
     Args:
         user_id: the user_id as submitted by MSS
+        context: the queue context of the queues for all jobs
         queue_pool: the collection of queues where the jobs run
 
     Raises:
@@ -244,7 +257,7 @@ async def delete_profile(
     Returns:
         A general message object with status
     """
-    scheduler.delete_user_profile(queue_pool, user_id)
+    scheduler.delete_user_profile(context, queues=queue_pool, user_id=user_id)
     return GeneralMessage(status="success", detail="Profile deleted")
 
 
@@ -313,7 +326,9 @@ async def create_user(
 
 @app.delete("/users/{user_id}", dependencies=[Depends(get_verified_mss_admin_user_id)])
 async def remove_user(
-    user_id: str, queue_pool: QueuePool = Depends(get_queue_pool)
+    user_id: str,
+    context: QueueContext = Depends(get_cached_queue_context),
+    queue_pool: QueuePool = Depends(get_queue_pool),
 ) -> GeneralMessage:
     """Deletes the user of the given user_id
 
@@ -321,6 +336,7 @@ async def remove_user(
 
     Args:
         user_id: the unique identifier of the user
+        context: the context of the queues for all jobs
         queue_pool: the collection of queues to run the jobs on
 
     Raises:
@@ -329,7 +345,7 @@ async def remove_user(
     Returns:
         A general message object with status
     """
-    scheduler.delete_user_profile(queue_pool, user_id)
+    scheduler.delete_user_profile(context, queues=queue_pool, user_id=user_id)
     return GeneralMessage(status="success", detail="User deleted")
 
 
@@ -358,6 +374,7 @@ async def view_users(
 @app.post("/bookings")
 async def create_booking(
     data: NewBookingInfo,
+    context: QueueContext = Depends(get_cached_queue_context),
     user_id: str = Depends(get_verified_mss_user_id),
     queue_pool: QueuePool = Depends(get_queue_pool),
     db_engine: Engine = Depends(get_db_engine),
@@ -366,6 +383,7 @@ async def create_booking(
 
     Args:
         user_id: the MSS user_id as sent by MSS
+        context: the queue context for the queues
         data: the information about the new booking
         queue_pool: the pool of queues to user
         db_engine: the SQL database to submit data to
@@ -378,12 +396,15 @@ async def create_booking(
         # create a random user if the user does not exist
         booking.create_random_user(db_engine, user_id)
 
-    return scheduler.submit_booking(queue_pool, user_id, booking_info=data)
+    return scheduler.submit_booking(
+        context, queues=queue_pool, user_id=user_id, booking_info=data
+    )
 
 
 @app.post("/bookings/{booking_id}/cancel")
 async def cancel_booking(
     booking_id: str,
+    context: QueueContext = Depends(get_cached_queue_context),
     user_id: str = Depends(get_verified_mss_user_id),
     queue_pool: QueuePool = Depends(get_queue_pool),
     is_mss_admin: bool = Depends(get_unverified_mss_is_admin),
@@ -391,6 +412,7 @@ async def cancel_booking(
     """Cancels a booking of given id for the user of the given token
 
     Args:
+        context: the queue context for the queues
         booking_id: the unique identifier of the booking to cancel
         user_id: the MSS user_id as sent by MSS
         queue_pool: the collection of queues to run the jobs on
@@ -400,7 +422,11 @@ async def cancel_booking(
         the general message object with the status
     """
     scheduler.cancel_booking(
-        queue_pool, user_id=user_id, booking_id=booking_id, is_mss_admin=is_mss_admin
+        context,
+        queues=queue_pool,
+        user_id=user_id,
+        booking_id=booking_id,
+        is_mss_admin=is_mss_admin,
     )
     return {"status": "success", "detail": f"Booking of id {booking_id} cancelled"}
 
@@ -456,6 +482,7 @@ async def view_bookings_config() -> BookingsConfig:
 
 @app.post("/jobs")
 async def submit_job(
+    context: QueueContext = Depends(get_cached_queue_context),
     upload_file: Annotated[UploadFile, Depends(validate_job_file)] = File(...),
     token_claims: MSSTokenClaims = Depends(get_mss_token_claims_dep(job_exists=False)),
     queue_pool: QueuePool = Depends(get_queue_pool),
@@ -467,16 +494,20 @@ async def submit_job(
         upload_file: the quantum job file uploaded
         token_claims: the user_id and job_id associated with this request
         queue_pool: the collection of queues to run the jobs on
+        context: the queue context for the job in the queue
         force_normal_queue: whether to force the job to run on the normal queue or not
 
     Returns:
         the submitted job
     """
+    context = copy.deepcopy(context)
+    context["force_normal_queue"] = force_normal_queue
+
     return scheduler.submit_job_file(
-        queue_pool,
+        context,
+        queues=queue_pool,
         upload_file=upload_file,
         credentials=token_claims,
-        force_normal_queue=force_normal_queue,
     )
 
 
@@ -485,10 +516,12 @@ async def view_job(
     job_id: str,
     user_id: str = Depends(get_verified_mss_user_id),
     is_mss_admin: bool = Depends(get_unverified_mss_is_admin),
+    context: QueueContext = Depends(get_cached_queue_context),
 ) -> Job:
     """View the job of given job_id if job belongs to current user or if user is admin
 
     Args:
+        context: the queue context for the job in the queue
         job_id: the unique identifier of the job
         user_id: the user_id as provided by MSS
         is_mss_admin: whether the user is an mss admin or not
@@ -496,13 +529,16 @@ async def view_job(
     Returns:
         the job of the given job_id
     """
-    return scheduler.get_job(job_id, user_id=user_id, is_mss_admin=is_mss_admin)
+    return scheduler.get_job(
+        context, job_id=job_id, user_id=user_id, is_mss_admin=is_mss_admin
+    )
 
 
 @app.post("/jobs/{job_id}/cancel")
 async def cancel_job(
     job_id: str,
     details: CancellationDetails,
+    context: QueueContext = Depends(get_cached_queue_context),
     mss_auth_details: MSSAuthDetails = Depends(get_verified_mss_details),
     queue_pool: QueuePool = Depends(get_queue_pool),
 ) -> GeneralMessage:
@@ -511,6 +547,7 @@ async def cancel_job(
     Args:
         job_id: the unique identifier of the job
         details: the extra information passed when canceling the job
+        context: the queue context for the job in the queue
         mss_auth_details: the auth details from MSS for this request
         queue_pool: the collection of queues to run the jobs on
 
@@ -523,7 +560,8 @@ async def cancel_job(
         rq.exceptions.InvalidJobOperation: if the job has already been cancelled
     """
     scheduler.cancel_job(
-        queue_pool,
+        context,
+        queues=queue_pool,
         job_id=job_id,
         user_id=mss_auth_details.user_id,
         is_mss_admin=mss_auth_details.is_mss_admin,
@@ -535,6 +573,7 @@ async def cancel_job(
 @app.delete("/jobs/{job_id}")
 async def remove_job(
     job_id: str,
+    context: QueueContext = Depends(get_cached_queue_context),
     user_id: str = Depends(get_verified_mss_user_id),
     queue_pool: QueuePool = Depends(get_queue_pool),
     is_mss_admin: bool = Depends(get_unverified_mss_is_admin),
@@ -543,6 +582,7 @@ async def remove_job(
 
     Args:
         job_id: the unique identifier of the job
+        context: the queue context for the job in the queue
         user_id: the JWT token for the user, transformed into user_id by callback
         queue_pool: the collection of queues to run the jobs on
         is_mss_admin: whether the user is an mss admin or not
@@ -554,13 +594,18 @@ async def remove_job(
         ItemNotFoundError: Job {job_id} not found
     """
     scheduler.delete_job(
-        queue_pool, job_id=job_id, user_id=user_id, is_mss_admin=is_mss_admin
+        context,
+        queues=queue_pool,
+        job_id=job_id,
+        user_id=user_id,
+        is_mss_admin=is_mss_admin,
     )
     return {"status": "success", "detail": f"Job of id {job_id} deleted"}
 
 
 @app.get("/jobs")
 async def view_jobs(
+    context: QueueContext = Depends(get_cached_queue_context),
     user_id: str = Depends(get_verified_mss_user_id),
     status: Optional[JobStatus] = Query(default=None),
     skip: int = Query(default=0),
@@ -569,6 +614,7 @@ async def view_jobs(
     """Views all jobs that belong to the current user
 
     Args:
+        context: the queue context for the jobs in the queue
         user_id: the unique identifier of the currently logged in user
         status: the status of the jobs to return; default = None, i.e. all statuses
         skip: number of records to ignore at the top of the returned results; default is 0
@@ -578,7 +624,7 @@ async def view_jobs(
         the paginated list of the available bookings
     """
     data = scheduler.get_many_jobs(
-        user_id=user_id, status=status, skip=skip, limit=limit
+        context, user_id=user_id, status=status, skip=skip, limit=limit
     )
     results = PaginatedListResponse[Job](skip=skip, limit=limit, data=data)
     return results.model_dump(mode="json")

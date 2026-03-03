@@ -23,11 +23,12 @@ from typing import List, Optional
 
 from fastapi import UploadFile
 from pydantic import ValidationError
+from redis import Redis
 from rq import exceptions as rq_errors
 from sqlmodel import or_
 
-from ...libs.device_parameters import get_backend_config, get_device_calibration_info
-from ...libs.queues.dtos import Job, JobStatus, Stage, StorageID
+from ...libs.device_parameters import get_device_calibration_info
+from ...libs.queues.dtos import Job, JobStatus, QueueContext, Stage, StorageID
 from ...utils.api import save_uploaded_file
 from ...utils.datetime import get_utc_now, utc_now_str
 from ...utils.exc import (
@@ -37,6 +38,7 @@ from ...utils.exc import (
     ItemNotFoundError,
     NotAuthenticatedError,
 )
+from ...utils.redis_store import Collection
 from ...utils.rq import cancel_rq_job
 from ..booking import get_many_bookings
 from ..booking.models import Booking, MSSTokenClaims, NewBookingInfo, User
@@ -52,11 +54,11 @@ from ..booking.store import get_bookings_sql_engine
 from .queues import QueuePool
 from .store import get_jobs_store
 from .tasks import post_booking_cleanup, reset_idleness_timer
-from .utils import get_queue_context, get_rq_job_id
+from .utils import get_rq_job_id
 
 
 def submit_booking(
-    queues: QueuePool, user_id: str, booking_info: NewBookingInfo
+    context: QueueContext, queues: QueuePool, user_id: str, booking_info: NewBookingInfo
 ) -> Booking:
     """Submits a booking for registration
 
@@ -78,6 +80,7 @@ def submit_booking(
     and the other at the `end_utc` of this booking to enforce the above conditions.
 
     Args:
+        context: the queue context of the job
         queues: the collection of queues on which jobs run.
         booking_info: the details for the booking
         user_id: the ID of user submitting the booking
@@ -85,7 +88,6 @@ def submit_booking(
     Returns:
         the submitted booking
     """
-    context = get_queue_context()
     booking_db_url = context["booking_db_url"]
 
     # create the new booking
@@ -116,13 +118,18 @@ def submit_booking(
 
 
 def cancel_booking(
-    queues: QueuePool, user_id: str, booking_id: str, is_mss_admin: bool = False
+    context: QueueContext,
+    queues: QueuePool,
+    user_id: str,
+    booking_id: str,
+    is_mss_admin: bool = False,
 ):
     """Cancels the given booking as long as the user is the owner or is admin
 
     If the booking has already started, canceling fails.
 
     Args:
+        context: the queue context of the job
         queues: the collection of queues on which jobs run.
         booking_id: the unique identifier of the booking to cancel
         user_id: the ID of the user cancelling the booking
@@ -134,7 +141,6 @@ def cancel_booking(
         BookingAlreadyActive: the booking of id {booking_id} is already active
         BookingAlreadyComplete: the booking of id {booking_id} is already completed.
     """
-    context = get_queue_context()
     booking_db_url = context["booking_db_url"]
 
     db_engine = get_bookings_sql_engine(url=booking_db_url)
@@ -165,10 +171,10 @@ def cancel_booking(
 
 
 def submit_job_file(
+    context: QueueContext,
     queues: QueuePool,
     upload_file: UploadFile,
     credentials: MSSTokenClaims,
-    force_normal_queue: bool = False,
 ) -> Job:
     """Submits the job for processing
 
@@ -193,65 +199,66 @@ def submit_job_file(
             - the job is pushed to the execution queue
 
     Args:
+        context: the context of the queue for the job
         queues: the collection of queues that are to run the job.
         upload_file: the job file containing the job to submit for the next steps of processing
         credentials: MSS login details as got from the headers and the parameters or body
-        force_normal_queue: the flag for whether to force the usage of the normal queue
 
     Returns:
         the submitted job
     """
-    context = get_queue_context(force_normal_queue=force_normal_queue)
     jobs_store_url = context["jobs_store_url"]
     booking_db_url = context["booking_db_url"]
     upload_folder = Path(context["job_upload_folder"])
+    backend_name = context["executor_options"].backend_name
 
-    # We save the job first in the jobs store before we put it on the queue
-    # because it will be picked from the jobs store when the worker is running.
-    # It would be harder to pass the job payload itself across each worker because it would have
-    # to be pickled.
-    store = get_jobs_store(url=jobs_store_url)
+    with Redis.from_url(jobs_store_url) as redis_conn:
+        # We save the job first in the jobs store before we put it on the queue
+        # because it will be picked from the jobs store when the worker is running.
+        # It would be harder to pass the job payload itself across each worker because it would have
+        # to be pickled.
+        jobs_store = Collection(connection=redis_conn, schema=Job)
 
-    job_id = credentials.job_id
-    user_id = credentials.user_id
-    if store.exists(job_id):
-        raise ConflictError(f"job_id {job_id} already exists")
+        job_id = credentials.job_id
+        user_id = credentials.user_id
+        if jobs_store.exists(job_id):
+            raise ConflictError(f"job_id {job_id} already exists")
 
-    # save job file
-    new_file_path = upload_folder / job_id
-    job_file_path = save_uploaded_file(upload_file, target=new_file_path)
+        # save job file
+        new_file_path = upload_folder / job_id
+        job_file_path = save_uploaded_file(upload_file, target=new_file_path)
 
-    # save job in database
-    backend_config = get_backend_config()
-    calibration_info = get_device_calibration_info(backend_config)
-    job = Job(
-        job_id=job_id,
-        device=backend_config.general_config.name,
-        calibration_date=calibration_info.last_calibrated,
-        user_id=user_id,
-        stage=Stage.PRE_PROC_Q,
-    )
+        # save job in database
+        calibration_info = get_device_calibration_info(redis_conn, backend_name)
+        job = Job(
+            job_id=job_id,
+            device=backend_name,
+            calibration_date=calibration_info.last_calibrated,
+            user_id=user_id,
+            stage=Stage.PRE_PROC_Q,
+        )
 
-    store.insert(job)
+        jobs_store.insert(job)
 
-    bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
-    active_booking = get_active_booking(db_engine=bookings_sql_engine)
-    booking_id = None
-    if active_booking:
-        booking_id = active_booking.id
+        bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
+        active_booking = get_active_booking(db_engine=bookings_sql_engine)
+        booking_id = None
+        if active_booking:
+            booking_id = active_booking.id
 
-    queues.preprocessing.enqueue(
-        job,
-        context,
-        booking_id=booking_id,
-        job_file=job_file_path,
-        job_id=get_rq_job_id(job_id, Stage.PRE_PROC_Q),
-    )
+        queues.preprocessing.enqueue(
+            job,
+            context,
+            booking_id=booking_id,
+            job_file=job_file_path,
+            job_id=get_rq_job_id(job_id, Stage.PRE_PROC_Q),
+        )
 
-    return job
+        return job
 
 
 def cancel_job(
+    context: QueueContext,
     queues: QueuePool,
     job_id: str,
     user_id: str,
@@ -261,6 +268,7 @@ def cancel_job(
     """Cancels the job of a given job_id if it belongs to the user or the user is admin
 
     Args:
+        context: the context of the queue for the job
         queues: the collection of queues on which jobs run.
         job_id: the unique identifier of the job
         user_id: the user_id of the user requesting the job
@@ -276,7 +284,6 @@ def cancel_job(
         rq.exceptions.InvalidJobOperationError: if the job has already been cancelled
         rq.exceptions.InvalidJobOperation: if the job has already been cancelled
     """
-    context = get_queue_context()
     booking_db_url = context["booking_db_url"]
     jobs_store_url = context["jobs_store_url"]
 
@@ -309,11 +316,16 @@ def cancel_job(
 
 
 def delete_job(
-    queues: QueuePool, job_id: str, user_id: str, is_mss_admin: bool = False
+    context: QueueContext,
+    queues: QueuePool,
+    job_id: str,
+    user_id: str,
+    is_mss_admin: bool = False,
 ) -> Job:
     """Deletes the job of a given job_id if it belongs to the user or the user is admin
 
     Args:
+        context: the context of the queue for the job
         queues: the collection of queues on which jobs run.
         job_id: the unique identifier of the job
         user_id: the user_id of the user requesting the job
@@ -328,10 +340,12 @@ def delete_job(
     """
     with suppress(rq_errors.InvalidJobOperation, rq_errors.InvalidJobOperationError):
         job = cancel_job(
-            queues, job_id=job_id, user_id=user_id, is_mss_admin=is_mss_admin
+            context,
+            queues=queues,
+            job_id=job_id,
+            user_id=user_id,
+            is_mss_admin=is_mss_admin,
         )
-
-    context = get_queue_context()
 
     job_store = get_jobs_store(url=context["jobs_store_url"])
 
@@ -344,10 +358,13 @@ def delete_job(
     return job
 
 
-def get_job(job_id: str, user_id: str, is_mss_admin: bool = False) -> Job:
+def get_job(
+    context: QueueContext, job_id: str, user_id: str, is_mss_admin: bool = False
+) -> Job:
     """Get the job of a given job_id if it belongs to the user or the user is admin
 
     Args:
+        context: the context of the queue for the job
         job_id: the unique identifier of the job
         user_id: the user_id of the user requesting the job
         is_mss_admin: whether the user is an MSS admin
@@ -359,7 +376,6 @@ def get_job(job_id: str, user_id: str, is_mss_admin: bool = False) -> Job:
         NotAuthenticatedError: user not found
         ItemNotFoundError: Job {job_id} not found
     """
-    context = get_queue_context()
     booking_db_url = context["booking_db_url"]
     jobs_store_url = context["jobs_store_url"]
 
@@ -380,6 +396,7 @@ def get_job(job_id: str, user_id: str, is_mss_admin: bool = False) -> Job:
 
 
 def get_many_jobs(
+    context: QueueContext,
     user_id: Optional[str] = None,
     status: Optional[JobStatus] = None,
     skip: int = 0,
@@ -388,6 +405,7 @@ def get_many_jobs(
     """Get the job of a given job_id if it belongs to the user or the user is admin
 
     Args:
+        context: the context of the queue for the jobs
         user_id: the user_id associated with the jobs; defaults to None i.e. all jobs are returned
         status: the status of the jobs; defaults to None i.e. all jobs are returned
         skip: number of records to ignore at the top of the returned results; default is 0
@@ -396,7 +414,6 @@ def get_many_jobs(
     Returns:
         the list of job
     """
-    context = get_queue_context()
     jobs_store_url = context["jobs_store_url"]
 
     job_store = get_jobs_store(url=jobs_store_url)
@@ -409,20 +426,20 @@ def get_many_jobs(
     return job_store.find_by_index(filters, skip=skip, limit=limit)
 
 
-def delete_user_profile(queues: QueuePool, user_id: str):
+def delete_user_profile(context: QueueContext, queues: QueuePool, user_id: str):
     """Deletes the user profile for the given user_id
 
     On top of deleting the user, the user's active and pending bookings
     and active and pending jobs are canceled
 
     Args:
+        context: the context of the queue for all jobs
         queues: the collection of queues on which jobs run.
         user_id: the ID of the user whose profile is to be deleted
 
     Raises:
         ItemNotFoundError: the user of id {user_id} was not found
     """
-    context = get_queue_context()
     booking_db_url = context["booking_db_url"]
     jobs_store_url = context["jobs_store_url"]
 

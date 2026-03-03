@@ -10,22 +10,26 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Dependencies useful for the FastAPI API"""
+import dataclasses
 import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Optional
+from os import PathLike
+from typing import Optional, Unpack
 
 from cryptography.exceptions import InvalidSignature
 from fastapi import Depends, FastAPI, HTTPException, UploadFile, status
 from fastapi.requests import Request
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, ValidationError
+from redis import Redis
 from sqlalchemy import Engine
 
 import settings
 
-from ..libs.queues.dtos import JobFile
+from ..libs.device_parameters import BackendConfig, save_all_device_params
+from ..libs.queues.dtos import ExecutorOptions, JobFile, QueueContext
 from ..services.booking.models import MSSTokenClaims
 from ..services.booking.service import get_user_job_id_pair_from_token
 from ..services.booking.store import get_bookings_sql_engine
@@ -33,9 +37,7 @@ from ..services.external.mss.service import AsyncMssClient, AsyncMssClientPipe
 from ..services.scheduler import get_job
 from ..services.scheduler.queues import QueuePool
 from ..services.scheduler.utils import (
-    async_get_executor,
-    get_executor,
-    reset_cached_executor,
+    init_executor,
 )
 from ..utils.api import get_request_logs_store, verify_mss_signature
 from ..utils.datetime import get_utc_now
@@ -51,31 +53,63 @@ from ..utils.strings import validate_uuid4_str
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 DB_ENGINE = get_bookings_sql_engine(settings.BOOKING_DB_URL)
 QUEUE_POOL = QueuePool.from_settings()
+QUEUE_CONTEXT: Optional[QueueContext] = None
+_REDIS_CONNECTION: Optional[Redis] = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handles functions to run before and after the application"""
-    global DB_ENGINE, QUEUE_POOL
+    global DB_ENGINE, QUEUE_POOL, QUEUE_CONTEXT, _REDIS_CONNECTION
 
     DB_ENGINE = get_bookings_sql_engine(settings.BOOKING_DB_URL)
     QUEUE_POOL = QueuePool.from_settings()
+    executor_options = _get_executor_options(
+        executor_type=settings.EXECUTOR_TYPE,
+        backend_config_file=settings.BACKEND_SETTINGS,
+        calibration_seed_file=settings.CALIBRATION_SEED,
+        quantify_config_file=settings.QUANTIFY_CONFIG_FILE,
+        quantify_metadata_file=settings.QUANTIFY_METADATA_FILE,
+        should_restore_currents=settings.SHOULD_RESTORE_CURRENTS,
+    )
+    QUEUE_CONTEXT = {
+        "queue_prefix": settings.DEFAULT_PREFIX,
+        "booking_db_url": settings.BOOKING_DB_URL,
+        "jobs_store_url": settings.RQ_REDIS_URL,
+        "force_normal_queue": False,
+        "max_idle_time": settings.MAX_IDLE_TIME,
+        "is_async": settings.IS_ASYNC,
+        "postprocessing_folder": f"{settings.LOG_FILE_POOL}",
+        "preprocessing_folder": f"{settings.PREPROCESSED_JOB_POOL}",
+        "job_upload_folder": f"{settings.JOB_UPLOAD_POOL}",
+        "executor_options": executor_options,
+    }
 
-    async with AsyncMssClient() as mss_client:
-        app.state.MSS_CLIENT = mss_client
-        async with AsyncMssClientPipe() as mss_client_pipe:
-            await async_get_executor(
-                redis=settings.REDIS_CONNECTION,
-                executor_type=settings.EXECUTOR_TYPE,
-                quantify_config_file=settings.QUANTIFY_CONFIG_FILE,
-                quantify_metadata_file=settings.QUANTIFY_METADATA_FILE,
-                mss_client_pipe=mss_client_pipe,
-            )
-        print(f"starting app at {get_utc_now()}")
-        yield
+    with Redis.from_url(settings.RQ_REDIS_URL) as redis_conn:
+        _REDIS_CONNECTION = redis_conn
 
-        DB_ENGINE = None
-        reset_cached_executor()
+        async with AsyncMssClient() as mss_client:
+            app.state.MSS_CLIENT = mss_client
+            async with AsyncMssClientPipe() as mss_client_pipe:
+                await save_all_device_params(
+                    redis=redis_conn,
+                    backend_config=executor_options.backend_config,
+                    mss_client_pipe=mss_client_pipe,
+                )
+            print(f"starting app at {get_utc_now()}")
+            yield
+
+            DB_ENGINE = None
+
+
+def get_redis_connection() -> Redis:
+    """Dependency injector to get the redis database connection"""
+    return _REDIS_CONNECTION
+
+
+def get_backend_name() -> str:
+    """Dependency injector to get the backend name"""
+    return QUEUE_CONTEXT["executor_options"].backend_name
 
 
 def get_queue_pool() -> QueuePool:
@@ -86,6 +120,11 @@ def get_queue_pool() -> QueuePool:
 def get_db_engine() -> Engine:
     """Dependency injector to retrieve the latest sql db engine"""
     return DB_ENGINE
+
+
+def get_cached_queue_context() -> QueueContext:
+    """Dependency injector to retrieve the cached queue context"""
+    return QUEUE_CONTEXT
 
 
 def get_job_id_dependency(job_id_field: str):
@@ -263,12 +302,14 @@ def get_mss_token_claims_dep(
     """
 
     def dependency_injector(
+        context: QueueContext = Depends(get_cached_queue_context),
         job_id: str = Depends(get_job_id_dependency(job_id_field=job_id_field)),
         token: Optional[str] = Depends(get_bearer_token),
     ) -> MSSTokenClaims:
         """Gets a valid user_id-job_id pair.
 
         Args:
+            context: the of the queues running the jobs
             job_id: the job_id as got from the parameters or from the uploaded file
             token: the bearer token in the authorization header
 
@@ -286,7 +327,7 @@ def get_mss_token_claims_dep(
             raise UnauthorizedError(f"unexpected job id {job_id}")
 
         try:
-            get_job(job_id=job_id, user_id=user_id)
+            get_job(context, job_id=job_id, user_id=user_id)
             if not job_exists:
                 raise ConflictError(f"job {job_id} already exists")
         except NotAuthenticatedError:
@@ -377,3 +418,31 @@ def get_verified_mss_details(request: Request) -> MSSAuthDetails:
         if token_job_id != job_id:
             raise UnauthorizedError("forbidden")
         return MSSAuthDetails(user_id=user_id, job_id=job_id)
+
+
+def _get_executor_options(
+    backend_config_file: PathLike,
+    calibration_seed_file: PathLike,
+    **kwargs: Unpack[ExecutorOptions],
+) -> ExecutorOptions:
+    """Gets the executor options that will be passed around in the queue
+
+    Args:
+        backend_config_file: the path to the general backend configuration file
+        calibration_seed_file: the path to the calibration seed file
+        kwargs: keyword arguments to pass to the executor options
+
+    Returns:
+        the executor options constructed from the above settings
+    """
+    initial_backend_config = BackendConfig.from_toml(
+        backend_config_file, seed_file=calibration_seed_file
+    )
+    executor_options = ExecutorOptions(
+        backend_name=initial_backend_config.name,
+        backend_config=initial_backend_config,
+        **kwargs,
+    )
+    executor = init_executor(executor_options, reset=True)
+    # update the backend_config with the updated version got from the executor
+    return dataclasses.replace(executor_options, backend_config=executor.backend_config)

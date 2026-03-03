@@ -426,9 +426,12 @@ class _BackendCalibrationConfig(BaseModel):
     coupler: List[Dict[str, Union[float, str]]] = []
 
 
-class BackendConfig(BaseModel):
+class BackendConfig(Schema):
     """The configration as read from the file"""
 
+    __primary_key_fields__ = ("name",)
+
+    name: Optional[str] = None
     general_config: _BackendGeneralConfig
     device_config: _BackendDeviceConfig
     gates: Dict[str, Dict[str, Any]] = {}
@@ -460,4 +463,10 @@ class BackendConfig(BaseModel):
         if self.general_config.simulator and self.calibration_config is None:
             raise ValueError("Calibration config is required for simulators.")
 
+        return self
+
+    @model_validator(mode="after")
+    def set_name(self):
+        """Sets the name basing on the general config"""
+        self.name = self.general_config.name
         return self

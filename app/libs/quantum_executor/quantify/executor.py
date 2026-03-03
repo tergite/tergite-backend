@@ -62,7 +62,16 @@ class QuantifyExecutor(QuantumExecutor):
         backend_config: BackendConfig,
         *,
         should_restore_currents: bool = False,
+        reset: bool = False,
     ):
+        """
+        Args:
+            quantify_config_file: path to the quantify specific config file
+            quantify_metadata_file: path to our custom quantify specific metadata
+            backend_config: the general backend configuration regardless of executor type
+            should_restore_currents: whether to restore current state; default = False
+            reset: whether to reset the whole executor; default = False
+        """
         self.quantify_config = load_quantify_config(quantify_config_file)
         self.quantify_metadata_file = quantify_metadata_file
         self.should_restore_currents = should_restore_currents
@@ -97,7 +106,8 @@ class QuantifyExecutor(QuantumExecutor):
             )
             clusters = QuantifyMetadata.from_yaml(quantify_metadata_file).get_clusters()
             for cluster in clusters:
-                cluster.reset()  # resets cluster for consistency
+                if reset:
+                    cluster.reset()  # resets cluster for consistency
                 self.__class__._coordinator.add_component(ClusterComponent(cluster))
 
         device_name = "DUT"
