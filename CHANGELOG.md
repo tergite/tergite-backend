@@ -12,6 +12,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Added decryption of `.env` file in the `bcc_start.sh` script
 - [BREAKING] Added the `PRIVATE_KEY_FILE`, `PRIVATE_KEY_PASSWORD` environment variables
 - Added `PYTEST_ARGS` CI environment variable for use in CI
+- Added SpiDAC controller for controlling the flux tunable couplers
 
 ### Changed
 
