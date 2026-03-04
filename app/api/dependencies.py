@@ -16,7 +16,7 @@ import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
 from os import PathLike
-from typing import Optional, Unpack
+from typing import Optional, Tuple, Unpack
 
 from cryptography.exceptions import InvalidSignature
 from fastapi import Depends, FastAPI, HTTPException, UploadFile, status
@@ -29,6 +29,7 @@ from sqlalchemy import Engine
 import settings
 
 from ..libs.device_parameters import BackendConfig, save_all_device_params
+from ..libs.quantum_executor.base.executor import QuantumExecutor
 from ..libs.queues.dtos import ExecutorOptions, JobFile, QueueContext
 from ..services.booking.models import MSSTokenClaims
 from ..services.booking.service import get_user_job_id_pair_from_token
@@ -64,7 +65,7 @@ async def lifespan(app: FastAPI):
 
     DB_ENGINE = get_bookings_sql_engine(settings.BOOKING_DB_URL)
     QUEUE_POOL = QueuePool.from_settings()
-    executor_options = _get_executor_options(
+    executor, executor_options = _get_executor_and_options(
         executor_type=settings.EXECUTOR_TYPE,
         backend_config_file=settings.BACKEND_SETTINGS,
         calibration_seed_file=settings.CALIBRATION_SEED,
@@ -100,6 +101,7 @@ async def lifespan(app: FastAPI):
             yield
 
             DB_ENGINE = None
+            executor.close()
 
 
 def get_redis_connection() -> Redis:
@@ -420,12 +422,12 @@ def get_verified_mss_details(request: Request) -> MSSAuthDetails:
         return MSSAuthDetails(user_id=user_id, job_id=job_id)
 
 
-def _get_executor_options(
+def _get_executor_and_options(
     backend_config_file: PathLike,
     calibration_seed_file: PathLike,
     **kwargs: Unpack[ExecutorOptions],
-) -> ExecutorOptions:
-    """Gets the executor options that will be passed around in the queue
+) -> Tuple[QuantumExecutor, ExecutorOptions]:
+    """Gets the executor and its options that will be passed around in the queue
 
     Args:
         backend_config_file: the path to the general backend configuration file
@@ -433,7 +435,7 @@ def _get_executor_options(
         kwargs: keyword arguments to pass to the executor options
 
     Returns:
-        the executor options constructed from the above settings
+        the executor and executor options constructed from the above settings
     """
     initial_backend_config = BackendConfig.from_toml(
         backend_config_file, seed_file=calibration_seed_file
@@ -445,4 +447,7 @@ def _get_executor_options(
     )
     executor = init_executor(executor_options, reset=True)
     # update the backend_config with the updated version got from the executor
-    return dataclasses.replace(executor_options, backend_config=executor.backend_config)
+    executor_options = dataclasses.replace(
+        executor_options, backend_config=executor.backend_config
+    )
+    return executor, executor_options

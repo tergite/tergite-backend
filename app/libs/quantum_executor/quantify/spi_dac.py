@@ -103,11 +103,18 @@ class SpiDAC:
         self.parking_current = self._config.parking_current
         self.coupler_map = self._config.coupler_spi_mapping
         self.couplers = sorted(self.coupler_map.keys())
-        self.spi_rack = SpiRack(name, self.port, is_dummy=self.is_dummy)
-        self.coupler_dac_module_map = {
-            k: _init_coupler_spi_module(self.spi_rack, v, self.is_dummy)
-            for k, v in self.coupler_map.items()
-        }
+        try:
+            self.spi_rack = SpiRack.find_instrument(name, SpiRack)
+            self.coupler_dac_module_map = {
+                k: _get_spi_module(self.spi_rack, v, self.is_dummy)
+                for k, v in self.coupler_map.items()
+            }
+        except KeyError:
+            self.spi_rack = SpiRack(name, self.port, is_dummy=self.is_dummy)
+            self.coupler_dac_module_map = {
+                k: _init_coupler_spi_module(self.spi_rack, v, self.is_dummy)
+                for k, v in self.coupler_map.items()
+            }
 
     @classmethod
     def exist(cls, name: str, instrument_class: type[Instrument] | None = None) -> bool:
@@ -232,7 +239,7 @@ def _init_coupler_spi_module(
         return f"Dummy_DAC_for_{module_name}_{dac_name}"
 
     if module_name not in spi_rack.instrument_modules:
-        spi_rack.add_spi_module(spi_mod_number, "S4g")
+        spi_rack.add_spi_module(spi_mod_number, "S4g", name=module_name)
 
     dac = spi_rack.instrument_modules[module_name].instrument_modules[dac_name]
 
@@ -247,3 +254,26 @@ def _init_coupler_spi_module(
     dac.ramp_rate(40e-6)
     dac.ramp_max_step(1e-6)
     return dac
+
+
+def _get_spi_module(
+    spi_rack: SpiRack, coupler_map_entry: CouplerMapEntry, is_dummy: bool = False
+) -> InstrumentModule | str:
+    """Gets the SPI comodule for the given coupler map entry
+
+    Args:
+        spi_rack: SpiRack instance
+        coupler_map_entry: Coupler mapping entry from the metadata
+        is_dummy: Whether the SPI Rack module should be initialized as a dummy SPI rack module
+
+    Returns:
+           the initialized SPI module or just a string if it is dummy
+    """
+    spi_mod_number = coupler_map_entry.spi_module_number
+    dac_name = coupler_map_entry.dac_name
+    module_name = f"module{spi_mod_number}"
+
+    if is_dummy:
+        return f"Dummy_DAC_for_{module_name}_{dac_name}"
+
+    return spi_rack.instrument_modules[module_name].instrument_modules[dac_name]

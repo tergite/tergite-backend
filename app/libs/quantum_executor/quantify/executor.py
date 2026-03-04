@@ -22,7 +22,7 @@ This module implements the executor.
 import logging
 import os
 from datetime import datetime
-from typing import List, Union
+from typing import Dict, List, Union
 
 import qblox_instruments
 from qcodes import Instrument
@@ -52,6 +52,9 @@ worker_logger = logging.getLogger(__name__)
 
 class QuantifyExecutor(QuantumExecutor):
     """The controller of the hardware that executes the quantum jobs"""
+
+    # a cache that won't be cleared by the garbage collector
+    _non_gc_instruments: Dict[str, Dict[str, Instrument]] = {}
 
     def __init__(
         self,
@@ -94,18 +97,34 @@ class QuantifyExecutor(QuantumExecutor):
             u: self.hardware_map[u][1] for u in self._couplers if u in self.hardware_map
         }
         self._port_to_coupler = {port: u for u, port in self._coupler_to_port.items()}
+        self.coordinator_name = f"{self.device_name}-executor"
+        no_gc_instruments_cache = self.__class__._non_gc_instruments.setdefault(
+            self.device_name, {}
+        )
+        try:
+            self._coordinator = no_gc_instruments_cache[self.coordinator_name]
+        except KeyError:
+            # make sure all previous connections are closed
+            # FIXME: This global is unnatural but QCoDeS' delegation force us to make
+            #   all instruments globals
+            qblox_instruments.Cluster.close_all()
+            self._coordinator = InstrumentCoordinator(self.coordinator_name)
+
+            # FIXME: Saving to the class variable just to escape the garbage collector
+            #   since QCoDeS already keeps these instruments as globals
+            #   and they raise errors if they already exist in QCoDeS
+            no_gc_instruments_cache[self.coordinator_name] = self._coordinator
+
+            clusters = self.quantify_metadata.get_clusters()
+            for cluster in clusters:
+                if reset:
+                    cluster.reset()  # resets cluster for consistency
+
+                cluster_component = ClusterComponent(cluster)
+                component_name = self._coordinator.add_component(cluster_component)
+                no_gc_instruments_cache[component_name] = cluster_component
 
         self.spi_dacs = init_spi_dacs(metadata=self.quantify_metadata)
-
-        # make sure all previous connections are closed
-        qblox_instruments.Cluster.close_all()
-
-        self._coordinator = InstrumentCoordinator(f"{self.device_name}-executor")
-        clusters = self.quantify_metadata.get_clusters()
-        for cluster in clusters:
-            if reset:
-                cluster.reset()  # resets cluster for consistency
-            self._coordinator.add_component(ClusterComponent(cluster))
 
         try:
             self._quantum_device = Instrument.find_instrument(
@@ -222,6 +241,13 @@ class QuantifyExecutor(QuantumExecutor):
         return bias
 
     def close(self) -> None:
-        if self._coordinator is not None:
-            self._coordinator.close_all()
-            self._coordinator = None
+        self._coordinator.stop()
+        for spi_dac in self.spi_dacs.values():
+            spi_dac.close()
+        # FIXME: This global is unnatural but QCoDeS is forcing us to do this
+        #   Unfortunately, this means closing one instance of this class closes
+        #   all clusters of all other instances. But if we don't, __init__ will be a problem
+        #   especially in automated tests
+        qblox_instruments.Cluster.close_all()
+        self._coordinator.close_all()
+        self.__class__._non_gc_instruments[self.device_name].clear()
