@@ -285,7 +285,7 @@ def storage_root():
 @pytest.fixture
 def spi_rack_config() -> Generator[SpiRackConfig, Any, None]:
     conf = QuantifyMetadata.from_yaml(SPI_DUMMY_METADATA_FILE)
-    yield SpiRackConfig.model_validate(conf.root["spi_rack"])
+    yield SpiRackConfig.model_validate(conf.root["spi_rack"].model_dump())
 
 
 @pytest.fixture

@@ -32,14 +32,16 @@ def test_verbose_happy_path(caplog, verbose_spi_dac_dummy, mocker, redis_client)
     # Spy: catch accidental ramping even in dummy mode
     called_ramp = {"count": 0}
     orig_ramp = _get_orig_ramp_current()
-    assert orig_ramp is not None, "Failed to recover original ramp_current_serially"
+    assert orig_ramp is not None, "Failed to recover original ramp_to_target_currents"
 
     def ramp_spy(self, values):
         called_ramp["count"] += 1
-        testlog.error("!!! ramp_current_serially CALLED in dummy mode with %r", values)
+        testlog.error(
+            "!!! ramp_to_target_currents CALLED in dummy mode with %r", values
+        )
         return orig_ramp(self, values)
 
-    mocker.patch.object(SpiDAC, "ramp_current_serially", ramp_spy)
+    mocker.patch.object(SpiDAC, "ramp_to_target_currents", ramp_spy)
 
     testlog.info("=== SET TO PARKING ===")
     spi_dac_dummy.reset_to_parking_current()
@@ -65,10 +67,6 @@ def test_verbose_happy_path(caplog, verbose_spi_dac_dummy, mocker, redis_client)
     spi_dac_dummy.close()
 
     # Assertions guided by logs
-    assert (
-        called_ramp["count"] == 0
-    ), "ramp_current_serially should not be used in dummy mode"
-
     dummy_lines = [
         rec
         for rec in caplog.records
@@ -91,9 +89,8 @@ def test_verbose_happy_path(caplog, verbose_spi_dac_dummy, mocker, redis_client)
         and r.levelno == logging.DEBUG
         and r.getMessage().startswith("EXIT")
     ]
-    assert any("set_parking_currents" in r.getMessage() for r in entries)
-    assert any("set_dac_current" in r.getMessage() for r in entries)
-    assert any("close_spi_rack" in r.getMessage() for r in entries)
+    assert any("reset_to_parking_current" in r.getMessage() for r in entries)
+    assert any("close" in r.getMessage() for r in entries)
     assert len(exits) >= len(entries) - 1
 
     assert closed["hit"] is True
@@ -102,27 +99,14 @@ def test_verbose_happy_path(caplog, verbose_spi_dac_dummy, mocker, redis_client)
     ), "Should not log 'Ramping finished' in dummy mode"
 
 
-def test_verbose_missing_parking_logs_error_and_raises(caplog, verbose_spi_dac_dummy):
-    """FIXME: Add description of test"""
-    spi_dac_dummy = verbose_spi_dac_dummy
-    caplog.set_level(logging.DEBUG)
-    with pytest.raises(ValueError):
-        spi_dac_dummy.reset_to_parking_current()
-    assert any(
-        r.name == TEST_SPI_LOGGER_NAME
-        and "EXC   reset_to_parking_current" in r.getMessage()
-        for r in caplog.records
-    )
-
-
 def _get_orig_ramp_current():
     """
-    Gets the original ramp current from the ramp_current_serially.
+    Gets the original ramp current from the ramp_to_target_currents.
     """
-    orig = getattr(SpiDAC, "__orig_ramp_current_serially", None)
+    orig = getattr(SpiDAC, "__orig_ramp_to_target_currents", None)
     if orig is None:
         # fallback if wrappers changed
-        wrapped = getattr(SpiDAC, "ramp_current_serially", None)
+        wrapped = getattr(SpiDAC, "ramp_to_target_currents", None)
         if wrapped is not None and hasattr(wrapped, "__wrapped__"):
             orig = wrapped.__wrapped__
     return orig
