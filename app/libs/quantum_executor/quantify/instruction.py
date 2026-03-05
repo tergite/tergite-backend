@@ -29,7 +29,6 @@ from quantify_scheduler.operations.acquisition_library import (
 )
 from quantify_scheduler.operations.pulse_library import (
     DRAGPulse,
-    GaussPulse,
     IdlePulse,
     NumericalPulse,
     ResetClockPhase,

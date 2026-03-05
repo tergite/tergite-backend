@@ -27,7 +27,7 @@ from app.libs.quantum_executor.base.experiment import (
     copy_expt_header_with,
 )
 
-from ...device_parameters import get_backend_config
+from ...device_parameters import BackendConfig, get_backend_config
 from .instruction import (
     Acquire,
     Delay,
@@ -64,6 +64,7 @@ class QiskitDynamicsExperiment(NativeExperiment[Schedule]):
         expt: PulseQobjExperiment,
         name: str,
         qobj_config: PulseQobjConfig,
+        backend_config: BackendConfig,
     ) -> "QiskitDynamicsExperiment":
         """Converts PulseQobjExperiment to qiskit dynamics experiment
 
@@ -71,6 +72,7 @@ class QiskitDynamicsExperiment(NativeExperiment[Schedule]):
             expt: the pulse qobject experiment to translate
             name: the name of the experiment
             qobj_config: the pulse qobject config
+            backend_config: the general backend config
 
         Returns:
             the QiskitDynamicsExperiment corresponding to the PulseQobj
@@ -92,8 +94,7 @@ class QiskitDynamicsExperiment(NativeExperiment[Schedule]):
                 logging.error(f"NotImplementError for expt: {name}: {exp}")
 
         # compute estimated duration
-        backend_conf = get_backend_config()
-        time_step_len = backend_conf.general_config.dt
+        time_step_len = backend_config.general_config.dt
         duration = schedule.duration * time_step_len
 
         return cls(

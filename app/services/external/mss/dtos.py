@@ -11,7 +11,7 @@
 # that they have been altered from the originals.
 
 from enum import Enum
-from typing import Dict, Protocol, Type, Union
+from typing import Dict, Type, Union
 
 from pydantic import BaseModel, Field, field_validator
 from pydantic_core.core_schema import ValidationInfo

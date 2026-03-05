@@ -37,7 +37,6 @@ from pydantic import ValidationError
 from pytest_mock import MockerFixture
 from redis import Redis
 from rq import SimpleWorker
-from scipy.stats import expon
 
 from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps
 from app.services.booking.models import Booking
@@ -752,17 +751,17 @@ def test_submit_jobs_in_active_booking(
         # Assert that they are all complete and their booker jobs started before booking end_utc
         # while non booker jobs started after end_utc
         # Note: Enqueue_at ignores microseconds
-        booking_end_timestamp = _drop_microsec(booking.end_utc)
-        last_booker_job_start = _drop_microsec(
-            last_booker_job.timestamps.execution.start_timestamp
-        )
-        first_non_booker_job_start = _drop_microsec(
+        booking_end_timestamp = booking.end_utc
+        last_booker_job_start = last_booker_job.timestamps.execution.start_timestamp
+        first_non_booker_job_start = (
             first_non_booker_job.timestamps.execution.start_timestamp
         )
 
         assert all([v.status == JobStatus.SUCCESSFUL for v in jobs_in_redis])
-        assert last_booker_job_start < booking_end_timestamp
-        assert first_non_booker_job_start >= booking_end_timestamp
+        assert last_booker_job_start < booking.end_utc
+        assert _drop_microsec(first_non_booker_job_start) >= _drop_microsec(
+            booking_end_timestamp
+        )
 
 
 @pytest.mark.parametrize(

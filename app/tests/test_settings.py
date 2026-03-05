@@ -1,10 +1,8 @@
 """Tests for the settings and configs"""
 
-import importlib
 import os
 
 import pytest
-import requests
 from pydantic import ValidationError
 
 from app.libs.quantum_executor.utils.config import (
@@ -36,19 +34,6 @@ def test_load_quantify_config_files():
     # Both configuration files are validated in QuantifyMetadata
     assert conf_metadata
     assert conf
-
-
-def test_redis_connection(redis_client):
-    """The global redis client as be found in settings"""
-    from settings import REDIS_CONNECTION
-
-    # Write a value in the real redis connection
-    expected = "123"
-    REDIS_CONNECTION.set("abc", expected)
-    # Read it from the test client
-    got = redis_client.get("abc").decode()
-    assert expected == got
-    redis_client.flushall()
 
 
 @pytest.mark.asyncio

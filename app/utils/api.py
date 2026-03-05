@@ -30,8 +30,6 @@ from typing import (
     Union,
 )
 
-import requests
-import websockets
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
@@ -39,7 +37,6 @@ from fastapi import HTTPException, Request, Response, UploadFile
 from fastapi.exception_handlers import http_exception_handler
 from pydantic import BaseModel, ConfigDict, Field
 from redis import Redis
-from websockets import ClientConnection
 
 import settings
 

@@ -13,7 +13,6 @@
 # that they have been altered from the originals.
 #
 """Utility functions for the scheduler service"""
-
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -25,16 +24,17 @@ from sklearn.utils.extmath import safe_sparse_dot
 import settings
 
 from ...libs.device_parameters import (
+    BackendConfig,
     DeviceCalibration,
-    async_initialize_backend,
     get_backend_config,
-    initialize_backend,
+    save_all_device_params,
 )
 from ...libs.quantum_executor.base.executor import QuantumExecutor
 from ...libs.quantum_executor.qiskit.executor import QiskitDynamicsExecutor
 from ...libs.quantum_executor.quantify.executor import QuantifyExecutor
 from ...libs.quantum_executor.utils.serialization import iqx_rld
 from ...libs.queues.dtos import (
+    ExecutorOptions,
     Job,
     JobEvent,
     JobResult,
@@ -77,140 +77,6 @@ _STAGE_STATUS_MAP: Dict[Stage, JobStatus] = {
     Stage.FINAL_Q: JobStatus.EXECUTING,
     Stage.FINAL_W: JobStatus.SUCCESSFUL,
 }
-_EXECUTOR: Optional[QuantumExecutor] = None
-
-
-def get_queue_context(force_normal_queue: bool = False, **kwargs) -> QueueContext:
-    """Generates a queue context from the given settings
-
-    Args:
-        force_normal_queue: the flag for whether to force the usage of the normal queue
-
-    Returns:
-        the queue context
-    """
-    return {
-        "queue_prefix": settings.DEFAULT_PREFIX,
-        "booking_db_url": settings.BOOKING_DB_URL,
-        "jobs_store_url": settings.RQ_REDIS_URL,
-        "force_normal_queue": force_normal_queue,
-        "max_idle_time": settings.MAX_IDLE_TIME,
-        "is_async": settings.IS_ASYNC,
-        "postprocessing_folder": f"{settings.LOG_FILE_POOL}",
-        "preprocessing_folder": f"{settings.PREPROCESSED_JOB_POOL}",
-        "job_upload_folder": f"{settings.JOB_UPLOAD_POOL}",
-        **kwargs,
-    }
-
-
-def get_executor(
-    redis: Redis = settings.REDIS_CONNECTION,
-    executor_type: str = settings.EXECUTOR_TYPE,
-    quantify_config_file: str = settings.QUANTIFY_CONFIG_FILE,
-    quantify_metadata_file: str = settings.QUANTIFY_METADATA_FILE,
-    mss_client_pipe: Optional[MssClientPipe] = None,
-    should_restore_currents: bool = settings.SHOULD_RESTORE_CURRENTS,
-) -> QuantumExecutor:
-    """Gets the executor for running jobs
-
-    It also initializes the backend before returning the executor
-
-    Args:
-        redis: the connection to the redis database
-        executor_type: the executor type to return
-        quantify_config_file: the path to the configuration file of the executor
-        quantify_metadata_file: the path to the metadata file of the executor
-        mss_client_pipe: the pipe to the MSS client to use to connect rq to MSS websocket connection
-        should_restore_currents: whether the executor should restore SPI currents
-
-    Returns:
-        An initialized quantum executor
-    """
-    global _EXECUTOR
-    if _EXECUTOR is None:
-        _EXECUTOR = _init_executor(
-            executor_type=executor_type,
-            quantify_config_file=quantify_config_file,
-            quantify_metadata_file=quantify_metadata_file,
-            should_restore_currents=should_restore_currents,
-        )
-
-        is_client_pipe_private = mss_client_pipe is None
-        if is_client_pipe_private:
-            redis_url = _get_redis_url(redis)
-            device = _EXECUTOR.backend_config.general_config.name
-            mss_client_pipe = MssClientPipe(redis_url=redis_url, device=device)
-
-        initialize_backend(
-            redis,
-            backend_config=_EXECUTOR.backend_config,
-            mss_client_pipe=mss_client_pipe,
-        )
-
-        # cleanup if needed
-        if is_client_pipe_private:
-            mss_client_pipe.close()
-
-    return _EXECUTOR
-
-
-async def async_get_executor(
-    redis: Redis = settings.REDIS_CONNECTION,
-    executor_type: str = settings.EXECUTOR_TYPE,
-    quantify_config_file: str = settings.QUANTIFY_CONFIG_FILE,
-    quantify_metadata_file: str = settings.QUANTIFY_METADATA_FILE,
-    mss_client_pipe: Optional[AsyncMssClientPipe] = None,
-    should_restore_currents: bool = settings.SHOULD_RESTORE_CURRENTS,
-) -> QuantumExecutor:
-    """Gets the executor for running jobs
-
-    It also initializes the backend before returning the executor
-
-    Args:
-        redis: the connection to the redis database
-        executor_type: the executor type to return
-        quantify_config_file: the path to the configuration file of the executor
-        quantify_metadata_file: the path to the metadata file of the executor
-        mss_client_pipe: the pipe to the MSS client to use to connect rq to MSS websocket connection
-        should_restore_currents: whether the executor should restore SPI currents
-
-    Returns:
-        An initialized quantum executor
-    """
-    global _EXECUTOR
-    if _EXECUTOR is None:
-        _EXECUTOR = _init_executor(
-            executor_type=executor_type,
-            quantify_config_file=quantify_config_file,
-            quantify_metadata_file=quantify_metadata_file,
-            should_restore_currents=should_restore_currents,
-        )
-
-        is_client_pipe_private = mss_client_pipe is None
-        if is_client_pipe_private:
-            redis_url = _get_redis_url(redis)
-            device = _EXECUTOR.backend_config.general_config.name
-            mss_client_pipe = AsyncMssClientPipe(redis_url=redis_url, device=device)
-
-        await async_initialize_backend(
-            redis,
-            backend_config=_EXECUTOR.backend_config,
-            mss_client_pipe=mss_client_pipe,
-        )
-
-        # cleanup if needed
-        if is_client_pipe_private:
-            await mss_client_pipe.close()
-
-    return _EXECUTOR
-
-
-def reset_cached_executor():
-    """Clears the cached executor resetting it to None"""
-    global _EXECUTOR
-    if _EXECUTOR:
-        _EXECUTOR.close()
-    _EXECUTOR = None
 
 
 def log_job_msg(message: str, level: LogLevel = LogLevel.INFO) -> None:
@@ -438,6 +304,38 @@ def decompress_qobj(qobj_dict: Dict[str, Any]) -> Dict[str, Any]:
     return qobj_dict
 
 
+def init_executor(options: ExecutorOptions, reset: bool = False) -> QuantumExecutor:
+    """Initializes the executor
+
+    Args:
+        options: the executor options useful to initialize the executor
+        reset: whether to reset the executor; default = False
+
+    Returns:
+        An initialized quantum executor
+    """
+    executor_type = options.executor_type
+    backend_config = options.backend_config
+
+    if executor_type == "qiskit_pulse_1q":
+        return QiskitDynamicsExecutor.new_one_qubit(
+            backend_config=backend_config, reset=reset
+        )
+
+    elif executor_type == "qiskit_pulse_2q":
+        return QiskitDynamicsExecutor.new_two_qubit(
+            backend_config=backend_config, reset=reset
+        )
+
+    return QuantifyExecutor(
+        quantify_config_file=options.quantify_config_file,
+        quantify_metadata_file=options.quantify_metadata_file,
+        backend_config=backend_config,
+        reset=reset,
+        should_restore_currents=options.should_restore_currents,
+    )
+
+
 def _get_next_status(job: Job, next_stage: Stage) -> JobStatus:
     """Gets the next status given a job and the next stage
 
@@ -475,39 +373,6 @@ def _get_next_timestamps(job: Job, next_stage: Stage, current_time: str) -> Time
     }
 
     return timestamps.with_updates(new_timestamps)
-
-
-def _init_executor(
-    executor_type: str,
-    quantify_config_file: str,
-    quantify_metadata_file: str,
-    should_restore_currents: bool = settings.SHOULD_RESTORE_CURRENTS,
-) -> QuantumExecutor:
-    """Initializes the executor
-
-    Args:
-        executor_type: the executor type to return
-        quantify_config_file: the path to the configuration file of the executor
-        quantify_metadata_file: the path to the metadata file of the executor
-        should_restore_currents: whether the executor should restore SPI currents
-
-    Returns:
-        An initialized quantum executor
-    """
-    backend_config = get_backend_config()
-
-    if executor_type == "qiskit_pulse_1q":
-        return QiskitDynamicsExecutor.new_one_qubit(backend_config=backend_config)
-
-    elif executor_type == "qiskit_pulse_2q":
-        return QiskitDynamicsExecutor.new_two_qubit(backend_config=backend_config)
-
-    return QuantifyExecutor(
-        quantify_config_file=quantify_config_file,
-        quantify_metadata_file=quantify_metadata_file,
-        backend_config=backend_config,
-        should_restore_currents=should_restore_currents,
-    )
 
 
 def _get_redis_url(redis: Redis) -> str:

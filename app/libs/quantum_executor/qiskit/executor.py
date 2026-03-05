@@ -89,6 +89,7 @@ class QiskitDynamicsExecutor(QuantumExecutor):
                 name=get_experiment_name(expt.header.name, idx + 1),
                 expt=expt,
                 qobj_config=qobj.config,
+                backend_config=self.backend_config,
             )
             for idx, expt in enumerate(qobj.experiments)
         ]
@@ -98,11 +99,12 @@ class QiskitDynamicsExecutor(QuantumExecutor):
         pass
 
     @classmethod
-    def new_one_qubit(cls, backend_config: BackendConfig):
+    def new_one_qubit(cls, backend_config: BackendConfig, reset: bool = False):
         """Generates a new one-qubit qiskit-dynamics executor
 
         Args:
             backend_config: the backend configuration
+            reset: whether to reset the backend
 
         Returns:
             an instance of this class that has one-qubit
@@ -115,19 +117,21 @@ class QiskitDynamicsExecutor(QuantumExecutor):
             meas_return="single",
         )
 
-        # train the discriminators and update the backend config
-        instance.backend_config.calibration_config.discriminators = (
-            instance.backend.train_discriminator()
-        )
+        if reset:
+            # train the discriminators and update the backend config
+            instance.backend_config.calibration_config.discriminators = (
+                instance.backend.train_discriminator()
+            )
 
         return instance
 
     @classmethod
-    def new_two_qubit(cls, backend_config: BackendConfig):
+    def new_two_qubit(cls, backend_config: BackendConfig, reset: bool = False):
         """Generates a new two-qubit qiskit-dynamics executor
 
         Args:
             backend_config: the backend configuration
+            reset: whether to reset the backend
 
         Returns:
             an instance of this class that has two coupled qubits
@@ -138,10 +142,12 @@ class QiskitDynamicsExecutor(QuantumExecutor):
             meas_level=1,
             meas_return="single",
         )
-        # train the discriminators and update the backend config
-        instance.backend_config.calibration_config.discriminators = (
-            instance.backend.train_discriminator()
-        )
+
+        if reset:
+            # train the discriminators and update the backend config
+            instance.backend_config.calibration_config.discriminators = (
+                instance.backend.train_discriminator()
+            )
         return instance
 
 

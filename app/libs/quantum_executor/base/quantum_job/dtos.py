@@ -14,12 +14,12 @@
 """Data Transfer objects for the Quantum job"""
 import enum
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Any, List, Optional, Type, Union
+from typing import Any, Optional, Type, Union
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Extra
+from pydantic import BaseModel, ConfigDict
 from qiskit.qobj import PulseQobj
 from quantify_scheduler.enums import BinMode
 

@@ -27,14 +27,12 @@ _CALIBRATION_SEED_FILE = get_fixture_path("quantify.seed.toml")
 
 def test_attempts_to_connect_to_real_hardware():
     """Loads the config for the real hardware in the appropriate way"""
-    QuantifyExecutor.close()
-
     with pytest.raises(socket.timeout):
-        backend_config = BackendConfig.from_toml(
+        backend_conf = BackendConfig.from_toml(
             _BACKEND_CONFIG_PATH, seed_file=_CALIBRATION_SEED_FILE
         )
         QuantifyExecutor(
             quantify_config_file=_REAL_HARDWARE_QUANTIFY_CONFIG_FILE,
             quantify_metadata_file=_REAL_HARDWARE_QUANTIFY_METADATA_FILE,
-            backend_config=backend_config,
+            backend_config=backend_conf,
         )

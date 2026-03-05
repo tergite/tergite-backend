@@ -20,7 +20,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-import redis
 from starlette.config import Config
 from starlette.datastructures import URL, CommaSeparatedStrings
 
@@ -187,8 +186,6 @@ BOOKING_DB_URL = config("BOOKING_DB_URL", default="sqlite:///booking_db.db")
 # default: "redis://localhost:6379/0"
 _REDIS_URL = f"redis://{REDIS_USER or ''}:{REDIS_PASSWORD or ''}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
 RQ_REDIS_URL = config("RQ_REDIS_URL", default=_REDIS_URL)
-# FIXME: Get rid of this when all queues are shifted over to scheduler
-REDIS_CONNECTION = redis.Redis.from_url(RQ_REDIS_URL)
 
 JWT_SECRET = config("JWT_SECRET")
 

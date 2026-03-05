@@ -29,118 +29,92 @@
 # and modified to adapt and integrate into tergite-backend package in Jul 2025
 
 import logging
-import os
-import sys
 import time
-from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Dict
 
-import numpy as np
 from qblox_instruments import SpiRack
 from qcodes import Instrument, validators
-from redis import Redis
+from qcodes.instrument import InstrumentModule
 
-import settings
-from app.libs.quantum_executor.utils.config import QuantifyMetadata
-
-from ..utils.config import CouplerMapEntry
+from app.libs.quantum_executor.utils.config import (
+    SPI_RACK_INSTRUMENT_TYPE,
+    CouplerMapEntry,
+    QuantifyMetadata,
+    SpiRackConfig,
+)
 
 # TODO: 8. Make safety ranges configurable
 
 logger = logging.getLogger(__name__)
 
 
-def _find_and_validate_spi_port(port: str | None) -> str | None:
-    """
-    Verify that port is reachable on the current machine.
+def init_spi_dacs(
+    metadata: QuantifyMetadata,
+    should_print_progress: bool = False,
+) -> Dict[str, "SpiDAC"]:
+    """Initializes the SpiDACs defined in the Quantify metadata
 
-    * On Windows we just return the value the user gave us
-    * On POSIX we only check that the device node exists under ``/dev``.
-
-    Parameters:
-    port
-        Serial port taken from *metadata.yml*, e.g. ``/dev/ttyACM0`` or
-        ``COM3``.  If ``None`` the function logs a warning and returns *None*.
+    Args:
+        metadata: Quantify metadata
+        should_print_progress: whether the progress should be printed when controlling the couplers; default = False
 
     Returns:
-    str | None
-        The validated port string, or *None* if the check fails.
+        the dictionary of name and SPI-Rack configurations
     """
-    if port is None:
-        logger.warning("No SPI port configured.")
-
-    if os.name == "nt":
-        # assume user running on windows and set up port properly
-        return port
-
-    # otherwiese POSIX
-    dev_path = Path(port)
-    if dev_path.exists():
-        return port
-
-    # For the default base case, return None
-    logger.warning(
-        "Couldn't find the serial port of the SPI rack. "
-        "Please check cable or fix the entry in metadata.yml (port=%s)",
-        port,
-    )
-    return None
-
-
-def _get_spi_metadata(
-    metadata_path: str | Path,
-) -> Tuple[str | None, bool, Dict[str, CouplerMapEntry]]:
-    """
-    Extract (port, is_dummy, coupler_map) from the first `SPI-Rack`
-    instrument found in *metadata_path*.
-
-    If the rack is missing, returns (None, False, {}).
-    """
-    meta = QuantifyMetadata.from_yaml(metadata_path)
-
-    for conf in meta.root.values():
-        if conf.instrument_type.lower().replace("_", "-") == "spi-rack":
-            port = getattr(conf, "port", None)
-            is_dummy = bool(getattr(conf, "is_dummy", False))
-            mapping = getattr(conf, "coupler_spi_mapping", {}) or {}
-            return port, is_dummy, mapping
-
-    return None, False, {}
+    return {
+        k: SpiDAC(
+            name=k,
+            conf=SpiRackConfig.model_validate(obj.model_dump()),
+            should_print_progress=should_print_progress,
+        )
+        for k, obj in metadata.root.items()
+        if obj.instrument_type == SPI_RACK_INSTRUMENT_TYPE
+    }
 
 
 class SpiDAC:
+    """The controller for the SPI Digital Analogue Converter (DAC) that drives the magnetic flux on the couplers
+
+    The flux is proportional to the current and thus this controls the currents applied to the couplers.
+    The SPI DAC is able to convert digital instructions on what the currents should be, into the actual
+    analogue currents that will flow to the couplers
+    """
+
     def __init__(
         self,
-        couplers: list[str],
-        metadata_path: str | Path = settings.QUANTIFY_METADATA_FILE,
-        print_progress: bool = False,
-        connection: Redis = settings.REDIS_CONNECTION,
-        name: str = settings.DEFAULT_PREFIX,
+        name: str,
+        conf: SpiRackConfig,
+        should_print_progress: bool = False,
     ):
-        # set up redis connection
-        self._connection = connection
-        self.print_progress = print_progress
-        # grab spi metadata
-        raw_port, self.is_dummy, self._coupler_map = _get_spi_metadata(metadata_path)
+        """
+        Args:
+            name: The name of the SPI DAC
+            conf: The SPI config for this rack as got from the quantify metadata file
+            should_print_progress: whether the progress should be printed when controlling the couplers; default = False
 
-        # validate port unless running dummy
-        self.port = (
-            _find_and_validate_spi_port(raw_port) if not self.is_dummy else raw_port
-        )
-
-        if self.port is None and not self.is_dummy:
-            raise ValueError(
-                "SPI rack port not found and 'is_dummy' is false - "
-                "fix the entry in metadata.yml."
-            )
-
-        # connect or build dummy
-        self.spi = SpiRack(name, self.port, is_dummy=self.is_dummy)
-
-        # build DAC handles
-        self.dacs_dictionary: Dict[str, Any] = {
-            coupler: self.create_spi_dac(coupler) for coupler in couplers
-        }
+        Raises:
+            ConfigurationError: Couldn't find the serial port {port} of the SPI rack.
+        """
+        self.name = name
+        self._should_print_progress = should_print_progress
+        self._config = conf
+        self.port = self._config.port
+        self.is_dummy = self._config.is_dummy
+        self.parking_current = self._config.parking_current
+        self.coupler_map = self._config.coupler_spi_mapping
+        self.couplers = sorted(self.coupler_map.keys())
+        try:
+            self.spi_rack = SpiRack.find_instrument(name, SpiRack)
+            self.coupler_dac_module_map = {
+                k: _get_spi_module(self.spi_rack, v, self.is_dummy)
+                for k, v in self.coupler_map.items()
+            }
+        except KeyError:
+            self.spi_rack = SpiRack(name, self.port, is_dummy=self.is_dummy)
+            self.coupler_dac_module_map = {
+                k: _init_coupler_spi_module(self.spi_rack, v, self.is_dummy)
+                for k, v in self.coupler_map.items()
+            }
 
     @classmethod
     def exist(cls, name: str, instrument_class: type[Instrument] | None = None) -> bool:
@@ -155,116 +129,68 @@ class SpiDAC:
         """
         return SpiRack.exist(name, instrument_class)
 
-    def create_spi_dac(self, coupler: str):
+    def reset_to_parking_current(self) -> None:
+        """Sets the current of all couplers on this SPI to the parking current"""
+        return self.ramp_to_target_currents(
+            {k: self.parking_current for k in self.couplers}
+        )
 
-        try:
-            entry = self._coupler_map[coupler]
-        except KeyError:
-            raise KeyError(
-                f"Coupler '{coupler}' missing in metadata.yml under 'coupler_spi_mapping'."
-            )
+    def get_current_biases(self) -> Dict[str, float]:
+        """Gets the current bias for all couplers on this SPI
 
-        spi_mod_number = entry.spi_module_number
-        dac_name = entry.dac_name
-        spi_mod_name = f"module{spi_mod_number}"
+        Returns:
+            A dictionary mapping coupler name to current bias value
+        """
+        return {
+            coupler: dac_module.current()
+            for coupler, dac_module in self.coupler_dac_module_map.items()
+            if isinstance(dac_module, InstrumentModule)
+        }
 
-        if self.is_dummy:
-            return f"Dummy_DAC_for_{spi_mod_name}_{dac_name}"
+    def ramp_to_target_currents(self, coupler_current_map: dict[str, float]):
+        """Raises or drops the current from the current to the target for each coupler in the map
 
-        if spi_mod_name not in self.spi.instrument_modules:
-            self.spi.add_spi_module(spi_mod_number, "S4g")
-
-        this_dac = self.spi.instrument_modules[spi_mod_name].instrument_modules[
-            dac_name
-        ]
-
-        # WARNING: this command is bugged on the SPI firmware. When a DAC in operated
-        # WARNING: for the first time, it sets the current to the minimum -0.25mA, which causes
-        # WARNING: significant and dangerous heating. Follow the group instructions when you
-        # WARNING: want to operate a DAC for the first time, or after a restart of the SPI rack.
-        this_dac.span("range_min_bi")
-
-        this_dac.current.vals = validators.Numbers(min_value=-3.1e-3, max_value=3.1e-3)
-        this_dac.ramping_enabled(True)
-        this_dac.ramp_rate(40e-6)
-        this_dac.ramp_max_step(1e-6)
-        return this_dac
-
-    def set_dacs_zero(self) -> None:
-        self.spi.set_dacs_zero()
-        return
-
-    def set_parking_currents(self, couplers: list[str]) -> None:
-
-        parking_currents = {}
-        # TODO: Change message about zero currents in device_config.toml - tergite-backend has backend_config.toml instead
-        for coupler in couplers:
-            if self._connection.hexists(f"couplers:{coupler}", "parking_current"):
-                parking_current = float(
-                    self._connection.hget(f"couplers:{coupler}", "parking_current")
-                )
-            else:
-                message = (
-                    "parking current is not present on redis."
-                    "If you intend to operate at zero DC current, set a zero value at your backend_config.toml"
-                )
-                logger.warning(f"{message}")
-                raise ValueError(message)
-
-            parking_currents[coupler] = parking_current
-
-        self.set_dac_current(parking_currents)
-        return
-
-    def set_dac_current(self, dac_values: dict[str, float]) -> None:
+        Args:
+            coupler_current_map: map of the coupler and the target currents to ramp to
+        """
         if self.is_dummy:
             logger.info(
-                f"Dummy DAC to current %s. NO REAL CURRENT is generated", dac_values
+                "Dummy DAC to current %s. NO REAL CURRENT is generated",
+                coupler_current_map,
             )
             return
-        self.ramp_current_serially(dac_values)
 
-    def ramp_current_simultaneusly(self, dac_values: dict[str, float]):
-        for coupler, target_current in dac_values.items():
-            dac = self.dacs_dictionary[coupler]
-            dac.current(target_current)
-        ramp_counter = 0
-        couplers = list(self.dacs_dictionary.keys())
-        dacs = self.dacs_dictionary.values()
-        logger.info("Ramping current (mA): %s", couplers)
-        while any([dac.is_ramping() for dac in dacs]):
-            ramp_counter += 1
-            print_termination = " -> "
-            if ramp_counter % 8 == 0:
-                print_termination = "\n"
-            these_currents = np.array([dac.current() for dac in dacs])
-            sys.stdout.write(f"{these_currents * 1000}", end=print_termination)
-            sys.stdout.flush()
-            time.sleep(1)
-        logger.info(f"Ramping finished at {dac.current() * 1000:.4f} mA")
+        for coupler, target_current in coupler_current_map.items():
+            if coupler not in self.coupler_dac_module_map:
+                logger.info(
+                    f"coupler {coupler} is not in spi rack {self.name}. Probably in another SPI rack."
+                )
+                continue
 
-    def ramp_current_serially(self, dac_values: dict[str, float]):
-        for coupler, target_current in dac_values.items():
-            dac = self.dacs_dictionary[coupler]
-            initial_current = dac.current() * 1000  # Convert to mA
-            target_mA = target_current * 1000  # Convert to mA
+            dac_module = self.coupler_dac_module_map[coupler]
+            initial_milliamps = dac_module.current() * 1000
+            target_milliamps = target_current * 1000
             total_range = abs(
-                target_mA - initial_current
+                target_milliamps - initial_milliamps
             )  # Compute range for progress bar
             if total_range == 0:
                 continue  # Already at target, no need to ramp
 
-            dac.current(target_current)
-
-            while dac.is_ramping():
+            dac_module.current(target_current)
+            while dac_module.is_ramping():
                 try:
-                    current_mA = dac.current() * 1000  # Get current in mA
-                    if self.print_progress:
+                    current_milliamps = dac_module.current() * 1000  # Get current in mA
+                    if self._should_print_progress:
+                        progress = abs(
+                            (current_milliamps - initial_milliamps) / total_range * 100
+                        )
                         logger.info(
-                            f"Coupler {coupler}: current is {current_mA:.4f} with target {target_mA:.4f} mA, completed = {abs(current_mA - initial_current)} %"
+                            f"Coupler {coupler}: current={current_milliamps:.4f}mA, target={target_milliamps:.4f}mA, completed={progress} %"
                         )
 
-                    if abs(current_mA - target_mA) < 0.005:  # Stop when close enough
+                    if (
+                        abs(current_milliamps - target_milliamps) < 0.005
+                    ):  # Stop when close enough
                         break
 
                     time.sleep(0.5)  # Simulate delay
@@ -275,17 +201,79 @@ class SpiDAC:
 
         logger.info(f"Ramping finished")
 
-    def print_currents(self):
-        for coupler, dac in self.dacs_dictionary.items():
-            current = dac.current() * 1000
-            logger.info(f"{coupler}: {current:.4f} mA")
-
-    def close_spi_rack(self):
+    def close(self):
+        """Closes this instance and releases the resources attached to it"""
         if not self.is_dummy:
-            for dac in self.dacs_dictionary.values():
+            for dac in self.coupler_dac_module_map.values():
                 while bool(dac.is_ramping()):
                     time.sleep(0.05)
+
                 dac.ramping_enabled(False)  # future sets are instant
         time.sleep(0.05)
-        self.spi.close()
-        logger.info(f"Closing SPI rack")
+
+        try:
+            self.spi_rack.close()
+            logger.info(f"Closing SPI rack")
+        except AttributeError:
+            pass
+
+
+def _init_coupler_spi_module(
+    spi_rack: SpiRack, coupler_map_entry: CouplerMapEntry, is_dummy: bool = False
+) -> InstrumentModule | str:
+    """Initializes the SPI comodule for the given coupler map entry
+
+    Args:
+        spi_rack: SpiRack instance
+        coupler_map_entry: Coupler mapping entry from the metadata
+        is_dummy: Whether the SPI Rack module should be initialized as a dummy SPI rack module
+
+    Returns:
+           the initialized SPI module or just a string if it is dummy
+    """
+    spi_mod_number = coupler_map_entry.spi_module_number
+    dac_name = coupler_map_entry.dac_name
+    module_name = f"module{spi_mod_number}"
+
+    if is_dummy:
+        return f"Dummy_DAC_for_{module_name}_{dac_name}"
+
+    if module_name not in spi_rack.instrument_modules:
+        spi_rack.add_spi_module(spi_mod_number, "S4g", name=module_name)
+
+    dac = spi_rack.instrument_modules[module_name].instrument_modules[dac_name]
+
+    # WARNING: this command is bugged on the SPI firmware. When a DAC in operated
+    # WARNING: for the first time, it sets the current to the minimum -0.25mA, which causes
+    # WARNING: significant and dangerous heating. Follow the group instructions when you
+    # WARNING: want to operate a DAC for the first time, or after a restart of the SPI rack.
+    dac.span("range_min_bi")
+
+    dac.current.vals = validators.Numbers(min_value=-3.1e-3, max_value=3.1e-3)
+    dac.ramping_enabled(True)
+    dac.ramp_rate(40e-6)
+    dac.ramp_max_step(1e-6)
+    return dac
+
+
+def _get_spi_module(
+    spi_rack: SpiRack, coupler_map_entry: CouplerMapEntry, is_dummy: bool = False
+) -> InstrumentModule | str:
+    """Gets the SPI comodule for the given coupler map entry
+
+    Args:
+        spi_rack: SpiRack instance
+        coupler_map_entry: Coupler mapping entry from the metadata
+        is_dummy: Whether the SPI Rack module should be initialized as a dummy SPI rack module
+
+    Returns:
+           the initialized SPI module or just a string if it is dummy
+    """
+    spi_mod_number = coupler_map_entry.spi_module_number
+    dac_name = coupler_map_entry.dac_name
+    module_name = f"module{spi_mod_number}"
+
+    if is_dummy:
+        return f"Dummy_DAC_for_{module_name}_{dac_name}"
+
+    return spi_rack.instrument_modules[module_name].instrument_modules[dac_name]

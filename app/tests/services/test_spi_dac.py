@@ -19,6 +19,7 @@ from qblox_instruments import SpiRack
 
 from ...libs.quantum_executor.quantify import spi_dac as spi_module
 from ...libs.quantum_executor.quantify.spi_dac import SpiDAC
+from ...libs.quantum_executor.utils.config import QuantifyMetadata, SpiRackConfig
 from ..conftest import SPI_DUMMY_METADATA_FILE
 from ..utils.fixtures import get_fixture_path, load_fixture
 
@@ -26,52 +27,34 @@ _SPI_HARDWARE_CONFIG = load_fixture("spi_hardware_quantify-metadata.yml", fmt="y
 _SPI_NO_COUPLER_CONFIG_PATH = get_fixture_path("spi_missing_coupler_metadata.yml")
 
 
-def test_metadata_parsing_and_create_dummy_dac():
-    port, is_dummy, mapping = spi_module._get_spi_metadata(SPI_DUMMY_METADATA_FILE)
-    assert is_dummy is True
-    assert "u0" in mapping
-    assert mapping["u0"].spi_module_number == 6
-    assert mapping["u0"].dac_name == "dac0"
+# FIXME: Remove tests of internal/private functions
 
-    # On POSIX, non-existent device should fail validation (only when used)
-    if os.name != "nt":
-        assert spi_module._find_and_validate_spi_port("/dev/THIS_IS_NOT_THERE") is None
+
+def test_init_spi_dacs():
+    """init_spi_dacs() should return a map of SpiDac instances from the given quantify metadata, with keys as the names"""
+    quantify_metadata = QuantifyMetadata.from_yaml(SPI_DUMMY_METADATA_FILE)
+
+    spi_dacs_map = spi_module.init_spi_dacs(quantify_metadata)
+    spi_rack_names = [
+        k for k, v in quantify_metadata.root.items() if v.instrument_type == "SPI-Rack"
+    ]
+    for spi_rack_name in spi_rack_names:
+        spi_dac = spi_dacs_map[spi_rack_name]
+        assert spi_dac.is_dummy
+        assert "u0" in spi_dac.coupler_map
+        assert spi_dac.coupler_map["u0"].spi_module_number == 6
+        assert spi_dac.coupler_map["u0"].dac_name == "dac0"
 
 
 def test_instantiation_uses_dummy_driver_and_returns_dummy_dac(spi_dac_dummy):
     """Instantiating an SpiDAC defaults to a dummy driver and dummy dac"""
     # We really created a qblox-instruments SpiRack (dummy)
-    assert isinstance(spi_dac_dummy.spi, SpiRack)
+    assert isinstance(spi_dac_dummy.spi_rack, SpiRack)
 
     # In dummy mode, create_spi_dac returns a descriptive string handle
-    assert isinstance(spi_dac_dummy.dacs_dictionary["u0"], str)
-    assert spi_dac_dummy.dacs_dictionary["u0"].startswith("Dummy_DAC_for_module6_dac0")
-
-
-def test_set_parking_requires_value_in_redis(spi_dac_dummy):
-    """No Redis value → should raise with clear message"""
-    with pytest.raises(ValueError) as ei:
-        spi_dac_dummy.set_parking_currents(["u0"])
-    assert "parking current is not present on redis" in str(ei.value)
-
-
-def test_missing_coupler_in_metadata_raises_keyerror(redis_client):
-    """
-    Use a dedicated fixture file missing 'u1' mapping to assert clear error.
-    """
-    missing_path = _SPI_NO_COUPLER_CONFIG_PATH
-    name = os.environ["DEFAULT_PREFIX"]
-
-    with pytest.raises(KeyError) as ei:
-        SpiDAC(
-            couplers=["u1"],
-            metadata_path=missing_path,
-            connection=redis_client,
-            name=name,
-        )
-
-    assert "Coupler 'u1' missing in metadata.yml under 'coupler_spi_mapping'." in str(
-        ei.value
+    assert isinstance(spi_dac_dummy.coupler_dac_module_map["u0"], str)
+    assert spi_dac_dummy.coupler_dac_module_map["u0"].startswith(
+        "Dummy_DAC_for_module6_dac0"
     )
 
 
@@ -82,8 +65,8 @@ def test_set_dacs_zero_calls_underlying_rack(spi_dac_dummy, mocker):
     def fake_zero(self):
         called["hit"] = True
 
-    mocker.patch.object(type(spi_dac_dummy.spi), "set_dacs_zero", fake_zero)
-    spi_dac_dummy.set_dacs_zero()
+    mocker.patch.object(type(spi_dac_dummy.spi_rack), "set_dacs_zero", fake_zero)
+    spi_dac_dummy.spi_rack.set_dacs_zero()
     assert called["hit"] is True
 
 
@@ -106,29 +89,30 @@ def test_ramp_behavior_on_real_rack(tmp_path, redis_client):
     meta = _SPI_HARDWARE_CONFIG.copy()
     meta["spi_rack"]["port"] = port
     meta["spi_rack"]["is_dummy"] = False
+    meta["spi_rack"]["parking_current"] = 0.0
 
     metadata_file = tmp_path / "quantify-metadata.yml"
     metadata_file.write_text(yaml.safe_dump(meta))
 
-    try:
-        sd = SpiDAC(
-            couplers=["u0"],
-            metadata_path=str(metadata_file),
-            print_progress=False,
-            name=name,
-            connection=redis_client,
-        )
+    metadata = QuantifyMetadata.from_yaml(metadata_file)
+    spi_rack_conf = SpiRackConfig.model_validate(metadata.root["spi_rack"])
 
+    spi_dac = SpiDAC(
+        name=name,
+        conf=spi_rack_conf,
+        should_print_progress=False,
+    )
+
+    try:
         # Start near 0 A
-        redis_client.hset("couplers:u0", "parking_current", 0.0)
-        sd.set_parking_currents(["u0"])
+        spi_dac.reset_to_parking_current()
 
         target = 0.0005  # 0.5 mA
         jumps = []
 
-        dac = sd.dacs_dictionary["u0"]
+        dac = spi_dac.coupler_dac_module_map["u0"]
         prev = dac.current()
-        sd.set_dac_current(
+        spi_dac.ramp_to_target_currents(
             {"u0": target}
         )  # real rack -> triggers ramp_current_serially
 
@@ -145,10 +129,9 @@ def test_ramp_behavior_on_real_rack(tmp_path, redis_client):
         assert abs(final - target) <= 5e-6  # ≤ 5 µA at the end
         assert 3.0 <= (t1 - t0) <= 30.0  # envelope for default ramp rate
 
-        sd.set_parking_currents(["u0"])
-        sd.close_spi_rack()
+        spi_dac.reset_to_parking_current()
     finally:
         try:
-            sd.close_spi_rack()
+            spi_dac.close()
         except:
             pass

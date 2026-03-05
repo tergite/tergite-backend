@@ -21,18 +21,19 @@ cluster0:
       instrument_type: QRM_RF
 
 # instrument name
-spi_rack:
+spi_rack0:
   # another allowed top-level type
   instrument_type: SPI-Rack
   # on Posix port looks like this
   port: "/dev/ttyACM0"
   is_dummy: false
+  parking_current: 1e-4
 
   coupler_spi_mapping:
-    q11_q12:          
+    u0:
       spi_module_number: 1
       dac_name: "dac0"
 
-    q12_q13:
+    u1:
       spi_module_number: 1
       dac_name: "dac1"

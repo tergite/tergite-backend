@@ -12,6 +12,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Added decryption of `.env` file in the `bcc_start.sh` script
 - [BREAKING] Added the `PRIVATE_KEY_FILE`, `PRIVATE_KEY_PASSWORD` environment variables
 - Added `PYTEST_ARGS` CI environment variable for use in CI
+- Added SpiDAC controller for controlling the flux tunable couplers
 
 ### Changed
 
@@ -19,6 +20,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Removed the JOB_EXECUTION_POOL_DIRNAME env variable
 - [BREAKING] Removed the `MSS_APP_TOKEN` environment variable
 - Changed connection to MSS to use RSA-secured websockets instead of RESTful HTTP requests
+- Fixed issue with executor being re-initialized on every job submission
+- Refactored SpiDAC code to be less dependent on global variables but to be fully dependent on the parent executor
 
 ### Fixed
 

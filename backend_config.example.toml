@@ -76,6 +76,11 @@ lda = [
 ]
 
 [device_config.coupling_dict]
+# map of coupler channel to qubit pair
+u0 = ["q12", "q13"]
+u1 = ["q12", "q14"]
+u2 = ["q14", "q15"]
+u3 = ["q12", "q15"]
 
 [gates.x]
 coupling_map = [ [ 0, 1], [1, 0] ]

@@ -1,13 +1,3 @@
-import asyncio
-import socket
-
-import websockets
-from pytest_mock import MockerFixture
-from starlette.datastructures import URL
-from websockets import ClientProtocol
-
-import app
-
 from .utils.env import (
     TEST_BACKEND_SETTINGS_FILE,
     TEST_BOOKING_DB_URL,
@@ -15,7 +5,6 @@ from .utils.env import (
     TEST_DEFAULT_PREFIX_SIM_1Q,
     TEST_DEFAULT_PREFIX_SIM_2Q,
     TEST_LOGFILE_DOWNLOAD_POOL_DIRNAME,
-    TEST_MSS_MACHINE_ROOT_URL,
     TEST_QISKIT_1Q_SEED_FILE,
     TEST_QISKIT_2Q_SEED_FILE,
     TEST_QUANTIFY_SEED_FILE,
@@ -36,10 +25,10 @@ import logging
 import os
 import shutil
 import sys
+from contextlib import suppress
 from pathlib import Path
 from typing import (
     Any,
-    AsyncGenerator,
     Dict,
     Generator,
     List,
@@ -54,6 +43,7 @@ import pytest
 import redis
 from fastapi.testclient import TestClient
 from pytest_lazy_fixtures import lf as lazy_fixture
+from pytest_mock import MockerFixture
 from qblox_instruments import SpiRack
 from redis.client import Redis
 from rq import SimpleWorker
@@ -61,13 +51,14 @@ from sqlalchemy import create_engine
 from sqlmodel import SQLModel
 
 from ..libs.quantum_executor.quantify.spi_dac import SpiDAC
+from ..libs.quantum_executor.utils.config import QuantifyMetadata, SpiRackConfig
 from ..libs.queues.dtos import Job
 from ..services.scheduler.queues import QueuePool
 from .utils.analysis import MockLinearDiscriminantAnalysis
 from .utils.executors import MockQiskitDynamicsExecutor, MockQuantifyExecutor
 from .utils.fixtures import get_fixture_path, load_fixture
 from .utils.mocks import make_attr_verbose
-from .utils.mss import MockWebsocket, mock_mss_websocket_handler
+from .utils.mss import MockWebsocket
 from .utils.rq import get_rq_pool_worker
 
 _redis_connection = redis.Redis.from_url(TEST_RQ_REDIS_URL)
@@ -292,72 +283,63 @@ def storage_root():
 
 
 @pytest.fixture
-def spi_dac_dummy(redis_client) -> Generator[SpiDAC, Any, None]:
+def spi_rack_config() -> Generator[SpiRackConfig, Any, None]:
+    conf = QuantifyMetadata.from_yaml(SPI_DUMMY_METADATA_FILE)
+    yield SpiRackConfig.model_validate(conf.root["spi_rack"].model_dump())
+
+
+@pytest.fixture
+def spi_dac_dummy(redis_client, spi_rack_config) -> Generator[SpiDAC, Any, None]:
     """
     Construct SpiDAC bound to the dummy SPI-Rack.
     """
     name = os.environ.get("DEFAULT_PREFIX", "quantify")
-    metadata_path = SPI_DUMMY_METADATA_FILE
-    couplers = ["u0"]
 
     if SpiDAC.exist(name):
         SpiRack.find_instrument(name).close()
 
-    sd = SpiDAC(
-        couplers=couplers,
-        metadata_path=metadata_path,
-        connection=redis_client,
+    spi_dac = SpiDAC(
         name=name,
+        conf=spi_rack_config,
     )
-    yield sd
+    yield spi_dac
 
-    try:
-        sd.close_spi_rack()
-    except:
-        pass
+    with suppress(Exception):
+        spi_dac.close()
 
 
 @pytest.fixture
-def verbose_spi_dac_dummy(redis_client, mocker) -> Generator[SpiDAC, Any, None]:
+def verbose_spi_dac_dummy(
+    redis_client, mocker, spi_rack_config
+) -> Generator[SpiDAC, Any, None]:
     """
     Construct SpiDAC bound to the dummy SPI-Rack.
     """
     name = os.environ.get("DEFAULT_PREFIX", "quantify")
-    metadata_path = SPI_DUMMY_METADATA_FILE
-    couplers = ["u0"]
 
     testlog = logging.getLogger(TEST_SPI_LOGGER_NAME)
     testlog.setLevel(logging.DEBUG)
 
     for fn in [
         "__init__",
-        "create_spi_dac",
-        "set_dacs_zero",
         "exist",
-        "set_parking_currents",
-        "set_dac_current",
-        "ramp_current_serially",
-        "ramp_current_simultaneusly",
-        "print_currents",
-        "close_spi_rack",
+        "reset_to_parking_current",
+        "ramp_to_target_currents",
+        "close",
     ]:
         make_attr_verbose(SpiDAC, mock_fixture=mocker, logger=testlog, attr_name=fn)
 
     if SpiDAC.exist(name):
         SpiRack.find_instrument(name).close()
 
-    sd = SpiDAC(
-        couplers=couplers,
-        metadata_path=metadata_path,
-        connection=redis_client,
+    spi_dac = SpiDAC(
         name=name,
+        conf=spi_rack_config,
     )
-    yield sd
+    yield spi_dac
 
-    try:
-        sd.close_spi_rack()
-    except:
-        pass
+    with suppress(Exception):
+        spi_dac.close()
 
 
 @pytest.fixture(autouse=True, scope="session")
