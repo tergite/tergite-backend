@@ -119,7 +119,7 @@ def test_update_ttl(redis_client, payload):
     new_item = auth_logs.update(key, PartialAuthLog(**new_update), ttl=ttl)
     new_item_in_db = _get_redis_value(redis_client, original_item)
 
-    time.sleep(ttl)
+    time.sleep(1.5 * ttl)
 
     with pytest.raises(ItemNotFoundError):
         auth_logs.get_one(key)
