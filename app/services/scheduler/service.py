@@ -38,6 +38,7 @@ from ...utils.exc import (
     ItemNotFoundError,
     NotAuthenticatedError,
 )
+from ...utils.redis import get_redis_connection
 from ...utils.redis_store import Collection
 from ...utils.rq import cancel_rq_job
 from ..booking import get_many_bookings
@@ -212,7 +213,7 @@ def submit_job_file(
     upload_folder = Path(context["job_upload_folder"])
     backend_name = context["executor_options"].backend_name
 
-    with Redis.from_url(jobs_store_url) as redis_conn:
+    with get_redis_connection(jobs_store_url, is_async=False) as redis_conn:
         # We save the job first in the jobs store before we put it on the queue
         # because it will be picked from the jobs store when the worker is running.
         # It would be harder to pass the job payload itself across each worker because it would have
