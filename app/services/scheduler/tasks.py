@@ -50,6 +50,7 @@ from ...libs.queues.dtos import (
 )
 from ...utils.datetime import get_utc_now
 from ...utils.exc import JobAlreadyCancelled, PostProcessingError
+from ...utils.redis import get_redis_connection
 from ...utils.rq import cancel_rq_job
 from ..booking import get_active_booking
 from ..booking.models import Booking
@@ -311,8 +312,8 @@ def postprocess(
     working_folder = Path(context["postprocessing_folder"])
     backend_name = context["executor_options"].backend_name
 
-    with redis.from_url(context["jobs_store_url"]) as redis_conn:
-        jobs_store = Collection(connection=redis_conn, schema=Job)
+    with get_redis_connection(context["jobs_store_url"]) as redis_conn:
+        jobs_store = init_jobs_store(connection=redis_conn)
         new_file = move_file(results_file_path, new_folder=working_folder, ext=".hdf5")
         logging.info(f"Moved the logfile to {str(new_file)}")
 

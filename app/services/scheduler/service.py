@@ -53,7 +53,7 @@ from ..booking.service import (
 )
 from ..booking.store import get_bookings_sql_engine
 from .queues import QueuePool
-from .store import get_jobs_store
+from .store import get_jobs_store, init_jobs_store
 from .tasks import post_booking_cleanup, reset_idleness_timer
 from .utils import get_rq_job_id
 
@@ -218,7 +218,7 @@ def submit_job_file(
         # because it will be picked from the jobs store when the worker is running.
         # It would be harder to pass the job payload itself across each worker because it would have
         # to be pickled.
-        jobs_store = Collection(connection=redis_conn, schema=Job)
+        jobs_store = init_jobs_store(connection=redis_conn)
 
         job_id = credentials.job_id
         user_id = credentials.user_id
