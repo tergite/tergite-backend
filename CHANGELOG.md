@@ -13,6 +13,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - [BREAKING] Added the `PRIVATE_KEY_FILE`, `PRIVATE_KEY_PASSWORD` environment variables
 - Added `PYTEST_ARGS` CI environment variable for use in CI
 - Added SpiDAC controller for controlling the flux tunable couplers
+- Added `REQUEST_LOG_TTL` and `REQUEST_LOG_CLEAN_INTERVAL` to control the rate at which request logs are cleared
+- Added `JOBS_STORE_TTL` and `JOBS_STORE_CLEAN_INTERVAL` to control the rate at which old jobs data is cleared from redis store
+- Added TTL on `RedisStore`
 
 ### Changed
 

@@ -169,3 +169,21 @@ CORS_ORIGINS=""
 # if empty, the right current date is used
 # default: ""
 CURRENT_DATE=""
+
+# The time to live in seconds for the request logs in the store.
+# default: 1209600 (two weeks)
+REQUEST_LOG_TTL=1209600
+
+
+# Interval in seconds between expired index cleanups for the request log store.
+# default: 18000 (5 hours)
+REQUEST_LOG_CLEAN_INTERVAL=18000
+
+# The time to live in seconds for the request logs in the store.
+# default: 1209600 (two weeks)
+JOBS_STORE_TTL=1209600
+
+
+# Interval in seconds between expired index cleanups for the request log store.
+# default: 18000 (5 hours)
+JOBS_STORE_CLEAN_INTERVAL=18000
