@@ -12,9 +12,8 @@
 #
 """Module containing the store for the scheduler service"""
 
-from redis import Redis
-
 from ...libs.queues.dtos import Job
+from ...utils.redis import get_redis_connection
 from ...utils.redis_store import Collection
 
 
@@ -27,5 +26,5 @@ def get_jobs_store(url: str) -> Collection[Job]:
     Returns:
         the RedisCollection containing the jobs
     """
-    connection = Redis.from_url(url=url)
+    connection = get_redis_connection(url=url)
     return Collection(connection=connection, schema=Job)

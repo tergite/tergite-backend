@@ -34,6 +34,7 @@ from redis.client import PubSub
 from websockets import ClientConnection
 
 import settings
+from app.utils.redis import get_redis_connection
 
 from .dtos import DeviceEvent, EventResponse
 
@@ -121,7 +122,7 @@ class MssClientPipe(BaseMssClientPipe):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._redis: Redis = Redis.from_url(self._redis_url)
+        self._redis: Redis = get_redis_connection(self._redis_url)
         self._inbox: PubSub = self._redis.pubsub(ignore_subscribe_messages=True)
 
     def send_event(self, payload: DeviceEvent, error_prefix: str = "") -> EventResponse:
@@ -188,7 +189,7 @@ class AsyncMssClientPipe(BaseMssClientPipe):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._redis: AsyncRedis = AsyncRedis.from_url(self._redis_url)
+        self._redis: AsyncRedis = get_redis_connection(self._redis_url, is_async=True)
         self._inbox: AsyncPubSub = self._redis.pubsub(ignore_subscribe_messages=True)
 
     async def send_event(
@@ -293,7 +294,7 @@ class AsyncMssClient(websockets.connect):
 
         self._outbox_pubsub: str = get_outbox_channel_name(device)
         self._inbox_pubsub: str = get_inbox_channel_name(device)
-        self._redis: AsyncRedis = AsyncRedis.from_url(url=redis_url)
+        self._redis: AsyncRedis = get_redis_connection(url=redis_url, is_async=True)
         self.outbox: AsyncPubSub = self._redis.pubsub(ignore_subscribe_messages=True)
 
     async def _outbox_handler(self, msg: dict) -> None:

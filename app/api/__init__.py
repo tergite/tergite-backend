@@ -76,10 +76,10 @@ from .dependencies import (
     get_backend_name,
     get_bearer_token,
     get_cached_queue_context,
+    get_cached_redis_connection,
     get_db_engine,
     get_mss_token_claims_dep,
     get_queue_pool,
-    get_redis_connection,
     get_unverified_mss_is_admin,
     get_verified_mss_admin_user_id,
     get_verified_mss_details,
@@ -202,7 +202,7 @@ async def download_logfile(logfile_id: UUID):
 
 @app.get("/static-properties", dependencies=[Depends(get_verified_mss_user_id)])
 async def get_static_properties(
-    redis: Redis = Depends(get_redis_connection),
+    redis: Redis = Depends(get_cached_redis_connection),
     backend_name: str = Depends(get_backend_name),
 ):
     """Retrieves the device properties that are not changing"""
@@ -211,7 +211,7 @@ async def get_static_properties(
 
 @app.get("/dynamic-properties", dependencies=[Depends(get_verified_mss_user_id)])
 async def get_dynamic_properties(
-    redis: Redis = Depends(get_redis_connection),
+    redis: Redis = Depends(get_cached_redis_connection),
     backend_name: str = Depends(get_backend_name),
 ):
     """Retrieves the device properties that are changing with time i.e. calibration data"""

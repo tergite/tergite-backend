@@ -20,6 +20,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+import redis
 from starlette.config import Config
 from starlette.datastructures import URL, CommaSeparatedStrings
 
@@ -154,6 +155,7 @@ SHOULD_RESTORE_CURRENTS = config("SHOULD_RESTORE_CURRENTS", cast=bool, default=F
 # -------------
 # Redis config
 # -------------
+REDIS_SCHEME = config("REDIS_SCHEME", default="redis")
 REDIS_HOST = config("REDIS_HOST", default="localhost")
 REDIS_PORT = config("REDIS_PORT", default=6379)
 REDIS_USER = config("REDIS_USER", default=None)
@@ -184,8 +186,12 @@ IS_ASYNC = config("IS_ASYNC", cast=bool, default="True")
 BOOKING_DB_URL = config("BOOKING_DB_URL", default="sqlite:///booking_db.db")
 
 # default: "redis://localhost:6379/0"
-_REDIS_URL = f"redis://{REDIS_USER or ''}:{REDIS_PASSWORD or ''}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+_REDIS_URL = f"{REDIS_SCHEME}://{REDIS_USER or ''}:{REDIS_PASSWORD or ''}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
 RQ_REDIS_URL = config("RQ_REDIS_URL", default=_REDIS_URL)
+if RQ_REDIS_URL.startswith("rediss:"):
+    REDIS_CONNECTION = redis.Redis.from_url(RQ_REDIS_URL, ssl=True)
+else:
+    REDIS_CONNECTION = redis.Redis.from_url(RQ_REDIS_URL)
 
 JWT_SECRET = config("JWT_SECRET")
 

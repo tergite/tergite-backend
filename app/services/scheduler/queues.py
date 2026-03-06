@@ -21,6 +21,7 @@ from rq import Queue as RqQueue
 import settings
 
 from ...libs.queues.types import RunnerQueue, StaticQueue
+from ...utils.redis import get_redis_connection
 from .tasks import (
     execute,
     postprocess,
@@ -76,7 +77,7 @@ class QueuePool:
         """Constructs a queue pool from the settings"""
         return cls(
             prefix=settings.DEFAULT_PREFIX,
-            connection=Redis.from_url(settings.RQ_REDIS_URL),
+            connection=get_redis_connection(settings.RQ_REDIS_URL),
             is_async=settings.IS_ASYNC,
         )
 

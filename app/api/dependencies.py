@@ -49,6 +49,7 @@ from ..utils.exc import (
     NotAuthenticatedError,
     UnauthorizedError,
 )
+from ..utils.redis import get_redis_connection
 from ..utils.strings import validate_uuid4_str
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -86,7 +87,7 @@ async def lifespan(app: FastAPI):
         "executor_options": executor_options,
     }
 
-    with Redis.from_url(settings.RQ_REDIS_URL) as redis_conn:
+    with get_redis_connection(settings.RQ_REDIS_URL, is_async=False) as redis_conn:
         _REDIS_CONNECTION = redis_conn
 
         async with AsyncMssClient() as mss_client:
@@ -104,7 +105,7 @@ async def lifespan(app: FastAPI):
             executor.close()
 
 
-def get_redis_connection() -> Redis:
+def get_cached_redis_connection() -> Redis:
     """Dependency injector to get the redis database connection"""
     return _REDIS_CONNECTION
 
