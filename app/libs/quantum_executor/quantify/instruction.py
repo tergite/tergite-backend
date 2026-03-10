@@ -775,5 +775,5 @@ def _map_to_qblox_timegrid(
         the timestamp or duration within the qblox time grid that corresponds to the given timestamp
     """
 
-    ticks = int(round(raw_time / grid_interval))
-    return ticks * grid_interval
+    time_to_next_gridline = (grid_interval - raw_time) % grid_interval
+    return raw_time + time_to_next_gridline

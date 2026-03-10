@@ -331,7 +331,7 @@ def _construct_schedule(
     """
 
     def to_tick(t: float) -> int:
-        return int(math.floor(t / timegrid_interval + 0.5 + 1e-12))
+        return int(round(t / timegrid_interval))
 
     def from_tick(k: int) -> float:
         return k * timegrid_interval

@@ -137,4 +137,6 @@ asyncio_default_fixture_loop_scope = "function"
 filterwarnings = [
   "ignore:This package has reached its end of life\\.:DeprecationWarning:quantify_scheduler\\..*",
   "ignore:qiskit\\.providers\\.models is deprecated since Qiskit 1\\.2 and will be removed in Qiskit 2\\.0\\.:DeprecationWarning:app\\.libs\\.quantum_executor\\.qiskit\\.backends\\..*",
+  # Qiskit Qobj / BackendV1 workflow deprecation
+  "ignore:.*The `Qobj` class and related functionality are part of the deprecated `BackendV1` workflow.*:DeprecationWarning",
 ]
