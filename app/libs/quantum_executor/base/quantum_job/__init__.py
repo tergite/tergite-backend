@@ -302,6 +302,7 @@ def discriminate_results(
             and returns a binary value (0/1).
         num_of_states: the number of states the discriminator produces; default=2
         byteorder: the byte order of the acquisition channel list; default=ByteOrder.LITTLE_ENDIAN
+        calibration: the device calibration object; default=None
 
     Returns:
         HexMatrix `results[experiments][shot]` -> hex string
@@ -351,6 +352,7 @@ def discriminate_results(
             else:
                 raise ValueError(
                     f"Can't find qubit id {quantify_qubit_id} in the calibration data {calibration}."
+                    f"{quantify_to_sdk_map}"
                 )
 
             if sdk_qubit_id not in q_to_c:
@@ -378,6 +380,8 @@ def discriminate_results(
                 f"{unmapped_channels} to SDK qubit ids for experiment "
                 f"{qobj_exp_index!r}."
                 f"{q_to_c}"
+                f"{quantify_to_sdk_map}"
+                f"{calibration}"
             )
 
         bitarrays_per_rep = register.transpose()
