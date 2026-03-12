@@ -262,6 +262,7 @@ class AcquireInstruction(BaseInstruction):
         duration = _map_to_qblox_timegrid(qobj_inst.duration * DT_CONST)
         acquire_instructions = []
         for n, qubit_idx in enumerate(qobj_inst.qubits):
+            # FIXME: this assumes that measurement channel is always f"m{qubit_idx}". Could this assumption be wrong?
             qobj_channel = f"m{qubit_idx}"
             clock_name, port_name = hardware_map[qobj_channel]
             acquire_instructions.append(

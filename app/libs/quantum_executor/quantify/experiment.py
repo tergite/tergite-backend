@@ -16,7 +16,6 @@
 # Refactored by Chalmers Next Labs 2025
 
 
-import math
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple, Type
