@@ -362,7 +362,7 @@ def discriminate_results(
             cbit_id = int(q_to_c[sdk_qubit_id])
 
             iq_values: npt.NDArray[np.complexfloating] = acquisitions.data[:, 0]
-            disc_res = discriminator(sdk_qubit_id, iq_values)
+            disc_res = discriminator(quantify_qubit_id, iq_values)
 
             if np.isscalar(disc_res):
                 register[cbit_id, :] = disc_res

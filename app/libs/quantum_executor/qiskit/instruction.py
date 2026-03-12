@@ -71,9 +71,10 @@ class GaussianPlay(qiskit_pulse.Play, QiskitDynamicsInstruction):
             limit_amplitude: If ``True``, then limit the amplitude of the
                 waveform to 1. The default is ``True`` and the amplitude is constrained to 1.
         """
+        angle = 0.0 if angle is None else angle
         pulse = qiskit_pulse.Gaussian(
             duration=duration,
-            amp=amp,
+            amp=amp.real,
             sigma=sigma,
             angle=angle,
             name=name,

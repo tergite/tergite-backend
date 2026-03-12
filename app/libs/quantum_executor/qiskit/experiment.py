@@ -49,6 +49,7 @@ _INSTRUCTION_PULSE_MAP: Dict[
     ("setp", None): SetPhase,
     ("fc", None): ShiftPhase,
     ("delay", None): Delay,
+    ("acquire", None): Acquire,
     ("parametric_pulse", "constant"): Acquire,
     ("parametric_pulse", "gaussian"): GaussianPlay,
     ("parametric_pulse", "drag"): GaussianPlay,
