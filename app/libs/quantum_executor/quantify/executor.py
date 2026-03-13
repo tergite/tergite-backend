@@ -100,7 +100,7 @@ class QuantifyExecutor(QuantumExecutor):
             u: self.hardware_map[u][1] for u in self._couplers if u in self.hardware_map
         }
         self._port_to_coupler = {port: u for u, port in self._coupler_to_port.items()}
-        self.coordinator_name = f"{self.device_name}-executor"
+        self.coordinator_name = f"{self.device_name}_executor"
         no_gc_instruments_cache = self.__class__._non_gc_instruments.setdefault(
             self.device_name, {}
         )
@@ -137,7 +137,7 @@ class QuantifyExecutor(QuantumExecutor):
             self._quantum_device = QuantumDevice(self.device_name)
 
         self._quantum_device.hardware_config(self.quantify_config)
-        self._compiler = SerialCompiler(name=f"{self.device_name}-compiler")
+        self._compiler = SerialCompiler(name=f"{self.device_name}_compiler")
         self._compilation_config = self._quantum_device.generate_compilation_config()
 
     def _to_native_experiments(
