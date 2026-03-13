@@ -121,7 +121,7 @@ class QuantifyExecutor(QuantumExecutor):
             clusters = self.quantify_metadata.get_clusters()
             for cluster in clusters:
                 if reset and are_clusters_resettable:
-                    cluster.reset()  # resets cluster for consistency
+                    cluster.reset()
 
                 cluster_component = ClusterComponent(cluster)
                 component_name = self._coordinator.add_component(cluster_component)
