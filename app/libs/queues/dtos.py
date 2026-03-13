@@ -203,7 +203,7 @@ class TimestampPair(BaseModel):
         return self._finish_timestamp
 
     @finish_timestamp.setter
-    def set_start_timestamp(self, value: Optional[datetime]):
+    def set_finish_timestamp(self, value: Optional[datetime]):
         """Sets the start timestamp of the pair"""
         self._finish_timestamp = value
 
@@ -482,6 +482,7 @@ class ExecutorOptions:
         backend_config: the backend configuration of the executor
         backend_name: name of backend
         should_restore_currents: whether the executor should restore SPI currents
+        are_clusters_resettable: whether the clusters for this executor can be reset
     """
 
     executor_type: str
@@ -490,6 +491,7 @@ class ExecutorOptions:
     quantify_config_file: Optional[PathLike] = None
     quantify_metadata_file: Optional[PathLike] = None
     should_restore_currents: bool = settings.SHOULD_RESTORE_CURRENTS
+    are_clusters_resettable: bool = settings.ARE_CLUSTERS_RESETTABLE
 
 
 class QueueContext(TypedDict):

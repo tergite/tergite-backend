@@ -332,7 +332,9 @@ def postprocess(
                     )
 
                     memory = discriminate_results(
-                        quantum_job, discriminator=discriminator
+                        quantum_job,
+                        discriminator=discriminator,
+                        calibration=calibration,
                     )
                     job = update_job_results(jobs_store, job_id=job_id, data=memory)
                     update_job_in_mss(mss_client_pipe, payload=job)

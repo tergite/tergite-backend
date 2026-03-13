@@ -64,6 +64,7 @@ class QuantifyExecutor(QuantumExecutor):
         *,
         should_restore_currents: bool = False,
         reset: bool = False,
+        are_clusters_resettable: bool = False,
     ):
         """
         Args:
@@ -72,11 +73,13 @@ class QuantifyExecutor(QuantumExecutor):
             backend_config: the general backend configuration regardless of executor type
             should_restore_currents: whether to restore current state; default = False
             reset: whether to reset the whole executor; default = False
+            are_clusters_resettable: whether the clusters can be reset for this executor; default = False
         """
         self.quantify_config = load_quantify_config(quantify_config_file)
         self.quantify_metadata = QuantifyMetadata.from_yaml(quantify_metadata_file)
         self.device_name = backend_config.general_config.name
         self.should_restore_currents = should_restore_currents
+        self.are_clusters_resettable = are_clusters_resettable
 
         qubit_ids = backend_config.device_config.qubit_ids
         coupling_dict = backend_config.device_config.coupling_dict
@@ -97,7 +100,7 @@ class QuantifyExecutor(QuantumExecutor):
             u: self.hardware_map[u][1] for u in self._couplers if u in self.hardware_map
         }
         self._port_to_coupler = {port: u for u, port in self._coupler_to_port.items()}
-        self.coordinator_name = f"{self.device_name}-executor"
+        self.coordinator_name = f"{self.device_name}_executor"
         no_gc_instruments_cache = self.__class__._non_gc_instruments.setdefault(
             self.device_name, {}
         )
@@ -117,8 +120,8 @@ class QuantifyExecutor(QuantumExecutor):
 
             clusters = self.quantify_metadata.get_clusters()
             for cluster in clusters:
-                if reset:
-                    cluster.reset()  # resets cluster for consistency
+                if reset and are_clusters_resettable:
+                    cluster.reset()
 
                 cluster_component = ClusterComponent(cluster)
                 component_name = self._coordinator.add_component(cluster_component)
@@ -134,7 +137,7 @@ class QuantifyExecutor(QuantumExecutor):
             self._quantum_device = QuantumDevice(self.device_name)
 
         self._quantum_device.hardware_config(self.quantify_config)
-        self._compiler = SerialCompiler(name=f"{self.device_name}-compiler")
+        self._compiler = SerialCompiler(name=f"{self.device_name}_compiler")
         self._compilation_config = self._quantum_device.generate_compilation_config()
 
     def _to_native_experiments(

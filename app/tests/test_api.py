@@ -930,7 +930,7 @@ def test_submit_jobs_in_idle_booking_before_another(
         )
 
 
-# _SIMPLE_UPLOAD_JOB_PARAMS[:-1] because the real simulator execution takes some time that is hard to precisely estimate
+# _SIMPLE_UPLOAD_JOB_PARAMS[:-2] because the real simulator execution takes some time that is hard to precisely estimate
 @pytest.mark.parametrize(
     "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-2]
 )
@@ -947,7 +947,7 @@ def test_submit_long_jobs_before_booking(
         # create many users and their tokens
         users = _create_many_users(client)
 
-        durations = [0.3, 3, 4, 1, 2.9, 0.2, 0.1]
+        durations = [0.3, 3, 4, 0.9, 2.9, 0.2, 0.1]
         raw_jobs = _get_raw_jobs(job, durations)
         # Creating this job metadata list first because it takes up a lot of time
         job_metadata_list = _get_job_submission_metadata(
@@ -974,9 +974,9 @@ def test_submit_long_jobs_before_booking(
         job_estimated_durations = [v.estimated_duration for v in jobs_in_db]
 
         assert all([job.status == JobStatus.SUCCESSFUL for job in jobs_in_db])
-        # the small-enough first (0.3, 1, 0.2, 0.1),
+        # the small-enough first (0.3, 0.9, 0.2, 0.1),
         # then the bigger ones (3.0, 4.0, 2.9) in original order
-        assert job_estimated_durations == [0.3, 1, 0.2, 0.1, 3.0, 4.0, 2.9]
+        assert job_estimated_durations == [0.3, 0.9, 0.2, 0.1, 3.0, 4.0, 2.9]
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)

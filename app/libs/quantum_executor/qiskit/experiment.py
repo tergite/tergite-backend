@@ -27,7 +27,7 @@ from app.libs.quantum_executor.base.experiment import (
     copy_expt_header_with,
 )
 
-from ...device_parameters import BackendConfig, get_backend_config
+from ...device_parameters import BackendConfig
 from .instruction import (
     Acquire,
     Delay,
@@ -49,8 +49,10 @@ _INSTRUCTION_PULSE_MAP: Dict[
     ("setp", None): SetPhase,
     ("fc", None): ShiftPhase,
     ("delay", None): Delay,
+    # ("acquire", None): Delay,
     ("parametric_pulse", "constant"): Acquire,
     ("parametric_pulse", "gaussian"): GaussianPlay,
+    ("parametric_pulse", "drag"): GaussianPlay,
     ("parametric_pulse", "wacqt_cz_gate_pulse"): WacqtCZPlay,
 }
 

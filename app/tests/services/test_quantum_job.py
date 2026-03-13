@@ -68,6 +68,15 @@ def _dummy_qobj(mem_slots: int, qubits: List[int], slots: List[int] | None = Non
     )
 
 
+def _dummy_calibration(qubits: List[int]):
+    qubit_list = []
+    for qubit_id in qubits:
+        qubit = SimpleNamespace(name="qubit", id=qubit_id)
+        qubit_list.append(qubit)
+    calibration = SimpleNamespace(name="calibration", qubits=qubit_list)
+    return calibration
+
+
 @pytest.mark.parametrize(
     "mem_slots, channels, byteorder, expected_hex",
     [
@@ -98,8 +107,9 @@ def test_discriminate_various_subsets(mem_slots, channels, byteorder, expected_h
     ds = _make_qdataset(channels)
     raw_results = {"exp~0": ds}
 
+    qubits = sorted(channels.keys())
     # minimal dummy PulseQobj with matching acquire information
-    qobj = _dummy_qobj(mem_slots, sorted(channels.keys()))
+    qobj = _dummy_qobj(mem_slots, qubits)
 
     # assemble the QuantumJob
     job = QuantumJob(
@@ -117,16 +127,24 @@ def test_discriminate_various_subsets(mem_slots, channels, byteorder, expected_h
     def disc(idx, iq):
         return iq.astype(np.int8)
 
-    got = discriminate_results(job, disc, byteorder=byteorder)
+    qubits = list(range(max(qubits) + 1))
+
+    calibration = _dummy_calibration(qubits=qubits)
+
+    got = discriminate_results(job, disc, byteorder=byteorder, calibration=calibration)
+
     assert got == [expected_hex]
 
 
 def test_discriminate_compacted_mapping():
     # slot 0 contains bits for qubit 1, slot 1 contains bits for qubit 3
-    ds = _make_qdataset({0: np.array([0, 1]), 1: np.array([1, 0])})
+    # NB: we changed behavior of discriminated output to return only consecutive registers
+    # and metadata in qobj will help SDK to decode acq indexes back to circuit-level measurement registers
+    ds = _make_qdataset({12: np.array([0, 1]), 14: np.array([1, 0])})
     raw_results = {"exp~0": ds}
+    qubits = [1, 3]
 
-    qobj = _dummy_qobj(mem_slots=4, qubits=[1, 3], slots=[0, 1])
+    qobj = _dummy_qobj(mem_slots=4, qubits=qubits, slots=[0, 1])
 
     job = QuantumJob(
         tuid="t",
@@ -142,7 +160,12 @@ def test_discriminate_compacted_mapping():
     def disc(idx, iq):
         return iq.astype(np.int8)
 
-    got = discriminate_results(job, disc, byteorder=ByteOrder.LITTLE_ENDIAN)
+    quantify_qubits = [11, 12, 13, 14]
+    calibration = _dummy_calibration(qubits=quantify_qubits)
+
+    got = discriminate_results(
+        job, disc, byteorder=ByteOrder.LITTLE_ENDIAN, calibration=calibration
+    )
 
     # Register length 4, bits at slots 0 and 1 only:
     # rep0: slot0=0, slot1=1 => 0b0010 => 0x2

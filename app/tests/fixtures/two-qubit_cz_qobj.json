@@ -1,247 +1,286 @@
 {
-    "job_id": "8153459b-b827-4ac7-a577-dc756617cdf4",
-    "params": {
-        "qobj": {
-            "qobj_id": "8153459b-b827-4ac7-a577-dc756617cdf4",
-            "header": {
-                "backend_name": "quantify",
-                "backend_version": "1.0.0"
+  "job_id": "8153459b-b827-4ac7-a577-dc756617cdf4",
+  "params": {
+    "qobj": {
+      "qobj_id": "48a7b10a-fb5c-4bfe-a879-b1945d1bbfd7",
+      "header": {
+        "backend_name": "quantify",
+        "backend_version": "1.0.0"
+      },
+      "config": {
+        "meas_level": 2,
+        "meas_return": "single",
+        "pulse_library": [],
+        "qubit_lo_freq": [
+          0.0,
+          0.0
+        ],
+        "meas_lo_freq": [
+          0.0,
+          0.0
+        ],
+        "memory_slot_size": 100,
+        "shots": 1024,
+        "memory_slots": 2,
+        "memory": false,
+        "parametric_pulses": [
+          "constant",
+          "zero",
+          "square",
+          "sawtooth",
+          "triangle",
+          "cos",
+          "sin",
+          "gaussian",
+          "gaussian_deriv",
+          "sech",
+          "sech_deriv",
+          "gaussian_square",
+          "drag",
+          "wacqt_cz_gate_pulse"
+        ],
+        "init_qubits": true,
+        "n_qubits": 2
+      },
+      "schema_version": "1.2.0",
+      "type": "PULSE",
+      "experiments": [
+        {
+          "instructions": [
+            {
+              "name": "fc",
+              "t0": 0,
+              "ch": "d0",
+              "phase": 1.5707963268
             },
-            "config": {
-                "meas_level": 2,
-                "meas_return": "single",
-                "pulse_library": [],
-                "qubit_lo_freq": [
-                    0.0,
-                    0.0
-                ],
-                "meas_lo_freq": [
-                    0.0,
-                    0.0
-                ],
-                "memory_slot_size": 100,
-                "shots": 1024,
-                "memory_slots": 2,
-                "memory": false,
-                "parametric_pulses": [
-                    "constant",
-                    "zero",
-                    "square",
-                    "sawtooth",
-                    "triangle",
-                    "cos",
-                    "sin",
-                    "gaussian",
-                    "gaussian_deriv",
-                    "sech",
-                    "sech_deriv",
-                    "gaussian_square",
-                    "drag",
-                    "wacqt_cz_gate_pulse"
-                ],
-                "init_qubits": true,
-                "n_qubits": 2
+            {
+              "name": "setf",
+              "t0": 0,
+              "ch": "d0",
+              "frequency": 4.734863037902449
             },
-            "schema_version": "1.2.0",
-            "type": "PULSE",
-            "experiments": [
-                {
-                    "instructions": [
-                        {
-                            "name": "fc",
-                            "t0": 0,
-                            "ch": "d0",
-                            "phase": 1.5707963268
-                        },
-                        {
-                            "name": "setf",
-                            "t0": 0,
-                            "ch": "d0",
-                            "frequency": 4.8
-                        },
-                        {
-                            "name": "fc",
-                            "t0": 0,
-                            "ch": "d1",
-                            "phase": 1.5707963268
-                        },
-                        {
-                            "name": "setf",
-                            "t0": 0,
-                            "ch": "d1",
-                            "frequency": 4.23
-                        },
-                        {
-                            "name": "parametric_pulse",
-                            "t0": 0,
-                            "ch": "d0",
-                            "pulse_shape": "gaussian",
-                            "parameters": {
-                                "duration": 14,
-                                "sigma": 2,
-                                "amp": [
-                                    0.015,
-                                    0.0
-                                ]
-                            }
-                        },
-                        {
-                            "name": "parametric_pulse",
-                            "t0": 0,
-                            "ch": "d1",
-                            "pulse_shape": "gaussian",
-                            "parameters": {
-                                "duration": 14,
-                                "sigma": 2,
-                                "amp": [
-                                    0.015,
-                                    0.0
-                                ]
-                            }
-                        },
-                        {
-                            "name": "fc",
-                            "t0": 14,
-                            "ch": "d0",
-                            "phase": 1.5707963268
-                        },
-                        {
-                            "name": "fc",
-                            "t0": 14,
-                            "ch": "d0",
-                            "phase": 0.3
-                        },
-                        {
-                            "name": "fc",
-                            "t0": 14,
-                            "ch": "d1",
-                            "phase": 1.5707963268
-                        },
-                        {
-                            "name": "fc",
-                            "t0": 14,
-                            "ch": "d1",
-                            "phase": 0.6
-                        },
-                        {
-                            "name": "setf",
-                            "t0": 14,
-                            "ch": "u0",
-                            "frequency": 3.9
-                        },
-                        {
-                            "name": "parametric_pulse",
-                            "t0": 14,
-                            "ch": "u0",
-                            "pulse_shape": "wacqt_cz_gate_pulse",
-                            "parameters": {
-                                "duration": 134,
-                                "delta_0": 0.08,
-                                "Theta": 0.002,
-                                "omega_c0": 24504422698.000385,
-                                "omega_Phi": -2528274122.8718343,
-                                "phi": 0.0,
-                                "t_w": 8e-08,
-                                "t_rf": 2.5e-08,
-                                "t_p": 3.5e-07,
-                                "amp": [
-                                    0.08,
-                                    0.0
-                                ],
-                                "freq": 3900000000
-                            }
-                        },
-                        {
-                            "name": "fc",
-                            "t0": 148,
-                            "ch": "d1",
-                            "phase": 1.5707963268
-                        },
-                        {
-                            "name": "setf",
-                            "t0": 148,
-                            "ch": "d1",
-                            "frequency": 4.23
-                        },
-                        {
-                            "name": "parametric_pulse",
-                            "t0": 148,
-                            "ch": "d1",
-                            "pulse_shape": "gaussian",
-                            "parameters": {
-                                "duration": 14,
-                                "sigma": 2,
-                                "amp": [
-                                    0.015,
-                                    0.0
-                                ]
-                            }
-                        },
-                        {
-                            "name": "fc",
-                            "t0": 162,
-                            "ch": "d1",
-                            "phase": 1.5707963268
-                        },
-                        {
-                            "name": "setf",
-                            "t0": 162,
-                            "ch": "m0",
-                            "frequency": 6.8
-                        },
-                        {
-                            "name": "setf",
-                            "t0": 162,
-                            "ch": "m1",
-                            "frequency": 6.8
-                        },
-                        {
-                            "name": "parametric_pulse",
-                            "t0": 162,
-                            "ch": "m0",
-                            "pulse_shape": "constant",
-                            "parameters": {
-                                "duration": 250,
-                                "amp": [
-                                    0.2,
-                                    0.0
-                                ]
-                            }
-                        },
-                        {
-                            "name": "parametric_pulse",
-                            "t0": 162,
-                            "ch": "m1",
-                            "pulse_shape": "constant",
-                            "parameters": {
-                                "duration": 250,
-                                "amp": [
-                                    0.2,
-                                    0.0
-                                ]
-                            }
-                        },
-                        {
-                            "name": "acquire",
-                            "t0": 164,
-                            "duration": 300,
-                            "qubits": [
-                                0,
-                                1
-                            ],
-                            "memory_slot": [
-                                0,
-                                1
-                            ]
-                        }
-                    ],
-                    "header": {
-                        "memory_slots": 2,
-                        "name": "circuit-160",
-                        "metadata": {}
-                    }
-                }
-            ]
+            {
+              "name": "parametric_pulse",
+              "t0": 0,
+              "ch": "d0",
+              "pulse_shape": "drag",
+              "parameters": {
+                "duration": 56,
+                "sigma": 14,
+                "beta": -0.05384615384615388,
+                "amp": [
+                  0.2846075164,
+                  0.0
+                ]
+              }
+            },
+            {
+              "name": "fc",
+              "t0": 56,
+              "ch": "d0",
+              "phase": 1.5707963268
+            },
+            {
+              "name": "setf",
+              "t0": 56,
+              "ch": "u0",
+              "frequency": 4.17058
+            },
+            {
+              "name": "delay",
+              "t0": 56,
+              "ch": "d0",
+              "duration": 4
+            },
+            {
+              "name": "delay",
+              "t0": 56,
+              "ch": "d1",
+              "duration": 4
+            },
+            {
+              "name": "delay",
+              "t0": 56,
+              "ch": "u0",
+              "duration": 4
+            },
+            {
+              "name": "delay",
+              "t0": 60,
+              "ch": "d0",
+              "duration": 158
+            },
+            {
+              "name": "delay",
+              "t0": 60,
+              "ch": "d1",
+              "duration": 158
+            },
+            {
+              "name": "parametric_pulse",
+              "t0": 60,
+              "ch": "u0",
+              "pulse_shape": "wacqt_cz_gate_pulse",
+              "parameters": {
+                "duration": 158,
+                "delta_0": 0.19,
+                "Theta": -0.000355,
+                "omega_c0": 26204526978.417038,
+                "omega_Phi": -1959850239.3287506,
+                "phi": 0.0,
+                "t_w": 4e-09,
+                "t_rf": 0.0,
+                "t_p": 1.58e-07,
+                "amp": [
+                  0.19,
+                  0.0
+                ],
+                "freq": 4170580000
+              }
+            },
+            {
+              "name": "fc",
+              "t0": 218,
+              "ch": "d0",
+              "phase": 1.98968
+            },
+            {
+              "name": "fc",
+              "t0": 218,
+              "ch": "d1",
+              "phase": 4.31
+            },
+            {
+              "name": "delay",
+              "t0": 218,
+              "ch": "u0",
+              "duration": 4
+            },
+            {
+              "name": "fc",
+              "t0": 222,
+              "ch": "d1",
+              "phase": 1.5707963268
+            },
+            {
+              "name": "setf",
+              "t0": 222,
+              "ch": "d1",
+              "frequency": 4.252943184593444
+            },
+            {
+              "name": "parametric_pulse",
+              "t0": 222,
+              "ch": "d1",
+              "pulse_shape": "drag",
+              "parameters": {
+                "duration": 28,
+                "sigma": 7,
+                "beta": -0.015384615384615441,
+                "amp": [
+                  0.2479530966,
+                  0.0
+                ]
+              }
+            },
+            {
+              "name": "fc",
+              "t0": 250,
+              "ch": "d1",
+              "phase": 1.5707963268
+            },
+            {
+              "name": "setf",
+              "t0": 250,
+              "ch": "m0",
+              "frequency": 6.8
+            },
+            {
+              "name": "setf",
+              "t0": 250,
+              "ch": "m1",
+              "frequency": 6.8
+            },
+            {
+              "name": "delay",
+              "t0": 250,
+              "ch": "m0",
+              "duration": 4
+            },
+            {
+              "name": "delay",
+              "t0": 250,
+              "ch": "m1",
+              "duration": 4
+            },
+            {
+              "name": "parametric_pulse",
+              "t0": 254,
+              "ch": "m1",
+              "pulse_shape": "constant",
+              "parameters": {
+                "duration": 3000,
+                "amp": [
+                  0.015,
+                  0.0
+                ]
+              }
+            },
+            {
+              "name": "parametric_pulse",
+              "t0": 254,
+              "ch": "m0",
+              "pulse_shape": "constant",
+              "parameters": {
+                "duration": 3800,
+                "amp": [
+                  0.026,
+                  0.0
+                ]
+              }
+            },
+            {
+              "name": "acquire",
+              "t0": 454,
+              "duration": 3600,
+              "qubits": [
+                0
+              ],
+              "memory_slot": [
+                0
+              ]
+            },
+            {
+              "name": "acquire",
+              "t0": 474,
+              "duration": 2500,
+              "qubits": [
+                1
+              ],
+              "memory_slot": [
+                1
+              ]
+            }
+          ],
+          "header": {
+            "memory_slots": 2,
+            "name": "circuit-160",
+            "metadata": {
+              "tergite": {
+                "c_reg_len": 2,
+                "q_to_c": {
+                  "0": 0,
+                  "1": 1
+                },
+                "meas_qubits_by-clbit": [
+                  0,
+                  1
+                ]
+              }
+            }
+          }
         }
+      ]
     }
+  }
 }

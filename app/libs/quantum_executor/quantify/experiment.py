@@ -18,9 +18,10 @@
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set, Tuple, Type
+from typing import Dict, Iterable, List, Mapping, Optional, Set, Tuple, Type
 
 from qiskit.qobj import (
     PulseQobjConfig,
@@ -36,6 +37,7 @@ from app.libs.quantum_executor.base.experiment import (
     NativeExperiment,
     copy_expt_header_with,
 )
+from app.libs.quantum_executor.quantify.channel import QuantifyChannel
 
 from ..base.quantum_job.dtos import NativeQobjConfig
 from .channel import QuantifyChannelRegistry
@@ -64,6 +66,7 @@ _INSTRUCTION_PULSE_MAP: Dict[Tuple[str, Optional[str]], Type[BaseInstruction]] =
     ("delay", None): DelayInstruction,
     ("acquire", None): AcquireInstruction,
     ("parametric_pulse", "gaussian"): GaussPulseInstruction,
+    ("parametric_pulse", "drag"): GaussPulseInstruction,
     ("parametric_pulse", "constant"): SquarePulseInstruction,
     ("parametric_pulse", "wacqt_cz"): WacqtCZPulseInstruction,
     ("parametric_pulse", "wacqt_cz_gate_pulse"): WacqtCZPulseInstruction,
@@ -331,22 +334,19 @@ def _construct_schedule(
     """
 
     def to_tick(t: float) -> int:
-        return int(round(t / timegrid_interval))
+        return int(math.floor(t / timegrid_interval + 0.5 + 1e-12))
 
     def from_tick(k: int) -> float:
         return k * timegrid_interval
-
-    root_end_tick = to_tick(float(getattr(root_op, "duration", 0.0) or 0.0))
 
     # Group instructions by (clock, slot_tick)
     by_clock_slot: Dict[str, Dict[int, List[Tuple[BaseInstruction, bool]]]] = {}
     last_slot_by_clock: Dict[str, int] = {}
     slots: Set[int] = set()
     clocks_in_order: List[str] = [p.clock for p in channel_plans]
-    slot_map: Dict[int, List[Tuple[BaseInstruction, bool]]] = defaultdict(list)
 
     for plan in channel_plans:
-        slot_map = defaultdict(list)
+        slot_map: Dict[int, List[Tuple[BaseInstruction, bool]]] = defaultdict(list)
         max_slot = -1
         for inst in plan.schedulable:
             s = to_tick(inst.t0)

@@ -79,6 +79,14 @@ QUANTIFY_CONFIG_FILE="quantify-config.json"
 #
 # Default: "quantify-metadata.yml"
 QUANTIFY_METADATA_FILE="quantify-metadata.yml"
+# Whether the clusters (especially on quantify executor) can be reset
+#
+# Default: False
+SHOULD_RESET_CLUSTER=False
+# Whether to SPI currents should be restored especially for the quantify executor
+#
+# Default: False
+SHOULD_RESTORE_CURRENTS=False
 
 # (6) Authentication
 # The private key for authenticating this backend to MSS
