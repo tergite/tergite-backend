@@ -64,6 +64,7 @@ class QuantifyExecutor(QuantumExecutor):
         *,
         should_restore_currents: bool = False,
         reset: bool = False,
+        are_clusters_resettable: bool = False,
     ):
         """
         Args:
@@ -72,11 +73,13 @@ class QuantifyExecutor(QuantumExecutor):
             backend_config: the general backend configuration regardless of executor type
             should_restore_currents: whether to restore current state; default = False
             reset: whether to reset the whole executor; default = False
+            are_clusters_resettable: whether the clusters can be reset for this executor; default = False
         """
         self.quantify_config = load_quantify_config(quantify_config_file)
         self.quantify_metadata = QuantifyMetadata.from_yaml(quantify_metadata_file)
         self.device_name = backend_config.general_config.name
         self.should_restore_currents = should_restore_currents
+        self.are_clusters_resettable = are_clusters_resettable
 
         qubit_ids = backend_config.device_config.qubit_ids
         coupling_dict = backend_config.device_config.coupling_dict
@@ -117,7 +120,7 @@ class QuantifyExecutor(QuantumExecutor):
 
             clusters = self.quantify_metadata.get_clusters()
             for cluster in clusters:
-                if reset:
+                if reset and are_clusters_resettable:
                     cluster.reset()  # resets cluster for consistency
 
                 cluster_component = ClusterComponent(cluster)

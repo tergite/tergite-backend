@@ -333,6 +333,7 @@ def init_executor(options: ExecutorOptions, reset: bool = False) -> QuantumExecu
         backend_config=backend_config,
         reset=reset,
         should_restore_currents=options.should_restore_currents,
+        are_clusters_resettable=options.are_clusters_resettable,
     )
 
 

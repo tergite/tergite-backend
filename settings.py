@@ -167,7 +167,7 @@ QUANTIFY_METADATA_FILE = config(
 
 # If set to true, it should write currents to redis and return them to previous values during circuit execution
 SHOULD_RESTORE_CURRENTS = config("SHOULD_RESTORE_CURRENTS", cast=bool, default=False)
-SHOULD_RESET_CLUSTER = config("SHOULD_RESET_CLUSTER", cast=bool, default=False)
+ARE_CLUSTERS_RESETTABLE = config("ARE_CLUSTERS_RESETTABLE", cast=bool, default=False)
 
 # -------------
 # Redis config
