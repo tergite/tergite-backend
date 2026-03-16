@@ -18,6 +18,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Added `REQUEST_LOG_TTL` and `REQUEST_LOG_CLEAN_INTERVAL` to control the rate at which request logs are cleared
 - Added `JOBS_STORE_TTL` and `JOBS_STORE_CLEAN_INTERVAL` to control the rate at which old jobs data is cleared from redis store
 - Added TTL on `RedisStore`
+- Added motzoi parameter to the calibration config seed 
+- Added clock phase resets for all drive channels before running each job
 
 ### Changed
 
@@ -27,11 +29,19 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Changed connection to MSS to use RSA-secured websockets instead of RESTful HTTP requests
 - Fixed issue with executor being re-initialized on every job submission
 - Refactored SpiDAC code to be less dependent on global variables but to be fully dependent on the parent executor
+- Replaced Gaussian pulse with DRAG pulse for quantify executor
+- Changed `discriminate_results` in `quantum_job` to explicitly map quantify qubits ids to qobj qubit ids
+- Changed `ShiftPhase` Instruction in Quantify to convert radians to degrees
+- Changed quantify executor initialization to allow skipping cluster reset for stability
 
 ### Fixed
 
 - Fixed 'Error 111 connecting to localhost:6379' when only RQ_REDIS_URL is provided
 - Fixed KeyError 'edges' due to new version of networkx
+- Fixed qobj to quantify scheduling mapping issue by adding barrier, dispatch and sync compensations in quantify executor
+- Fixed SPI_Dac logic allowing to restore currents to values recorded before running a job 
+- Fixed `WacqtCZPulse` Instruction for quantify backend to use SoftSquare pulse instead of numerical waveform
+- Fixed `discriminate_results` in `quantum_job` scripts to properly process circuit_level acquisition requirements 
 
 ## [2025.09.1] - 2025-11-06
 
