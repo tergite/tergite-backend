@@ -9,6 +9,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [2026.03.1] - 2026-03-17
 
+### Added
+
+- Added rq queue default timeouts set from environment vars 
+  `MAX_EXECUTION_TIME`, `MAX_PREPROCESSING_TIME`, `MAX_POSTPROCESSING_TIME` and `MAX_GENERAL_QUEUE_TIME`
+
 ### Fixed
 
 - Add beta qobj parameters for gaussian pulse for compatibility with new SDK-level drag instruction

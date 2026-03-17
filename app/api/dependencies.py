@@ -85,6 +85,10 @@ async def lifespan(app: FastAPI):
         "preprocessing_folder": f"{settings.PREPROCESSED_JOB_POOL}",
         "job_upload_folder": f"{settings.JOB_UPLOAD_POOL}",
         "executor_options": executor_options,
+        "preprocessing_timeout": settings.MAX_PREPROCESSING_TIME,
+        "execution_timeout": settings.MAX_EXECUTION_TIME,
+        "postprocessing_timeout": settings.MAX_POSTPROCESSING_TIME,
+        "general_queue_timeout": settings.MAX_GENERAL_QUEUE_TIME,
     }
 
     with get_redis_connection(settings.RQ_REDIS_URL, is_async=False) as redis_conn:
