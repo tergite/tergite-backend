@@ -7,9 +7,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.03.1] - 2026-03-17
+
 ### Fixed
 
-## [2026.03.1] - 2026-03-17
 - Add beta qobj parameters for gaussian pulse for compatibility with new SDK-level drag instruction
 
 ## [2026.03.0] - 2026-03-16
