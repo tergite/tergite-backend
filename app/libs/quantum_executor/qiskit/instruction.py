@@ -51,7 +51,7 @@ class GaussianPlay(qiskit_pulse.Play, QiskitDynamicsInstruction):
         duration: Union[int, ParameterExpression],
         amp: Union[ParameterExpression, float],
         sigma: Union[ParameterExpression, float],
-        beta: Union[ParameterExpression, float],
+        beta: Union[ParameterExpression, float, None] = None,
         angle: Union[ParameterExpression, float, None] = None,
         name: Optional[str] = None,
         limit_amplitude: Optional[bool] = None,
