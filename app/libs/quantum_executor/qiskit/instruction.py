@@ -223,8 +223,8 @@ class Delay(qiskit_pulse.Delay, QiskitDynamicsInstruction):
 
     @classmethod
     def from_qobj(cls, qobj_inst: PulseQobjInstruction) -> "Delay":
-        params = qobj_inst.parameters or {}
-        duration = params.get("duration", qobj_inst.duration)
+        params = getattr(qobj_inst, "parameters", {})
+        duration = params.get("duration", getattr(qobj_inst, "duration", 0))
         channel = _get_channel(qobj_inst)
         return cls(
             duration=duration,
