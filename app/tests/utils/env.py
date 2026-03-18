@@ -82,6 +82,11 @@ TEST_LOG_LEVEL = os.getenv("LOG_LEVEL", "ERROR")
 TEST_DEBUG = os.getenv("DEBUG", "False")
 TEST_RQ_MAX_QUEUE_WAIT_TIME = int(os.getenv("TEST_RQ_MAX_QUEUE_WAIT_TIME", "40"))
 
+TEST_MAX_PREPROCESSING_TIME = int(os.getenv("MAX_PREPROCESSING_TIME", "300"))
+TEST_MAX_EXECUTION_TIME = int(os.getenv("MAX_EXECUTION_TIME", "600"))
+TEST_MAX_POSTPROCESSING_TIME = int(os.getenv("MAX_POSTPROCESSING_TIME", "180"))
+TEST_MAX_GENERAL_QUEUE_TIME = int(os.getenv("MAX_GENERAL_QUEUE_TIME", "180"))
+
 
 def setup_test_env():
     """Sets up the test environment.
@@ -114,6 +119,10 @@ def setup_test_env():
     environ["MAX_TIME_SLOT_LENGTH"] = f"{TEST_MAX_TIME_SLOT_LENGTH}"
     environ["MIN_TIME_SLOT_LENGTH"] = f"{TEST_MIN_TIME_SLOT_LENGTH}"
     environ["MAX_SLOTS_PER_DAY"] = f"{TEST_MAX_SLOTS_PER_DAY}"
+    environ["MAX_EXECUTION_TIME"] = f"{TEST_MAX_EXECUTION_TIME}"
+    environ["MAX_POSTPROCESSING_TIME"] = f"{TEST_MAX_POSTPROCESSING_TIME}"
+    environ["MAX_PREPROCESSING_TIME"] = f"{TEST_MAX_PREPROCESSING_TIME}"
+    environ["MAX_GENERAL_QUEUE_TIME"] = f"{TEST_MAX_GENERAL_QUEUE_TIME}"
     environ["MAX_IDLE_TIME"] = f"{TEST_MAX_IDLE_TIME}"
     environ["IS_ASYNC"] = f"{TEST_IS_ASYNC}"
     environ["BOOKING_DB_URL"] = f"{TEST_BOOKING_DB_URL}"

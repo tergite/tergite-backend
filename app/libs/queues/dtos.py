@@ -504,6 +504,11 @@ class QueueContext(TypedDict):
         force_normal_queue: the flag for whether to force the usage of the normal queue
         max_idle_time: the maximum time a booking can remain idle
         is_async: whether jobs should be run in async workers or in the same process; good for testing
+        executor_options: the options used when initializing the executor
+        preprocessing_timeout: the maximum time tasks should run on the preprocessing queue
+        execution_timeout: the maximum time tasks should run on the execution queue
+        postprocessing_timeout: the maximum time tasks should run on the postprocessing queue
+        general_queue_timeout: the maximum time tasks should run on the general queue
     """
 
     queue_prefix: str
@@ -516,6 +521,10 @@ class QueueContext(TypedDict):
     max_idle_time: int
     is_async: bool
     executor_options: ExecutorOptions
+    execution_timeout: int
+    preprocessing_timeout: int
+    postprocessing_timeout: int
+    general_queue_timeout: int
 
 
 _STAGE_VERBOSE_NAME_MAP: Dict[Stage, str] = {

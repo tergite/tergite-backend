@@ -144,6 +144,26 @@ UVICORN_LOG_LEVEL=info
 # default: 900 i.e. 15 minutes
 MAX_IDLE_TIME=900
 
+# Maximum time in seconds jobs on the execution queue should take
+#
+# default: 10 minutes
+MAX_EXECUTION_TIME=600
+
+# Maximum time in seconds jobs on the preprocessing queue should take
+#
+# default: 5 minutes
+MAX_PREPROCESSING_TIME=300
+
+# Maximum time in seconds jobs on the postprocessing queue should take
+#
+# default: 3 minutes
+MAX_POSTPROCESSING_TIME=180
+
+# Maximum time in seconds jobs on the general queue should take
+#
+# default: 3 minutes
+MAX_GENERAL_QUEUE_TIME=180
+
 # Whether the jobs should be run in the same main process (synchronously) or on workers (asynchronously)
 # this is useful for testing rq
 # default: True

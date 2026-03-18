@@ -192,13 +192,17 @@ def reset_idleness_timer(
     queue_prefix = context["queue_prefix"]
     is_async = context["is_async"]
     booking_db_url = context["booking_db_url"]
+    general_queue_timeout = context["general_queue_timeout"]
     if max_idle_time is None:
         max_idle_time = context["max_idle_time"]
 
     bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
     redis_connection = get_current_job().connection
     general_queue = get_general_queue(
-        prefix=queue_prefix, connection=redis_connection, is_async=is_async
+        prefix=queue_prefix,
+        connection=redis_connection,
+        default_timeout=general_queue_timeout,
+        is_async=is_async,
     )
 
     booking = get_booking(bookings_sql_engine, Booking.id == booking_id)
@@ -252,6 +256,7 @@ def execute(
     jobs_store = get_jobs_store(url=context["jobs_store_url"])
     preprocessing_dir = Path(context["preprocessing_folder"])
     executor_options = context["executor_options"]
+    postprocessing_timeout = context["postprocessing_timeout"]
 
     try:
         update_job_stage(jobs_store, job_id=job_id, stage=Stage.EXEC_W)
@@ -266,7 +271,10 @@ def execute(
             raise JobAlreadyCancelled("cancelled")
 
         postproc_queue = get_postprocessing_queue(
-            prefix=queue_prefix, connection=connection, is_async=is_async
+            prefix=queue_prefix,
+            connection=connection,
+            default_timeout=postprocessing_timeout,
+            is_async=is_async,
         )
         job = update_job_stage(jobs_store, job_id=job_id, stage=Stage.PST_PROC_Q)
         postproc_queue.enqueue(
@@ -455,6 +463,7 @@ def _try_enqueue_on_normal_queue(
     booking_db_url = context["booking_db_url"]
     queue_prefix = context["queue_prefix"]
     is_async = context["is_async"]
+    execution_timeout = context["execution_timeout"]
     job_id = job.job_id
 
     bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
@@ -464,7 +473,10 @@ def _try_enqueue_on_normal_queue(
 
     connection = get_current_job().connection
     queue = get_normal_execution_queue(
-        prefix=queue_prefix, connection=connection, is_async=is_async
+        prefix=queue_prefix,
+        connection=connection,
+        default_timeout=execution_timeout,
+        is_async=is_async,
     )
 
     if next_booking:
@@ -514,6 +526,7 @@ def _try_enqueue_on_booked_queue(
 
     queue_prefix = context["queue_prefix"]
     is_async = context["is_async"]
+    execution_timeout = context["execution_timeout"]
     force_normal_queue = context.get("force_normal_queue")
     user_id = job.user_id
     booking_db_url = context["booking_db_url"]
@@ -528,7 +541,10 @@ def _try_enqueue_on_booked_queue(
 
     connection = get_current_job().connection
     queue = get_booked_execution_queue(
-        prefix=queue_prefix, connection=connection, is_async=is_async
+        prefix=queue_prefix,
+        connection=connection,
+        default_timeout=execution_timeout,
+        is_async=is_async,
     )
 
     usable_time = 0
@@ -620,13 +636,17 @@ def _pop_waitlist_to_booking(
     jobs_store_url = context["jobs_store_url"]
     queue_prefix = context["queue_prefix"]
     is_async = context["is_async"]
+    execution_timeout = context["execution_timeout"]
     connection = get_current_job().connection
 
     waitlist = get_waitlist(prefix=queue_prefix, connection=connection)
     bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
     job_store = get_jobs_store(jobs_store_url)
     queue = get_booked_execution_queue(
-        prefix=queue_prefix, connection=connection, is_async=is_async
+        prefix=queue_prefix,
+        connection=connection,
+        default_timeout=execution_timeout,
+        is_async=is_async,
     )
 
     usable_time = float("inf")
@@ -674,6 +694,7 @@ def _pop_waitlist_to_normal_queue(context: QueueContext):
     booking_db_url = context["booking_db_url"]
     jobs_store_url = context["jobs_store_url"]
     queue_prefix = context["queue_prefix"]
+    execution_timeout = context["execution_timeout"]
     is_async = context["is_async"]
     redis_connection = get_current_job().connection
 
@@ -687,7 +708,10 @@ def _pop_waitlist_to_normal_queue(context: QueueContext):
 
     job_tuples = waitlist.pop_many(max_total_duration=max_total_duration)
     normal_queue = get_normal_execution_queue(
-        prefix=queue_prefix, connection=redis_connection, is_async=is_async
+        prefix=queue_prefix,
+        connection=redis_connection,
+        default_timeout=execution_timeout,
+        is_async=is_async,
     )
     for job, args, kwargs in job_tuples:
         job = update_job_stage(job_store, job_id=job.job_id, stage=Stage.EXEC_Q)

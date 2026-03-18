@@ -5,6 +5,10 @@ from .utils.env import (
     TEST_DEFAULT_PREFIX_SIM_1Q,
     TEST_DEFAULT_PREFIX_SIM_2Q,
     TEST_LOGFILE_DOWNLOAD_POOL_DIRNAME,
+    TEST_MAX_EXECUTION_TIME,
+    TEST_MAX_GENERAL_QUEUE_TIME,
+    TEST_MAX_POSTPROCESSING_TIME,
+    TEST_MAX_PREPROCESSING_TIME,
     TEST_QISKIT_1Q_SEED_FILE,
     TEST_QISKIT_2Q_SEED_FILE,
     TEST_QUANTIFY_SEED_FILE,
@@ -153,7 +157,13 @@ def redis_client() -> Generator[Redis, Any, None]:
 def rq_worker(redis_client) -> Generator[SimpleWorker, Any, None]:
     """Get the rq worker for running async tasks asynchronously for the default backend"""
     queue_pool = QueuePool(
-        prefix=TEST_DEFAULT_PREFIX, connection=redis_client, is_async=True
+        prefix=TEST_DEFAULT_PREFIX,
+        connection=redis_client,
+        is_async=True,
+        execution_timeout=TEST_MAX_EXECUTION_TIME,
+        preprocessing_timeout=TEST_MAX_PREPROCESSING_TIME,
+        postprocessing_timeout=TEST_MAX_POSTPROCESSING_TIME,
+        general_queue_timeout=TEST_MAX_GENERAL_QUEUE_TIME,
     )
     yield get_rq_pool_worker(queue_pool)
 
@@ -162,7 +172,13 @@ def rq_worker(redis_client) -> Generator[SimpleWorker, Any, None]:
 def rq_worker_for_simulator_1q(redis_client) -> Generator[SimpleWorker, Any, None]:
     """Get the rq worker for running async tasks asynchronously for the 1 qubit simulator"""
     queue_pool = QueuePool(
-        prefix=TEST_DEFAULT_PREFIX_SIM_1Q, connection=redis_client, is_async=True
+        prefix=TEST_DEFAULT_PREFIX_SIM_1Q,
+        connection=redis_client,
+        is_async=True,
+        execution_timeout=TEST_MAX_EXECUTION_TIME,
+        preprocessing_timeout=TEST_MAX_PREPROCESSING_TIME,
+        postprocessing_timeout=TEST_MAX_POSTPROCESSING_TIME,
+        general_queue_timeout=TEST_MAX_GENERAL_QUEUE_TIME,
     )
     yield get_rq_pool_worker(queue_pool)
 
@@ -171,7 +187,13 @@ def rq_worker_for_simulator_1q(redis_client) -> Generator[SimpleWorker, Any, Non
 def rq_worker_for_simulator_2q(redis_client) -> Generator[SimpleWorker, Any, None]:
     """Get the rq worker for running async tasks asynchronously for the 2 qubit simulator"""
     queue_pool = QueuePool(
-        prefix=TEST_DEFAULT_PREFIX_SIM_2Q, connection=redis_client, is_async=True
+        prefix=TEST_DEFAULT_PREFIX_SIM_2Q,
+        connection=redis_client,
+        is_async=True,
+        execution_timeout=TEST_MAX_EXECUTION_TIME,
+        preprocessing_timeout=TEST_MAX_PREPROCESSING_TIME,
+        postprocessing_timeout=TEST_MAX_POSTPROCESSING_TIME,
+        general_queue_timeout=TEST_MAX_GENERAL_QUEUE_TIME,
     )
     yield get_rq_pool_worker(queue_pool)
 

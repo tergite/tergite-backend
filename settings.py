@@ -196,6 +196,20 @@ MAX_SLOTS_PER_DAY = max(0, config("MAX_SLOTS_PER_DAY", cast=int, default=1))
 # default: 15 minutes
 MAX_IDLE_TIME = max(0, config("MAX_IDLE_TIME", cast=int, default=900))
 
+# default: 10 minutes
+MAX_EXECUTION_TIME = max(0, config("MAX_EXECUTION_TIME", cast=int, default=600))
+
+# default: 5 minutes
+MAX_PREPROCESSING_TIME = max(0, config("MAX_PREPROCESSING_TIME", cast=int, default=300))
+
+# default: 3 minutes
+MAX_POSTPROCESSING_TIME = max(
+    0, config("MAX_POSTPROCESSING_TIME", cast=int, default=180)
+)
+
+# default: 3 minutes
+MAX_GENERAL_QUEUE_TIME = max(0, config("MAX_GENERAL_QUEUE_TIME", cast=int, default=180))
+
 # default: True
 IS_ASYNC = config("IS_ASYNC", cast=bool, default="True")
 

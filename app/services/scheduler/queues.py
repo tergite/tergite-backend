@@ -42,31 +42,59 @@ class QueuePool:
         general: the queue for running any other kind of task
     """
 
-    def __init__(self, prefix: str, connection: "Redis", is_async: bool = True):
+    def __init__(
+        self,
+        prefix: str,
+        connection: "Redis",
+        preprocessing_timeout: int,
+        execution_timeout: int,
+        postprocessing_timeout: int,
+        general_queue_timeout: int,
+        is_async: bool = True,
+    ):
         """
         Args:
             prefix: the prefix for the names of the expected queues
             connection: the connection to Redis
             is_async: whether to dispatch the enqueued tasks in other workers
+            preprocessing_timeout: maximum time jobs spend preprocessing
+            execution_timeout: maximum time jobs spend executing
+            postprocessing_timeout: maximum time jobs spend postprocessing
+            general_queue_timeout: maximum time tasks spend on general queue
         """
         self._connection = connection
         self._is_async = is_async
 
         # runner queues
         self.preprocessing = get_preprocessing_queue(
-            prefix, connection=connection, is_async=is_async
+            prefix,
+            connection=connection,
+            default_timeout=preprocessing_timeout,
+            is_async=is_async,
         )
         self.normal_execution = get_normal_execution_queue(
-            prefix, connection=connection, is_async=is_async
+            prefix,
+            connection=connection,
+            default_timeout=execution_timeout,
+            is_async=is_async,
         )
         self.booked_execution = get_booked_execution_queue(
-            prefix, connection=connection, is_async=is_async
+            prefix,
+            connection=connection,
+            default_timeout=execution_timeout,
+            is_async=is_async,
         )
         self.general = get_general_queue(
-            prefix, connection=connection, is_async=is_async
+            prefix,
+            connection=connection,
+            default_timeout=general_queue_timeout,
+            is_async=is_async,
         )
         self.postprocessing = get_postprocessing_queue(
-            prefix, connection=connection, is_async=is_async
+            prefix,
+            connection=connection,
+            default_timeout=postprocessing_timeout,
+            is_async=is_async,
         )
 
         # static queues
@@ -78,6 +106,10 @@ class QueuePool:
         return cls(
             prefix=settings.DEFAULT_PREFIX,
             connection=get_redis_connection(settings.RQ_REDIS_URL),
+            preprocessing_timeout=settings.MAX_PREPROCESSING_TIME,
+            execution_timeout=settings.MAX_EXECUTION_TIME,
+            postprocessing_timeout=settings.MAX_POSTPROCESSING_TIME,
+            general_queue_timeout=settings.MAX_GENERAL_QUEUE_TIME,
             is_async=settings.IS_ASYNC,
         )
 
@@ -96,7 +128,11 @@ def get_waitlist(prefix: str, connection: Redis) -> StaticQueue:
 
 
 def get_preprocessing_queue(
-    prefix: str, connection: Redis, is_async: bool = True, **kwargs
+    prefix: str,
+    connection: Redis,
+    default_timeout: int,
+    is_async: bool = True,
+    **kwargs,
 ) -> RunnerQueue:
     """Gets the queue for preprocessing
 
@@ -105,8 +141,8 @@ def get_preprocessing_queue(
         connection: the redis connection instance where the queue is hosted
         is_async: whether the actual queue should be created or
             a dummy one running in the same process to use for testing
+        default_timeout: the default maximum time a job can take on this queue
         kwargs: other options to pass to the Queue e.g.
-            - default_timeout: Optional[int] = None,
             - is_async: bool = True,
             - job_class: Optional[Union[str, type['Job']]] = None,
             - serializer: Optional[Union[Serializer, str]] = None,
@@ -120,12 +156,20 @@ def get_preprocessing_queue(
     """
     kwargs["job_executor_func"] = preprocess
     return RunnerQueue(
-        f"{prefix}_preprocessing", connection, is_async=is_async, **kwargs
+        f"{prefix}_preprocessing",
+        connection,
+        default_timeout=default_timeout,
+        is_async=is_async,
+        **kwargs,
     )
 
 
 def get_normal_execution_queue(
-    prefix: str, connection: Redis, is_async: bool = True, **kwargs
+    prefix: str,
+    connection: Redis,
+    default_timeout: int,
+    is_async: bool = True,
+    **kwargs,
 ) -> RunnerQueue:
     """Gets the queue for executing on the normal queue
 
@@ -134,8 +178,8 @@ def get_normal_execution_queue(
         connection: the redis connection instance where the queue is hosted
         is_async: whether the actual queue should be created or
             a dummy one running in the same process to use for testing
+        default_timeout: the default maximum time a job can take on this queue
         kwargs: other options to pass to the Queue e.g.
-            - default_timeout: Optional[int] = None,
             - is_async: bool = True,
             - job_class: Optional[Union[str, type['Job']]] = None,
             - serializer: Optional[Union[Serializer, str]] = None,
@@ -149,22 +193,31 @@ def get_normal_execution_queue(
     """
     kwargs["job_executor_func"] = execute
     return RunnerQueue(
-        f"{prefix}_normal_execution", connection, is_async=is_async, **kwargs
+        f"{prefix}_normal_execution",
+        connection,
+        default_timeout=default_timeout,
+        is_async=is_async,
+        **kwargs,
     )
 
 
 def get_booked_execution_queue(
-    prefix: str, connection: Redis, is_async: bool = True, **kwargs
+    prefix: str,
+    connection: Redis,
+    default_timeout: int,
+    is_async: bool = True,
+    **kwargs,
 ) -> RunnerQueue:
     """Gets the queue for executing on the booked execution queue
 
     Args:
         prefix: the prefix to add to the name of the queue
         connection: the redis connection instance where the queue is hosted
+        default_timeout: the default timeout in seconds
         is_async: whether the actual queue should be created or
             a dummy one running in the same process to use for testing
+        default_timeout: the default maximum time a job can take on this queue
         kwargs: other options to pass to the Queue e.g.
-            - default_timeout: Optional[int] = None,
             - is_async: bool = True,
             - job_class: Optional[Union[str, type['Job']]] = None,
             - serializer: Optional[Union[Serializer, str]] = None,
@@ -178,12 +231,20 @@ def get_booked_execution_queue(
     """
     kwargs["job_executor_func"] = execute
     return RunnerQueue(
-        f"{prefix}_booked_execution", connection, is_async=is_async, **kwargs
+        f"{prefix}_booked_execution",
+        connection,
+        default_timeout=default_timeout,
+        is_async=is_async,
+        **kwargs,
     )
 
 
 def get_general_queue(
-    prefix: str, connection: Redis, is_async: bool = True, **kwargs
+    prefix: str,
+    connection: Redis,
+    default_timeout: int,
+    is_async: bool = True,
+    **kwargs,
 ) -> RqQueue:
     """Gets the queue for running general tasks
 
@@ -192,8 +253,8 @@ def get_general_queue(
         connection: the redis connection instance where the queue is hosted
         is_async: whether the actual queue should be created or
             a dummy one running in the same process to use for testing
+        default_timeout: the default maximum time a job can take on this queue
         kwargs: other options to pass to the Queue e.g.
-            - default_timeout: Optional[int] = None,
             - is_async: bool = True,
             - job_class: Optional[Union[str, type['Job']]] = None,
             - serializer: Optional[Union[Serializer, str]] = None,
@@ -202,11 +263,21 @@ def get_general_queue(
     Returns:
         a Queue instance for general tasks
     """
-    return RqQueue(f"{prefix}_general", connection, is_async=is_async, **kwargs)
+    return RqQueue(
+        f"{prefix}_general",
+        connection,
+        default_timeout=default_timeout,
+        is_async=is_async,
+        **kwargs,
+    )
 
 
 def get_postprocessing_queue(
-    prefix: str, connection: Redis, is_async: bool = True, **kwargs
+    prefix: str,
+    connection: Redis,
+    default_timeout: int,
+    is_async: bool = True,
+    **kwargs,
 ) -> RunnerQueue:
     """Gets the queue for postprocessing
 
@@ -215,8 +286,8 @@ def get_postprocessing_queue(
         connection: the redis connection instance where the queue is hosted
         is_async: whether the actual queue should be created or
             a dummy one running in the same process to use for testing
+        default_timeout: the default maximum time a job can take on this queue
         kwargs: other options to pass to the Queue e.g.
-            - default_timeout: Optional[int] = None,
             - is_async: bool = True,
             - job_class: Optional[Union[str, type['Job']]] = None,
             - serializer: Optional[Union[Serializer, str]] = None,
@@ -230,5 +301,9 @@ def get_postprocessing_queue(
     kwargs["success_callback"] = postprocessing_success_callback
     kwargs["failure_callback"] = postprocessing_failure_callback
     return RunnerQueue(
-        f"{prefix}_postprocessing", connection, is_async=is_async, **kwargs
+        f"{prefix}_postprocessing",
+        connection,
+        default_timeout=default_timeout,
+        is_async=is_async,
+        **kwargs,
     )
