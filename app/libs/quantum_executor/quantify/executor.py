@@ -60,6 +60,7 @@ class QuantifyExecutor(QuantumExecutor):
         self,
         quantify_config_file: Union[str, bytes, os.PathLike],
         quantify_metadata_file: Union[str, bytes, os.PathLike],
+        calibration_seed_file: Union[str, bytes, os.PathLike, None],
         backend_config: BackendConfig,
         *,
         should_restore_currents: bool = False,
@@ -70,11 +71,14 @@ class QuantifyExecutor(QuantumExecutor):
         Args:
             quantify_config_file: path to the quantify specific config file
             quantify_metadata_file: path to our custom quantify specific metadata
+            calibration_seed_file: path to the calibration seed file
             backend_config: the general backend configuration regardless of executor type
             should_restore_currents: whether to restore current state; default = False
             reset: whether to reset the whole executor; default = False
             are_clusters_resettable: whether the clusters can be reset for this executor; default = False
         """
+        self.quantify_config_file = quantify_config_file
+        self.calibration_seed_file = calibration_seed_file
         self.quantify_config = load_quantify_config(quantify_config_file)
         self.quantify_metadata = QuantifyMetadata.from_yaml(quantify_metadata_file)
         self.device_name = backend_config.general_config.name
@@ -150,6 +154,8 @@ class QuantifyExecutor(QuantumExecutor):
                 qobj_config=qobj.config,
                 hardware_map=self.hardware_map,
                 native_config=native_config,
+                quantify_config_file=self.quantify_config_file,
+                calibration_seed_file=self.calibration_seed_file,
             )
             for idx, expt in enumerate(qobj.experiments)
         ]

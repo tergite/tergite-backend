@@ -13,11 +13,15 @@
 # that they have been altered from the originals.
 
 import abc
+import json
 import math
+from functools import lru_cache
+from os import PathLike
 from typing import Any, Dict, List, Optional
 from uuid import uuid4 as uuid
 
 import numpy as np
+import toml
 from qiskit.qobj import PulseQobjConfig, PulseQobjInstruction
 
 # Instead of constructing bare Operation objects, we now import the new API classes:
@@ -512,6 +516,22 @@ class ShiftPhaseInstruction(BaseInstruction):
         clock_name, port_name = hardware_map[qobj_channel]
         channel = channel_registry.get(clock_name)
         phase_degree = qobj_inst.phase * 180 / np.pi
+        drive_frequency_hz = get_drive_frequency_from_calibration_seed(
+            clock_name,
+            kwargs.get("calibration_seed_file"),
+        )
+        lo_frequency_hz = get_lo_frequency_hz(
+            port=port_name,
+            clock=clock_name,
+            quantify_config_file=kwargs.get("quantify_config_file"),
+        )
+        if (
+            drive_frequency_hz is not None
+            and lo_frequency_hz is not None
+            and lo_frequency_hz < drive_frequency_hz
+        ):
+            phase_degree = -phase_degree
+
         return [
             ShiftPhaseInstruction(
                 name=qobj_inst.name,
@@ -778,3 +798,63 @@ def _map_to_qblox_timegrid(
 
     ticks = int(round(raw_time / grid_interval))
     return ticks * grid_interval
+
+
+def get_drive_frequency_from_calibration_seed(
+    clock: str, calibration_seed_file: Optional[PathLike]
+) -> Optional[float]:
+    if calibration_seed_file is None:
+        return None
+
+    return _load_calibration_drive_frequencies(str(calibration_seed_file)).get(clock)
+
+
+def get_lo_frequency_hz(
+    *,
+    port: str,
+    clock: str,
+    quantify_config_file: Optional[PathLike],
+) -> Optional[float]:
+    if quantify_config_file is None:
+        return None
+
+    key = f"{port}-{clock}"
+    entry = _load_quantify_modulation_frequencies(str(quantify_config_file)).get(
+        key, {}
+    )
+
+    lo_frequency_hz = entry.get("lo_freq")
+    if lo_frequency_hz is None:
+        return None
+
+    return float(lo_frequency_hz)
+
+
+@lru_cache(maxsize=1)
+def _load_quantify_modulation_frequencies(quantify_config_file: str) -> Dict[str, Any]:
+    with open(quantify_config_file) as file:
+        data = json.load(file)
+
+    return data.get("hardware_options", {}).get("modulation_frequencies", {})
+
+
+@lru_cache(maxsize=1)
+def _load_calibration_drive_frequencies(calibration_seed_file: str) -> Dict[str, float]:
+    data = toml.load(calibration_seed_file)
+
+    qubits = data.get("calibration_config", {}).get("qubit", [])
+    results: Dict[str, float] = {}
+    for qubit in qubits:
+        qubit_id = qubit.get("id")
+        frequency_hz = qubit.get("frequency")
+        if qubit_id is None or frequency_hz is None:
+            continue
+
+        results[_to_drive_clock(qubit_id)] = float(frequency_hz)
+
+    return results
+
+
+def _to_drive_clock(qubit_id: Any) -> str:
+    stripped = str(qubit_id).strip().lstrip("q")
+    return f"q{int(stripped):02d}.01"
