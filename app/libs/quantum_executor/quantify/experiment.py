@@ -21,7 +21,6 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from dataclasses import dataclass
-from os import PathLike
 from typing import Dict, Iterable, List, Mapping, Optional, Set, Tuple, Type
 
 from qiskit.qobj import (
@@ -123,8 +122,8 @@ class QuantifyExperiment(NativeExperiment[Schedule]):
         qobj_config: PulseQobjConfig,
         native_config: NativeQobjConfig,
         hardware_map: Optional[Dict[str, Tuple[str, str]]],
-        quantify_config_file: Optional[PathLike] = None,
-        calibration_seed_file: Optional[PathLike] = None,
+        lo_frequencies: Optional[Dict[str, float]] = None,
+        drive_frequencies: Optional[Dict[str, float]] = None,
         include_dynamic_frequency_ops: bool = False,
     ) -> "QuantifyExperiment":
         """Converts PulseQobjExperiment to native experiment
@@ -149,8 +148,8 @@ class QuantifyExperiment(NativeExperiment[Schedule]):
                 config=qobj_config,
                 native_config=native_config,
                 hardware_map=hardware_map,
-                quantify_config_file=quantify_config_file,
-                calibration_seed_file=calibration_seed_file,
+                lo_frequencies=lo_frequencies,
+                drive_frequencies=drive_frequencies,
             )
 
         schedule = _construct_schedule(
@@ -178,8 +177,8 @@ def _add_instruction_to_channel_registry(
     config: PulseQobjConfig,
     native_config: NativeQobjConfig,
     hardware_map: Optional[Dict[str, str]] = None,
-    quantify_config_file: Optional[PathLike] = None,
-    calibration_seed_file: Optional[PathLike] = None,
+    lo_frequencies: Optional[Dict[str, float]] = None,
+    drive_frequencies: Optional[Dict[str, float]] = None,
 ):
     if hardware_map is None:
         hardware_map = {}
@@ -201,8 +200,8 @@ def _add_instruction_to_channel_registry(
         hardware_map=hardware_map,
     )
     if cls_instr is ShiftPhaseInstruction:
-        instruction_kwargs["quantify_config_file"] = quantify_config_file
-        instruction_kwargs["calibration_seed_file"] = calibration_seed_file
+        instruction_kwargs["lo_frequencies"] = lo_frequencies
+        instruction_kwargs["drive_frequencies"] = drive_frequencies
 
     for instruction in cls_instr.list_from_qobj_inst(
         qobj_inst,

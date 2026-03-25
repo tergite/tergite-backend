@@ -448,7 +448,6 @@ def _get_executor_and_options(
     executor_options = ExecutorOptions(
         backend_name=initial_backend_config.name,
         backend_config=initial_backend_config,
-        calibration_seed_file=calibration_seed_file,
         **kwargs,
     )
     executor = init_executor(executor_options, reset=True)

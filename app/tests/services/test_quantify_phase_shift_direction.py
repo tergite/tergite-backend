@@ -14,18 +14,20 @@
 
 import math
 from types import SimpleNamespace
+from typing import Any, Dict
 
 import pytest
 from qiskit.qobj import PulseQobj
 
+from app.libs.device_parameters.dtos import BackendConfig
 from app.libs.quantum_executor.quantify.experiment import QuantifyExperiment
-from app.libs.quantum_executor.quantify.instruction import (
-    _load_calibration_drive_frequencies,
-    _load_quantify_modulation_frequencies,
-)
 from app.libs.quantum_executor.utils.config import load_quantify_config
 from app.libs.quantum_executor.utils.portclock import generate_hardware_map
-from app.tests.utils.env import TEST_QUANTIFY_CONFIG_FILE, TEST_QUANTIFY_SEED_FILE
+from app.tests.utils.env import (
+    TEST_BACKEND_SETTINGS_FILE,
+    TEST_QUANTIFY_CONFIG_FILE,
+    TEST_QUANTIFY_SEED_FILE,
+)
 
 
 def _build_qobj(instructions: list[dict]) -> PulseQobj:
@@ -75,18 +77,65 @@ def _build_native_config(qobj: PulseQobj) -> SimpleNamespace:
     )
 
 
-@pytest.fixture(autouse=True)
-def clear_phase_reference_caches():
-    _load_quantify_modulation_frequencies.cache_clear()
-    _load_calibration_drive_frequencies.cache_clear()
-    yield
-    _load_quantify_modulation_frequencies.cache_clear()
-    _load_calibration_drive_frequencies.cache_clear()
+def _build_lo_frequencies(quantify_config: Any) -> Dict[str, float]:
+    results: Dict[str, float] = {}
+    modulation_frequencies = (
+        getattr(quantify_config.hardware_options, "modulation_frequencies", {}) or {}
+    )
+    for key, entry in modulation_frequencies.items():
+        lo_freq = getattr(entry, "lo_freq", None)
+        if lo_freq is None and isinstance(entry, dict):
+            lo_freq = entry.get("lo_freq")
+        if lo_freq is None:
+            continue
+        results[key] = float(lo_freq)
+
+    return results
 
 
-def _build_experiment(*, qubit_id: str, instructions: list[dict]) -> QuantifyExperiment:
+def _build_drive_frequencies(backend_config: BackendConfig) -> Dict[str, float]:
+    calibration_config = backend_config.calibration_config
+    if calibration_config is None:
+        return {}
+
+    results: Dict[str, float] = {}
+    for qubit in calibration_config.qubit:
+        qubit_id = qubit.get("id")
+        frequency_hz = qubit.get("frequency")
+        if qubit_id is None or frequency_hz is None:
+            continue
+
+        stripped = str(qubit_id).strip().lstrip("q")
+        results[f"q{int(stripped):02d}.01"] = float(frequency_hz)
+
+    return results
+
+
+@pytest.fixture
+def phase_reference_data() -> Dict[str, Any]:
     quantify_config = load_quantify_config(TEST_QUANTIFY_CONFIG_FILE)
-    hardware_map = generate_hardware_map([qubit_id], {}, quantify_config)
+    backend_config = BackendConfig.from_toml(
+        TEST_BACKEND_SETTINGS_FILE,
+        seed_file=TEST_QUANTIFY_SEED_FILE,
+    )
+    return {
+        "quantify_config": quantify_config,
+        "lo_frequencies": _build_lo_frequencies(quantify_config),
+        "drive_frequencies": _build_drive_frequencies(backend_config),
+    }
+
+
+def _build_experiment(
+    *,
+    qubit_id: str,
+    instructions: list[dict],
+    phase_reference_data: Dict[str, Any],
+) -> QuantifyExperiment:
+    hardware_map = generate_hardware_map(
+        [qubit_id],
+        {},
+        phase_reference_data["quantify_config"],
+    )
     qobj = _build_qobj(instructions)
 
     return QuantifyExperiment.from_qobj_expt(
@@ -95,8 +144,8 @@ def _build_experiment(*, qubit_id: str, instructions: list[dict]) -> QuantifyExp
         qobj_config=qobj.config,
         native_config=_build_native_config(qobj),
         hardware_map=hardware_map,
-        quantify_config_file=TEST_QUANTIFY_CONFIG_FILE,
-        calibration_seed_file=TEST_QUANTIFY_SEED_FILE,
+        lo_frequencies=phase_reference_data["lo_frequencies"],
+        drive_frequencies=phase_reference_data["drive_frequencies"],
     )
 
 
@@ -104,13 +153,16 @@ def _phase_shift_from_operation(operation) -> float:
     return operation.data["pulse_info"][0]["phase_shift"]
 
 
-def test_fc_phase_shift_uses_calibration_frequency_instead_of_qobj_setf():
+def test_fc_phase_shift_uses_calibration_frequency_instead_of_qobj_setf(
+    phase_reference_data,
+):
     experiment = _build_experiment(
         qubit_id="q14",
         instructions=[
             {"name": "fc", "t0": 0, "ch": "d0", "phase": math.pi / 2},
             {"name": "setf", "t0": 0, "ch": "d0", "frequency": 4.4},
         ],
+        phase_reference_data=phase_reference_data,
     )
 
     channel = experiment.channel_registry["q14.01"]
@@ -123,13 +175,16 @@ def test_fc_phase_shift_uses_calibration_frequency_instead_of_qobj_setf():
     ) == pytest.approx(-90.0)
 
 
-def test_fc_phase_shift_keeps_direction_when_lo_is_above_calibration_frequency():
+def test_fc_phase_shift_keeps_direction_when_lo_is_above_calibration_frequency(
+    phase_reference_data,
+):
     experiment = _build_experiment(
         qubit_id="q12",
         instructions=[
             {"name": "fc", "t0": 0, "ch": "d0", "phase": math.pi / 2},
             {"name": "setf", "t0": 0, "ch": "d0", "frequency": 4.8},
         ],
+        phase_reference_data=phase_reference_data,
     )
 
     channel = experiment.channel_registry["q12.01"]
@@ -142,12 +197,13 @@ def test_fc_phase_shift_keeps_direction_when_lo_is_above_calibration_frequency()
     ) == pytest.approx(90.0)
 
 
-def test_set_phase_instruction_remains_unchanged():
+def test_set_phase_instruction_remains_unchanged(phase_reference_data):
     experiment = _build_experiment(
         qubit_id="q14",
         instructions=[
             {"name": "setp", "t0": 0, "ch": "d0", "phase": math.pi / 2},
         ],
+        phase_reference_data=phase_reference_data,
     )
 
     channel = experiment.channel_registry["q14.01"]

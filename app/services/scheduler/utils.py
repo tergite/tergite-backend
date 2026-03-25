@@ -330,7 +330,6 @@ def init_executor(options: ExecutorOptions, reset: bool = False) -> QuantumExecu
     return QuantifyExecutor(
         quantify_config_file=options.quantify_config_file,
         quantify_metadata_file=options.quantify_metadata_file,
-        calibration_seed_file=options.calibration_seed_file,
         backend_config=backend_config,
         reset=reset,
         should_restore_currents=options.should_restore_currents,

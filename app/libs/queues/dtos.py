@@ -479,7 +479,6 @@ class ExecutorOptions:
         executor_type: the executor type to return
         quantify_config_file: the path to the quantify configuration file of the executor
         quantify_metadata_file: the path to the quantify metadata file of the executor
-        calibration_seed_file: the path to the calibration seed file of the executor
         backend_config: the backend configuration of the executor
         backend_name: name of backend
         should_restore_currents: whether the executor should restore SPI currents
@@ -491,7 +490,6 @@ class ExecutorOptions:
     backend_config: BackendConfig
     quantify_config_file: Optional[PathLike] = None
     quantify_metadata_file: Optional[PathLike] = None
-    calibration_seed_file: Optional[PathLike] = None
     should_restore_currents: bool = settings.SHOULD_RESTORE_CURRENTS
     are_clusters_resettable: bool = settings.ARE_CLUSTERS_RESETTABLE
 
