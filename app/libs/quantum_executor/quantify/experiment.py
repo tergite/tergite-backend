@@ -122,6 +122,8 @@ class QuantifyExperiment(NativeExperiment[Schedule]):
         qobj_config: PulseQobjConfig,
         native_config: NativeQobjConfig,
         hardware_map: Optional[Dict[str, Tuple[str, str]]],
+        lo_frequencies: Optional[Dict[str, float]] = None,
+        drive_frequencies: Optional[Dict[str, float]] = None,
         include_dynamic_frequency_ops: bool = False,
     ) -> "QuantifyExperiment":
         """Converts PulseQobjExperiment to native experiment
@@ -146,6 +148,8 @@ class QuantifyExperiment(NativeExperiment[Schedule]):
                 config=qobj_config,
                 native_config=native_config,
                 hardware_map=hardware_map,
+                lo_frequencies=lo_frequencies,
+                drive_frequencies=drive_frequencies,
             )
 
         schedule = _construct_schedule(
@@ -173,6 +177,8 @@ def _add_instruction_to_channel_registry(
     config: PulseQobjConfig,
     native_config: NativeQobjConfig,
     hardware_map: Optional[Dict[str, str]] = None,
+    lo_frequencies: Optional[Dict[str, float]] = None,
+    drive_frequencies: Optional[Dict[str, float]] = None,
 ):
     if hardware_map is None:
         hardware_map = {}
@@ -187,12 +193,19 @@ def _add_instruction_to_channel_registry(
             raise RuntimeError(
                 f"No mapping for PulseQobjInstruction {qobj_inst}.\n{exp}"
             )
-    for instruction in cls_instr.list_from_qobj_inst(
-        qobj_inst,
+    instruction_kwargs = dict(
         config=config,
         native_config=native_config,
         channel_registry=channel_registry,
         hardware_map=hardware_map,
+    )
+    if cls_instr is ShiftPhaseInstruction:
+        instruction_kwargs["lo_frequencies"] = lo_frequencies
+        instruction_kwargs["drive_frequencies"] = drive_frequencies
+
+    for instruction in cls_instr.list_from_qobj_inst(
+        qobj_inst,
+        **instruction_kwargs,
     ):
         if instruction.name != "ResetClockPhase":
             instruction.register()

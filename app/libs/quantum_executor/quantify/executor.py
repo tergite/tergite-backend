@@ -22,7 +22,7 @@ This module implements the executor.
 import logging
 import os
 from datetime import datetime
-from typing import Dict, List, Union
+from typing import Any, Dict, List, Union
 
 import qblox_instruments
 from qcodes import Instrument
@@ -48,6 +48,44 @@ from app.libs.quantum_executor.utils.portclock import generate_hardware_map
 from .spi_dac import init_spi_dacs
 
 worker_logger = logging.getLogger(__name__)
+
+
+def _extract_lo_frequencies(quantify_config: Any) -> Dict[str, float]:
+    modulation_frequencies = (
+        getattr(quantify_config.hardware_options, "modulation_frequencies", {}) or {}
+    )
+    results: Dict[str, float] = {}
+    for key, entry in modulation_frequencies.items():
+        lo_freq = getattr(entry, "lo_freq", None)
+        if lo_freq is None and isinstance(entry, dict):
+            lo_freq = entry.get("lo_freq")
+        if lo_freq is None:
+            continue
+        results[key] = float(lo_freq)
+
+    return results
+
+
+def _extract_drive_frequencies(backend_config: BackendConfig) -> Dict[str, float]:
+    calibration_config = backend_config.calibration_config
+    if calibration_config is None:
+        return {}
+
+    results: Dict[str, float] = {}
+    for qubit in calibration_config.qubit:
+        qubit_id = qubit.get("id")
+        frequency_hz = qubit.get("frequency")
+        if qubit_id is None or frequency_hz is None:
+            continue
+
+        results[_to_drive_clock(qubit_id)] = float(frequency_hz)
+
+    return results
+
+
+def _to_drive_clock(qubit_id: Any) -> str:
+    stripped = str(qubit_id).strip().lstrip("q")
+    return f"q{int(stripped):02d}.01"
 
 
 class QuantifyExecutor(QuantumExecutor):
@@ -80,6 +118,8 @@ class QuantifyExecutor(QuantumExecutor):
         self.device_name = backend_config.general_config.name
         self.should_restore_currents = should_restore_currents
         self.are_clusters_resettable = are_clusters_resettable
+        self.lo_frequencies = _extract_lo_frequencies(self.quantify_config)
+        self.drive_frequencies = _extract_drive_frequencies(backend_config)
 
         qubit_ids = backend_config.device_config.qubit_ids
         coupling_dict = backend_config.device_config.coupling_dict
@@ -150,6 +190,8 @@ class QuantifyExecutor(QuantumExecutor):
                 qobj_config=qobj.config,
                 hardware_map=self.hardware_map,
                 native_config=native_config,
+                lo_frequencies=self.lo_frequencies,
+                drive_frequencies=self.drive_frequencies,
             )
             for idx, expt in enumerate(qobj.experiments)
         ]

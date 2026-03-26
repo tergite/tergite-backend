@@ -512,6 +512,17 @@ class ShiftPhaseInstruction(BaseInstruction):
         clock_name, port_name = hardware_map[qobj_channel]
         channel = channel_registry.get(clock_name)
         phase_degree = qobj_inst.phase * 180 / np.pi
+        drive_frequencies = kwargs.get("drive_frequencies") or {}
+        lo_frequencies = kwargs.get("lo_frequencies") or {}
+        drive_frequency_hz = drive_frequencies.get(clock_name)
+        lo_frequency_hz = lo_frequencies.get(f"{port_name}-{clock_name}")
+        if (
+            drive_frequency_hz is not None
+            and lo_frequency_hz is not None
+            and lo_frequency_hz < drive_frequency_hz
+        ):
+            phase_degree = -phase_degree
+
         return [
             ShiftPhaseInstruction(
                 name=qobj_inst.name,

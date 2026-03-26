@@ -7,6 +7,12 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.03.2] - 2026-03-26
+
+### Added 
+
+- Added a lo_freqs and drive_freqs to quantify experiment and change shift phase based on them.
+
 ## [2026.03.1] - 2026-03-17
 
 ### Added
