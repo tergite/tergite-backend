@@ -340,7 +340,7 @@ def discriminate_results(
 
         # as acquisitions are always ordered, qubit id would correspond to sdk qubit id per base contract
         for channel, acquisitions in sorted_acquisitions:
-            if acquisitions.shape[1] != 1:
+            if acquisitions.shape[1] != 1 and job.meas_return != MeasRet.AVERAGED:
                 raise ValueError(
                     f"Experiment data contain more than one measurement per channel. "
                     f"Found {acquisitions.shape[1]} for channel {channel}"
@@ -626,6 +626,7 @@ def _save_results_to_hdf5(file: h5py.File, results: QJobResult):
         file: the HDF5 file to save to
         results: the experiment results to save
     """
+    experiments_group = file.require_group("experiments", track_order=True)
     for name, result in results.items():
         path = f"experiments/{name}"
 
@@ -668,6 +669,21 @@ def _extract_results_from_hdf5(
 
         hdf5_dataset: h5py.Dataset = file[path]
         xarray_dataset[acq] = (["repetition", f"acq_index_{acq}"], hdf5_dataset[:])
+
+    # Sort by the numeric experiment index embedded in the name (e.g. "circuit~3" -> 3).
+    # HDF5 visit() traverses groups alphabetically, so without this "~10" would
+    # come before "~2", causing discriminate_results / xarray_to_list to look up
+    # the wrong qobj.experiments[i] for every experiment after the 9th.
+    results = dict(
+        sorted(
+            results.items(),
+            key=lambda kv: (
+                _parse_exp_index_from_name(kv[0])
+                if _parse_exp_index_from_name(kv[0]) is not None
+                else kv[0]
+            ),
+        )
+    )
 
     return results
 
