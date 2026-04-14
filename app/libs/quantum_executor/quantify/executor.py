@@ -21,6 +21,7 @@ This module implements the executor.
 
 import logging
 import os
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Union
 
@@ -130,7 +131,11 @@ class QuantifyExecutor(QuantumExecutor):
             coupling_dict=coupling_dict,
             quantify_config=self.quantify_config,
         )
-        super().__init__(hardware_map=self.hardware_map, backend_config=backend_config)
+        self.experiment_delay = self.quantify_metadata.experiment_delay
+        super().__init__(
+            hardware_map=self.hardware_map,
+            backend_config=backend_config,
+        )
 
         self._couplers = sorted(backend_config.device_config.coupling_dict.keys())
 
@@ -204,6 +209,9 @@ class QuantifyExecutor(QuantumExecutor):
         native_config: NativeQobjConfig,
         logger: ExperimentLogger,
     ) -> QExperimentResult:
+        if self.experiment_delay > 0:
+            time.sleep(self.experiment_delay)
+
         # Stop any running sequences.
         self._coordinator.stop()
         t1 = datetime.now()

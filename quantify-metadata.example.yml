@@ -1,10 +1,10 @@
 # This configuration file is needed to provide metadata for the instruments/Clusters that are needed for instrument coordinator setup
 # This allows to copy external QBLOX cluster configuration file without additional changes, while still providing Cluster data in structured format
 
-# instrument name 
+# instrument name
 cluster0:
   # instrument type
-  # Cluster or SPI-Rack 
+  # Cluster or SPI-Rack
   instrument_type: Cluster
 
   # Ip address of the cluster
@@ -12,6 +12,12 @@ cluster0:
 
   # whether to attempt connecting to the real cluster or to return dummy result for test purposes
   is_dummy: true
+
+  # Delay in seconds to wait before each experiment execution within a single job.
+  # Applies to every experiment in the job, including the first one.
+  # Use this to enforce a minimum cooldown interval between back-to-back hardware executions.
+  # Default is 0 (no delay).
+  experiment_delay: 10
 
   # this would only be used to set up dummy cluster modules
   modules:
