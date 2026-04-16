@@ -626,7 +626,8 @@ def _save_results_to_hdf5(file: h5py.File, results: QJobResult):
         file: the HDF5 file to save to
         results: the experiment results to save
     """
-    experiments_group = file.require_group("experiments", track_order=True)
+    if "experiments" not in file:
+        file.create_group("experiments", track_order=True)
     for name, result in results.items():
         path = f"experiments/{name}"
 
