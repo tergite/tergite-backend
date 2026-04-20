@@ -31,7 +31,7 @@ from redis import Redis
 from redis.asyncio import Redis as AsyncRedis
 from redis.asyncio.client import PubSub as AsyncPubSub
 from redis.client import PubSub
-from websockets import ClientConnection
+from websockets import ClientConnection, ConnectionClosed
 
 import settings
 from app.utils.redis import get_redis_connection
@@ -40,6 +40,47 @@ from .dtos import DeviceEvent, EventResponse
 
 _BCC_PRIVATE_KEYS: Dict[str, RSAPrivateKey] = {}
 _MSS_CLIENT_PIPE: Optional["MssClientPipe"] = None
+
+
+async def connect_to_mss(
+    connection_event: asyncio.Event,
+    uri: str = str(settings.MSS_DEVICE_EVENTS_ENDPOINT),
+    device: str = settings.DEFAULT_PREFIX,
+    private_key_file=settings.PRIVATE_KEY_FILE,
+    key_password: Optional[bytes] = settings.PRIVATE_KEY_PASSWORD,
+    open_timeout: float = settings.MSS_CONNECTION_TIMEOUT,
+    redis_url: str = settings.RQ_REDIS_URL,
+    **kwargs: Any,
+) -> None:
+    """Keeps a live MSS websocket, reconnecting automatically on disconnection.
+    It sets the connection_event once it successfully connects
+
+    Args:
+        connection_event (asyncio.Event): Event that fires when the connection is established
+        uri: the URI to connect to; default = settings.MSS_DEVICE_EVENTS_ENDPOINT
+        device: the name of the device; default = settings.DEFAULT_PREFIX
+        private_key_file: the path to the private key file; default = settings.PRIVATE_KEY_FILE
+        key_password: the password for the private key file; defaults = settings.PRIVATE_KEY_PASSWORD
+        open_timeout: the timeout for opening the websocket in seconds; default = settings.MSS_CONNECTION_TIMEOUT
+        redis_url: the redis URL connection to use for PubSub; default = settings.RQ_REDIS_URL
+        kwargs: additional options to pass to websockets.connect
+
+    """
+    async for mss_client in AsyncMssClient(
+        uri=uri,
+        device=device,
+        private_key_file=private_key_file,
+        key_password=key_password,
+        open_timeout=open_timeout,
+        redis_url=redis_url,
+        **kwargs,
+    ):
+        try:
+            connection_event.set()
+            await mss_client.wait_closed()
+        except ConnectionClosed:
+            logging.warning("MSS websocket closed; reconnecting...")
+            continue
 
 
 def get_inbox_channel_name(device: str = settings.DEFAULT_PREFIX) -> str:

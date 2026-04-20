@@ -117,6 +117,7 @@ if not MSS_PUBLIC_KEY_PATH.exists():
 # time-to-live for the nonce; defaults to 5 minutes
 MSS_NONCE_TTL = config("MSS_NONCE_TTL", cast=float, default=300)
 
+
 # time to live for the request logs; defaults to 2 weeks
 REQUEST_LOG_TTL = config("REQUEST_LOG_TTL", cast=float, default=3600 * 24 * 14)
 
