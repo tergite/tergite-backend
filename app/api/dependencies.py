@@ -94,7 +94,7 @@ async def lifespan(app: FastAPI):
 
     with get_redis_connection(settings.RQ_REDIS_URL, is_async=False) as redis_conn:
         _REDIS_CONNECTION = redis_conn
-        net_connection_timeout = settings.MSS_CONNECTION_TIMEOUT * 1.5
+        net_connection_timeout = settings.MSS_CONNECTION_TIMEOUT * 3
         mss_conn_event = asyncio.Event()
         mss_connection_task = asyncio.create_task(
             connect_to_mss(mss_conn_event), name="mss-connection-runner"
