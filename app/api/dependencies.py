@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Dependencies useful for the FastAPI API"""
+import asyncio
 import dataclasses
 import json
 import logging
@@ -34,7 +35,7 @@ from ..libs.queues.dtos import ExecutorOptions, JobFile, QueueContext
 from ..services.booking.models import MSSTokenClaims
 from ..services.booking.service import get_user_job_id_pair_from_token
 from ..services.booking.store import get_bookings_sql_engine
-from ..services.external.mss.service import AsyncMssClient, AsyncMssClientPipe
+from ..services.external.mss.service import AsyncMssClientPipe, connect_to_mss
 from ..services.scheduler import get_job
 from ..services.scheduler.queues import QueuePool
 from ..services.scheduler.utils import (
@@ -93,9 +94,18 @@ async def lifespan(app: FastAPI):
 
     with get_redis_connection(settings.RQ_REDIS_URL, is_async=False) as redis_conn:
         _REDIS_CONNECTION = redis_conn
+        net_connection_timeout = (
+            settings.MSS_CONNECTION_TIMEOUT * settings.MSS_CONNECTION_MAX_ATTEMPTS
+        )
+        mss_conn_event = asyncio.Event()
+        mss_connection_task = asyncio.create_task(
+            connect_to_mss(mss_conn_event), name="mss-connection-runner"
+        )
 
-        async with AsyncMssClient() as mss_client:
-            app.state.MSS_CLIENT = mss_client
+        try:
+            async with asyncio.timeout(net_connection_timeout):
+                await mss_conn_event.wait()
+
             async with AsyncMssClientPipe() as mss_client_pipe:
                 await save_all_device_params(
                     redis=redis_conn,
@@ -104,6 +114,21 @@ async def lifespan(app: FastAPI):
                 )
             print(f"starting app at {get_utc_now()}")
             yield
+        except TimeoutError as e:
+            if mss_connection_task.done():
+                # let the error during connection be returned to main process
+                mss_connection_task.result()
+            else:
+                raise TimeoutError(
+                    f"Connection to MSS took longer than {net_connection_timeout}s"
+                ) from e
+
+        finally:
+            mss_connection_task.cancel()
+            try:
+                await mss_connection_task
+            except (asyncio.CancelledError, Exception) as exp:
+                logging.exception(f"Error shutting down MSS connection task: {exp}")
 
             DB_ENGINE = None
             executor.close()

@@ -7,8 +7,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
-### Fixed 
+### Fixed
 
+- Fixed errors when websocket fails to connect or disconnects while the server is running
 - Meas mode avg issue in post-processing fixed 
 - Experiments sorted numerically to avoid mixup 
 

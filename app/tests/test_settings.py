@@ -1,6 +1,7 @@
 """Tests for the settings and configs"""
 
 import os
+import time
 
 import pytest
 from pydantic import ValidationError
@@ -37,25 +38,36 @@ def test_load_quantify_config_files():
 
 
 @pytest.mark.asyncio
-async def test_no_mss_connected():
-    """Raises connection errors only when MSS is unavailable"""
+async def test_mss_reconnection():
+    """Attempts to reconnect to MSS up to a given number of times"""
     remove_modules(["os", "app", "settings"])
+
+    timeout = 10
+    connection_attempts = 3
 
     os.environ["EXECUTOR_TYPE"] = "quantify"
     os.environ["BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
     mss_port = os.getenv("UNAVAILABLE_MSS_PORT", "5050")
     os.environ["MSS_MACHINE_ROOT_URL"] = f"http://localhost:{mss_port}"
+    os.environ["MSS_CONNECTION_TIMEOUT"] = f"{timeout}"
+    os.environ["MSS_CONNECTION_MAX_ATTEMPTS"] = f"{connection_attempts}"
+    net_connection_timeout = timeout * connection_attempts
 
     from sqlmodel import SQLModel
 
     SQLModel.metadata.clear()
 
-    with pytest.raises(ConnectionRefusedError):
+    start_time = time.time()
+    with pytest.raises(TimeoutError, match=r"Connection to MSS took longer than"):
         from app.api import app
 
         # just to run the startup events
         async with app.router.lifespan_context(app):
             pass
+
+    end_time = time.time()
+    time_taken = end_time - start_time
+    assert abs(time_taken - net_connection_timeout) < 1.2
 
 
 @pytest.mark.asyncio

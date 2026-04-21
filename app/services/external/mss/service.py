@@ -21,7 +21,7 @@ import uuid
 from abc import ABC
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Generator, Optional
 
 import websockets
 from cryptography.hazmat.primitives import hashes, serialization
@@ -31,7 +31,7 @@ from redis import Redis
 from redis.asyncio import Redis as AsyncRedis
 from redis.asyncio.client import PubSub as AsyncPubSub
 from redis.client import PubSub
-from websockets import ClientConnection
+from websockets import ClientConnection, ConnectionClosed
 
 import settings
 from app.utils.redis import get_redis_connection
@@ -40,6 +40,47 @@ from .dtos import DeviceEvent, EventResponse
 
 _BCC_PRIVATE_KEYS: Dict[str, RSAPrivateKey] = {}
 _MSS_CLIENT_PIPE: Optional["MssClientPipe"] = None
+
+
+async def connect_to_mss(
+    connection_event: asyncio.Event,
+    uri: str = str(settings.MSS_DEVICE_EVENTS_ENDPOINT),
+    device: str = settings.DEFAULT_PREFIX,
+    private_key_file=settings.PRIVATE_KEY_FILE,
+    key_password: Optional[bytes] = settings.PRIVATE_KEY_PASSWORD,
+    open_timeout: float = settings.MSS_CONNECTION_TIMEOUT,
+    redis_url: str = settings.RQ_REDIS_URL,
+    **kwargs: Any,
+) -> None:
+    """Keeps a live MSS websocket, reconnecting automatically on disconnection.
+    It sets the connection_event once it successfully connects
+
+    Args:
+        connection_event (asyncio.Event): Event that fires when the connection is established
+        uri: the URI to connect to; default = settings.MSS_DEVICE_EVENTS_ENDPOINT
+        device: the name of the device; default = settings.DEFAULT_PREFIX
+        private_key_file: the path to the private key file; default = settings.PRIVATE_KEY_FILE
+        key_password: the password for the private key file; defaults = settings.PRIVATE_KEY_PASSWORD
+        open_timeout: the timeout for opening the websocket in seconds; default = settings.MSS_CONNECTION_TIMEOUT
+        redis_url: the redis URL connection to use for PubSub; default = settings.RQ_REDIS_URL
+        kwargs: additional options to pass to websockets.connect
+
+    """
+    async for mss_client in AsyncMssClient(
+        uri=uri,
+        device=device,
+        private_key_file=private_key_file,
+        key_password=key_password,
+        open_timeout=open_timeout,
+        redis_url=redis_url,
+        **kwargs,
+    ):
+        try:
+            connection_event.set()
+            await mss_client.wait_closed()
+        except ConnectionClosed:
+            logging.warning("MSS websocket closed; reconnecting...")
+            continue
 
 
 def get_inbox_channel_name(device: str = settings.DEFAULT_PREFIX) -> str:
@@ -279,15 +320,6 @@ class AsyncMssClient(websockets.connect):
             redis_url: the redis URL connection to use for PubSub; default = settings.RQ_REDIS_URL
             kwargs: additional options to pass to websockets.connect
         """
-        auth_headers = _create_headers(
-            private_key_file=private_key_file,
-            device=device,
-            key_password=key_password,
-        )
-        kwargs["additional_headers"] = {
-            **kwargs.pop("additional_headers", {}),
-            **auth_headers,
-        }
         super().__init__(uri, open_timeout=open_timeout, **kwargs)
 
         self.__uri = uri
@@ -296,6 +328,29 @@ class AsyncMssClient(websockets.connect):
         self._inbox_pubsub: str = get_inbox_channel_name(device)
         self._redis: AsyncRedis = get_redis_connection(url=redis_url, is_async=True)
         self.outbox: AsyncPubSub = self._redis.pubsub(ignore_subscribe_messages=True)
+
+        self._private_key_file: Path = private_key_file
+        self._private_key_password: bytes = key_password
+        self._device = device
+
+    def _refresh_auth_headers(self):
+        """Refresh the auth headers of the connection as these are based on a timestamp
+
+        On reconnection, we need to make sure a new timestamp is used
+        """
+        auth_headers = _create_headers(
+            private_key_file=self._private_key_file,
+            device=self._device,
+            key_password=self._private_key_password,
+        )
+        try:
+            self.additional_headers.update(auth_headers)
+        except AttributeError:
+            self.additional_headers = auth_headers
+
+    def __await__(self) -> Generator[Any, None, ClientConnection]:
+        self._refresh_auth_headers()
+        return super().__await__()
 
     async def _outbox_handler(self, msg: dict) -> None:
         """Handles messages sent to the outbox
