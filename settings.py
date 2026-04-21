@@ -99,6 +99,7 @@ MSS_DEVICE_EVENTS_ENDPOINT: URL = config(
     "MSS_DEVICE_EVENTS_ENDPOINT", cast=URL, default=_DEFAULT_MSS_WS_URL
 )
 MSS_CONNECTION_TIMEOUT = config("MSS_CONNECTION_TIMEOUT", cast=float, default=5)
+MSS_CONNECTION_MAX_ATTEMPTS = config("MSS_CONNECTION_MAX_ATTEMPTS", cast=int, default=5)
 
 BCC_MACHINE_ROOT_URL = config(
     "BCC_MACHINE_ROOT_URL", cast=URL, default="http://localhost:8000"
