@@ -21,7 +21,7 @@ import uuid
 from abc import ABC
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Generator, Optional
 
 import websockets
 from cryptography.hazmat.primitives import hashes, serialization
@@ -320,15 +320,6 @@ class AsyncMssClient(websockets.connect):
             redis_url: the redis URL connection to use for PubSub; default = settings.RQ_REDIS_URL
             kwargs: additional options to pass to websockets.connect
         """
-        auth_headers = _create_headers(
-            private_key_file=private_key_file,
-            device=device,
-            key_password=key_password,
-        )
-        kwargs["additional_headers"] = {
-            **kwargs.pop("additional_headers", {}),
-            **auth_headers,
-        }
         super().__init__(uri, open_timeout=open_timeout, **kwargs)
 
         self.__uri = uri
@@ -337,6 +328,29 @@ class AsyncMssClient(websockets.connect):
         self._inbox_pubsub: str = get_inbox_channel_name(device)
         self._redis: AsyncRedis = get_redis_connection(url=redis_url, is_async=True)
         self.outbox: AsyncPubSub = self._redis.pubsub(ignore_subscribe_messages=True)
+
+        self._private_key_file: Path = private_key_file
+        self._private_key_password: bytes = key_password
+        self._device = device
+
+    def _refresh_auth_headers(self):
+        """Refresh the auth headers of the connection as these are based on a timestamp
+
+        On reconnection, we need to make sure a new timestamp is used
+        """
+        auth_headers = _create_headers(
+            private_key_file=self._private_key_file,
+            device=self._device,
+            key_password=self._private_key_password,
+        )
+        try:
+            self.additional_headers.update(auth_headers)
+        except AttributeError:
+            self.additional_headers = auth_headers
+
+    def __await__(self) -> Generator[Any, None, ClientConnection]:
+        self._refresh_auth_headers()
+        return super().__await__()
 
     async def _outbox_handler(self, msg: dict) -> None:
         """Handles messages sent to the outbox
