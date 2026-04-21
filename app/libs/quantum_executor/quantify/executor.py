@@ -136,7 +136,6 @@ class QuantifyExecutor(QuantumExecutor):
             backend_config=backend_config,
         )
         self._experiment_delay = self.quantify_metadata.experiment_delay
-        
 
         self._couplers = sorted(backend_config.device_config.coupling_dict.keys())
 
