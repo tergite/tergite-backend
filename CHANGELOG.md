@@ -7,6 +7,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Fixed 
+
+- Meas mode avg issue in post-processing fixed 
+- Experiments sorted numerically to avoid mixup 
+
 ## [2026.03.2] - 2026-03-26
 
 ### Added 
