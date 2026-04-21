@@ -90,6 +90,13 @@ class InstrumentConfig(BaseModel):
         None, description="Indicates if the cluster is a dummy cluster."
     )
     port: Optional[str] = None
+    experiment_delay: float = Field(
+        0.0,
+        description=(
+            "Delay in seconds to wait between consecutive experiments within a single job. "
+            "Useful to avoid back-to-back hardware execution without a cooldown interval."
+        ),
+    )
 
     @field_validator("instrument_type")
     def validate_instrument_type(cls, v):
@@ -173,6 +180,14 @@ class QuantifyMetadata(RootModel[Dict[str, InstrumentConfig]]):
             data = yaml.safe_load(file)
 
         return cls.model_validate(data)
+
+    @property
+    def experiment_delay(self) -> float:
+        """Delay in seconds between consecutive experiments, taken from the first cluster config."""
+        for conf in self.root.values():
+            if conf.instrument_type == CLUSTER_INSTRUMENT_TYPE:
+                return conf.experiment_delay
+        return 0.0
 
     def get_clusters(self) -> List[qblox_instruments.Cluster]:
         """Get the clusters corresponding to the metadata
