@@ -92,7 +92,7 @@ from .dependencies import (
 app = FastAPI(
     title="Backend Control Computer",
     description="Interfaces Quantum processor via REST API",
-    version="2026.03.2",
+    version="v2026.03.3-rc.6",
     lifespan=lifespan,
 )
 
