@@ -50,7 +50,7 @@ async def test_no_mss_connected():
 
     SQLModel.metadata.clear()
 
-    with pytest.raises(ConnectionRefusedError):
+    with pytest.raises(TimeoutError, match=r"Connection to MSS took longer than"):
         from app.api import app
 
         # just to run the startup events
