@@ -212,6 +212,11 @@ MAX_POSTPROCESSING_TIME = max(
 # default: 3 minutes
 MAX_GENERAL_QUEUE_TIME = max(0, config("MAX_GENERAL_QUEUE_TIME", cast=int, default=180))
 
+# default: 1.5 hours
+MAX_RECALIBRATION_QUEUE_TIME = max(
+    0, config("MAX_RECALIBRATION_QUEUE_TIME", cast=int, default=5400)
+)
+
 # default: True
 IS_ASYNC = config("IS_ASYNC", cast=bool, default="True")
 

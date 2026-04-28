@@ -260,6 +260,7 @@ rq worker -u "$REDIS_URL" "$WORKER_FLAG" "${DEFAULT_PREFIX}_preprocessing" &
 rq worker -u "$REDIS_URL" "$WORKER_FLAG" "${DEFAULT_PREFIX}_normal_execution" &
 rq worker -u "$REDIS_URL" "$WORKER_FLAG" "${DEFAULT_PREFIX}_booked_execution" &
 rq worker -u "$REDIS_URL" "$WORKER_FLAG" "${DEFAULT_PREFIX}_postprocessing" &
+rq worker -u "$REDIS_URL" "$WORKER_FLAG" "${DEFAULT_PREFIX}_recalibration" &
 
 # REST-API
 extra_params=$([[ "$IS_SYSTEMD" = "true" ]] && echo "--proxy-headers" || echo "--reload")

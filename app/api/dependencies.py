@@ -90,6 +90,7 @@ async def lifespan(app: FastAPI):
         "execution_timeout": settings.MAX_EXECUTION_TIME,
         "postprocessing_timeout": settings.MAX_POSTPROCESSING_TIME,
         "general_queue_timeout": settings.MAX_GENERAL_QUEUE_TIME,
+        "recalibration_queue_timeout": settings.MAX_RECALIBRATION_QUEUE_TIME,
     }
 
     with get_redis_connection(settings.RQ_REDIS_URL, is_async=False) as redis_conn:

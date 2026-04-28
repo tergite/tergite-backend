@@ -509,6 +509,7 @@ class QueueContext(TypedDict):
         execution_timeout: the maximum time tasks should run on the execution queue
         postprocessing_timeout: the maximum time tasks should run on the postprocessing queue
         general_queue_timeout: the maximum time tasks should run on the general queue
+        recalibration_queue_timeout: the maximum time tasks should run on the recalibration queue
     """
 
     queue_prefix: str
@@ -525,6 +526,7 @@ class QueueContext(TypedDict):
     preprocessing_timeout: int
     postprocessing_timeout: int
     general_queue_timeout: int
+    recalibration_queue_timeout: int
 
 
 _STAGE_VERBOSE_NAME_MAP: Dict[Stage, str] = {

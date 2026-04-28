@@ -162,6 +162,10 @@ class QuantumExecutor(abc.ABC):
             logger.error(f"\nFailed job: {job_id}, tuid: {tuid}\n{format_exc()}")
             raise e
 
+    @abc.abstractmethod
+    def recalibrate(self) -> None:
+        """Recalibrates the executor"""
+
     def run(self, job_id: str, inputs_folder: Path = PREPROCESSED_JOB_POOL) -> str:
         """Runs the experiments and returns the results file path
 

@@ -61,6 +61,7 @@ from .store import get_jobs_store, init_jobs_store
 from .utils import (
     apply_linear_discriminator,
     decompress_qobj,
+    get_recalibration_job_id,
     get_rq_job_id,
     init_executor,
     log_job_failure,
@@ -413,6 +414,64 @@ def postprocessing_failure_callback(
                 reason="error during post processing",
             )
             update_job_in_mss(mss_client_pipe, payload=job)
+
+
+def recalibrate(
+    context: QueueContext, interval: Optional[float] = None
+) -> Optional[rq.job.Job]:
+    """Recalibrates the device
+
+    Args:
+        context: the context required when running a job on a queue
+        interval: the interval in seconds between two concurrent jobs; default = None i.e. no repeat
+
+    Returns:
+        the rq.job.Job that is constructed and enqueued to schedule next recalibration, or None if interval was not set
+    """
+    from .queues import get_recalibration_queue
+
+    executor_options = context["executor_options"]
+
+    # ensure recalibration runs without interference
+    with get_executor_lock():
+        executor = init_executor(executor_options)
+
+        try:
+            # FIXME: add statuses and timestamps for tracking state of device
+            # set status: recalibrating
+            # set time started: now
+            executor.recalibrate()
+        finally:
+            # set status: recalibrated
+            # set status: last_recalibrated
+            pass
+
+    if isinstance(interval, float):
+        # enqueue next run
+        queue_prefix = context["queue_prefix"]
+        is_async = context["is_async"]
+        recalibration_queue_timeout = context["recalibration_queue_timeout"]
+
+        redis_connection = get_current_job().connection
+        recalibration_queue = get_recalibration_queue(
+            prefix=queue_prefix,
+            connection=redis_connection,
+            default_timeout=recalibration_queue_timeout,
+            is_async=is_async,
+        )
+
+        rq_job_id = get_recalibration_job_id(context)
+        func_name = f"{__name__}.{recalibrate.__qualname__}"
+
+        return recalibration_queue.enqueue_in(
+            timedelta(seconds=interval),
+            func_name,
+            context=context,
+            interval=interval,
+            # rq specific kwargs
+            job_id=rq_job_id,
+        )
+    return None
 
 
 def _is_job_shorter(storage_id: StorageID, duration: float) -> bool:

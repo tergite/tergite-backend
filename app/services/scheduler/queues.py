@@ -28,6 +28,7 @@ from .tasks import (
     postprocessing_failure_callback,
     postprocessing_success_callback,
     preprocess,
+    recalibrate,
 )
 
 
@@ -50,6 +51,7 @@ class QueuePool:
         execution_timeout: int,
         postprocessing_timeout: int,
         general_queue_timeout: int,
+        recalibration_timeout: int,
         is_async: bool = True,
     ):
         """
@@ -61,6 +63,7 @@ class QueuePool:
             execution_timeout: maximum time jobs spend executing
             postprocessing_timeout: maximum time jobs spend postprocessing
             general_queue_timeout: maximum time tasks spend on general queue
+            recalibration_timeout: maximum time tasks spend recalibration queue
         """
         self._connection = connection
         self._is_async = is_async
@@ -97,6 +100,13 @@ class QueuePool:
             is_async=is_async,
         )
 
+        self.recalibration: RqQueue = get_recalibration_queue(
+            prefix,
+            connection=connection,
+            default_timeout=recalibration_timeout,
+            is_async=is_async,
+        )
+
         # static queues
         self.waitlist = get_waitlist(prefix, connection=connection)
 
@@ -110,6 +120,7 @@ class QueuePool:
             execution_timeout=settings.MAX_EXECUTION_TIME,
             postprocessing_timeout=settings.MAX_POSTPROCESSING_TIME,
             general_queue_timeout=settings.MAX_GENERAL_QUEUE_TIME,
+            recalibration_timeout=settings.MAX_RECALIBRATION_QUEUE_TIME,
             is_async=settings.IS_ASYNC,
         )
 
@@ -302,6 +313,40 @@ def get_postprocessing_queue(
     kwargs["failure_callback"] = postprocessing_failure_callback
     return RunnerQueue(
         f"{prefix}_postprocessing",
+        connection,
+        default_timeout=default_timeout,
+        is_async=is_async,
+        **kwargs,
+    )
+
+
+def get_recalibration_queue(
+    prefix: str,
+    connection: Redis,
+    default_timeout: int,
+    is_async: bool = True,
+    **kwargs,
+) -> RqQueue:
+    """Gets the queue for recalibration
+
+    Args:
+        prefix: the prefix to add to the name of the queue
+        connection: the redis connection instance where the queue is hosted
+        is_async: whether the actual queue should be created or
+            a dummy one running in the same process to use for testing
+        default_timeout: the default maximum time a job can take on this queue
+        kwargs: other options to pass to the Queue e.g.
+            - is_async: bool = True,
+            - job_class: Optional[Union[str, type['Job']]] = None,
+            - serializer: Optional[Union[Serializer, str]] = None,
+            - death_penalty_class: Optional[type[BaseDeathPenalty]] = UnixSignalDeathPenalty,
+            - stopped_callback: the callback to run when a job is stopped before it completes
+
+    Returns:
+        a RunnerQueue instance to be used in preprocessing
+    """
+    return RqQueue(
+        f"{prefix}_recalibration",
         connection,
         default_timeout=default_timeout,
         is_async=is_async,

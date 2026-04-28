@@ -18,18 +18,18 @@
 """Module containing service for scheduling jobs"""
 import logging
 from contextlib import suppress
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
 from fastapi import UploadFile
 from pydantic import ValidationError
-from redis import Redis
 from rq import exceptions as rq_errors
 from sqlmodel import or_
 
 from ...libs.device_parameters import get_device_calibration_info
 from ...libs.queues.dtos import Job, JobStatus, QueueContext, Stage, StorageID
-from ...utils.api import save_uploaded_file
+from ...utils.api import GeneralMessage, save_uploaded_file
 from ...utils.datetime import get_utc_now, utc_now_str
 from ...utils.exc import (
     BookingAlreadyActiveError,
@@ -39,7 +39,6 @@ from ...utils.exc import (
     NotAuthenticatedError,
 )
 from ...utils.redis import get_redis_connection
-from ...utils.redis_store import Collection
 from ...utils.rq import cancel_rq_job
 from ..booking import get_many_bookings
 from ..booking.models import Booking, MSSTokenClaims, NewBookingInfo, User
@@ -54,8 +53,8 @@ from ..booking.service import (
 from ..booking.store import get_bookings_sql_engine
 from .queues import QueuePool
 from .store import get_jobs_store, init_jobs_store
-from .tasks import post_booking_cleanup, reset_idleness_timer
-from .utils import get_rq_job_id
+from .tasks import post_booking_cleanup, recalibrate, reset_idleness_timer
+from .utils import get_recalibration_job_id, get_rq_job_id
 
 
 def submit_booking(
@@ -481,6 +480,71 @@ def delete_user_profile(context: QueueContext, queues: QueuePool, user_id: str):
 
     # delete the user
     delete_users(db_engine, User.id == user_id)
+
+
+def init_recalibration(
+    context: QueueContext,
+    queues: QueuePool,
+    start_timestamp: Optional[datetime] = None,
+    interval: Optional[float] = None,
+) -> GeneralMessage:
+    """Initializes recalibration of the device at the given time
+
+    Args:
+        context: the context of the queue
+        queues: the collection of queues on which jobs run.
+        start_timestamp: the timestamp when recalibration should start; defaults to None meaning as soon as possible.
+        interval: the interval in seconds between two recalibrations; defaults to None, meaning no repeat
+
+    Returns:
+        the general message indicating status of request
+    """
+    # just make sure no other recalibration is running or scheduled before starting again
+    job_id = halt_recalibration(context, ignore_errors=True)
+
+    if isinstance(start_timestamp, datetime):
+        queues.recalibration.enqueue_at(
+            datetime=start_timestamp,
+            f=recalibrate,
+            context=context,
+            interval=interval,
+            job_id=job_id,
+        )
+    else:
+        queues.recalibration.enqueue(
+            f=recalibrate,
+            context=context,
+            interval=interval,
+            job_id=job_id,
+        )
+
+    return {
+        "status": "success",
+    }
+
+
+def halt_recalibration(context: QueueContext, ignore_errors: bool = False) -> str:
+    """Cancels recalibration if scheduled
+
+    Args:
+        context: the context required when running a job on a queue
+        ignore_errors: whether to ignore errors during cancellation of recalibration; defaults to False
+
+    Returns:
+        the ID of the rq Job for recalibration
+
+    Raises:
+        rq.exception.NoSuchJobError: if the job does not exist
+        rq.exception.InvalidJobOperationError: if the job is already cancelled
+        rq.exception.InvalidJobOperation: if the job is already cancelled
+    """
+    job_id = get_recalibration_job_id(context)
+    jobs_store_url = context["jobs_store_url"]
+
+    with get_redis_connection(jobs_store_url, is_async=False) as redis_conn:
+        cancel_rq_job(redis_conn, job_id=job_id, ignore_errors=ignore_errors)
+
+    return job_id
 
 
 def _cancel_job_in_queues(queues: QueuePool, job: Job, ignore_errors: bool = False):

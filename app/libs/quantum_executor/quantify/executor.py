@@ -185,6 +185,10 @@ class QuantifyExecutor(QuantumExecutor):
         self._compiler = SerialCompiler(name=f"{self.device_name}_compiler")
         self._compilation_config = self._quantum_device.generate_compilation_config()
 
+    def recalibrate(self) -> None:
+        """Recalibrates the executor"""
+        raise NotImplementedError("recalibrate not implemented")
+
     def _to_native_experiments(
         self, qobj: PulseQobj, native_config: NativeQobjConfig, /
     ) -> List[QuantifyExperiment]:

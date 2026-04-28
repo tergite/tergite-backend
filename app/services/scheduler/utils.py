@@ -337,6 +337,19 @@ def init_executor(options: ExecutorOptions, reset: bool = False) -> QuantumExecu
     )
 
 
+def get_recalibration_job_id(context: QueueContext) -> str:
+    """Gets the rq job id for the recalibration job
+
+    Args:
+        context: the context required when running a job on a queue
+
+    Returns:
+        the rq job id for the idle timer job
+    """
+    queue_prefix = context["queue_prefix"]
+    return f"{queue_prefix}_recalibration_scheduler"
+
+
 def _get_next_status(job: Job, next_stage: Stage) -> JobStatus:
     """Gets the next status given a job and the next stage
 
