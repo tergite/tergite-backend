@@ -57,7 +57,7 @@ from .dtos import RecalibrationInfo
 from .queues import QueuePool
 from .store import get_jobs_store, init_jobs_store
 from .tasks import post_booking_cleanup, recalibrate, reset_idleness_timer
-from .utils import get_recalibration_job_id, get_rq_job_id
+from .utils import get_rq_job_id
 
 
 def submit_booking(
@@ -497,13 +497,18 @@ def init_recalibration(
         context: the context of the queue
         queues: the collection of queues on which jobs run.
         start_timestamp: the timestamp when recalibration should start; defaults to None meaning as soon as possible.
-        interval: the interval in seconds between two recalibrations; defaults to None, meaning no repeat
+        interval: the interval in seconds between two recalibrations; defaults to None,
+            meaning use the default recalibration interval.
 
     Returns:
         the general message indicating status of request
     """
     # just make sure no other recalibration is running or scheduled before starting again
-    job_id = stop_recalibration(context, ignore_errors=True)
+    stop_recalibration(context, queues=queues, ignore_errors=True)
+
+    # set the interval to the default value
+    if interval is None:
+        interval = context["default_recalibration_interval"]
 
     if isinstance(start_timestamp, datetime):
         job = queues.recalibration.enqueue_at(
@@ -511,14 +516,12 @@ def init_recalibration(
             f=recalibrate,
             context=context,
             interval=interval,
-            job_id=job_id,
         )
     else:
         job = queues.recalibration.enqueue(
             f=recalibrate,
             context=context,
             interval=interval,
-            job_id=job_id,
         )
 
     # save some metadata on the job for later retrieval
@@ -528,55 +531,47 @@ def init_recalibration(
     return {"status": "success"}
 
 
-def stop_recalibration(context: QueueContext, ignore_errors: bool = False) -> str:
-    """Cancels recalibration if scheduled
+def stop_recalibration(
+    context: QueueContext, queues: QueuePool, ignore_errors: bool = False
+):
+    """Cancels recalibration if scheduled or queued
 
     Args:
         context: the context required when running a job on a queue
+        queues: the collection of queues on which jobs run.
         ignore_errors: whether to ignore errors during cancellation of recalibration; defaults to False
-
-    Returns:
-        the ID of the rq Job for recalibration
 
     Raises:
         ItemNotFoundError: if the job does not exist
         JobAlreadyCancelled: if the job is already cancelled
     """
-    job_id = get_recalibration_job_id(context)
     jobs_store_url = context["jobs_store_url"]
+    pending_job_ids = queues.recalibration.get_job_ids()
+    pending_job_ids += queues.recalibration.scheduled_job_registry.get_job_ids()
 
     with get_redis_connection(jobs_store_url, is_async=False) as redis_conn:
-        try:
-            cancel_rq_job(redis_conn, job_id=job_id, ignore_errors=ignore_errors)
-        except rq_errors.NoSuchJobError:
-            raise ItemNotFoundError("recalibration job does not exist")
-        except (rq_errors.InvalidJobOperationError, rq_errors.InvalidJobOperation):
-            raise JobAlreadyCancelled("recalibration job is already cancelled")
+        for job_id in pending_job_ids:
+            try:
+                cancel_rq_job(redis_conn, job_id=job_id, ignore_errors=ignore_errors)
+            except rq_errors.NoSuchJobError:
+                raise ItemNotFoundError("recalibration job does not exist")
+            except (rq_errors.InvalidJobOperationError, rq_errors.InvalidJobOperation):
+                raise JobAlreadyCancelled("recalibration job is already cancelled")
 
-    return job_id
 
-
-def get_recalibration_info(context: QueueContext) -> RecalibrationInfo:
+def get_recalibration_info(queues: QueuePool) -> RecalibrationInfo:
     """Gets the basic information about recalibration
 
     Args:
-        context: the context of the queues
+        queues: the collection of queues on which jobs run.
 
     Returns:
         the basic information about the recalibration
 
     Raises:
-        ItemNotFoundError: if the job does not exist
+        RuntimeError: multiple current jobs found: [...]
     """
-    job_id = get_recalibration_job_id(context)
-    jobs_store_url = context["jobs_store_url"]
-
-    with get_redis_connection(jobs_store_url, is_async=False) as redis_conn:
-        try:
-            job = RqJob.fetch(job_id, connection=redis_conn)
-            return RecalibrationInfo.from_job(job)
-        except rq_errors.NoSuchJobError:
-            raise ItemNotFoundError("recalibration job not found")
+    return RecalibrationInfo.from_queue(queues.recalibration)
 
 
 def _cancel_job_in_queues(queues: QueuePool, job: Job, ignore_errors: bool = False):
@@ -642,3 +637,24 @@ def _cancel_booking_from_queues(queues: QueuePool, booking: Booking):
 
     # cancel and remove any end_event jobs
     cancel_rq_job(queue_connection, booking.end_event_id, ignore_errors=True)
+
+
+def _get_current_recalibration_job_id(queues: QueuePool) -> Optional[str]:
+    """Gets the rq job id for the recalibration job
+
+    Args:
+        queues: the pool of queues that jobs run on
+
+    Returns:
+        the rq job id for the recalibration job or None if non-existent
+    """
+    enqueued_jobs = queues.recalibration.get_job_ids(offset=-1, length=-1)
+    scheduled_jobs = queues.recalibration.scheduled_job_registry.get_job_ids(
+        start=-1, end=-1
+    )
+    if scheduled_jobs:
+        return scheduled_jobs[0]
+    elif enqueued_jobs:
+        return enqueued_jobs[0]
+
+    return None

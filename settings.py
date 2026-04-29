@@ -219,7 +219,7 @@ MAX_RECALIBRATION_QUEUE_TIME = max(
 
 # default: 1 day
 DEFAULT_RECALIBRATION_INTERVAL = config(
-    "DEFAULT_RECALIBRATION_INTERVAL", cast=int, default=86_400
+    "DEFAULT_RECALIBRATION_INTERVAL", cast=float, default=86_400
 )
 
 # default: True

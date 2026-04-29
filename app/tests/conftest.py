@@ -9,6 +9,7 @@ from .utils.env import (
     TEST_MAX_GENERAL_QUEUE_TIME,
     TEST_MAX_POSTPROCESSING_TIME,
     TEST_MAX_PREPROCESSING_TIME,
+    TEST_MAX_RECALIBRATION_QUEUE_TIME,
     TEST_QISKIT_1Q_SEED_FILE,
     TEST_QISKIT_2Q_SEED_FILE,
     TEST_QUANTIFY_SEED_FILE,
@@ -164,6 +165,7 @@ def rq_worker(redis_client) -> Generator[SimpleWorker, Any, None]:
         preprocessing_timeout=TEST_MAX_PREPROCESSING_TIME,
         postprocessing_timeout=TEST_MAX_POSTPROCESSING_TIME,
         general_queue_timeout=TEST_MAX_GENERAL_QUEUE_TIME,
+        recalibration_timeout=TEST_MAX_RECALIBRATION_QUEUE_TIME,
     )
     yield get_rq_pool_worker(queue_pool)
 
@@ -179,6 +181,7 @@ def rq_worker_for_simulator_1q(redis_client) -> Generator[SimpleWorker, Any, Non
         preprocessing_timeout=TEST_MAX_PREPROCESSING_TIME,
         postprocessing_timeout=TEST_MAX_POSTPROCESSING_TIME,
         general_queue_timeout=TEST_MAX_GENERAL_QUEUE_TIME,
+        recalibration_timeout=TEST_MAX_RECALIBRATION_QUEUE_TIME,
     )
     yield get_rq_pool_worker(queue_pool)
 
@@ -194,6 +197,7 @@ def rq_worker_for_simulator_2q(redis_client) -> Generator[SimpleWorker, Any, Non
         preprocessing_timeout=TEST_MAX_PREPROCESSING_TIME,
         postprocessing_timeout=TEST_MAX_POSTPROCESSING_TIME,
         general_queue_timeout=TEST_MAX_GENERAL_QUEUE_TIME,
+        recalibration_timeout=TEST_MAX_RECALIBRATION_QUEUE_TIME,
     )
     yield get_rq_pool_worker(queue_pool)
 

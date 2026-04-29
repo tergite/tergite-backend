@@ -61,7 +61,6 @@ from .store import get_jobs_store, init_jobs_store
 from .utils import (
     apply_linear_discriminator,
     decompress_qobj,
-    get_recalibration_job_id,
     get_rq_job_id,
     init_executor,
     log_job_failure,
@@ -452,7 +451,6 @@ def recalibrate(
             is_async=is_async,
         )
 
-        rq_job_id = get_recalibration_job_id(context)
         func_name = f"{__name__}.{recalibrate.__qualname__}"
 
         job = recalibration_queue.enqueue_in(
@@ -460,8 +458,6 @@ def recalibrate(
             func_name,
             context=context,
             interval=interval,
-            # rq specific kwargs
-            job_id=rq_job_id,
         )
 
         # save some metadata on the job for later retrieval

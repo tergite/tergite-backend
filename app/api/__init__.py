@@ -657,26 +657,27 @@ async def initialize_recalibration(
 
 @app.get("/recalibration/info", dependencies=[Depends(get_verified_mss_admin_user_id)])
 async def get_recalibration_info(
-    context: QueueContext = Depends(get_cached_queue_context),
+    queue_pool: QueuePool = Depends(get_queue_pool),
 ) -> RecalibrationInfo:
     """Gets the current information about the recalibration
 
     Only MSS admin users can initialize recalibration
 
     Args:
-        context: the queue context for the recalibration
+        queue_pool: the collection of queues to run the recalibration on
 
     Returns:
         the information about the recalibration
     """
-    return scheduler.get_recalibration_info(context)
+    return scheduler.get_recalibration_info(queues=queue_pool)
 
 
-@app.get(
+@app.post(
     "/recalibration/cancel", dependencies=[Depends(get_verified_mss_admin_user_id)]
 )
 async def cancel_recalibration(
     context: QueueContext = Depends(get_cached_queue_context),
+    queue_pool: QueuePool = Depends(get_queue_pool),
     ignore_errors: bool = Query(False),
 ) -> GeneralMessage:
     """Cancels recalibration on this device
@@ -685,10 +686,13 @@ async def cancel_recalibration(
 
     Args:
         context: the queue context for the recalibration
+        queue_pool: the collection of queues to run the recalibration on
         ignore_errors: whether to ignore errors during recalibration
 
     Returns:
         general information on the status of the request
     """
-    scheduler.stop_recalibration(context, ignore_errors=ignore_errors)
+    scheduler.stop_recalibration(
+        context, queues=queue_pool, ignore_errors=ignore_errors
+    )
     return {"status": "success"}

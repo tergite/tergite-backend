@@ -14,7 +14,7 @@
 #
 """Utility functions for the scheduler service"""
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 from numpy import typing as npt
@@ -24,10 +24,7 @@ from sklearn.utils.extmath import safe_sparse_dot
 import settings
 
 from ...libs.device_parameters import (
-    BackendConfig,
     DeviceCalibration,
-    get_backend_config,
-    save_all_device_params,
 )
 from ...libs.quantum_executor.base.executor import QuantumExecutor
 from ...libs.quantum_executor.qiskit.executor import QiskitDynamicsExecutor
@@ -41,7 +38,6 @@ from ...libs.queues.dtos import (
     JobStage,
     JobStatus,
     LogLevel,
-    QueueContext,
     Stage,
     Timestamps,
 )
@@ -49,7 +45,6 @@ from ...utils.datetime import utc_now_str
 from ...utils.redis_store import Collection
 from ..external.mss.dtos import DeviceEvent, DeviceEventName, EventResponse
 from ..external.mss.service import (
-    AsyncMssClientPipe,
     MssClientPipe,
 )
 
@@ -335,19 +330,6 @@ def init_executor(options: ExecutorOptions, reset: bool = False) -> QuantumExecu
         should_restore_currents=options.should_restore_currents,
         are_clusters_resettable=options.are_clusters_resettable,
     )
-
-
-def get_recalibration_job_id(context: QueueContext) -> str:
-    """Gets the rq job id for the recalibration job
-
-    Args:
-        context: the context required when running a job on a queue
-
-    Returns:
-        the rq job id for the idle timer job
-    """
-    queue_prefix = context["queue_prefix"]
-    return f"{queue_prefix}_recalibration_scheduler"
 
 
 def _get_next_status(job: Job, next_stage: Stage) -> JobStatus:

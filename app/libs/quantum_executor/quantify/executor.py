@@ -187,7 +187,17 @@ class QuantifyExecutor(QuantumExecutor):
 
     def recalibrate(self) -> None:
         """Recalibrates the executor"""
-        raise NotImplementedError("recalibrate not implemented")
+        is_dummy = False
+        for conf in self.quantify_metadata.root.values():
+            if conf.is_dummy:
+                is_dummy = True
+                break
+
+        if is_dummy:
+            # do nothing except log if this is dummy executor
+            logging.info("recalibrating the dummy executor")
+        else:
+            raise NotImplementedError("recalibrate not implemented")
 
     def _to_native_experiments(
         self, qobj: PulseQobj, native_config: NativeQobjConfig, /
