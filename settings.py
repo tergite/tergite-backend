@@ -217,6 +217,11 @@ MAX_RECALIBRATION_QUEUE_TIME = max(
     0, config("MAX_RECALIBRATION_QUEUE_TIME", cast=int, default=5400)
 )
 
+# default: 1 day
+DEFAULT_RECALIBRATION_INTERVAL = config(
+    "DEFAULT_RECALIBRATION_INTERVAL", cast=int, default=86_400
+)
+
 # default: True
 IS_ASYNC = config("IS_ASYNC", cast=bool, default="True")
 

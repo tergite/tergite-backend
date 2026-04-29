@@ -57,6 +57,7 @@ from app.utils.exc import (
 from ..libs import device_parameters as props_lib
 from ..libs.queues.dtos import Job, JobStatus, QueueContext
 from ..services.booking import get_user
+from ..services.scheduler.dtos import RecalibrationInfo
 from ..services.scheduler.queues import QueuePool
 from ..utils.api import (
     CancellationDetails,
@@ -113,7 +114,6 @@ app.add_exception_handler(IndexError, to_http_error(500, "Unexpected server erro
 app.add_exception_handler(TypeError, to_http_error(500, "Unexpected server error"))
 app.add_exception_handler(RuntimeError, to_http_error(500, "Unexpected server error"))
 app.add_exception_handler(InvalidJobIdInUploadedFileError, to_http_error(400))
-app.add_exception_handler(ItemNotFoundError, to_http_error(404))
 app.add_exception_handler(JobAlreadyCancelled, to_http_error(406))
 
 # setup CORS if CORS_ORIGINS are set
@@ -628,3 +628,67 @@ async def view_jobs(
     )
     results = PaginatedListResponse[Job](skip=skip, limit=limit, data=data)
     return results.model_dump(mode="json")
+
+
+@app.post("/recalibration/init", dependencies=[Depends(get_verified_mss_admin_user_id)])
+async def initialize_recalibration(
+    context: QueueContext = Depends(get_cached_queue_context),
+    queue_pool: QueuePool = Depends(get_queue_pool),
+    start_timestamp: Optional[datetime] = Query(None),
+    interval: Optional[float] = Query(None),
+) -> GeneralMessage:
+    """Initializes recalibration
+
+    Only MSS admin users can initialize recalibration
+
+    Args:
+        context: the queue context for the recalibration
+        queue_pool: the collection of queues to run the recalibration on
+        start_timestamp: the start time of the recalibration; default = None i.e. straight away
+        interval: the recalibration interval; default = None i.e. no repeat
+
+    Returns:
+        the status of the recalibration
+    """
+    return scheduler.init_recalibration(
+        context, queues=queue_pool, start_timestamp=start_timestamp, interval=interval
+    )
+
+
+@app.get("/recalibration/info", dependencies=[Depends(get_verified_mss_admin_user_id)])
+async def get_recalibration_info(
+    context: QueueContext = Depends(get_cached_queue_context),
+) -> RecalibrationInfo:
+    """Gets the current information about the recalibration
+
+    Only MSS admin users can initialize recalibration
+
+    Args:
+        context: the queue context for the recalibration
+
+    Returns:
+        the information about the recalibration
+    """
+    return scheduler.get_recalibration_info(context)
+
+
+@app.get(
+    "/recalibration/cancel", dependencies=[Depends(get_verified_mss_admin_user_id)]
+)
+async def cancel_recalibration(
+    context: QueueContext = Depends(get_cached_queue_context),
+    ignore_errors: bool = Query(False),
+) -> GeneralMessage:
+    """Cancels recalibration on this device
+
+    Only MSS admin users can initialize recalibration
+
+    Args:
+        context: the queue context for the recalibration
+        ignore_errors: whether to ignore errors during recalibration
+
+    Returns:
+        general information on the status of the request
+    """
+    scheduler.stop_recalibration(context, ignore_errors=ignore_errors)
+    return {"status": "success"}

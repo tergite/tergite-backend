@@ -435,17 +435,9 @@ def recalibrate(
     # ensure recalibration runs without interference
     with get_executor_lock():
         executor = init_executor(executor_options)
+        executor.recalibrate()
 
-        try:
-            # FIXME: add statuses and timestamps for tracking state of device
-            # set status: recalibrating
-            # set time started: now
-            executor.recalibrate()
-        finally:
-            # set status: recalibrated
-            # set status: last_recalibrated
-            pass
-
+    # schedule next run
     if isinstance(interval, float):
         # enqueue next run
         queue_prefix = context["queue_prefix"]
@@ -463,7 +455,7 @@ def recalibrate(
         rq_job_id = get_recalibration_job_id(context)
         func_name = f"{__name__}.{recalibrate.__qualname__}"
 
-        return recalibration_queue.enqueue_in(
+        job = recalibration_queue.enqueue_in(
             timedelta(seconds=interval),
             func_name,
             context=context,
@@ -471,6 +463,12 @@ def recalibrate(
             # rq specific kwargs
             job_id=rq_job_id,
         )
+
+        # save some metadata on the job for later retrieval
+        job.meta["interval"] = interval
+        job.save_meta()
+
+        return job
     return None
 
 

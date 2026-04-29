@@ -169,6 +169,11 @@ MAX_GENERAL_QUEUE_TIME=180
 # default: 2 hours
 MAX_RECALIBRATION_QUEUE_TIME=7200
 
+# The default time in seconds between consecutive recalibration runs
+#
+# default: 1 day
+DEFAULT_RECALIBRATION_INTERVAL=86400
+
 # Whether the jobs should be run in the same main process (synchronously) or on workers (asynchronously)
 # this is useful for testing rq
 # default: True

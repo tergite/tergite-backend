@@ -25,6 +25,7 @@ from typing import List, Optional
 from fastapi import UploadFile
 from pydantic import ValidationError
 from rq import exceptions as rq_errors
+from rq.job import Job as RqJob
 from sqlmodel import or_
 
 from ...libs.device_parameters import get_device_calibration_info
@@ -36,6 +37,7 @@ from ...utils.exc import (
     BookingAlreadyCompleteError,
     ConflictError,
     ItemNotFoundError,
+    JobAlreadyCancelled,
     NotAuthenticatedError,
 )
 from ...utils.redis import get_redis_connection
@@ -51,6 +53,7 @@ from ..booking.service import (
     get_user,
 )
 from ..booking.store import get_bookings_sql_engine
+from .dtos import RecalibrationInfo
 from .queues import QueuePool
 from .store import get_jobs_store, init_jobs_store
 from .tasks import post_booking_cleanup, recalibrate, reset_idleness_timer
@@ -500,10 +503,10 @@ def init_recalibration(
         the general message indicating status of request
     """
     # just make sure no other recalibration is running or scheduled before starting again
-    job_id = halt_recalibration(context, ignore_errors=True)
+    job_id = stop_recalibration(context, ignore_errors=True)
 
     if isinstance(start_timestamp, datetime):
-        queues.recalibration.enqueue_at(
+        job = queues.recalibration.enqueue_at(
             datetime=start_timestamp,
             f=recalibrate,
             context=context,
@@ -511,19 +514,21 @@ def init_recalibration(
             job_id=job_id,
         )
     else:
-        queues.recalibration.enqueue(
+        job = queues.recalibration.enqueue(
             f=recalibrate,
             context=context,
             interval=interval,
             job_id=job_id,
         )
 
-    return {
-        "status": "success",
-    }
+    # save some metadata on the job for later retrieval
+    job.meta["interval"] = interval
+    job.save_meta()
+
+    return {"status": "success"}
 
 
-def halt_recalibration(context: QueueContext, ignore_errors: bool = False) -> str:
+def stop_recalibration(context: QueueContext, ignore_errors: bool = False) -> str:
     """Cancels recalibration if scheduled
 
     Args:
@@ -534,17 +539,44 @@ def halt_recalibration(context: QueueContext, ignore_errors: bool = False) -> st
         the ID of the rq Job for recalibration
 
     Raises:
-        rq.exception.NoSuchJobError: if the job does not exist
-        rq.exception.InvalidJobOperationError: if the job is already cancelled
-        rq.exception.InvalidJobOperation: if the job is already cancelled
+        ItemNotFoundError: if the job does not exist
+        JobAlreadyCancelled: if the job is already cancelled
     """
     job_id = get_recalibration_job_id(context)
     jobs_store_url = context["jobs_store_url"]
 
     with get_redis_connection(jobs_store_url, is_async=False) as redis_conn:
-        cancel_rq_job(redis_conn, job_id=job_id, ignore_errors=ignore_errors)
+        try:
+            cancel_rq_job(redis_conn, job_id=job_id, ignore_errors=ignore_errors)
+        except rq_errors.NoSuchJobError:
+            raise ItemNotFoundError("recalibration job does not exist")
+        except (rq_errors.InvalidJobOperationError, rq_errors.InvalidJobOperation):
+            raise JobAlreadyCancelled("recalibration job is already cancelled")
 
     return job_id
+
+
+def get_recalibration_info(context: QueueContext) -> RecalibrationInfo:
+    """Gets the basic information about recalibration
+
+    Args:
+        context: the context of the queues
+
+    Returns:
+        the basic information about the recalibration
+
+    Raises:
+        ItemNotFoundError: if the job does not exist
+    """
+    job_id = get_recalibration_job_id(context)
+    jobs_store_url = context["jobs_store_url"]
+
+    with get_redis_connection(jobs_store_url, is_async=False) as redis_conn:
+        try:
+            job = RqJob.fetch(job_id, connection=redis_conn)
+            return RecalibrationInfo.from_job(job)
+        except rq_errors.NoSuchJobError:
+            raise ItemNotFoundError("recalibration job not found")
 
 
 def _cancel_job_in_queues(queues: QueuePool, job: Job, ignore_errors: bool = False):
