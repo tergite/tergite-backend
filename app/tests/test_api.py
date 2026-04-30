@@ -2353,7 +2353,7 @@ def test_init_recalibration_without_interval(client, redis_conn: Redis, worker):
 
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
 def test_init_recalibration_with_start_time(client, redis_conn: Redis, worker):
-    """Init recalibration restarts the calibration sequence at a given start time in future"""
+    """POST /recalibration/cancel restarts the recalibration sequence at a given start time in future"""
     with client as client:
         users = _create_many_users(client, raw_users=USERS)
         user = users[0]
@@ -2396,7 +2396,7 @@ def test_init_recalibration_with_start_time(client, redis_conn: Redis, worker):
 
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
 def test_get_recalibration_info(client, redis_conn: Redis, worker):
-    """Get recalibration info retrieves the basic recalibration info"""
+    """Get /recalibration/info gets recalibration info retrieves the basic recalibration info"""
     with client as client:
         users = _create_many_users(client, raw_users=USERS)
         user = users[0]
@@ -2509,9 +2509,73 @@ def test_get_recalibration_info(client, redis_conn: Redis, worker):
         }
 
 
-def test_cancel_recalibration(client):
-    """Cancels the recalibration that maybe running and any future recalibrations"""
-    assert False
+@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
+def test_cancel_default_recalibration(client, redis_conn: Redis, worker):
+    """POST /recalibration/cancel cancels the default recalibration started on startup"""
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS)
+        user = users[0]
+        user_id = user["id"]
+        queue_prefix = client.app.state.QUEUE_CONTEXT["queue_prefix"]
+        queue_name = f"{queue_prefix}_recalibration"
+        queue = _get_queue_by_name(worker, queue_name)
+
+        headers = create_mss_headers(user_id, is_admin=True)
+        response = client.post("/recalibration/cancel", headers=headers)
+        assert response.status_code == 200
+        assert response.json() == {"status": "success"}
+        assert queue.jobs == []
+        assert queue.canceled_job_registry.count == 1
+        assert queue.scheduled_job_registry.count == 0
+        assert queue.finished_job_registry.count == 0
+        assert queue.failed_job_registry.count == 0
+        assert queue.deferred_job_registry.count == 0
+
+
+@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
+def test_cancel_restarted_recalibration(client, redis_conn: Redis, worker):
+    """POST /recalibration/cancel cancels any recalibration restarted even after cancellation"""
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS)
+        user = users[0]
+        user_id = user["id"]
+        queue_prefix = client.app.state.QUEUE_CONTEXT["queue_prefix"]
+        queue_name = f"{queue_prefix}_recalibration"
+        queue = _get_queue_by_name(worker, queue_name)
+
+        # first cancel the recalibration
+        headers = create_mss_headers(user_id, is_admin=True)
+        response = client.post("/recalibration/cancel", headers=headers)
+        assert response.status_code == 200
+
+        # restart the recalibration with a given interval
+        headers = create_mss_headers(user_id, is_admin=True)
+        start_timestamp = datetime.now(timezone.utc) + timedelta(seconds=2)
+        response = client.post(
+            "/recalibration/init",
+            headers=headers,
+            params={
+                "start_timestamp": start_timestamp.isoformat(),
+                "interval": 4.0,
+            },
+        )
+        assert response.status_code == 200
+
+        assert queue.canceled_job_registry.count == 1
+        assert queue.scheduled_job_registry.count == 1
+
+        # Cancel the recalibration again
+        headers = create_mss_headers(user_id, is_admin=True)
+        response = client.post("/recalibration/cancel", headers=headers)
+        assert response.status_code == 200
+        assert response.json() == {"status": "success"}
+
+        assert queue.jobs == []
+        assert queue.canceled_job_registry.count == 2
+        assert queue.scheduled_job_registry.count == 0
+        assert queue.finished_job_registry.count == 0
+        assert queue.failed_job_registry.count == 0
+        assert queue.deferred_job_registry.count == 0
 
 
 def _cancel_job_via_mss(

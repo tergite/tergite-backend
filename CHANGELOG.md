@@ -7,6 +7,12 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Added
+
+- Added recalibration offering to the scheduler service, to start on startup
+- Added recalibration endpoints to the API to restart (`/recalibration/init`), 
+  view (`/recalibration/info`), and cancel (`/recalibration/cancel`) recalibration.
+
 ## [2026.06.0-rc.1] - 2026-05-19
 
 ### Fixed
