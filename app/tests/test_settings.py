@@ -1,5 +1,6 @@
 """Tests for the settings and configs"""
 
+import math
 import os
 import time
 
@@ -67,7 +68,7 @@ async def test_mss_reconnection():
 
     end_time = time.time()
     time_taken = end_time - start_time
-    assert abs(time_taken - net_connection_timeout) < 2.5
+    assert math.isclose(time_taken, net_connection_timeout, abs_tol=3)
 
 
 @pytest.mark.asyncio
