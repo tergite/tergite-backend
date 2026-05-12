@@ -19,6 +19,7 @@ jobs:
     strategy:
       matrix:
         python-version: [ "3.12", "3.13" ]
+        deps-group: [ "qiskit", "quantify" ]
 
     services:
       redis:
@@ -32,27 +33,19 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           python-version: ${{ matrix.python-version }}
-          cache: 'pip'
+          enable-cache: true
+          cache-suffix: ${{ matrix.deps-group }}
       - name: Run tests
         run: |
-          pip install ."[dev]"
+          uv sync --dev --extra ${{ matrix.deps-group }}
           black --check app
           isort --check-only app
-          PYTEST_ARGS=${{ vars.PYTEST_ARGS }}
-          CPU_COUNT=$(python -c "import os; print(os.cpu_count())")
-          WORKER_COUNT=$(python -c "import os; print(min(os.cpu_count(), 4))")
-          echo "CPUs - $CPU_COUNT, WORKERS - $WORKER_COUNT"
-          echo "PYTEST_ARGS=$PYTEST_ARGS"
-          if [ -z "$PYTEST_ARGS" ]; then 
-            pytest app; 
-          else 
-            pytest $PYTEST_ARGS; 
-          fi
+          pytest app;
         env:
           REDIS_HOST: localhost
           REDIS_PORT: 6379
