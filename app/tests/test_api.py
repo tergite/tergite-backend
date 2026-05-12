@@ -35,6 +35,7 @@ from uuid import uuid4
 import pytest
 from black.nodes import Generic
 from pydantic import ValidationError
+from pytest_lazy_fixtures import lf as lazy_fixture
 from pytest_mock import MockerFixture
 from redis import Redis
 from rq import Queue as RqQueue
@@ -46,6 +47,8 @@ from app.services.booking.models import Booking
 from app.tests.conftest import (
     CLIENT_AND_RQ_WORKER_TUPLES,
     FASTAPI_CLIENTS,
+    HAS_QISKIT_DYNAMICS,
+    HAS_QUANTIFY,
     INVALID_CREATE_BOOKINGS_PARAMS,
     JOBS,
     JOBS_HASH_NAME,
@@ -92,17 +95,41 @@ _DYNAMIC_PROPERTIES = [
 ]
 
 # params
-_QUANTIFY_UPLOAD_JOB_PARAMS = [
-    (*CLIENT_AND_RQ_WORKER_TUPLES[0], job) for job in _QUANTIFY_JOBS_FOR_UPLOAD
-]
+_QUANTIFY_UPLOAD_JOB_PARAMS = []
+_SIM_1Q_UPLOAD_JOB_PARAMS = []
+_SIM_2Q_UPLOAD_JOB_PARAMS = []
 
-_SIM_1Q_UPLOAD_JOB_PARAMS = [
-    (*CLIENT_AND_RQ_WORKER_TUPLES[1], job) for job in _SIM_1Q_JOBS_FOR_UPLOAD
-]
+if HAS_QUANTIFY:
+    _QUANTIFY_UPLOAD_JOB_PARAMS = [
+        (
+            lazy_fixture("quantify_rest_client"),
+            lazy_fixture("redis_client"),
+            lazy_fixture("rq_worker"),
+            job,
+        )
+        for job in _QUANTIFY_JOBS_FOR_UPLOAD
+    ]
 
-_SIM_2Q_UPLOAD_JOB_PARAMS = [
-    (*CLIENT_AND_RQ_WORKER_TUPLES[2], job) for job in _SIM_2Q_JOBS_FOR_UPLOAD
-]
+if HAS_QISKIT_DYNAMICS:
+    _SIM_1Q_UPLOAD_JOB_PARAMS = [
+        (
+            lazy_fixture("qiskit_1q_rest_client"),
+            lazy_fixture("redis_client"),
+            lazy_fixture("rq_worker_for_simulator_1q"),
+            job,
+        )
+        for job in _SIM_1Q_JOBS_FOR_UPLOAD
+    ]
+
+    _SIM_2Q_UPLOAD_JOB_PARAMS = [
+        (
+            lazy_fixture("qiskit_2q_rest_client"),
+            lazy_fixture("redis_client"),
+            lazy_fixture("rq_worker_for_simulator_1q"),
+            job,
+        )
+        for job in _SIM_2Q_JOBS_FOR_UPLOAD
+    ]
 
 _SIMPLE_UPLOAD_JOB_PARAMS = (
     _QUANTIFY_UPLOAD_JOB_PARAMS + _SIM_1Q_UPLOAD_JOB_PARAMS + _SIM_2Q_UPLOAD_JOB_PARAMS

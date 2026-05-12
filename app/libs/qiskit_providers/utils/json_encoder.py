@@ -33,7 +33,12 @@
 import json
 from typing import Any
 
-from qiskit.circuit.parameterexpression import ParameterExpression
+_PARAMETER_SLOTS = [
+    "_parameter_symbols",
+    "_parameter_keys",
+    "_symbol_expr",
+    "_name_map",
+]
 
 
 class IQXJsonEncoder(json.JSONEncoder):
@@ -73,7 +78,9 @@ class IQXJsonEncoder(json.JSONEncoder):
         # Use Qobj complex json format:
         if isinstance(o, complex):
             return (o.real, o.imag)
-        if isinstance(o, ParameterExpression):
+
+        obj_slots = getattr(type(o), "slots", ())
+        if all(slot in obj_slots for slot in _PARAMETER_SLOTS):
             try:
                 return float(o)
             except (TypeError, RuntimeError):

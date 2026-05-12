@@ -27,8 +27,6 @@ from ...libs.device_parameters import (
     DeviceCalibration,
 )
 from ...libs.quantum_executor.base.executor import QuantumExecutor
-from ...libs.quantum_executor.qiskit.executor import QiskitDynamicsExecutor
-from ...libs.quantum_executor.quantify.executor import QuantifyExecutor
 from ...libs.quantum_executor.utils.serialization import iqx_rld
 from ...libs.queues.dtos import (
     ExecutorOptions,
@@ -313,14 +311,26 @@ def init_executor(options: ExecutorOptions, reset: bool = False) -> QuantumExecu
     backend_config = options.backend_config
 
     if executor_type == "qiskit_pulse_1q":
+        # only import this if the executor is of the qiskit_pulse so
+        # that the rest of the code is independent of qiskit
+        from ...libs.quantum_executor.qiskit.executor import QiskitDynamicsExecutor
+
         return QiskitDynamicsExecutor.new_one_qubit(
             backend_config=backend_config, reset=reset
         )
 
     elif executor_type == "qiskit_pulse_2q":
+        # only import this if the executor is of the qiskit_pulse so
+        # that the rest of the code is independent of qiskit
+        from ...libs.quantum_executor.qiskit.executor import QiskitDynamicsExecutor
+
         return QiskitDynamicsExecutor.new_two_qubit(
             backend_config=backend_config, reset=reset
         )
+
+    # only import this if the executor is of the quantify so
+    # that the rest of the code is independent of quantify
+    from ...libs.quantum_executor.quantify.executor import QuantifyExecutor
 
     return QuantifyExecutor(
         quantify_config_file=options.quantify_config_file,

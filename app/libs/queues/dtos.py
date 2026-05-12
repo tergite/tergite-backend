@@ -42,9 +42,9 @@ from pydantic import (
 )
 from pydantic_core import CoreSchema, core_schema
 from pydantic_core.core_schema import SerializationInfo
-from qiskit.qobj import PulseQobj
 
 import settings
+from app.libs.qiskit.qobj import PulseQobj
 
 from ...utils.datetime import get_utc_now, to_utc, utc_now_str
 from ...utils.exc import JobAlreadyCompleteError

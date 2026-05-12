@@ -26,8 +26,9 @@ from typing import Any, Optional, Tuple, Type
 import redis
 import rq.job
 from pydantic import ValidationError
-from qiskit.qobj import PulseQobj
 from rq import Repeat, get_current_job
+
+from app.libs.qiskit.qobj import PulseQobj
 
 from ...libs.device_parameters import (
     get_device_calibration_info,

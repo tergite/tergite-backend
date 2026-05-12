@@ -16,9 +16,10 @@ from types import SimpleNamespace
 
 import pandas as pd
 import pytest
-from qiskit.qobj import PulseQobj
 from quantify_scheduler.backends.graph_compilation import SerialCompiler
 from quantify_scheduler.device_under_test.quantum_device import QuantumDevice
+
+from app.libs.qiskit.qobj import PulseQobj
 
 # SUT pieces
 from app.libs.quantum_executor.quantify.experiment import QuantifyExperiment

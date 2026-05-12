@@ -18,7 +18,7 @@ import copy
 from dataclasses import dataclass
 from typing import Generic, TypeVar
 
-from qiskit.qobj import PulseQobjConfig, QobjExperimentHeader
+from app.libs.qiskit.qobj import PulseQobjConfig, QobjExperimentHeader
 
 T = TypeVar("T")
 

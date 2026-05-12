@@ -16,7 +16,6 @@ import socket
 import pytest
 
 from ...libs.device_parameters.dtos import BackendConfig
-from ...libs.quantum_executor.quantify.executor import QuantifyExecutor
 from ..utils.fixtures import get_fixture_path
 
 _REAL_HARDWARE_QUANTIFY_CONFIG_FILE = get_fixture_path("generic-quantify-config.json")
@@ -31,6 +30,9 @@ def test_attempts_to_connect_to_real_hardware():
         backend_conf = BackendConfig.from_toml(
             _BACKEND_CONFIG_PATH, seed_file=_CALIBRATION_SEED_FILE
         )
+
+        from ...libs.quantum_executor.quantify.executor import QuantifyExecutor
+
         QuantifyExecutor(
             quantify_config_file=_REAL_HARDWARE_QUANTIFY_CONFIG_FILE,
             quantify_metadata_file=_REAL_HARDWARE_QUANTIFY_METADATA_FILE,

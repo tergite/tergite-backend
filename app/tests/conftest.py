@@ -49,62 +49,82 @@ import redis
 from fastapi.testclient import TestClient
 from pytest_lazy_fixtures import lf as lazy_fixture
 from pytest_mock import MockerFixture
-from qblox_instruments import SpiRack
 from redis.client import Redis
 from rq import SimpleWorker
 from sqlalchemy import create_engine
 from sqlmodel import SQLModel
 
-from ..libs.quantum_executor.quantify.spi_dac import SpiDAC
-from ..libs.quantum_executor.utils.config import QuantifyMetadata, SpiRackConfig
 from ..libs.queues.dtos import Job
 from ..services.scheduler.queues import QueuePool
 from .utils.analysis import MockLinearDiscriminantAnalysis
-from .utils.executors import MockQiskitDynamicsExecutor, MockQuantifyExecutor
 from .utils.fixtures import get_fixture_path, load_fixture
 from .utils.mocks import make_attr_verbose
 from .utils.mss import MockWebsocket
 from .utils.rq import get_rq_pool_worker
 
+HAS_QISKIT_DYNAMICS = False
+HAS_QUANTIFY = False
+
+with suppress(ImportError):
+    import qiskit_dynamics
+
+    HAS_QISKIT_DYNAMICS = True
+
+with suppress(ImportError):
+    import quantify_scheduler
+
+    HAS_QUANTIFY = True
+
 _redis_connection = redis.Redis.from_url(TEST_RQ_REDIS_URL)
 
 MOCK_NOW = "2023-11-27T12:46:48.851656+00:00"
 
-FASTAPI_CLIENTS = [
-    lazy_fixture("quantify_rest_client"),
-    lazy_fixture("qiskit_1q_rest_client"),
-    lazy_fixture("qiskit_2q_rest_client"),
-]
+FASTAPI_CLIENTS = []
+CLIENTS = []
+CLIENT_AND_RQ_WORKER_TUPLES = []
 
-CLIENTS = [
-    (lazy_fixture("quantify_rest_client"), lazy_fixture("redis_client")),
-    (
-        lazy_fixture("qiskit_1q_rest_client"),
-        lazy_fixture("redis_client"),
-    ),
-    (
-        lazy_fixture("qiskit_2q_rest_client"),
-        lazy_fixture("redis_client"),
-    ),
-]
-
-CLIENT_AND_RQ_WORKER_TUPLES = [
-    (
+if HAS_QUANTIFY:
+    FASTAPI_CLIENTS += [
         lazy_fixture("quantify_rest_client"),
-        lazy_fixture("redis_client"),
-        lazy_fixture("rq_worker"),
-    ),
-    (
+    ]
+    CLIENTS += [
+        (lazy_fixture("quantify_rest_client"), lazy_fixture("redis_client")),
+    ]
+    CLIENT_AND_RQ_WORKER_TUPLES += [
+        (
+            lazy_fixture("quantify_rest_client"),
+            lazy_fixture("redis_client"),
+            lazy_fixture("rq_worker"),
+        ),
+    ]
+
+if HAS_QISKIT_DYNAMICS:
+    FASTAPI_CLIENTS += [
         lazy_fixture("qiskit_1q_rest_client"),
-        lazy_fixture("redis_client"),
-        lazy_fixture("rq_worker_for_simulator_1q"),
-    ),
-    (
         lazy_fixture("qiskit_2q_rest_client"),
-        lazy_fixture("redis_client"),
-        lazy_fixture("rq_worker_for_simulator_2q"),
-    ),
-]
+    ]
+    CLIENTS += [
+        (
+            lazy_fixture("qiskit_1q_rest_client"),
+            lazy_fixture("redis_client"),
+        ),
+        (
+            lazy_fixture("qiskit_2q_rest_client"),
+            lazy_fixture("redis_client"),
+        ),
+    ]
+    CLIENT_AND_RQ_WORKER_TUPLES += [
+        (
+            lazy_fixture("qiskit_1q_rest_client"),
+            lazy_fixture("redis_client"),
+            lazy_fixture("rq_worker_for_simulator_1q"),
+        ),
+        (
+            lazy_fixture("qiskit_2q_rest_client"),
+            lazy_fixture("redis_client"),
+            lazy_fixture("rq_worker_for_simulator_2q"),
+        ),
+    ]
 
 _mock_linear_discriminant_analysis = MockLinearDiscriminantAnalysis(
     result={
@@ -202,6 +222,7 @@ def rq_worker_for_simulator_2q(redis_client) -> Generator[SimpleWorker, Any, Non
     yield get_rq_pool_worker(queue_pool)
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.fixture
 def quantify_rest_client(mocker, redis_client) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
@@ -211,8 +232,11 @@ def quantify_rest_client(mocker, redis_client) -> Generator[TestClient, Any, Non
     os.environ["BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
     os.environ["CALIBRATION_SEED"] = TEST_QUANTIFY_SEED_FILE
 
+    from .utils.executors.quantify import MockQuantifyExecutor
+
     mocker.patch(
-        "app.services.scheduler.utils.QuantifyExecutor", new=MockQuantifyExecutor
+        "app.libs.quantum_executor.quantify.executor.QuantifyExecutor",
+        new=MockQuantifyExecutor,
     )
 
     import app
@@ -233,6 +257,7 @@ def patched_mss_websockets(mocker) -> Generator[MockerFixture, Any, None]:
     yield mocker
 
 
+@pytest.mark.skipif(not HAS_QISKIT_DYNAMICS, reason="requires qiskit")
 @pytest.fixture
 def qiskit_1q_rest_client(mocker) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
@@ -241,6 +266,17 @@ def qiskit_1q_rest_client(mocker) -> Generator[TestClient, Any, None]:
     os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_1Q
     os.environ["BACKEND_SETTINGS"] = TEST_SIMQ1_BACKEND_SETTINGS_FILE
     os.environ["CALIBRATION_SEED"] = TEST_QISKIT_1Q_SEED_FILE
+
+    from .utils.executors.qiskit import MockQiskitDynamicsExecutor
+
+    mocker.patch(
+        "app.libs.quantum_executor.qiskit.executor.QiskitDynamicsExecutor",
+        new=MockQiskitDynamicsExecutor,
+    )
+    mocker.patch(
+        "app.libs.quantum_executor.qiskit.backends.one_qubit.LinearDiscriminantAnalysis",
+        return_value=_mock_linear_discriminant_analysis,
+    )
 
     import app
     import settings
@@ -254,6 +290,7 @@ def qiskit_1q_rest_client(mocker) -> Generator[TestClient, Any, None]:
     _redis_connection.flushall()
 
 
+@pytest.mark.skipif(not HAS_QISKIT_DYNAMICS, reason="requires qiskit")
 @pytest.fixture
 def qiskit_2q_rest_client(mocker) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
@@ -262,6 +299,17 @@ def qiskit_2q_rest_client(mocker) -> Generator[TestClient, Any, None]:
     os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_2Q
     os.environ["BACKEND_SETTINGS"] = TEST_SIMQ2_BACKEND_SETTINGS_FILE
     os.environ["CALIBRATION_SEED"] = TEST_QISKIT_2Q_SEED_FILE
+
+    from .utils.executors.qiskit import MockQiskitDynamicsExecutor
+
+    mocker.patch(
+        "app.libs.quantum_executor.qiskit.executor.QiskitDynamicsExecutor",
+        new=MockQiskitDynamicsExecutor,
+    )
+    mocker.patch(
+        "app.libs.quantum_executor.qiskit.backends.two_qubit.LinearDiscriminantAnalysis",
+        return_value=_mock_linear_discriminant_analysis_sim2q,
+    )
 
     import app
     import settings
@@ -308,17 +356,25 @@ def storage_root():
     shutil.rmtree(path, ignore_errors=True)
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.fixture
-def spi_rack_config() -> Generator[SpiRackConfig, Any, None]:
+def spi_rack_config():
+    from ..libs.quantum_executor.utils.config import QuantifyMetadata, SpiRackConfig
+
     conf = QuantifyMetadata.from_yaml(SPI_DUMMY_METADATA_FILE)
     yield SpiRackConfig.model_validate(conf.root["spi_rack"].model_dump())
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.fixture
-def spi_dac_dummy(redis_client, spi_rack_config) -> Generator[SpiDAC, Any, None]:
+def spi_dac_dummy(redis_client, spi_rack_config):
     """
     Construct SpiDAC bound to the dummy SPI-Rack.
     """
+    from qblox_instruments import SpiRack
+
+    from ..libs.quantum_executor.quantify.spi_dac import SpiDAC
+
     name = os.environ.get("DEFAULT_PREFIX", "quantify")
 
     if SpiDAC.exist(name):
@@ -334,13 +390,16 @@ def spi_dac_dummy(redis_client, spi_rack_config) -> Generator[SpiDAC, Any, None]
         spi_dac.close()
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.fixture
-def verbose_spi_dac_dummy(
-    redis_client, mocker, spi_rack_config
-) -> Generator[SpiDAC, Any, None]:
+def verbose_spi_dac_dummy(redis_client, mocker, spi_rack_config):
     """
     Construct SpiDAC bound to the dummy SPI-Rack.
     """
+    from qblox_instruments import SpiRack
+
+    from ..libs.quantum_executor.quantify.spi_dac import SpiDAC
+
     name = os.environ.get("DEFAULT_PREFIX", "quantify")
 
     testlog = logging.getLogger(TEST_SPI_LOGGER_NAME)
@@ -410,22 +469,6 @@ def _patch_async_client(mocker, *extra_patches: Tuple[str, Dict[str, Any]]):
         extra_patches: extra patches to patch with the mocker object
     """
     mocker.patch("websockets.connect.create_connection", side_effect=MockWebsocket)
-
-    mocker.patch(
-        "app.services.scheduler.utils.QuantifyExecutor", new=MockQuantifyExecutor
-    )
-    mocker.patch(
-        "app.services.scheduler.utils.QiskitDynamicsExecutor",
-        new=MockQiskitDynamicsExecutor,
-    )
-    mocker.patch(
-        "app.libs.quantum_executor.qiskit.backends.one_qubit.LinearDiscriminantAnalysis",
-        return_value=_mock_linear_discriminant_analysis,
-    )
-    mocker.patch(
-        "app.libs.quantum_executor.qiskit.backends.two_qubit.LinearDiscriminantAnalysis",
-        return_value=_mock_linear_discriminant_analysis_sim2q,
-    )
     os.environ["BLACKLISTED"] = ""
 
     for url, kwargs in extra_patches:

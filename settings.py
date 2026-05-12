@@ -16,6 +16,7 @@
 import logging
 import os
 import sys
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
@@ -23,6 +24,19 @@ from typing import List, Optional
 import redis
 from starlette.config import Config
 from starlette.datastructures import URL, CommaSeparatedStrings
+
+HAS_QISKIT_DYNAMICS = False
+HAS_QUANTIFY = False
+
+with suppress(ImportError):
+    import qiskit_dynamics
+
+    HAS_QISKIT_DYNAMICS = True
+
+with suppress(ImportError):
+    import quantify_scheduler
+
+    HAS_QUANTIFY = True
 
 _ROOT_PATH = Path(__file__).parent
 # NOTE: shell env variables take precedence over the configuration file

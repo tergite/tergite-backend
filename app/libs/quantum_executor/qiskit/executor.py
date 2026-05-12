@@ -16,9 +16,9 @@ from typing import List, Type
 
 import numpy as np
 from numpy import typing as npt
-from qiskit.qobj import PulseQobj
 from qiskit.result import Result as qiskitResult
 
+from app.libs.qiskit.qobj import PulseQobj
 from app.libs.quantum_executor.base.executor import QuantumExecutor
 from app.libs.quantum_executor.base.experiment import NativeExperiment
 from app.libs.quantum_executor.qiskit.experiment import QiskitDynamicsExperiment

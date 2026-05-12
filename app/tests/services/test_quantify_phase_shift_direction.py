@@ -17,9 +17,9 @@ from types import SimpleNamespace
 from typing import Any, Dict
 
 import pytest
-from qiskit.qobj import PulseQobj
 
 from app.libs.device_parameters.dtos import BackendConfig
+from app.libs.qiskit.qobj import PulseQobj
 from app.libs.quantum_executor.quantify.experiment import QuantifyExperiment
 from app.libs.quantum_executor.utils.config import load_quantify_config
 from app.libs.quantum_executor.utils.portclock import generate_hardware_map

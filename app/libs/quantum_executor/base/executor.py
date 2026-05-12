@@ -20,13 +20,13 @@ from traceback import format_exc
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-from qiskit.qobj import PulseQobj
 from quantify_core.data import handling as dh
 from quantify_core.data.handling import create_exp_folder, gen_tuid
 from quantify_core.data.types import TUID
 
 import settings
 from app.libs.device_parameters import BackendConfig
+from app.libs.qiskit.qobj import PulseQobj
 from app.libs.quantum_executor.base.experiment import NativeExperiment
 from app.libs.quantum_executor.base.quantum_job import (
     save_job_in_hdf5,

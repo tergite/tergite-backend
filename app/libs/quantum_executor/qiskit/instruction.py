@@ -20,8 +20,8 @@ import numpy as np
 from qiskit import pulse as qiskit_pulse
 from qiskit.circuit import ParameterExpression
 from qiskit.pulse.channels import ControlChannel, DriveChannel, PulseChannel
-from qiskit.qobj import PulseQobjInstruction
 
+from app.libs.qiskit.qobj import PulseQobjInstruction
 from app.libs.quantum_executor.qiskit.functions import omega_c
 
 
