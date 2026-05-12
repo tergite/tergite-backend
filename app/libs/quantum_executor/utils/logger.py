@@ -20,12 +20,9 @@ from pathlib import Path
 from typing import Union
 
 import pandas as pd
-import quantify_core.data.handling as dh
 import tabulate
-from quantify_core.data.types import TUID
-from quantify_scheduler import Schedule
-from quantify_scheduler.schedules import CompiledSchedule
 
+from .compat import TUID, CompiledSchedule, Schedule, locate_experiment_container
 from .general import load_config, search_nested
 
 
@@ -41,7 +38,6 @@ class Line:
         return f"{self.idx}:\t{s}".expandtabs(16)
 
 
-# TODO: The experiment logger can be ported to a library at some point
 class ExperimentLogger:
     def __init__(
         self,
@@ -53,7 +49,7 @@ class ExperimentLogger:
         """Initialize the ExperimentLogger for the ongoing experiment."""
         self.tuid = tuid
         self.formatter = formatter
-        self.folder = abspath(dh.locate_experiment_container(self.tuid))
+        self.folder = abspath(locate_experiment_container(self.tuid))
         self.logger = self.make_logger(__name__, self.folder, self.formatter)
         self.logger.propagate = False
 

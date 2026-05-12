@@ -359,7 +359,10 @@ def storage_root():
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.fixture
 def spi_rack_config():
-    from ..libs.quantum_executor.utils.config import QuantifyMetadata, SpiRackConfig
+    from app.libs.quantum_executor.quantify.utils.config import (
+        QuantifyMetadata,
+        SpiRackConfig,
+    )
 
     conf = QuantifyMetadata.from_yaml(SPI_DUMMY_METADATA_FILE)
     yield SpiRackConfig.model_validate(conf.root["spi_rack"].model_dump())
@@ -373,7 +376,7 @@ def spi_dac_dummy(redis_client, spi_rack_config):
     """
     from qblox_instruments import SpiRack
 
-    from ..libs.quantum_executor.quantify.spi_dac import SpiDAC
+    from app.libs.quantum_executor.quantify.spi_dac import SpiDAC
 
     name = os.environ.get("DEFAULT_PREFIX", "quantify")
 

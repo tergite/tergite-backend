@@ -20,14 +20,128 @@ import pytest
 
 from app.libs.device_parameters.dtos import BackendConfig
 from app.libs.qiskit.qobj import PulseQobj
-from app.libs.quantum_executor.quantify.experiment import QuantifyExperiment
-from app.libs.quantum_executor.utils.config import load_quantify_config
-from app.libs.quantum_executor.utils.portclock import generate_hardware_map
+from app.tests.conftest import HAS_QUANTIFY
 from app.tests.utils.env import (
     TEST_BACKEND_SETTINGS_FILE,
     TEST_QUANTIFY_CONFIG_FILE,
     TEST_QUANTIFY_SEED_FILE,
 )
+
+
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
+@pytest.fixture
+def phase_reference_data() -> Dict[str, Any]:
+    from app.libs.quantum_executor.quantify.utils.config import load_quantify_config
+
+    quantify_config = load_quantify_config(TEST_QUANTIFY_CONFIG_FILE)
+    backend_config = BackendConfig.from_toml(
+        TEST_BACKEND_SETTINGS_FILE,
+        seed_file=TEST_QUANTIFY_SEED_FILE,
+    )
+    return {
+        "quantify_config": quantify_config,
+        "lo_frequencies": _build_lo_frequencies(quantify_config),
+        "drive_frequencies": _build_drive_frequencies(backend_config),
+    }
+
+
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
+def test_fc_phase_shift_uses_calibration_frequency_instead_of_qobj_setf(
+    phase_reference_data,
+):
+    experiment = _build_experiment(
+        qubit_id="q14",
+        instructions=[
+            {"name": "fc", "t0": 0, "ch": "d0", "phase": math.pi / 2},
+            {"name": "setf", "t0": 0, "ch": "d0", "frequency": 4.4},
+        ],
+        phase_reference_data=phase_reference_data,
+    )
+
+    channel = experiment.channel_registry["q14.01"]
+    phase_instruction = channel.instructions[0]
+
+    assert phase_instruction.phase == pytest.approx(-90.0)
+    assert channel.get_phase_at_position(0) == pytest.approx(-90.0)
+    assert _phase_shift_from_operation(
+        phase_instruction.to_operation(experiment.config)
+    ) == pytest.approx(-90.0)
+
+
+pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
+
+
+def test_fc_phase_shift_keeps_direction_when_lo_is_above_calibration_frequency(
+    phase_reference_data,
+):
+    experiment = _build_experiment(
+        qubit_id="q12",
+        instructions=[
+            {"name": "fc", "t0": 0, "ch": "d0", "phase": math.pi / 2},
+            {"name": "setf", "t0": 0, "ch": "d0", "frequency": 4.8},
+        ],
+        phase_reference_data=phase_reference_data,
+    )
+
+    channel = experiment.channel_registry["q12.01"]
+    phase_instruction = channel.instructions[0]
+
+    assert phase_instruction.phase == pytest.approx(90.0)
+    assert channel.get_phase_at_position(0) == pytest.approx(90.0)
+    assert _phase_shift_from_operation(
+        phase_instruction.to_operation(experiment.config)
+    ) == pytest.approx(90.0)
+
+
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
+def test_set_phase_instruction_remains_unchanged(phase_reference_data):
+    experiment = _build_experiment(
+        qubit_id="q14",
+        instructions=[
+            {"name": "setp", "t0": 0, "ch": "d0", "phase": math.pi / 2},
+        ],
+        phase_reference_data=phase_reference_data,
+    )
+
+    channel = experiment.channel_registry["q14.01"]
+    phase_instruction = channel.instructions[0]
+
+    assert phase_instruction.phase == pytest.approx(90.0)
+    assert channel.get_phase_at_position(0) == pytest.approx(90.0)
+    assert _phase_shift_from_operation(
+        phase_instruction.to_operation(experiment.config)
+    ) == pytest.approx(90.0)
+
+
+def _build_experiment(
+    *,
+    qubit_id: str,
+    instructions: list[dict],
+    phase_reference_data: Dict[str, Any],
+):
+    from app.libs.quantum_executor.quantify.experiment import QuantifyExperiment
+    from app.libs.quantum_executor.quantify.utils.portclock import generate_hardware_map
+
+    hardware_map = generate_hardware_map(
+        [qubit_id],
+        {},
+        phase_reference_data["quantify_config"],
+    )
+    qobj = _build_qobj(instructions)
+
+    return QuantifyExperiment.from_qobj_expt(
+        name=qobj.experiments[0].header.name,
+        expt=qobj.experiments[0],
+        qobj_config=qobj.config,
+        native_config=_build_native_config(qobj),
+        hardware_map=hardware_map,
+        lo_frequencies=phase_reference_data["lo_frequencies"],
+        drive_frequencies=phase_reference_data["drive_frequencies"],
+    )
+
+
+def _phase_shift_from_operation(operation) -> float:
+    return operation.data["pulse_info"][0]["phase_shift"]
 
 
 def _build_qobj(instructions: list[dict]) -> PulseQobj:
@@ -109,108 +223,3 @@ def _build_drive_frequencies(backend_config: BackendConfig) -> Dict[str, float]:
         results[f"q{int(stripped):02d}.01"] = float(frequency_hz)
 
     return results
-
-
-@pytest.fixture
-def phase_reference_data() -> Dict[str, Any]:
-    quantify_config = load_quantify_config(TEST_QUANTIFY_CONFIG_FILE)
-    backend_config = BackendConfig.from_toml(
-        TEST_BACKEND_SETTINGS_FILE,
-        seed_file=TEST_QUANTIFY_SEED_FILE,
-    )
-    return {
-        "quantify_config": quantify_config,
-        "lo_frequencies": _build_lo_frequencies(quantify_config),
-        "drive_frequencies": _build_drive_frequencies(backend_config),
-    }
-
-
-def _build_experiment(
-    *,
-    qubit_id: str,
-    instructions: list[dict],
-    phase_reference_data: Dict[str, Any],
-) -> QuantifyExperiment:
-    hardware_map = generate_hardware_map(
-        [qubit_id],
-        {},
-        phase_reference_data["quantify_config"],
-    )
-    qobj = _build_qobj(instructions)
-
-    return QuantifyExperiment.from_qobj_expt(
-        name=qobj.experiments[0].header.name,
-        expt=qobj.experiments[0],
-        qobj_config=qobj.config,
-        native_config=_build_native_config(qobj),
-        hardware_map=hardware_map,
-        lo_frequencies=phase_reference_data["lo_frequencies"],
-        drive_frequencies=phase_reference_data["drive_frequencies"],
-    )
-
-
-def _phase_shift_from_operation(operation) -> float:
-    return operation.data["pulse_info"][0]["phase_shift"]
-
-
-def test_fc_phase_shift_uses_calibration_frequency_instead_of_qobj_setf(
-    phase_reference_data,
-):
-    experiment = _build_experiment(
-        qubit_id="q14",
-        instructions=[
-            {"name": "fc", "t0": 0, "ch": "d0", "phase": math.pi / 2},
-            {"name": "setf", "t0": 0, "ch": "d0", "frequency": 4.4},
-        ],
-        phase_reference_data=phase_reference_data,
-    )
-
-    channel = experiment.channel_registry["q14.01"]
-    phase_instruction = channel.instructions[0]
-
-    assert phase_instruction.phase == pytest.approx(-90.0)
-    assert channel.get_phase_at_position(0) == pytest.approx(-90.0)
-    assert _phase_shift_from_operation(
-        phase_instruction.to_operation(experiment.config)
-    ) == pytest.approx(-90.0)
-
-
-def test_fc_phase_shift_keeps_direction_when_lo_is_above_calibration_frequency(
-    phase_reference_data,
-):
-    experiment = _build_experiment(
-        qubit_id="q12",
-        instructions=[
-            {"name": "fc", "t0": 0, "ch": "d0", "phase": math.pi / 2},
-            {"name": "setf", "t0": 0, "ch": "d0", "frequency": 4.8},
-        ],
-        phase_reference_data=phase_reference_data,
-    )
-
-    channel = experiment.channel_registry["q12.01"]
-    phase_instruction = channel.instructions[0]
-
-    assert phase_instruction.phase == pytest.approx(90.0)
-    assert channel.get_phase_at_position(0) == pytest.approx(90.0)
-    assert _phase_shift_from_operation(
-        phase_instruction.to_operation(experiment.config)
-    ) == pytest.approx(90.0)
-
-
-def test_set_phase_instruction_remains_unchanged(phase_reference_data):
-    experiment = _build_experiment(
-        qubit_id="q14",
-        instructions=[
-            {"name": "setp", "t0": 0, "ch": "d0", "phase": math.pi / 2},
-        ],
-        phase_reference_data=phase_reference_data,
-    )
-
-    channel = experiment.channel_registry["q14.01"]
-    phase_instruction = channel.instructions[0]
-
-    assert phase_instruction.phase == pytest.approx(90.0)
-    assert channel.get_phase_at_position(0) == pytest.approx(90.0)
-    assert _phase_shift_from_operation(
-        phase_instruction.to_operation(experiment.config)
-    ) == pytest.approx(90.0)

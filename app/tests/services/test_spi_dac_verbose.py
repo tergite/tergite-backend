@@ -14,10 +14,10 @@ import logging
 
 import pytest
 
-from ...libs.quantum_executor.quantify.spi_dac import SpiDAC
-from ..conftest import TEST_SPI_LOGGER_NAME
+from ..conftest import HAS_QUANTIFY, TEST_SPI_LOGGER_NAME
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 def test_verbose_happy_path(caplog, verbose_spi_dac_dummy, mocker, redis_client):
     """
     Log-heavy check of the nominal flow on dummy rack:
@@ -25,6 +25,8 @@ def test_verbose_happy_path(caplog, verbose_spi_dac_dummy, mocker, redis_client)
     - ensure dummy path *does not* call ramp_current_serially
     - ensure expected module logs are present
     """
+    from app.libs.quantum_executor.quantify.spi_dac import SpiDAC
+
     spi_dac_dummy = verbose_spi_dac_dummy
     testlog = logging.getLogger(TEST_SPI_LOGGER_NAME)
     caplog.set_level(logging.DEBUG)
@@ -103,6 +105,8 @@ def _get_orig_ramp_current():
     """
     Gets the original ramp current from the ramp_to_target_currents.
     """
+    from ...libs.quantum_executor.quantify.spi_dac import SpiDAC
+
     orig = getattr(SpiDAC, "__orig_ramp_to_target_currents", None)
     if orig is None:
         # fallback if wrappers changed

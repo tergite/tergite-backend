@@ -21,7 +21,7 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Mapping, Optional, Set, Tuple, Type
+from typing import Dict, List, Optional, Set, Tuple, Type
 
 from quantify_scheduler import Schedule
 from quantify_scheduler.operations.pulse_library import IdlePulse, ResetClockPhase

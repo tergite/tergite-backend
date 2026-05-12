@@ -7,10 +7,7 @@ import time
 import pytest
 from pydantic import ValidationError
 
-from app.libs.quantum_executor.utils.config import (
-    QuantifyMetadata,
-    load_quantify_config,
-)
+from app.tests.conftest import HAS_QUANTIFY
 from app.tests.utils.env import (
     TEST_BACKEND_SETTINGS_FILE,
     TEST_BROKEN_QUANTIFY_CONFIG_FILE,
@@ -28,8 +25,14 @@ _QUANTIFY_CONFIG_FILE = get_fixture_path("generic-quantify-config.json")
 _QUANTIFY_METADATA_FILE = get_fixture_path("generic-quantify-config.yml")
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 def test_load_quantify_config_files():
     """ExecutorConfig can load YAML Quantify Metadata File and Quantify Config File"""
+    from app.libs.quantum_executor.quantify.utils.config import (
+        QuantifyMetadata,
+        load_quantify_config,
+    )
+
     conf_metadata = QuantifyMetadata.from_yaml(_QUANTIFY_METADATA_FILE)
     conf = load_quantify_config(_QUANTIFY_CONFIG_FILE)
 
@@ -119,6 +122,7 @@ async def test_calibration_seed_broken_for_simulator(patched_mss_websockets):
             pass
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.mark.asyncio
 async def test_quantify_metadata_is_broken(patched_mss_websockets):
     """Raises validation errors if quantify metadata conf file is broken"""
@@ -142,6 +146,7 @@ async def test_quantify_metadata_is_broken(patched_mss_websockets):
             pass
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.mark.asyncio
 async def test_quantify_config_is_broken(patched_mss_websockets):
     """Raises validation errors if quantify config file is broken"""

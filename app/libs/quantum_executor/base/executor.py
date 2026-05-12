@@ -20,11 +20,7 @@ from traceback import format_exc
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-from quantify_core.data import handling as dh
-from quantify_core.data.handling import create_exp_folder, gen_tuid
-from quantify_core.data.types import TUID
 
-import settings
 from app.libs.device_parameters import BackendConfig
 from app.libs.qiskit.qobj import PulseQobj
 from app.libs.quantum_executor.base.experiment import NativeExperiment
@@ -34,6 +30,7 @@ from app.libs.quantum_executor.base.quantum_job import (
 )
 from app.libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig, QuantumJob
 from app.libs.quantum_executor.base.quantum_job.typing import QExperimentResult
+from app.libs.quantum_executor.utils.compat import TUID, create_exp_folder, gen_tuid
 from app.libs.quantum_executor.utils.logger import ExperimentLogger
 from settings import PREPROCESSED_JOB_POOL
 
@@ -45,7 +42,6 @@ class QuantumExecutor(abc.ABC):
         backend_config: Optional[BackendConfig] = None,
         **kwargs,
     ):
-        dh.set_datadir(settings.EXECUTOR_DATA_DIR)
         self.hardware_map = hardware_map
         self.backend_config = backend_config
 
@@ -126,7 +122,7 @@ class QuantumExecutor(abc.ABC):
         qobj_header = qobj.header.to_dict()
         qobj_tag = qobj_header.get("tag", "")
         # create the logger folder where to log messages etc.
-        create_exp_folder(tuid=tuid, name=qobj_tag)
+        # create_exp_folder(tuid=tuid, name=qobj_tag)
         logger = ExperimentLogger(tuid)
         logger.info(f"Preprocessing job for tuid: {tuid} (not the same as job_id)")
 

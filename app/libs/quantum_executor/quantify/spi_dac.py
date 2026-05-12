@@ -36,7 +36,7 @@ from qblox_instruments import SpiRack
 from qcodes import Instrument, validators
 from qcodes.instrument import InstrumentModule
 
-from app.libs.quantum_executor.utils.config import (
+from .utils.config import (
     SPI_RACK_INSTRUMENT_TYPE,
     CouplerMapEntry,
     QuantifyMetadata,

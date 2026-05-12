@@ -35,13 +35,13 @@ import h5py
 import numpy as np
 import xarray as xr
 from numpy import typing as npt
-from quantify_scheduler.enums import BinMode
 
 from app.libs.qiskit.qobj import PulseQobj, PulseQobjConfig, PulseQobjInstruction
 
 from ....device_parameters.dtos import DeviceCalibration
 from ...utils.general import search_nested
 from .dtos import (
+    BinMode,
     ByteOrder,
     MeasLvl,
     MeasProtocol,

@@ -27,11 +27,13 @@ from typing import Any, Dict, List, Union
 
 import qblox_instruments
 from qcodes import Instrument
+from quantify_core.data.handling import set_datadir
 from quantify_scheduler.backends.graph_compilation import SerialCompiler
 from quantify_scheduler.device_under_test.quantum_device import QuantumDevice
 from quantify_scheduler.instrument_coordinator import InstrumentCoordinator
 from quantify_scheduler.instrument_coordinator.components.qblox import ClusterComponent
 
+import settings
 from app.libs.device_parameters.dtos import BackendConfig
 from app.libs.qiskit.qobj import PulseQobj
 from app.libs.quantum_executor.base.executor import QuantumExecutor
@@ -39,12 +41,12 @@ from app.libs.quantum_executor.base.quantum_job import get_experiment_name
 from app.libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
 from app.libs.quantum_executor.base.quantum_job.typing import QExperimentResult
 from app.libs.quantum_executor.quantify.experiment import QuantifyExperiment
-from app.libs.quantum_executor.utils.config import (
+from app.libs.quantum_executor.quantify.utils.config import (
     QuantifyMetadata,
     load_quantify_config,
 )
+from app.libs.quantum_executor.quantify.utils.portclock import generate_hardware_map
 from app.libs.quantum_executor.utils.logger import ExperimentLogger
-from app.libs.quantum_executor.utils.portclock import generate_hardware_map
 
 from .spi_dac import init_spi_dacs
 
@@ -66,6 +68,7 @@ class QuantifyExecutor(QuantumExecutor):
         should_restore_currents: bool = False,
         reset: bool = False,
         are_clusters_resettable: bool = False,
+        data_dir: str = settings.EXECUTOR_DATA_DIR,
     ):
         """
         Args:
@@ -75,6 +78,7 @@ class QuantifyExecutor(QuantumExecutor):
             should_restore_currents: whether to restore current state; default = False
             reset: whether to reset the whole executor; default = False
             are_clusters_resettable: whether the clusters can be reset for this executor; default = False
+            data_dir: the directory where to save experiment data; default = settings.EXECUTOR_DATA_DIR
         """
         self.quantify_config = load_quantify_config(quantify_config_file)
         self.quantify_metadata = QuantifyMetadata.from_yaml(quantify_metadata_file)
@@ -93,6 +97,8 @@ class QuantifyExecutor(QuantumExecutor):
             coupling_dict=coupling_dict,
             quantify_config=self.quantify_config,
         )
+
+        set_datadir(data_dir)
         super().__init__(
             hardware_map=self.hardware_map,
             backend_config=backend_config,

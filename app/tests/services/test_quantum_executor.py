@@ -16,6 +16,7 @@ import socket
 import pytest
 
 from ...libs.device_parameters.dtos import BackendConfig
+from ..conftest import HAS_QUANTIFY
 from ..utils.fixtures import get_fixture_path
 
 _REAL_HARDWARE_QUANTIFY_CONFIG_FILE = get_fixture_path("generic-quantify-config.json")
@@ -24,6 +25,7 @@ _BACKEND_CONFIG_PATH = get_fixture_path("backend_config.toml")
 _CALIBRATION_SEED_FILE = get_fixture_path("quantify.seed.toml")
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 def test_attempts_to_connect_to_real_hardware():
     """Loads the config for the real hardware in the appropriate way"""
     with pytest.raises(socket.timeout):

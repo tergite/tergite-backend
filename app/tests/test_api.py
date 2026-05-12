@@ -125,7 +125,7 @@ if HAS_QISKIT_DYNAMICS:
         (
             lazy_fixture("qiskit_2q_rest_client"),
             lazy_fixture("redis_client"),
-            lazy_fixture("rq_worker_for_simulator_1q"),
+            lazy_fixture("rq_worker_for_simulator_2q"),
             job,
         )
         for job in _SIM_2Q_JOBS_FOR_UPLOAD

@@ -90,8 +90,10 @@ qiskit = [
     "jax>=0.5.1",
     "qiskit~=0.45.0",
     "qiskit-ibm-provider>=0.9.0",
-     "numpy>=1.26.0",
+    "numpy>=1.26.0",
     "h5py>=3.12.1",
+    "xarray",
+    "scikit-learn",
 ]
 
 [dependency-groups]
