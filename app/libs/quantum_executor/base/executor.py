@@ -122,7 +122,7 @@ class QuantumExecutor(abc.ABC):
         qobj_header = qobj.header.to_dict()
         qobj_tag = qobj_header.get("tag", "")
         # create the logger folder where to log messages etc.
-        # create_exp_folder(tuid=tuid, name=qobj_tag)
+        create_exp_folder(tuid=tuid, name=qobj_tag)
         logger = ExperimentLogger(tuid)
         logger.info(f"Preprocessing job for tuid: {tuid} (not the same as job_id)")
 

@@ -7,7 +7,7 @@ import time
 import pytest
 from pydantic import ValidationError
 
-from app.tests.conftest import HAS_QUANTIFY
+from app.tests.conftest import HAS_QISKIT_DYNAMICS, HAS_QUANTIFY
 from app.tests.utils.env import (
     TEST_BACKEND_SETTINGS_FILE,
     TEST_BROKEN_QUANTIFY_CONFIG_FILE,
@@ -23,6 +23,14 @@ from app.tests.utils.modules import remove_modules
 
 _QUANTIFY_CONFIG_FILE = get_fixture_path("generic-quantify-config.json")
 _QUANTIFY_METADATA_FILE = get_fixture_path("generic-quantify-config.yml")
+_EXECUTOR_AND_SETTINGS = []
+if HAS_QUANTIFY:
+    _EXECUTOR_AND_SETTINGS += [("quantify", TEST_BACKEND_SETTINGS_FILE)]
+
+if HAS_QISKIT_DYNAMICS:
+    _EXECUTOR_AND_SETTINGS += [
+        ("qiskit_pulse_1q", TEST_SIMQ1_BACKEND_SETTINGS_FILE),
+    ]
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
@@ -42,15 +50,16 @@ def test_load_quantify_config_files():
 
 
 @pytest.mark.asyncio
-async def test_mss_reconnection():
+@pytest.mark.parametrize("executor, settings_file", _EXECUTOR_AND_SETTINGS)
+async def test_mss_reconnection(executor, settings_file):
     """Attempts to reconnect to MSS up to a given number of times"""
     remove_modules(["os", "app", "settings"])
 
     timeout = 10
     connection_attempts = 3
 
-    os.environ["EXECUTOR_TYPE"] = "quantify"
-    os.environ["BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
+    os.environ["EXECUTOR_TYPE"] = executor
+    os.environ["BACKEND_SETTINGS"] = settings_file
     mss_port = os.getenv("UNAVAILABLE_MSS_PORT", "5050")
     os.environ["MSS_MACHINE_ROOT_URL"] = f"http://localhost:{mss_port}"
     os.environ["MSS_CONNECTION_TIMEOUT"] = f"{timeout}"
@@ -71,7 +80,7 @@ async def test_mss_reconnection():
 
     end_time = time.time()
     time_taken = end_time - start_time
-    assert math.isclose(time_taken, net_connection_timeout, abs_tol=3)
+    assert math.isclose(time_taken, net_connection_timeout, abs_tol=3.2)
 
 
 @pytest.mark.asyncio

@@ -83,21 +83,13 @@ _SIM_1Q_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload_simulator_1q.json")
 _SIM_2Q_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload_simulator_2q.json")
 _QUANTIFY_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload.json")
 _INVALID_JOBS_FOR_UPLOAD = load_fixture("invalid_jobs_to_upload.json")
-_STATIC_PROPERTIES = [
-    load_fixture("static_properties.json"),
-    load_fixture("static_properties.simq1.json"),
-    load_fixture("static_properties.simq2.json"),
-]
-_DYNAMIC_PROPERTIES = [
-    load_fixture("dynamic_properties.json"),
-    load_fixture("dynamic_properties.simq1.json"),
-    load_fixture("dynamic_properties.simq2.json"),
-]
 
-# params
+# executor-specific params
 _QUANTIFY_UPLOAD_JOB_PARAMS = []
 _SIM_1Q_UPLOAD_JOB_PARAMS = []
 _SIM_2Q_UPLOAD_JOB_PARAMS = []
+_STATIC_PROPERTIES_PARAMS = []
+_DYNAMIC_PROPERTIES_PARAMS = []
 
 if HAS_QUANTIFY:
     _QUANTIFY_UPLOAD_JOB_PARAMS = [
@@ -108,6 +100,12 @@ if HAS_QUANTIFY:
             job,
         )
         for job in _QUANTIFY_JOBS_FOR_UPLOAD
+    ]
+    _STATIC_PROPERTIES_PARAMS += [
+        (lazy_fixture("quantify_rest_client"), load_fixture("static_properties.json"))
+    ]
+    _DYNAMIC_PROPERTIES_PARAMS += [
+        (lazy_fixture("quantify_rest_client"), load_fixture("dynamic_properties.json"))
     ]
 
 if HAS_QISKIT_DYNAMICS:
@@ -129,6 +127,26 @@ if HAS_QISKIT_DYNAMICS:
             job,
         )
         for job in _SIM_2Q_JOBS_FOR_UPLOAD
+    ]
+    _STATIC_PROPERTIES_PARAMS += [
+        (
+            lazy_fixture("qiskit_1q_rest_client"),
+            load_fixture("static_properties.simq1.json"),
+        ),
+        (
+            lazy_fixture("qiskit_2q_rest_client"),
+            load_fixture("static_properties.simq2.json"),
+        ),
+    ]
+    _DYNAMIC_PROPERTIES_PARAMS += [
+        (
+            lazy_fixture("qiskit_1q_rest_client"),
+            load_fixture("dynamic_properties.simq1.json"),
+        ),
+        (
+            lazy_fixture("qiskit_2q_rest_client"),
+            load_fixture("dynamic_properties.simq2.json"),
+        ),
     ]
 
 _SIMPLE_UPLOAD_JOB_PARAMS = (
@@ -165,12 +183,6 @@ _ALL_INVALID_UPLOAD_JOB_PARAMS = [
     for client, redis, rq_worker in CLIENT_AND_RQ_WORKER_TUPLES
 ]
 
-_STATIC_PROPERTIES_PARAMS = [
-    (client, resp) for client, resp in zip(FASTAPI_CLIENTS, _STATIC_PROPERTIES)
-]
-_DYNAMIC_PROPERTIES_PARAMS = [
-    (client, resp) for client, resp in zip(FASTAPI_CLIENTS, _DYNAMIC_PROPERTIES)
-]
 _ROOT_PARAMS = [
     (client, headers)
     for client in FASTAPI_CLIENTS

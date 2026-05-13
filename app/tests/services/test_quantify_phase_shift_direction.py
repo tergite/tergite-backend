@@ -68,9 +68,7 @@ def test_fc_phase_shift_uses_calibration_frequency_instead_of_qobj_setf(
     ) == pytest.approx(-90.0)
 
 
-pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
-
-
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 def test_fc_phase_shift_keeps_direction_when_lo_is_above_calibration_frequency(
     phase_reference_data,
 ):
