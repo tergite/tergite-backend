@@ -7,11 +7,26 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Changed
+
+- Changed to use `uv` for managing dependencies due to the complicated hierachy of
+  dependencies in this project
+- Moved the 'dev' dependencies from 'optional-dependencies' to 'dependency-groups' in
+  pyproject.toml
+- [BREAKING] optional-dependencies under the `quantify` group now explicitly conflict
+  with those under the `qiskit` group meaning one can't use the same environment for
+  both
+- [BREAKING] Separated the Docker images produced for this project to have tags like
+  `2026.06.1-qiskit`, `2026.06.1-quantify`, `latest-quantify`, `latest-qiskit`
+- Removed the extra dependencies in pyproject that are not explicitly used by the code.
+  These were originally put there to help the pip resolver when resolving nested dependencies.
+
 ### Added
 
 - Added recalibration offering to the scheduler service, to start on startup
 - Added recalibration endpoints to the API to restart (`/recalibration/init`), 
   view (`/recalibration/info`), and cancel (`/recalibration/cancel`) recalibration.
+- Added the `tergite-tuner` library as a dependency
 
 ## [2026.06.0-rc.1] - 2026-05-19
 
