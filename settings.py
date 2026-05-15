@@ -96,6 +96,32 @@ CALIBRATION_SEED = config(
     "CALIBRATION_SEED", cast=str, default=_ROOT_PATH / "calibration.seed.toml"
 )
 
+CALIBRATION_NODE_CONFIG_FILE = config(
+    "CALIBRATION_NODE_CONFIG_FILE", cast=Path, default=_ROOT_PATH / "node_config.toml"
+)
+if not CALIBRATION_NODE_CONFIG_FILE.exists():
+    raise FileNotFoundError(
+        f"CALIBRATION_NODE_CONFIG_FILE: {CALIBRATION_NODE_CONFIG_FILE} not found."
+    )
+
+CALIBRATION_DEVICE_CONFIG_FILE = config(
+    "CALIBRATION_DEVICE_CONFIG_FILE",
+    cast=Path,
+    default=_ROOT_PATH / "calib_device_config.toml",
+)
+if not CALIBRATION_DEVICE_CONFIG_FILE.exists():
+    raise FileNotFoundError(
+        f"CALIBRATION_DEVICE_CONFIG_FILE: {CALIBRATION_DEVICE_CONFIG_FILE} not found."
+    )
+
+CALIBRATION_SPI_CONFIG_FILE = config(
+    "CALIBRATION_SPI_CONFIG_FILE", cast=Path, default=_ROOT_PATH / "spi_config.toml"
+)
+if not CALIBRATION_SPI_CONFIG_FILE.exists():
+    raise FileNotFoundError(
+        f"CALIBRATION_SPI_CONFIG_FILE: {CALIBRATION_SPI_CONFIG_FILE} not found."
+    )
+
 # Connectivity settings
 MSS_MACHINE_ROOT_URL: URL = config(
     "MSS_MACHINE_ROOT_URL", cast=URL, default="http://localhost:8002"

@@ -168,3 +168,12 @@ backend_config.**.toml
 
 # redis
 **.rdb
+
+# recalibration
+node_config.toml
+calib_device_config.toml
+spi_config.toml
+
+# sqlite
+**.db-shm
+**.db-wal

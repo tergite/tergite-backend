@@ -21,7 +21,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-from app.libs.device_parameters import BackendConfig
+from app.libs.device_parameters import BackendConfig, DeviceCalibration
 from app.libs.qiskit.qobj import PulseQobj
 from app.libs.quantum_executor.base.experiment import NativeExperiment
 from app.libs.quantum_executor.base.quantum_job import (
@@ -30,8 +30,8 @@ from app.libs.quantum_executor.base.quantum_job import (
 )
 from app.libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig, QuantumJob
 from app.libs.quantum_executor.base.quantum_job.typing import QExperimentResult
-from app.libs.quantum_executor.utils.compat import TUID, create_exp_folder, gen_tuid
 from app.libs.quantum_executor.utils.logger import ExperimentLogger
+from app.utils.compat import TUID, create_exp_folder, gen_tuid
 from settings import PREPROCESSED_JOB_POOL
 
 
@@ -159,7 +159,7 @@ class QuantumExecutor(abc.ABC):
             raise e
 
     @abc.abstractmethod
-    def recalibrate(self) -> None:
+    def recalibrate(self, **kwargs) -> DeviceCalibration | None:
         """Recalibrates the executor"""
 
     def run(self, job_id: str, inputs_folder: Path = PREPROCESSED_JOB_POOL) -> str:

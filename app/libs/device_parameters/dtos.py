@@ -13,6 +13,9 @@
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
+import copy
+from abc import ABC, abstractmethod
+from contextlib import suppress
 from os import PathLike
 from typing import (
     Any,
@@ -20,78 +23,26 @@ from typing import (
     Generic,
     List,
     Literal,
+    Mapping,
     Optional,
+    Self,
     Tuple,
     TypeVar,
     Union,
 )
 
+import numpy as np
 import toml
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from app.utils.compat import CalibrationResults, _CouplerInRedis
 from app.utils.datetime import utc_now_str
 from app.utils.redis_store import Schema
 
 from .utils import attach_units_many
 
 _CalibValueType = TypeVar("_CalibValueType", int, float, str)
-
-
-class QubitProps(BaseModel):
-    """Qubit Device configuration"""
-
-    frequency: float
-    pi_pulse_amplitude: float
-    pi_pulse_duration: float
-    pi_pulse_motzoi: float
-    pulse_type: str
-    pulse_sigma: float
-    t1_decoherence: float
-    t2_decoherence: float
-    id: Optional[int] = None
-    index: Optional[int] = None
-    x_position: Optional[int] = None
-    y_position: Optional[int] = None
-    xy_drive_line: Optional[int] = None
-    z_drive_line: Optional[int] = None
-
-
-class ReadoutResonatorProps(BaseModel):
-    """ReadoutResonator Device configuration"""
-
-    acq_delay: float
-    acq_integration_time: float
-    frequency: float
-    pulse_amplitude: float
-    pulse_delay: float
-    pulse_duration: float
-    pulse_type: str
-    id: Optional[int] = None
-    index: Optional[int] = None
-    x_position: Optional[int] = None
-    y_position: Optional[int] = None
-    readout_line: Optional[int] = None
-    lda_parameters: Optional[Dict[str, Any]] = None
-
-
-class CouplerProps(BaseModel):
-    """Coupler Device configuration"""
-
-    frequency: float
-    frequency_detuning: int
-    anharmonicity: int
-    coupling_strength_02: int
-    coupling_strength_12: int
-    cz_pulse_amplitude: float
-    cz_pulse_dc_bias: float
-    cz_pulse_phase_offset: float
-    cz_pulse_duration_before: float
-    cz_pulse_duration_rise: float
-    cz_pulse_duration_constant: float
-    control_rz_lambda: float
-    target_rz_lambda: float
-    pulse_type: str
-    id: Optional[int] = None
+_DOWNCONVERT_FREQUENCY = 4.4e9
 
 
 class Device(Schema):
@@ -155,20 +106,154 @@ class Device(Schema):
         )
 
 
-class CalibrationValue(BaseModel, Generic[_CalibValueType]):
+class CalibrationModel(BaseModel, ABC):
+    """The base class of calibration model"""
+
+    model_config = ConfigDict(extra="allow")
+
+    @abstractmethod
+    def model_dump_scalar(self, **kwargs) -> Any:
+        """Returns the calibration value as a scalar"""
+        ...
+
+    @abstractmethod
+    def model_dump_unit(self, **kwargs) -> Any:
+        """Returns the unit of the value"""
+        ...
+
+
+class CalibrationValue(CalibrationModel, Generic[_CalibValueType]):
     """A calibration value"""
 
-    model_config = ConfigDict(extra="allow")
-
-    value: Union[float, str, int]
-    date: Optional[str] = None
+    value: _CalibValueType
     unit: str = ""
+    date: Optional[str] = None
+
+    def model_dump_scalar(self, **kwargs) -> _CalibValueType:
+        """Returns the calibration value as a scalar"""
+        return self.value
+
+    def model_dump_unit(self, **kwargs) -> str:
+        """Returns the unit of the value"""
+        return self.unit
+
+    @classmethod
+    def from_scalar(
+        cls, value: _CalibValueType | None, unit: str = "", **kwargs
+    ) -> Optional[Self]:
+        """Converts a scalar to a calibration value if not None
+
+        Args:
+            value: the scalar to convert
+            unit: the unit
+            **kwargs: other arguments
+
+        Returns:
+            the calibration value or None if value is None
+        """
+        if value is None:
+            return None
+        return cls(value=value, unit=unit, **kwargs)
 
 
-class QubitCalibration(BaseModel):
-    """Schema for the calibration data of the qubit"""
+class CalibrationValueSet(CalibrationModel, ABC):
+    """A collection of calibration values"""
 
     model_config = ConfigDict(extra="allow")
+
+    @classmethod
+    @abstractmethod
+    def from_calib_results(
+        cls, data: CalibrationResults, name_id_map: Dict[str, Any], **kwargs: Any
+    ) -> List[Self]:
+        """Generates new instances of this calibration value set from the calibration results
+
+        Args:
+            data: the for the qubit in redis
+            name_id_map: the map of the names in the data to the identifier used in BCC
+
+        Returns:
+            the list of new instances of calibration value sets
+        """
+        ...
+
+    def model_dump_unit(
+        self,
+        exclude_none: bool = False,
+        **kwargs,
+    ) -> Dict[str, _CalibValueType]:
+        """Generates a dict with all the calibration values' units
+
+        Args:
+            exclude_none: whether to exclude none values or not
+
+        Returns:
+            A dictionary representation of the units of the model.
+        """
+        data = {}
+        fields = self.__class__.model_fields
+        for k in fields.keys():
+            v = copy.copy(getattr(self, k))
+            if v is None and exclude_none:
+                continue
+
+            data[k] = v
+            if isinstance(v, CalibrationModel):
+                data[k] = v.model_dump_unit(exclude_none=exclude_none, **kwargs)
+            elif isinstance(v, (list, tuple)):
+                for idx, item in enumerate(v):
+                    if isinstance(item, CalibrationModel):
+                        data[k][idx] = item.model_dump_unit(
+                            exclude_none=exclude_none, **kwargs
+                        )
+            elif isinstance(v, Mapping):
+                for key, item in v.items():
+                    if isinstance(item, CalibrationModel):
+                        data[k][key] = item.model_dump_unit(
+                            exclude_none=exclude_none, **kwargs
+                        )
+        return data
+
+    def model_dump_scalar(
+        self,
+        exclude_none: bool = False,
+        **kwargs,
+    ) -> Dict[str, _CalibValueType]:
+        """Generates a dict with all the calibration values converted to scalars
+
+        Args:
+            exclude_none: whether to exclude none values or not
+
+        Returns:
+            A dictionary representation of the model.
+        """
+        data = {}
+        fields = self.__class__.model_fields
+        for k in fields.keys():
+            v = copy.copy(getattr(self, k))
+            if v is None and exclude_none:
+                continue
+
+            data[k] = v
+            if isinstance(v, CalibrationModel):
+                data[k] = v.model_dump_scalar(exclude_none=exclude_none, **kwargs)
+            elif isinstance(v, (list, tuple)):
+                for idx, item in enumerate(v):
+                    if isinstance(item, CalibrationModel):
+                        data[k][idx] = item.model_dump_scalar(
+                            exclude_none=exclude_none, **kwargs
+                        )
+            elif isinstance(v, Mapping):
+                for key, item in v.items():
+                    if isinstance(item, CalibrationModel):
+                        data[k][key] = item.model_dump_scalar(
+                            exclude_none=exclude_none, **kwargs
+                        )
+        return data
+
+
+class QubitCalibration(CalibrationValueSet):
+    """Schema for the calibration data of the qubit"""
 
     t1_decoherence: Optional[CalibrationValue[float]] = None
     t2_decoherence: Optional[CalibrationValue[float]] = None
@@ -178,8 +263,9 @@ class QubitCalibration(BaseModel):
     # parameters for x gate
     pi_pulse_amplitude: Optional[CalibrationValue[float]] = None
     pi_pulse_duration: Optional[CalibrationValue[float]] = None
+    pi_pulse_motzoi: Optional[CalibrationValue[float]] = None
     pulse_type: Optional[CalibrationValue[str]] = None
-    pulse_sigma: Optional[CalibrationValue[float]] = None
+    pulse_sigma: Optional[CalibrationValue[float]] = CalibrationValue.from_scalar(0)
     id: Optional[int] = None
     index: Optional[CalibrationValue[int]] = None
     x_position: Optional[CalibrationValue[int]] = None
@@ -209,11 +295,49 @@ class QubitCalibration(BaseModel):
 
         return results
 
+    @classmethod
+    def from_calib_results(
+        cls, data: CalibrationResults, **kwargs
+    ) -> List["QubitCalibration"]:
+        """Generates new instances of QubitCalibration from the calibration results
 
-class ResonatorCalibration(BaseModel):
+        Args:
+            data: the for the qubit in redis
+
+        Returns:
+            the list of new instances of QubitCalibration
+        """
+        results: List[QubitCalibration] = []
+        for qubit, qubit_data in data.transmons.items():
+            results.append(
+                QubitCalibration(
+                    id=int(qubit.strip("q")),
+                    frequency=CalibrationValue.from_scalar(
+                        qubit_data.clock_freqs.f01, unit="Hz"
+                    ),
+                    pi_pulse_amplitude=CalibrationValue.from_scalar(
+                        qubit_data.rxy.amp180
+                    ),
+                    pi_pulse_duration=CalibrationValue.from_scalar(
+                        qubit_data.rxy.duration, unit="s"
+                    ),
+                    pi_pulse_motzoi=CalibrationValue.from_scalar(qubit_data.rxy.motzoi),
+                    pulse_type=CalibrationValue.from_scalar("Gaussian"),
+                    pulse_sigma=CalibrationValue.from_scalar(qubit_data.rxy.sigma),
+                    t1_decoherence=CalibrationValue.from_scalar(
+                        qubit_data.t1_time, unit="us"
+                    ),
+                    t2_decoherence=CalibrationValue.from_scalar(
+                        qubit_data.t2_echo_time, unit="us"
+                    ),
+                )
+            )
+
+        return results
+
+
+class ResonatorCalibration(CalibrationValueSet):
     """Schema for the calibration data of the resonator"""
-
-    model_config = ConfigDict(extra="allow")
 
     acq_delay: Optional[CalibrationValue[float]] = None
     acq_integration_time: Optional[CalibrationValue[float]] = None
@@ -250,11 +374,49 @@ class ResonatorCalibration(BaseModel):
 
         return results
 
+    @classmethod
+    def from_calib_results(
+        cls, data: CalibrationResults, **kwargs
+    ) -> List["ResonatorCalibration"]:
+        """Generates new instances of ResonatorCalibration from the calibration results
 
-class CouplerCalibration(BaseModel):
+        Args:
+            data: the calibration results
+
+        Returns:
+            the list of new instances of ResonatorCalibration
+        """
+        results: List[ResonatorCalibration] = []
+        for qubit, item in data.transmons.items():
+            results.append(
+                ResonatorCalibration(
+                    id=int(qubit.strip("q")),
+                    acq_delay=CalibrationValue.from_scalar(
+                        item.measure.acq_delay, unit="s"
+                    ),
+                    acq_integration_time=CalibrationValue.from_scalar(
+                        item.measure.integration_time, unit="s"
+                    ),
+                    frequency=CalibrationValue.from_scalar(
+                        item.extended_clock_freqs.readout_2state_opt, unit="Hz"
+                    ),
+                    pulse_delay=CalibrationValue.from_scalar(
+                        item.measure.ro_pulse_delay, unit="s"
+                    ),
+                    pulse_duration=CalibrationValue.from_scalar(
+                        item.measure.pulse_duration, unit="s"
+                    ),
+                    pulse_amplitude=CalibrationValue.from_scalar(
+                        item.measure_2state_opt.pulse_amp
+                    ),
+                    pulse_type=CalibrationValue.from_scalar("Square"),
+                )
+            )
+        return results
+
+
+class CouplerCalibration(CalibrationValueSet):
     """Schema for the calibration data of the coupler"""
-
-    model_config = ConfigDict(extra="allow")
 
     frequency: Optional[CalibrationValue[float]] = None
     frequency_detuning: Optional[CalibrationValue[float]] = None
@@ -294,8 +456,106 @@ class CouplerCalibration(BaseModel):
 
         return results
 
+    @classmethod
+    def from_calib_results(
+        cls,
+        data: CalibrationResults,
+        name_id_map: Dict[str, int],
+        reverse_phase_qubits: Tuple[str, ...] = (),
+        **kwargs,
+    ) -> List["CouplerCalibration"]:
+        """Generates new instances of CouplerCalibration from the calibration results
 
-class DeviceCalibration(Schema):
+        Args:
+            data: the calibration results
+            name_id_map: the map for the names of couplers
+                    in calibration to their index in BCC
+            reverse_phase_qubits: the qubits that have the reverse phase of what
+                they should have phase on the couplers
+            kwargs: extra args like:
+                coupler_index_map (dict[str, int]): the required map for the names of couplers
+                    in calibration to their index in BCC
+
+        Returns:
+            the list of new instances of CouplerCalibration
+        """
+        results: List[CouplerCalibration] = []
+        for coupler, item in data.couplers.items():
+            try:
+                bcc_coupler_idx = name_id_map[coupler]
+            except KeyError:
+                # ignore couplers missing in the map
+                continue
+
+            control_phase, target_phase = cls._get_local_phases(
+                coupler, item, reverse_phase_qubits
+            )
+
+            results.append(
+                CouplerCalibration(
+                    id=bcc_coupler_idx,
+                    # correcting the frequency by the downconvert frequency
+                    frequency=CalibrationValue.from_scalar(
+                        value=_DOWNCONVERT_FREQUENCY - item.cz_pulse_frequency,
+                        unit="Hz",
+                    ),
+                    cz_pulse_amplitude=CalibrationValue.from_scalar(
+                        item.cz_pulse_amplitude
+                    ),
+                    cz_pulse_dc_bias=CalibrationValue.from_scalar(item.parking_current),
+                    cz_pulse_duration_constant=CalibrationValue.from_scalar(
+                        item.cz_pulse_duration, unit="s"
+                    ),
+                    control_rz_lambda=CalibrationValue.from_scalar(
+                        control_phase, unit="rad"
+                    ),
+                    target_rz_lambda=CalibrationValue.from_scalar(
+                        target_phase, unit="rad"
+                    ),
+                    pulse_type=CalibrationValue.from_scalar("wacqt_cz"),
+                )
+            )
+
+        return results
+
+    @classmethod
+    def _get_local_phases(
+        cls, coupler: str, data: _CouplerInRedis, reverse_phase_qubits: Tuple[str, ...]
+    ) -> Tuple[float, float]:
+        """Gets the local phases in radians for given the data from redis
+
+        Args:
+            coupler: the coupler name
+            data: the data of the coupler as obtained from the redis
+            reverse_phase_qubits: the qubits that have the reverse phase of what they sh
+                should have phase on their couplers
+
+        Returns:
+            tuple of (control_qubit_local_phase, target_qubit_local_phase)
+        """
+        control_phase = data.cz_dynamic_control
+        target_phase = data.cz_dynamic_target
+
+        # FIXME: Major assumption: couplers are labeled as q{num}_q{num}
+        q1, q2 = coupler.split("_")
+        affected_qubits = set(reverse_phase_qubits) & {q1, q2}
+
+        # flip phases of the affected qubits
+        for q in affected_qubits:
+            # FIXME: Major assumption: the even qubit is the control one,
+            #  and the odd is target
+            idx = int(q.lstrip("q"))
+            is_even = idx % 2 == 0
+            if is_even:
+                control_phase = -control_phase
+            else:
+                target_phase = -target_phase
+
+        # convert to radians
+        return np.deg2rad(control_phase), np.deg2rad(target_phase)
+
+
+class DeviceCalibration(Schema, CalibrationValueSet):
     """Schema for the calibration data of a given device"""
 
     __primary_key_fields__ = ("name",)
@@ -307,6 +567,44 @@ class DeviceCalibration(Schema):
     couplers: Optional[List[CouplerCalibration]] = None
     discriminators: Optional[Dict[str, Any]] = None
     last_calibrated: str
+
+    def to_toml(self, file_path: PathLike[str]):
+        """Persists the calibration data to a TOML file
+
+        Args:
+            file_path: the path to the TOML file to persist to
+        """
+        units = self.model_dump_unit(exclude_none=True)
+        scalars = self.model_dump_scalars(exclude_none=True)
+
+        qubit_units = {}
+        coupler_units = {}
+        resonator_units = {}
+
+        with suppress(KeyError, IndexError):
+            qubit_units = units["qubits"][0]
+        with suppress(KeyError, IndexError, TypeError):
+            coupler_units = units["couplers"][0]
+        with suppress(KeyError, IndexError, TypeError):
+            resonator_units = units["resonators"][0]
+        conf = _BackendCalibrationConfig(
+            units={
+                "qubit": qubit_units,
+                "coupler": coupler_units,
+                "readout_resonator": resonator_units,
+                "discriminators": {},
+            },
+            qubit=scalars["qubits"],
+            coupler=scalars["couplers"],
+            readout_resonator=scalars["resonators"],
+            discriminators=self.discriminators,
+        )
+
+        file_data = {
+            "calibration_config": conf.model_dump(mode="json"),
+        }
+        with open(file_path, "w") as file:
+            toml.dump(file_data, file)
 
     @classmethod
     def from_config(cls, conf: "BackendConfig") -> "DeviceCalibration":
@@ -333,6 +631,53 @@ class DeviceCalibration(Schema):
             couplers=CouplerCalibration.from_calib_config(calib_config),
             discriminators=calib_config.discriminators,
             last_calibrated=utc_now_str(),
+        )
+
+    @classmethod
+    def from_calib_results(
+        cls,
+        data: CalibrationResults,
+        name_id_map: Dict[str, int],
+        reverse_phase_qubits: Tuple[str, ...] = (),
+        **kwargs: Any,
+    ) -> "DeviceCalibration":
+        """Generates a new instance of DeviceCalibration from the calibration results
+
+        Args:
+            data: the calibration results
+            name_id_map: the map for the names of couplers/qubits
+                    in calibration data to their identifier in BCC
+            reverse_phase_qubits: the qubits that have their phases reversed on couplers
+            kwargs: extra args like:
+
+            kwargs: extra args to add to the DeviceCalibration
+
+        Returns:
+            the new instance of DeviceCalibration
+        """
+        # set defaults
+        kwargs.setdefault("last_calibrated", utc_now_str())
+        kwargs.setdefault("version", "0.0.0")
+
+        return DeviceCalibration(
+            **kwargs,
+            qubits=QubitCalibration.from_calib_results(data),
+            resonators=ResonatorCalibration.from_calib_results(data),
+            couplers=CouplerCalibration.from_calib_results(
+                data,
+                name_id_map=name_id_map,
+                reverse_phase_qubits=reverse_phase_qubits,
+            ),
+            discriminators={
+                "lda": {
+                    qubit: {
+                        "coef_0": item.lda_coef_0,
+                        "coef_1": item.lda_coef_1,
+                        "intercept": item.lda_intercept,
+                    }
+                    for qubit, item in data.transmons.items()
+                }
+            },
         )
 
 
@@ -378,6 +723,8 @@ class _BackendDeviceConfig(BaseModel):
     resonator_parameters: List[str] = []
     coupler_parameters: List[str] = []
     discriminator_parameters: Dict[str, List[str]] = {}
+    fixed_duration_couplers: Tuple[str, ...] = ()
+    reverse_phase_qubits: Tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def set_coupling_map(self):

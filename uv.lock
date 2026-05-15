@@ -4282,7 +4282,7 @@ requires-dist = [
     { name = "scikit-learn", marker = "extra == 'qiskit'" },
     { name = "sqlmodel", specifier = "~=0.0.24" },
     { name = "tabulate", specifier = ">=0.9.0" },
-    { name = "tergite-tuner", marker = "extra == 'quantify'", specifier = "~=2026.5.1" },
+    { name = "tergite-tuner", marker = "extra == 'quantify'", specifier = "~=2026.6.0rc3" },
     { name = "toml", specifier = ">=0.10.2" },
     { name = "xarray", marker = "extra == 'qiskit'" },
 ]
@@ -4309,7 +4309,7 @@ dev = [
 
 [[package]]
 name = "tergite-tuner"
-version = "2026.5.1"
+version = "2026.6.0rc3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "h5py" },
@@ -4332,9 +4332,9 @@ dependencies = [
     { name = "tomlkit" },
     { name = "xarray" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/93/1d/9205b9c34197544374a03bb26e45cca3711caddbd5a5d0af41c6605e6b40/tergite_tuner-2026.5.1.tar.gz", hash = "sha256:f3e9f8c7a917e0e088283b7a42d28fe2a92f4027f3d67d36a36772703edfaf12", size = 235559 }
+sdist = { url = "https://files.pythonhosted.org/packages/cd/d8/378dbc8c550708e2953ef6ee86213ec658b8ecf35abce55eaebd5d6fdd6b/tergite_tuner-2026.6.0rc3.tar.gz", hash = "sha256:6148f0a161fb1a5cf86e557860fb9681180840ac280f192957aecab6db7bf9e4", size = 236742 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/af/32/c296bd1e01aebbc504d0c2359f6ffe83b42a499c39e4bf8d87fd371f0f0f/tergite_tuner-2026.5.1-py3-none-any.whl", hash = "sha256:09ab76e03c9a40d72df16727ac6cf4c40339798b6e89894d03044faf8fb45a0d", size = 320121 },
+    { url = "https://files.pythonhosted.org/packages/fa/17/4eba710f66a6ceb64211798edc0e24e2f19dfdd5606706ac101927722d1c/tergite_tuner-2026.6.0rc3-py3-none-any.whl", hash = "sha256:a9a7f1e49d913b1f3467026db7db771787599912c0d8901abe3c5f98d42b8d80", size = 320691 },
 ]
 
 [[package]]

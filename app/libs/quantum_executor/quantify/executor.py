@@ -23,6 +23,7 @@ import logging
 import os
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Union
 
 import qblox_instruments
@@ -47,8 +48,11 @@ from app.libs.quantum_executor.quantify.utils.config import (
 )
 from app.libs.quantum_executor.quantify.utils.portclock import generate_hardware_map
 from app.libs.quantum_executor.utils.logger import ExperimentLogger
+from app.utils.compat import ClusterConfig, MeasurementMode, SPIMode
 
+from ...device_parameters import DeviceCalibration
 from .spi_dac import init_spi_dacs
+from .utils.calibration import recalibrate
 
 worker_logger = logging.getLogger(__name__)
 
@@ -69,6 +73,14 @@ class QuantifyExecutor(QuantumExecutor):
         reset: bool = False,
         are_clusters_resettable: bool = False,
         data_dir: str = settings.EXECUTOR_DATA_DIR,
+        calib_node_conf: (
+            Path | os.PathLike[str]
+        ) = settings.CALIBRATION_NODE_CONFIG_FILE,
+        calib_device_conf: (
+            Path | os.PathLike[str]
+        ) = settings.CALIBRATION_DEVICE_CONFIG_FILE,
+        calib_spi_conf: Path | os.PathLike[str] = settings.CALIBRATION_SPI_CONFIG_FILE,
+        calib_seed_file: Path | os.PathLike[str] = settings.CALIBRATION_SEED,
     ):
         """
         Args:
@@ -79,7 +91,14 @@ class QuantifyExecutor(QuantumExecutor):
             reset: whether to reset the whole executor; default = False
             are_clusters_resettable: whether the clusters can be reset for this executor; default = False
             data_dir: the directory where to save experiment data; default = settings.EXECUTOR_DATA_DIR
+            calib_node_conf: the configuration file for the nodes during calibration
+            calib_device_conf: the configuration file for the entire devices during calibration
+            calib_spi_conf: the configuration file for the spi during calibration
         """
+        self.calib_seed_file = calib_seed_file
+        self.calib_spi_conf = calib_spi_conf
+        self.calib_device_conf = calib_device_conf
+        self.calib_node_conf = calib_node_conf
         self.quantify_config = load_quantify_config(quantify_config_file)
         self.quantify_metadata = QuantifyMetadata.from_yaml(quantify_metadata_file)
         self.device_name = backend_config.general_config.name
@@ -98,6 +117,7 @@ class QuantifyExecutor(QuantumExecutor):
             quantify_config=self.quantify_config,
         )
 
+        self.data_dir = data_dir
         set_datadir(data_dir)
         super().__init__(
             hardware_map=self.hardware_map,
@@ -153,19 +173,65 @@ class QuantifyExecutor(QuantumExecutor):
         self._compiler = SerialCompiler(name=f"{self.device_name}_compiler")
         self._compilation_config = self._quantum_device.generate_compilation_config()
 
-    def recalibrate(self) -> None:
-        """Recalibrates the executor"""
-        is_dummy = False
-        for conf in self.quantify_metadata.root.values():
-            if conf.is_dummy:
-                is_dummy = True
-                break
+    def recalibrate(self, redis_url: str, **kwargs) -> DeviceCalibration | None:
+        """Recalibrates the executor
 
-        if is_dummy:
-            # do nothing except log if this is dummy executor
-            logging.info("recalibrating the dummy executor")
-        else:
-            raise NotImplementedError("recalibrate not implemented")
+        Args:
+            redis_url: the redis url where intermediate calibration data is stored
+
+        Returns:
+            the final device calibration state after recalibration
+        """
+        data_dir = Path(self.data_dir)
+        backend_config = self.backend_config
+        calib_device_conf = self.calib_device_conf
+        calib_node_conf = self.calib_node_conf
+        calib_spi_conf = self.calib_spi_conf
+        qubits = backend_config.device_config.qubit_ids
+        couplers = [
+            f"{q1}_{q2}"
+            for q1, q2 in backend_config.device_config.coupling_dict.values()
+        ]
+        fixed_duration_couplers = backend_config.device_config.fixed_duration_couplers
+        reverse_phase_qubits = backend_config.device_config.reverse_phase_qubits
+        cluster_config = ClusterConfig.model_validate(self.quantify_config)
+
+        results = None
+        for name, conf in self.quantify_metadata.root.items():
+            if conf.instrument_type == "Cluster":
+                cluster_mode = (
+                    MeasurementMode.dummy if conf.is_dummy else MeasurementMode.real
+                )
+                logging.info(f"recalibrating {name} in {cluster_mode} mode...")
+
+                results = recalibrate(
+                    backend_config=self.backend_config,
+                    cluster_mode=cluster_mode,
+                    stdout_log_level=25,
+                    file_log_level=25,
+                    cluster_ip=conf.ip_address,
+                    redis_url=redis_url,
+                    data_dir=data_dir,
+                    spi_mode=SPIMode.dummy,
+                    qubits=qubits,
+                    couplers=couplers,
+                    is_recalibration=True,
+                    ignore_spec=True,
+                    save_plot=False,
+                    fixed_duration_couplers=fixed_duration_couplers,
+                    reverse_phase_qubits=reverse_phase_qubits,
+                    cluster_config=cluster_config,
+                    spi_config=calib_spi_conf,
+                    device_config=calib_device_conf,
+                    node_config=calib_node_conf,
+                )
+
+        if isinstance(results, DeviceCalibration):
+            calib_seed_file = self.calib_seed_file
+            logging.info(f"calibration complete. Saving to {calib_seed_file}...")
+            results.to_toml(calib_seed_file)
+
+        return results
 
     def _to_native_experiments(
         self, qobj: PulseQobj, native_config: NativeQobjConfig, /

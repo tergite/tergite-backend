@@ -21,6 +21,8 @@ coordinates = [
   [0, 0],
   [1, 0]
 ]
+fixed_duration_couplers = [ "q6_q7" ]
+reverse_phase_qubits = [ "q9" ]
 
 qubit_parameters = [
   "id",

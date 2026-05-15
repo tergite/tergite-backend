@@ -69,7 +69,7 @@ quantify = [
     "quantify-core>=0.8.1",
     "quantify-scheduler~=0.22.2",
     "qblox-instruments~=0.14.2",
-    "tergite-tuner~=2026.5.1",
+    "tergite-tuner~=2026.06.0-rc.3",
     "numpy>=2.0",
     "h5py>=3.14.0",
 ]

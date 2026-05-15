@@ -25,9 +25,20 @@ try:
     from quantify_core.data.types import TUID
     from quantify_scheduler import Schedule
     from quantify_scheduler.schedules import CompiledSchedule
+    from tergite_tuner import CalibrationResults
+    from tergite_tuner.config.types import ClusterConfig
+    from tergite_tuner.export import _CouplerInRedis
+    from tergite_tuner.utils.types.enums import MeasurementMode, SPIMode
 except ImportError:
+    from typing import Any
+
     from qiskit.pulse import Schedule
 
+    ClusterConfig = Any
+    SPIMode = Any
+    MeasurementMode = Any
+    CalibrationResults = Any
+    _CouplerInRedis = Any
     CompiledSchedule = Schedule
     TUID = str
 

@@ -22,7 +22,13 @@ from typing import Union
 import pandas as pd
 import tabulate
 
-from .compat import TUID, CompiledSchedule, Schedule, locate_experiment_container
+from app.utils.compat import (
+    TUID,
+    CompiledSchedule,
+    Schedule,
+    locate_experiment_container,
+)
+
 from .general import load_config, search_nested
 
 
