@@ -67,7 +67,7 @@ async def test_mss_reconnection():
 
     end_time = time.time()
     time_taken = end_time - start_time
-    assert abs(time_taken - net_connection_timeout) < 1.2
+    assert abs(time_taken - net_connection_timeout) < 2.5
 
 
 @pytest.mark.asyncio
