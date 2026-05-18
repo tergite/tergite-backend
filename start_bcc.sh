@@ -251,7 +251,7 @@ set -e # exit if any step fails
 
 WORKER_FLAG="";
 if [[ "${DEBUG:-}" = "true" ]]; then
-  WORKER_FLAG="-w app.utils.logging_worker.LoggingWorker";
+  WORKER_FLAG="-w app.utils.logging.LoggingRqWorker";
 fi
 
 # Worker processes
