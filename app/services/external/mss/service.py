@@ -21,7 +21,7 @@ import uuid
 from abc import ABC
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Dict, Generator, Optional
+from typing import Any, Callable, Dict, Generator, Optional
 
 import websockets
 from cryptography.hazmat.primitives import hashes, serialization
@@ -31,9 +31,10 @@ from redis import Redis
 from redis.asyncio import Redis as AsyncRedis
 from redis.asyncio.client import PubSub as AsyncPubSub
 from redis.client import PubSub
-from websockets import ClientConnection, ConnectionClosed
+from websockets import ClientConnection, ConnectionClosed, InvalidMessage, InvalidStatus
 
 import settings
+from app.utils.logging import err_logger
 from app.utils.redis import get_redis_connection
 
 from .dtos import DeviceEvent, EventResponse
@@ -81,6 +82,10 @@ async def connect_to_mss(
         except ConnectionClosed:
             logging.warning("MSS websocket closed; reconnecting...")
             continue
+        except Exception as e:
+            err_logger.error(f"Unexpected error connecting to MSS websocket: {e}")
+            await asyncio.sleep(5)
+            continue
 
 
 def get_inbox_channel_name(device: str = settings.DEFAULT_PREFIX) -> str:
@@ -109,6 +114,55 @@ def get_outbox_channel_name(device: str = settings.DEFAULT_PREFIX) -> str:
         the name of the inbox channel
     """
     return f"{device}:mss:outbox"
+
+
+def _process_websocket_exception(exc: Exception) -> Exception | None:
+    """
+    Determine whether a connection error is retryable or fatal.
+
+    When reconnecting automatically with ``async for ... in connect(...)``, if a
+    connection attempt fails, :func:`process_exception` is called to determine
+    whether to retry connecting or to raise the exception.
+
+    This function defines the default behavior, which is to retry on:
+
+    * :exc:`EOFError`, :exc:`OSError`, :exc:`asyncio.TimeoutError`: network
+      errors;
+    * :exc:`~websockets.exceptions.InvalidStatus` when the status code is 500,
+      502, 503, or 504: server or proxy errors.
+
+    All other exceptions are considered fatal.
+
+    Return :obj:`None` if the exception is retryable i.e. when the error could
+    be transient and trying to reconnect with the same parameters could succeed.
+    The exception will be logged at the ``INFO`` level.
+
+    Return an exception, either ``exc`` or a new exception, if the exception is
+    fatal i.e. when trying to reconnect will most likely produce the same error.
+    That exception will be raised, breaking out of the retry loop.
+
+    """
+    # This catches python-socks' ProxyConnectionError and ProxyTimeoutError.
+    # Remove asyncio.TimeoutError when dropping Python < 3.11.
+    if isinstance(exc, (OSError, TimeoutError, asyncio.TimeoutError, EOFError)):
+        f"Network error encountered ({type(exc).__name__}). Retrying..."
+        return None
+    if isinstance(exc, InvalidMessage) and isinstance(exc.__cause__, EOFError):
+        f"Network error encountered ({type(exc).__name__}). Retrying..."
+        return None
+    if isinstance(exc, InvalidStatus) and exc.response.status_code in [
+        400,  # invalid request
+        404,  # server unavailable
+        500,  # Internal Server Error
+        502,  # Bad Gateway
+        503,  # Service Unavailable
+        504,  # Gateway Timeout
+    ]:
+        err_logger.warning(
+            f"Handshake failed with HTTP {exc.response.status_code}. Retrying..."
+        )
+        return None
+    return exc
 
 
 class BaseMssClientPipe(ABC):
@@ -308,6 +362,9 @@ class AsyncMssClient(websockets.connect):
         key_password: Optional[bytes] = settings.PRIVATE_KEY_PASSWORD,
         open_timeout: float = settings.MSS_CONNECTION_TIMEOUT,
         redis_url: str = settings.RQ_REDIS_URL,
+        process_exception: Callable[
+            [Exception], Exception | None
+        ] = _process_websocket_exception,
         **kwargs: Any,
     ):
         """
@@ -318,9 +375,15 @@ class AsyncMssClient(websockets.connect):
             key_password: the password for the private key file; defaults = settings.PRIVATE_KEY_PASSWORD
             open_timeout: the timeout for opening the websocket in seconds; default = settings.MSS_CONNECTION_TIMEOUT
             redis_url: the redis URL connection to use for PubSub; default = settings.RQ_REDIS_URL
+            process_exception: the exception handling function; default = process_exception
             kwargs: additional options to pass to websockets.connect
         """
-        super().__init__(uri, open_timeout=open_timeout, **kwargs)
+        super().__init__(
+            uri,
+            open_timeout=open_timeout,
+            process_exception=process_exception,
+            **kwargs,
+        )
 
         self.__uri = uri
 

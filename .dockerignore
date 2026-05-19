@@ -144,6 +144,7 @@ tmp/
 app/tests/data/
 data/
 pytest-data/
+app/tests/
 
 # quantify scheduler
 *.hex

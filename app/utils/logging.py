@@ -4,8 +4,21 @@ import sys
 
 from rq import Worker
 
+import settings
 
-class LoggingWorker(Worker):
+# error logger
+err_logger = logging.getLogger("uvicorn.error")
+# work around for testing to allow errors to be seen in terminal
+if settings.APP_SETTINGS == "test":
+    err_logger.error = print
+    err_logger.info = print
+    err_logger.warning = print
+    err_logger.debug = print
+
+
+class LoggingRqWorker(Worker):
+    """A special RQ worker that logs its messages for ease of tracking"""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
