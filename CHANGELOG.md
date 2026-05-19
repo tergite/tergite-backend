@@ -7,6 +7,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.06.0-rc.1] - 2026-05-19
+
 ### Fixed
 
 - Fixed errors when websocket fails to connect or disconnects while the server is running
