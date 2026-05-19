@@ -14,6 +14,7 @@ import json
 from os import path
 from typing import Any, Dict, List, Union
 
+import toml
 import yaml
 
 _TESTS_FOLDER = path.dirname(path.dirname(path.abspath(__file__)))
@@ -27,19 +28,23 @@ def load_fixture(
 
     Args:
         file_name: the name of the file that contains the fixture
-        fmt: file format e.g. json or yaml, default: json
+        fmt: file format e.g. json, toml or yaml, default: json
 
     Returns:
         the list of dicts or the dict got from the json fixture file
     """
     fixture_path = get_fixture_path(file_name)
-    with open(fixture_path, "rb") as file:
-        if fmt == "json":
+    if fmt == "json":
+        with open(fixture_path, "rb") as file:
             return json.load(file)
-        elif fmt == "yaml":
+    elif fmt == "yaml":
+        with open(fixture_path, "rb") as file:
             return yaml.load(file, Loader=yaml.FullLoader)
-        else:
-            raise NotImplementedError(f"Cannot load fixture of format:{fmt}")
+    elif fmt == "toml":
+        with open(fixture_path, "r") as file:
+            return toml.load(file)
+    else:
+        raise NotImplementedError(f"Cannot load fixture of format:{fmt}")
 
 
 def get_fixture_path(*paths: str) -> str:

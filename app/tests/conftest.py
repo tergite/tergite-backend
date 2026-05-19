@@ -1,3 +1,5 @@
+import toml
+
 from .utils.env import (
     TEST_BACKEND_SETTINGS_FILE,
     TEST_BOOKING_DB_URL,
@@ -37,10 +39,12 @@ from typing import (
     Dict,
     Generator,
     List,
+    Literal,
     NotRequired,
     Optional,
     Tuple,
     TypedDict,
+    Unpack,
 )
 
 import numpy as np
@@ -150,6 +154,9 @@ VALID_BOOKINGS: List["BasicBookingInfo"] = load_fixture("valid_bookings.json")
 INVALID_BOOKINGS: List["BasicBookingInfo"] = load_fixture("invalid_bookings.json")
 JOBS: List[Dict[str, Any]] = load_fixture("job_list.json")
 PAGINATION: List["PaginationInfo"] = load_fixture("pagination.json")
+RECALIBRATION_MOCKS: Dict[Literal["qubit", "coupler"], Dict[str, Any]] = load_fixture(
+    "recalibration-mocks.json"
+)
 SPI_DUMMY_METADATA_FILE = get_fixture_path("spi_dummy_quantify-metadata.yml")
 TEST_SPI_LOGGER_NAME = "test.spi_dac.verbose"
 
@@ -224,19 +231,43 @@ def rq_worker_for_simulator_2q(redis_client) -> Generator[SimpleWorker, Any, Non
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.fixture
-def quantify_rest_client(mocker, redis_client) -> Generator[TestClient, Any, None]:
+def quantify_seed_file(tmp_path) -> Generator[str, Any, None]:
+    """Returns a path to a temporary copy of the dummy quantify calibration seed file"""
+    contents = {}
+    with open(TEST_QUANTIFY_SEED_FILE, "r") as file:
+        contents = toml.load(file)
+
+    new_seed_file = tmp_path / "dummy_calibration.seed.toml"
+    with open(new_seed_file, "w") as file:
+        toml.dump(contents, file)
+
+    yield str(new_seed_file)
+
+    new_seed_file.unlink(missing_ok=True)
+
+
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
+@pytest.fixture
+def quantify_rest_client(
+    mocker, redis_client, quantify_seed_file
+) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
     _patch_async_client(mocker)
     os.environ["EXECUTOR_TYPE"] = "quantify"
     os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX
     os.environ["BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
-    os.environ["CALIBRATION_SEED"] = TEST_QUANTIFY_SEED_FILE
+    os.environ["CALIBRATION_SEED"] = quantify_seed_file
 
     from .utils.executors.quantify import MockQuantifyExecutor
+    from .utils.tuner import mock_run_node
 
     mocker.patch(
         "app.libs.quantum_executor.quantify.executor.QuantifyExecutor",
         new=MockQuantifyExecutor,
+    )
+    mocker.patch(
+        "app.libs.quantum_executor.quantify.utils.calibration.run_node",
+        new=mock_run_node,
     )
 
     import app
@@ -261,7 +292,6 @@ def patched_mss_websockets(mocker) -> Generator[MockerFixture, Any, None]:
 @pytest.fixture
 def qiskit_1q_rest_client(mocker) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
-    _patch_async_client(mocker)
     os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_1q"
     os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_1Q
     os.environ["BACKEND_SETTINGS"] = TEST_SIMQ1_BACKEND_SETTINGS_FILE
@@ -269,6 +299,7 @@ def qiskit_1q_rest_client(mocker) -> Generator[TestClient, Any, None]:
 
     from .utils.executors.qiskit import MockQiskitDynamicsExecutor
 
+    mocker.patch("websockets.connect.create_connection", side_effect=MockWebsocket)
     mocker.patch(
         "app.libs.quantum_executor.qiskit.executor.QiskitDynamicsExecutor",
         new=MockQiskitDynamicsExecutor,

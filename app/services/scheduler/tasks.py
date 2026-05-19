@@ -443,14 +443,21 @@ def recalibrate(
         if isinstance(results, DeviceCalibration):
             logging.info(f"Updating MSS...")
             with MssClientPipe() as mss_client_pipe:
-                mss_client_pipe.send_event(
+                response = mss_client_pipe.send_event(
                     DeviceEvent(
                         name=DeviceEventName.RECALIBRATED,
                         data=results,
                     ),
                     error_prefix="error sending recalibration info: ",
                 )
-            logging.info(f"calibration data updated in MSS")
+                if response["status"] != "success":
+                    raise RuntimeError(
+                        f"Error sending recalibration info: {response["detail"]}"
+                    )
+
+            logging.info(
+                f"calibration data updated in MSS with response: {response["status"]}"
+            )
 
     # schedule next run
     if isinstance(interval, float):

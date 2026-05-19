@@ -33,6 +33,7 @@ from typing import (
 from uuid import uuid4
 
 import pytest
+import toml
 from black.nodes import Generic
 from pydantic import ValidationError
 from pytest_lazy_fixtures import lf as lazy_fixture
@@ -192,6 +193,10 @@ _ROOT_PARAMS = [
 _VIEW_MANY_PARAMS = [
     (pagination, client) for pagination in PAGINATION for client in FASTAPI_CLIENTS
 ]
+
+_EXPECTED_RECALIBRATION_SEED_CONTENT = load_fixture(
+    "expected_recalibration.seed.toml", fmt="toml"
+)
 
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
@@ -2282,8 +2287,11 @@ def test_unauthenticated_get_dynamic_props(client, _expected):
         assert got == {"detail": "user not authenticated"}
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
-def test_init_recalibration_with_interval(client, redis_conn: Redis, worker):
+def test_init_recalibration_with_interval(
+    client, redis_conn: Redis, worker, quantify_seed_file
+):
     """Init recalibration restarts the calibration sequence, changing the interval from the default"""
     with client as client:
         users = _create_many_users(client, raw_users=USERS)
@@ -2333,16 +2341,22 @@ def test_init_recalibration_with_interval(client, redis_conn: Redis, worker):
         final_actual_interval = (
             final_rq_job.started_at - before_request_timestamp
         ).total_seconds()
+        with open(quantify_seed_file, "r") as file:
+            seed_file_content = toml.load(file)
 
         assert initial_rq_interval == initial_interval
         assert final_rq_interval == new_interval
         assert final_rq_job.is_finished
         assert initial_rq_job.is_canceled
         assert math.isclose(final_actual_interval, new_interval, abs_tol=1)
+        assert seed_file_content == _EXPECTED_RECALIBRATION_SEED_CONTENT
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
-def test_init_recalibration_without_interval(client, redis_conn: Redis, worker):
+def test_init_recalibration_without_interval(
+    client, redis_conn: Redis, worker, quantify_seed_file
+):
     """Init recalibration restarts the calibration sequence without interval continues with the default interval"""
     with client as client:
         users = _create_many_users(client, raw_users=USERS)
@@ -2382,16 +2396,22 @@ def test_init_recalibration_without_interval(client, redis_conn: Redis, worker):
         final_actual_interval = (
             final_rq_job.started_at - before_request_timestamp
         ).total_seconds()
+        with open(quantify_seed_file, "r") as file:
+            seed_file_content = toml.load(file)
 
         assert initial_rq_interval == initial_interval
         assert final_rq_interval == initial_interval
         assert final_rq_job.is_finished
         assert initial_rq_job.is_canceled
         assert math.isclose(final_actual_interval, initial_interval, abs_tol=1)
+        assert seed_file_content == _EXPECTED_RECALIBRATION_SEED_CONTENT
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
-def test_init_recalibration_with_start_time(client, redis_conn: Redis, worker):
+def test_init_recalibration_with_start_time(
+    client, redis_conn: Redis, worker, quantify_seed_file
+):
     """POST /recalibration/cancel restarts the recalibration sequence at a given start time in future"""
     with client as client:
         users = _create_many_users(client, raw_users=USERS)
@@ -2426,15 +2446,19 @@ def test_init_recalibration_with_start_time(client, redis_conn: Redis, worker):
 
         first_rq_job_id = queue.finished_job_registry.get_job_ids(start=0, end=1)[0]
         first_rq_job = RqJob.fetch(first_rq_job_id, connection=redis_conn)
+        with open(quantify_seed_file, "r") as file:
+            seed_file_content = toml.load(file)
 
         assert first_rq_job.is_finished
         assert math.isclose(
             first_rq_job.started_at.timestamp(), start_timestamp.timestamp(), abs_tol=1
         )
+        assert seed_file_content == _EXPECTED_RECALIBRATION_SEED_CONTENT
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
-def test_get_recalibration_info(client, redis_conn: Redis, worker):
+def test_get_recalibration_info(client, redis_conn: Redis, worker, quantify_seed_file):
     """Get /recalibration/info gets recalibration info retrieves the basic recalibration info"""
     with client as client:
         users = _create_many_users(client, raw_users=USERS)

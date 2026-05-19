@@ -339,6 +339,11 @@ def init_executor(options: ExecutorOptions, reset: bool = False) -> QuantumExecu
         reset=reset,
         should_restore_currents=options.should_restore_currents,
         are_clusters_resettable=options.are_clusters_resettable,
+        data_dir=options.data_directory,
+        calib_node_conf=options.calibration_node_config,
+        calib_device_conf=options.calibration_device_config,
+        calib_seed_file=options.calibration_seed_file,
+        calib_spi_conf=options.calibration_spi_config,
     )
 
 

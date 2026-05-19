@@ -74,6 +74,10 @@ async def lifespan(app: FastAPI):
         quantify_config_file=settings.QUANTIFY_CONFIG_FILE,
         quantify_metadata_file=settings.QUANTIFY_METADATA_FILE,
         should_restore_currents=settings.SHOULD_RESTORE_CURRENTS,
+        data_directory=settings.EXECUTOR_DATA_DIR,
+        calibration_node_config=settings.CALIBRATION_NODE_CONFIG_FILE,
+        calibration_device_config=settings.CALIBRATION_DEVICE_CONFIG_FILE,
+        calibration_spi_config=settings.CALIBRATION_SPI_CONFIG_FILE,
     )
     QUEUE_CONTEXT = {
         "queue_prefix": settings.DEFAULT_PREFIX,
@@ -479,6 +483,7 @@ def _get_executor_and_options(
     executor_options = ExecutorOptions(
         backend_name=initial_backend_config.name,
         backend_config=initial_backend_config,
+        calibration_seed_file=calibration_seed_file,
         **kwargs,
     )
     executor = init_executor(executor_options, reset=True)

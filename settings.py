@@ -99,7 +99,7 @@ CALIBRATION_SEED = config(
 CALIBRATION_NODE_CONFIG_FILE = config(
     "CALIBRATION_NODE_CONFIG_FILE", cast=Path, default=_ROOT_PATH / "node_config.toml"
 )
-if not CALIBRATION_NODE_CONFIG_FILE.exists():
+if HAS_QUANTIFY and not CALIBRATION_NODE_CONFIG_FILE.exists():
     raise FileNotFoundError(
         f"CALIBRATION_NODE_CONFIG_FILE: {CALIBRATION_NODE_CONFIG_FILE} not found."
     )
@@ -109,7 +109,7 @@ CALIBRATION_DEVICE_CONFIG_FILE = config(
     cast=Path,
     default=_ROOT_PATH / "calib_device_config.toml",
 )
-if not CALIBRATION_DEVICE_CONFIG_FILE.exists():
+if HAS_QUANTIFY and not CALIBRATION_DEVICE_CONFIG_FILE.exists():
     raise FileNotFoundError(
         f"CALIBRATION_DEVICE_CONFIG_FILE: {CALIBRATION_DEVICE_CONFIG_FILE} not found."
     )
@@ -117,7 +117,7 @@ if not CALIBRATION_DEVICE_CONFIG_FILE.exists():
 CALIBRATION_SPI_CONFIG_FILE = config(
     "CALIBRATION_SPI_CONFIG_FILE", cast=Path, default=_ROOT_PATH / "spi_config.toml"
 )
-if not CALIBRATION_SPI_CONFIG_FILE.exists():
+if HAS_QUANTIFY and not CALIBRATION_SPI_CONFIG_FILE.exists():
     raise FileNotFoundError(
         f"CALIBRATION_SPI_CONFIG_FILE: {CALIBRATION_SPI_CONFIG_FILE} not found."
     )

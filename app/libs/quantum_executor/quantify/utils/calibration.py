@@ -42,6 +42,25 @@ _QUBITS_NODE_RUN_MAP = {
     NodeEnum.RANDOMIZED_BENCHMARKING: _RunMode.ALL_QUBITS,
 }
 
+_INITIAL_QUBITS_NODE_RUN_MAP = {
+    NodeEnum.RESONATOR_SPECTROSCOPY: _RunMode.ALL_QUBITS,
+    NodeEnum.QUBIT_01_SPECTROSCOPY: _RunMode.ALL_QUBITS,
+    NodeEnum.RABI_OSCILLATIONS: _RunMode.ALL_QUBITS,
+    NodeEnum.RAMSEY_CORRECTION: _RunMode.ALL_QUBITS,
+    NodeEnum.MOTZOI_PARAMETER: _RunMode.ALL_QUBITS,
+    NodeEnum.N_RABI_OSCILLATIONS: _RunMode.ALL_QUBITS,
+    NodeEnum.RESONATOR_SPECTROSCOPY_1: _RunMode.ALL_QUBITS,
+    NodeEnum.RO_FREQUENCY_TWO_STATE_OPTIMIZATION: _RunMode.ALL_QUBITS,
+    NodeEnum.RO_AMPLITUDE_TWO_STATE_OPTIMIZATION: _RunMode.ALL_QUBITS,
+    NodeEnum.QUBIT_12_SPECTROSCOPY: _RunMode.ALL_QUBITS,
+    NodeEnum.RABI_OSCILLATIONS_12: _RunMode.ALL_QUBITS,
+    NodeEnum.RAMSEY_CORRECTION_12: _RunMode.ONE_QUBIT_AT_A_TIME,
+    NodeEnum.MOTZOI_12_PARAMETER: _RunMode.ALL_QUBITS,
+    NodeEnum.RO_FREQUENCY_THREE_STATE_OPTIMIZATION: _RunMode.ALL_QUBITS,
+    NodeEnum.RO_AMPLITUDE_THREE_STATE_OPTIMIZATION: _RunMode.ALL_QUBITS,
+    NodeEnum.RANDOMIZED_BENCHMARKING: _RunMode.ALL_QUBITS,
+}
+
 _FIXED_DURATION_COUPLER_NODES = (
     NodeEnum.CZ_CHEVRON,
     NodeEnum.CZ_CALIBRATION,
@@ -96,9 +115,9 @@ def _recalibrate_all_qubits(
     Returns:
         the updated session object and the results
     """
-    qubits: list = session_options.get("qubits", [])
+    qubits: list = session_options.pop("qubits", [])
     session: Optional[SessionContext] = None
-    for node, run_mode in _QUBITS_NODE_RUN_MAP.items():
+    for node, run_mode in _INITIAL_QUBITS_NODE_RUN_MAP.items():
         if run_mode == _RunMode.ALL_QUBITS:
             session, _ = run_node(
                 session=session,

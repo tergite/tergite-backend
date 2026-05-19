@@ -6,6 +6,7 @@ import time
 
 import pytest
 from pydantic import ValidationError
+from pytest_lazy_fixtures import lf as lazy_fixture
 
 from app.tests.conftest import HAS_QISKIT_DYNAMICS, HAS_QUANTIFY
 from app.tests.utils.env import (
@@ -13,6 +14,7 @@ from app.tests.utils.env import (
     TEST_BROKEN_QUANTIFY_CONFIG_FILE,
     TEST_BROKEN_QUANTIFY_METADATA_FILE,
     TEST_DEFAULT_PREFIX_SIM_1Q,
+    TEST_QISKIT_1Q_SEED_FILE,
     TEST_QUANTIFY_CONFIG_FILE,
     TEST_QUANTIFY_METADATA_FILE,
     TEST_QUANTIFY_SEED_FILE,
@@ -25,11 +27,17 @@ _QUANTIFY_CONFIG_FILE = get_fixture_path("generic-quantify-config.json")
 _QUANTIFY_METADATA_FILE = get_fixture_path("generic-quantify-config.yml")
 _EXECUTOR_AND_SETTINGS = []
 if HAS_QUANTIFY:
-    _EXECUTOR_AND_SETTINGS += [("quantify", TEST_BACKEND_SETTINGS_FILE)]
+    _EXECUTOR_AND_SETTINGS += [
+        (
+            "quantify",
+            TEST_BACKEND_SETTINGS_FILE,
+            lazy_fixture("quantify_seed_file"),
+        )
+    ]
 
 if HAS_QISKIT_DYNAMICS:
     _EXECUTOR_AND_SETTINGS += [
-        ("qiskit_pulse_1q", TEST_SIMQ1_BACKEND_SETTINGS_FILE),
+        ("qiskit_pulse_1q", TEST_SIMQ1_BACKEND_SETTINGS_FILE, TEST_QISKIT_1Q_SEED_FILE),
     ]
 
 
@@ -50,8 +58,8 @@ def test_load_quantify_config_files():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("executor, settings_file", _EXECUTOR_AND_SETTINGS)
-async def test_mss_reconnection(executor, settings_file):
+@pytest.mark.parametrize("executor, settings_file, seed_file", _EXECUTOR_AND_SETTINGS)
+async def test_mss_reconnection(executor, settings_file, seed_file):
     """Attempts to reconnect to MSS up to a given number of times"""
     remove_modules(["os", "app", "settings"])
 
@@ -64,6 +72,7 @@ async def test_mss_reconnection(executor, settings_file):
     os.environ["MSS_MACHINE_ROOT_URL"] = f"http://localhost:{mss_port}"
     os.environ["MSS_CONNECTION_TIMEOUT"] = f"{timeout}"
     os.environ["MSS_CONNECTION_MAX_ATTEMPTS"] = f"{connection_attempts}"
+    os.environ["CALIBRATION_SEED"] = f"{seed_file}"
     net_connection_timeout = timeout * connection_attempts
 
     from sqlmodel import SQLModel

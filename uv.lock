@@ -4195,7 +4195,7 @@ wheels = [
 
 [[package]]
 name = "tergite-backend"
-version = "2026.3.3rc6"
+version = "2026.6.0rc1"
 source = { editable = "." }
 dependencies = [
     { name = "bcrypt" },
@@ -4282,7 +4282,7 @@ requires-dist = [
     { name = "scikit-learn", marker = "extra == 'qiskit'" },
     { name = "sqlmodel", specifier = "~=0.0.24" },
     { name = "tabulate", specifier = ">=0.9.0" },
-    { name = "tergite-tuner", marker = "extra == 'quantify'", specifier = "~=2026.6.0rc3" },
+    { name = "tergite-tuner", marker = "extra == 'quantify'", specifier = "~=2026.6.0rc5" },
     { name = "toml", specifier = ">=0.10.2" },
     { name = "xarray", marker = "extra == 'qiskit'" },
 ]
@@ -4309,7 +4309,7 @@ dev = [
 
 [[package]]
 name = "tergite-tuner"
-version = "2026.6.0rc3"
+version = "2026.6.0rc5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "h5py" },
@@ -4332,9 +4332,9 @@ dependencies = [
     { name = "tomlkit" },
     { name = "xarray" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/cd/d8/378dbc8c550708e2953ef6ee86213ec658b8ecf35abce55eaebd5d6fdd6b/tergite_tuner-2026.6.0rc3.tar.gz", hash = "sha256:6148f0a161fb1a5cf86e557860fb9681180840ac280f192957aecab6db7bf9e4", size = 236742 }
+sdist = { url = "https://files.pythonhosted.org/packages/d9/e2/2966c478f09385dea075e5eb3c005079b3c188cef7f15ce2879ed587f277/tergite_tuner-2026.6.0rc5.tar.gz", hash = "sha256:af62ef05c87a06986217dedc2c4b1e3a79dda265a9964e526a394ee7de0ae61a", size = 236797 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/fa/17/4eba710f66a6ceb64211798edc0e24e2f19dfdd5606706ac101927722d1c/tergite_tuner-2026.6.0rc3-py3-none-any.whl", hash = "sha256:a9a7f1e49d913b1f3467026db7db771787599912c0d8901abe3c5f98d42b8d80", size = 320691 },
+    { url = "https://files.pythonhosted.org/packages/bd/e4/6b2a0030269073c6a40695fc94b0f4ba6777c6f2baa3e45209cc9430ffed/tergite_tuner-2026.6.0rc5-py3-none-any.whl", hash = "sha256:76d4bc779408f988ad3e25a0bc30d5203263bd10dba58c93eed5b49df456cbc8", size = 320767 },
 ]
 
 [[package]]

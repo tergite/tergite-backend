@@ -16,6 +16,7 @@
 import copy
 from abc import ABC, abstractmethod
 from contextlib import suppress
+from functools import cached_property
 from os import PathLike
 from typing import (
     Any,
@@ -33,7 +34,13 @@ from typing import (
 
 import numpy as np
 import toml
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    computed_field,
+    field_validator,
+    model_validator,
+)
 
 from app.utils.compat import CalibrationResults, _CouplerInRedis
 from app.utils.datetime import utc_now_str
@@ -249,6 +256,9 @@ class CalibrationValueSet(CalibrationModel, ABC):
                         data[k][key] = item.model_dump_scalar(
                             exclude_none=exclude_none, **kwargs
                         )
+
+        for k in self.__class__.model_computed_fields:
+            data[k] = copy.copy(getattr(self, k))
         return data
 
 
@@ -273,6 +283,20 @@ class QubitCalibration(CalibrationValueSet):
     xy_drive_line: Optional[CalibrationValue[int]] = None
     z_drive_line: Optional[CalibrationValue[int]] = None
 
+    @field_validator("id", mode="before")
+    @classmethod
+    def prep_id(cls, v):
+        if isinstance(v, str):
+            return int(v.lstrip("q"))
+        return int(v)
+
+    @computed_field
+    @cached_property
+    def name(self) -> Optional[str]:
+        if self.id is None:
+            return None
+        return f"q{self.id}"
+
     @classmethod
     def from_calib_config(
         cls, conf: "_BackendCalibrationConfig"
@@ -290,7 +314,7 @@ class QubitCalibration(CalibrationValueSet):
 
         results: List[QubitCalibration] = []
         for qubit_conf in qubit_data:
-            qubit_conf["id"] = str(qubit_conf["id"]["value"]).strip("q")
+            qubit_conf["id"] = qubit_conf["id"]["value"]
             results.append(QubitCalibration.model_validate(qubit_conf))
 
         return results
@@ -311,7 +335,7 @@ class QubitCalibration(CalibrationValueSet):
         for qubit, qubit_data in data.transmons.items():
             results.append(
                 QubitCalibration(
-                    id=int(qubit.strip("q")),
+                    id=qubit,
                     frequency=CalibrationValue.from_scalar(
                         qubit_data.clock_freqs.f01, unit="Hz"
                     ),
@@ -352,6 +376,20 @@ class ResonatorCalibration(CalibrationValueSet):
     y_position: Optional[CalibrationValue[int]] = None
     readout_line: Optional[CalibrationValue[int]] = None
 
+    @field_validator("id", mode="before")
+    @classmethod
+    def prep_id(cls, v):
+        if isinstance(v, str):
+            return int(v.lstrip("q"))
+        return int(v)
+
+    @computed_field
+    @cached_property
+    def name(self) -> Optional[str]:
+        if self.id is None:
+            return None
+        return f"q{self.id}"
+
     @classmethod
     def from_calib_config(
         cls, conf: "_BackendCalibrationConfig"
@@ -369,7 +407,7 @@ class ResonatorCalibration(CalibrationValueSet):
 
         results: List[ResonatorCalibration] = []
         for resonator_conf in resonator_data:
-            resonator_conf["id"] = str(resonator_conf["id"]["value"]).strip("q")
+            resonator_conf["id"] = resonator_conf["id"]["value"]
             results.append(ResonatorCalibration.model_validate(resonator_conf))
 
         return results
@@ -390,7 +428,7 @@ class ResonatorCalibration(CalibrationValueSet):
         for qubit, item in data.transmons.items():
             results.append(
                 ResonatorCalibration(
-                    id=int(qubit.strip("q")),
+                    id=qubit,
                     acq_delay=CalibrationValue.from_scalar(
                         item.measure.acq_delay, unit="s"
                     ),
@@ -433,6 +471,39 @@ class CouplerCalibration(CalibrationValueSet):
     target_rz_lambda: Optional[CalibrationValue] = None
     pulse_type: Optional[CalibrationValue[str]] = None
     id: Optional[int] = None
+    full_name: Optional[str] = None
+    """The name of the coupler in format {control_qubit}_{target_qubit}"""
+    # FIXME: This format is not being followed currently
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def prep_id(cls, v):
+        if isinstance(v, str):
+            return int(v.lstrip("u"))
+        return v
+
+    @computed_field
+    @cached_property
+    def short_name(self) -> Optional[str]:
+        if self.id is None:
+            return None
+        return f"u{self.id}"
+
+    @computed_field
+    @cached_property
+    def control_qubit(self) -> Optional[str]:
+        # FIXME: the format '{control}_{target}' is not being used at the moment
+        if self.full_name is None:
+            return None
+        return self.full_name.split("_")[0]
+
+    @computed_field
+    @cached_property
+    def target_qubit(self) -> Optional[str]:
+        # FIXME: the format '{control}_{target}' is not being used at the moment
+        if self.full_name is None:
+            return None
+        return self.full_name.split("_")[1]
 
     @classmethod
     def from_calib_config(
@@ -451,7 +522,7 @@ class CouplerCalibration(CalibrationValueSet):
 
         results: List[CouplerCalibration] = []
         for coupler_conf in coupler_data:
-            coupler_conf["id"] = str(coupler_conf["id"]["value"]).strip("u")
+            coupler_conf["id"] = coupler_conf["id"]["value"]
             results.append(CouplerCalibration.model_validate(coupler_conf))
 
         return results
@@ -494,6 +565,7 @@ class CouplerCalibration(CalibrationValueSet):
             results.append(
                 CouplerCalibration(
                     id=bcc_coupler_idx,
+                    full_name=coupler,
                     # correcting the frequency by the downconvert frequency
                     frequency=CalibrationValue.from_scalar(
                         value=_DOWNCONVERT_FREQUENCY - item.cz_pulse_frequency,
@@ -536,7 +608,6 @@ class CouplerCalibration(CalibrationValueSet):
         control_phase = data.cz_dynamic_control
         target_phase = data.cz_dynamic_target
 
-        # FIXME: Major assumption: couplers are labeled as q{num}_q{num}
         q1, q2 = coupler.split("_")
         affected_qubits = set(reverse_phase_qubits) & {q1, q2}
 
@@ -575,7 +646,7 @@ class DeviceCalibration(Schema, CalibrationValueSet):
             file_path: the path to the TOML file to persist to
         """
         units = self.model_dump_unit(exclude_none=True)
-        scalars = self.model_dump_scalars(exclude_none=True)
+        scalars = self.model_dump_scalar(exclude_none=True)
 
         qubit_units = {}
         coupler_units = {}
@@ -583,10 +654,13 @@ class DeviceCalibration(Schema, CalibrationValueSet):
 
         with suppress(KeyError, IndexError):
             qubit_units = units["qubits"][0]
+            qubit_units.pop("id")
         with suppress(KeyError, IndexError, TypeError):
             coupler_units = units["couplers"][0]
+            coupler_units.pop("id")
         with suppress(KeyError, IndexError, TypeError):
             resonator_units = units["resonators"][0]
+            resonator_units.pop("id")
         conf = _BackendCalibrationConfig(
             units={
                 "qubit": qubit_units,

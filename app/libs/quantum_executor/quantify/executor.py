@@ -48,7 +48,7 @@ from app.libs.quantum_executor.quantify.utils.config import (
 )
 from app.libs.quantum_executor.quantify.utils.portclock import generate_hardware_map
 from app.libs.quantum_executor.utils.logger import ExperimentLogger
-from app.utils.compat import ClusterConfig, MeasurementMode, SPIMode
+from app.utils.compat import MeasurementMode, SPIMode
 
 from ...device_parameters import DeviceCalibration
 from .spi_dac import init_spi_dacs
@@ -72,7 +72,7 @@ class QuantifyExecutor(QuantumExecutor):
         should_restore_currents: bool = False,
         reset: bool = False,
         are_clusters_resettable: bool = False,
-        data_dir: str = settings.EXECUTOR_DATA_DIR,
+        data_dir: Path | os.PathLike[str] = settings.EXECUTOR_DATA_DIR,
         calib_node_conf: (
             Path | os.PathLike[str]
         ) = settings.CALIBRATION_NODE_CONFIG_FILE,
@@ -194,7 +194,7 @@ class QuantifyExecutor(QuantumExecutor):
         ]
         fixed_duration_couplers = backend_config.device_config.fixed_duration_couplers
         reverse_phase_qubits = backend_config.device_config.reverse_phase_qubits
-        cluster_config = ClusterConfig.model_validate(self.quantify_config)
+        cluster_config = self.quantify_config
 
         results = None
         for name, conf in self.quantify_metadata.root.items():

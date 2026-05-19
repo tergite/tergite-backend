@@ -41,7 +41,7 @@ TEST_BCC_PORT = 8000
 TEST_MSS_APP_TOKEN = "some-mss-app-token-for-testing"
 
 TEST_CALIBRATION_NODE_CONFIG_FILE = _PROJECT_ROOT / "node_config.example.toml"
-TEST_CALIBRATION_SPI_CONFIG_FILE = _PROJECT_ROOT / "spi_config.example.toml"
+TEST_CALIBRATION_SPI_CONFIG_FILE = get_fixture_path("dummy_spi_config.calib.toml")
 TEST_CALIBRATION_DEVICE_CONFIG_FILE = _PROJECT_ROOT / "calib_device_config.example.toml"
 
 TEST_QUANTIFY_CONFIG_FILE = get_fixture_path("dummy-quantify-config.json")

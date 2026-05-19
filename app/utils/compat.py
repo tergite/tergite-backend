@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Utility for compatibility handling between qiskit-dynamics and quantify"""
+import logging
 import uuid
 from pathlib import Path
 
@@ -29,7 +30,11 @@ try:
     from tergite_tuner.config.types import ClusterConfig
     from tergite_tuner.export import _CouplerInRedis
     from tergite_tuner.utils.types.enums import MeasurementMode, SPIMode
-except ImportError:
+except ImportError as e:
+    if settings.HAS_QUANTIFY:
+        raise e
+
+    logging.debug(f"import error: {e}. We will attempt to make a mock of that type")
     from typing import Any
 
     from qiskit.pulse import Schedule
