@@ -2,22 +2,30 @@ FROM python:3.12-bullseye
 
 WORKDIR /code
 
-COPY . /code/
+COPY pyproject.toml uv.lock* setup.py /code/
 
 ARG DEPS_GROUP="quantify"
 
 # Install dependencies for recalibration
 RUN  if [ "$DEPS_GROUP" = "quantify" ]; then \
-      apt-get update && apt-get install libgl1 -y \
-      && rm -rf /var/lib/apt/lists/* \
+        apt-get update && \
+        apt-get install libgl1 -y && \
+        rm -rf /var/lib/apt/lists/*; \
     fi
 
 # Install uv
+ENV PIP_ROOT_USER_ACTION=ignore
 RUN pip install uv
 
-# Install dependencies
-RUN uv sync --system --extra ${DEPS_GROUP}
+# Install prod-only dependencies in system python's packages
+ENV UV_PROJECT_ENVIRONMENT="/usr/local"
+ENV UV_NO_DEV=1
+RUN uv sync --no-python-downloads --python-preference only-system --extra "$DEPS_GROUP"
 
+# uninstall uv
+RUN pip uninstall uv -y
+
+COPY . /code/
 RUN chmod +x /code/start_bcc.sh
 
 LABEL org.opencontainers.image.licenses=APACHE-2.0
