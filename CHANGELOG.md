@@ -27,6 +27,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Added recalibration endpoints to the API to restart (`/recalibration/init`), 
   view (`/recalibration/info`), and cancel (`/recalibration/cancel`) recalibration.
 - Added the `tergite-tuner` library as a dependency
+- Added the `name` on `QubitCalibration`, `short_name`, `full_name`, `control_qubit`
+  and `target_qubit` on `CouplerCalibration`.
 
 ## [2026.06.0-rc.1] - 2026-05-19
 
