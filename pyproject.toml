@@ -56,37 +56,35 @@ dependencies = [
     "pyjwt~=2.9.0",
     "pyyaml~=6.0.2",
     "fastapi[standard]~=0.116.1",
-    "h5py>=3.12.1",
     "toml>=0.10.2",
-    "qiskit~=0.45.0",
-    "qiskit-ibm-provider>=0.9.0",
-    "quantify-core>=0.8.1",
-    "quantify-scheduler~=0.22.2",
-    "qblox-instruments~=0.14.2",
     "requests>=2.31.0",
     "tabulate>=0.9.0",
-    "tqdm>=4.66.1",
-    "ruamel.yaml~=0.18.10",
-    "jax>=0.5.1",
-    "qiskit-dynamics>=0.5.1,<0.6.0",
     "cryptography~=45.0.2",
-    # deps of deps
-    # ------------
-    # Just adding these libraries and versions to avoid resolution-too-deep errors
-    # but the libraries themselves are dependencies of dependencies.
-    "numpy>=1.26.0",
-    "pydantic~=2.11.3",
     "filelock~=3.18.0",
-    "matplotlib~=3.10.0",
-    "contourpy~=1.3.1",
-    "qcodes~=0.49.0",
-    "pandas~=2.2.1",
-    "annotated-types~=0.7.0",
-    "anyio~=4.8.0",
-    "dill~=0.3.9"
+    "pydantic~=2.11.3",
 ]
 
 [project.optional-dependencies]
+quantify = [
+    "quantify-core>=0.8.1",
+    "quantify-scheduler~=0.22.2",
+    "qblox-instruments~=0.14.2",
+    "tergite-tuner~=2026.06.0-rc.5",
+    "numpy>=2.0",
+    "h5py>=3.14.0",
+]
+qiskit = [
+    "qiskit-dynamics>=0.5.1,<0.6.0",
+    "jax>=0.5.1",
+    "qiskit~=0.45.0",
+    "qiskit-ibm-provider>=0.9.0",
+    "numpy>=1.26.0",
+    "h5py>=3.12.1",
+    "xarray",
+    "scikit-learn",
+]
+
+[dependency-groups]
 dev = [
     "pytest>=8.3.5",
     "httpx~=0.28.0",
@@ -139,4 +137,12 @@ filterwarnings = [
   "ignore:qiskit\\.providers\\.models is deprecated since Qiskit 1\\.2 and will be removed in Qiskit 2\\.0\\.:DeprecationWarning:app\\.libs\\.quantum_executor\\.qiskit\\.backends\\..*",
   # Qiskit Qobj / BackendV1 workflow deprecation
   "ignore:.*The `Qobj` class and related functionality are part of the deprecated `BackendV1` workflow.*:DeprecationWarning",
+]
+
+[tool.uv]
+conflicts = [
+    [
+        { extra = "quantify" },
+        { extra = "qiskit" }
+    ]
 ]

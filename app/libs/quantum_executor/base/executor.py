@@ -20,13 +20,9 @@ from traceback import format_exc
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-from qiskit.qobj import PulseQobj
-from quantify_core.data import handling as dh
-from quantify_core.data.handling import create_exp_folder, gen_tuid
-from quantify_core.data.types import TUID
 
-import settings
-from app.libs.device_parameters import BackendConfig
+from app.libs.device_parameters import BackendConfig, DeviceCalibration
+from app.libs.qiskit.qobj import PulseQobj
 from app.libs.quantum_executor.base.experiment import NativeExperiment
 from app.libs.quantum_executor.base.quantum_job import (
     save_job_in_hdf5,
@@ -35,6 +31,7 @@ from app.libs.quantum_executor.base.quantum_job import (
 from app.libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig, QuantumJob
 from app.libs.quantum_executor.base.quantum_job.typing import QExperimentResult
 from app.libs.quantum_executor.utils.logger import ExperimentLogger
+from app.utils.compat import TUID, create_exp_folder, gen_tuid
 from settings import PREPROCESSED_JOB_POOL
 
 
@@ -45,7 +42,6 @@ class QuantumExecutor(abc.ABC):
         backend_config: Optional[BackendConfig] = None,
         **kwargs,
     ):
-        dh.set_datadir(settings.EXECUTOR_DATA_DIR)
         self.hardware_map = hardware_map
         self.backend_config = backend_config
 
@@ -161,6 +157,10 @@ class QuantumExecutor(abc.ABC):
             # log exceptions
             logger.error(f"\nFailed job: {job_id}, tuid: {tuid}\n{format_exc()}")
             raise e
+
+    @abc.abstractmethod
+    def recalibrate(self, **kwargs) -> DeviceCalibration | None:
+        """Recalibrates the executor"""
 
     def run(self, job_id: str, inputs_folder: Path = PREPROCESSED_JOB_POOL) -> str:
         """Runs the experiments and returns the results file path

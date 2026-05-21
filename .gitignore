@@ -177,5 +177,12 @@ backend_config.**.toml
 # redis
 **.rdb
 
-# sql databases
+# sqlite databases
 *.db
+**.db-shm
+**.db-wal
+
+# recalibration
+node_config.toml
+calib_device_config.toml
+spi_config.toml

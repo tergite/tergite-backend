@@ -12,18 +12,25 @@
 # that they have been altered from the originals.
 """Test utilities for datetime"""
 from datetime import datetime, timezone
+from typing import Literal
+
+_TimeSpec = Literal[
+    "auto", "hours", "minutes", "seconds", "milliseconds", "microseconds"
+]
 
 
-def get_timestamp_str(timestamp: datetime) -> str:
+def get_timestamp_str(timestamp: datetime, timespec: _TimeSpec = "milliseconds") -> str:
     """Converts a timestamp to a string
 
     Args:
         timestamp: the datetime value
+        timespec: the number of additional terms of the time to include. Valid options are 'auto', 'hours',
+            'minutes', 'seconds', 'milliseconds' and 'microseconds'
 
     Returns:
         the timestamp as a string
     """
-    return timestamp.isoformat("T", timespec="milliseconds").replace("+00:00", "Z")
+    return timestamp.isoformat("T", timespec=timespec).replace("+00:00", "Z")
 
 
 def get_current_timestamp_str() -> str:

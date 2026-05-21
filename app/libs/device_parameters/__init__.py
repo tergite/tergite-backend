@@ -152,9 +152,6 @@ def save_backend_config(connection: Redis, data: BackendConfig):
     configs_store.insert(data)
 
 
-# conn.publish("qiskit_pulse_1q:mss:outbox",
-
-
 async def send_device_params_to_mss(
     mss_client_pipe: "AsyncMssClientPipe",
     device_info: Device,

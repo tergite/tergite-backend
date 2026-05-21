@@ -14,6 +14,7 @@
 """Tests for the scheduler that handles queueing of user's jobs"""
 import copy
 import json
+import math
 import time
 from contextlib import suppress
 from datetime import datetime, timedelta, timezone
@@ -32,17 +33,23 @@ from typing import (
 from uuid import uuid4
 
 import pytest
+import toml
 from black.nodes import Generic
 from pydantic import ValidationError
+from pytest_lazy_fixtures import lf as lazy_fixture
 from pytest_mock import MockerFixture
 from redis import Redis
+from rq import Queue as RqQueue
 from rq import SimpleWorker
+from rq.job import Job as RqJob
 
 from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps
 from app.services.booking.models import Booking
 from app.tests.conftest import (
     CLIENT_AND_RQ_WORKER_TUPLES,
     FASTAPI_CLIENTS,
+    HAS_QISKIT_DYNAMICS,
+    HAS_QUANTIFY,
     INVALID_CREATE_BOOKINGS_PARAMS,
     JOBS,
     JOBS_HASH_NAME,
@@ -54,8 +61,11 @@ from app.tests.conftest import (
     PaginationInfo,
 )
 from app.tests.utils.api import create_invalid_mss_headers, create_mss_headers
+from app.tests.utils.datetime import get_timestamp_str
 from app.tests.utils.env import (
+    TEST_DEFAULT_RECALIBRATION_INTERVAL,
     TEST_MAX_IDLE_TIME,
+    TEST_MAX_RECALIBRATION_QUEUE_TIME,
     TEST_MAX_SLOTS_PER_DAY,
     TEST_MAX_TIME_SLOT_LENGTH,
     TEST_MIN_TIME_SLOT_LENGTH,
@@ -74,29 +84,71 @@ _SIM_1Q_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload_simulator_1q.json")
 _SIM_2Q_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload_simulator_2q.json")
 _QUANTIFY_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload.json")
 _INVALID_JOBS_FOR_UPLOAD = load_fixture("invalid_jobs_to_upload.json")
-_STATIC_PROPERTIES = [
-    load_fixture("static_properties.json"),
-    load_fixture("static_properties.simq1.json"),
-    load_fixture("static_properties.simq2.json"),
-]
-_DYNAMIC_PROPERTIES = [
-    load_fixture("dynamic_properties.json"),
-    load_fixture("dynamic_properties.simq1.json"),
-    load_fixture("dynamic_properties.simq2.json"),
-]
 
-# params
-_QUANTIFY_UPLOAD_JOB_PARAMS = [
-    (*CLIENT_AND_RQ_WORKER_TUPLES[0], job) for job in _QUANTIFY_JOBS_FOR_UPLOAD
-]
+# executor-specific params
+_QUANTIFY_UPLOAD_JOB_PARAMS = []
+_SIM_1Q_UPLOAD_JOB_PARAMS = []
+_SIM_2Q_UPLOAD_JOB_PARAMS = []
+_STATIC_PROPERTIES_PARAMS = []
+_DYNAMIC_PROPERTIES_PARAMS = []
 
-_SIM_1Q_UPLOAD_JOB_PARAMS = [
-    (*CLIENT_AND_RQ_WORKER_TUPLES[1], job) for job in _SIM_1Q_JOBS_FOR_UPLOAD
-]
+if HAS_QUANTIFY:
+    _QUANTIFY_UPLOAD_JOB_PARAMS = [
+        (
+            lazy_fixture("quantify_rest_client"),
+            lazy_fixture("redis_client"),
+            lazy_fixture("rq_worker"),
+            job,
+        )
+        for job in _QUANTIFY_JOBS_FOR_UPLOAD
+    ]
+    _STATIC_PROPERTIES_PARAMS += [
+        (lazy_fixture("quantify_rest_client"), load_fixture("static_properties.json"))
+    ]
+    _DYNAMIC_PROPERTIES_PARAMS += [
+        (lazy_fixture("quantify_rest_client"), load_fixture("dynamic_properties.json"))
+    ]
 
-_SIM_2Q_UPLOAD_JOB_PARAMS = [
-    (*CLIENT_AND_RQ_WORKER_TUPLES[2], job) for job in _SIM_2Q_JOBS_FOR_UPLOAD
-]
+if HAS_QISKIT_DYNAMICS:
+    _SIM_1Q_UPLOAD_JOB_PARAMS = [
+        (
+            lazy_fixture("qiskit_1q_rest_client"),
+            lazy_fixture("redis_client"),
+            lazy_fixture("rq_worker_for_simulator_1q"),
+            job,
+        )
+        for job in _SIM_1Q_JOBS_FOR_UPLOAD
+    ]
+
+    _SIM_2Q_UPLOAD_JOB_PARAMS = [
+        (
+            lazy_fixture("qiskit_2q_rest_client"),
+            lazy_fixture("redis_client"),
+            lazy_fixture("rq_worker_for_simulator_2q"),
+            job,
+        )
+        for job in _SIM_2Q_JOBS_FOR_UPLOAD
+    ]
+    _STATIC_PROPERTIES_PARAMS += [
+        (
+            lazy_fixture("qiskit_1q_rest_client"),
+            load_fixture("static_properties.simq1.json"),
+        ),
+        (
+            lazy_fixture("qiskit_2q_rest_client"),
+            load_fixture("static_properties.simq2.json"),
+        ),
+    ]
+    _DYNAMIC_PROPERTIES_PARAMS += [
+        (
+            lazy_fixture("qiskit_1q_rest_client"),
+            load_fixture("dynamic_properties.simq1.json"),
+        ),
+        (
+            lazy_fixture("qiskit_2q_rest_client"),
+            load_fixture("dynamic_properties.simq2.json"),
+        ),
+    ]
 
 _SIMPLE_UPLOAD_JOB_PARAMS = (
     _QUANTIFY_UPLOAD_JOB_PARAMS + _SIM_1Q_UPLOAD_JOB_PARAMS + _SIM_2Q_UPLOAD_JOB_PARAMS
@@ -132,12 +184,6 @@ _ALL_INVALID_UPLOAD_JOB_PARAMS = [
     for client, redis, rq_worker in CLIENT_AND_RQ_WORKER_TUPLES
 ]
 
-_STATIC_PROPERTIES_PARAMS = [
-    (client, resp) for client, resp in zip(FASTAPI_CLIENTS, _STATIC_PROPERTIES)
-]
-_DYNAMIC_PROPERTIES_PARAMS = [
-    (client, resp) for client, resp in zip(FASTAPI_CLIENTS, _DYNAMIC_PROPERTIES)
-]
 _ROOT_PARAMS = [
     (client, headers)
     for client in FASTAPI_CLIENTS
@@ -147,6 +193,10 @@ _ROOT_PARAMS = [
 _VIEW_MANY_PARAMS = [
     (pagination, client) for pagination in PAGINATION for client in FASTAPI_CLIENTS
 ]
+
+_EXPECTED_RECALIBRATION_SEED_CONTENT = load_fixture(
+    "expected_recalibration.seed.toml", fmt="toml"
+)
 
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
@@ -1310,10 +1360,10 @@ def test_admin_cancel_future_booking(client):
         booking = Booking.model_validate(response.json())
 
         # Non-admins fail
-        # response = _cancel_booking(client, user_id=user_2_id, booking_id=booking.id)
-        # json_response = response.json()
-        # assert response.status_code == 404
-        # assert "not found" in json_response["detail"]
+        response = _cancel_booking(client, user_id=user_2_id, booking_id=booking.id)
+        json_response = response.json()
+        assert response.status_code == 404
+        assert "not found" in json_response["detail"]
 
         response = _cancel_booking(
             client, user_id=user_2_id, booking_id=booking.id, is_admin=True
@@ -2237,6 +2287,360 @@ def test_unauthenticated_get_dynamic_props(client, _expected):
         assert got == {"detail": "user not authenticated"}
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
+@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
+def test_init_recalibration_with_interval(
+    client, redis_conn: Redis, worker, quantify_seed_file
+):
+    """Init recalibration restarts the calibration sequence, changing the interval from the default"""
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS)
+        user = users[0]
+        user_id = user["id"]
+        queue_prefix = client.app.state.QUEUE_CONTEXT["queue_prefix"]
+        queue_name = f"{queue_prefix}_recalibration"
+        queue = _get_queue_by_name(worker, queue_name)
+        initial_interval = TEST_DEFAULT_RECALIBRATION_INTERVAL
+        max_queue_time = TEST_MAX_RECALIBRATION_QUEUE_TIME
+        new_interval = 4
+
+        non_admin_headers = create_mss_headers(user_id, is_admin=False)
+        admin_headers = create_mss_headers(user_id, is_admin=True)
+
+        initial_rq_job = queue.jobs[-1]
+        initial_rq_interval = initial_rq_job.meta.get("interval", None)
+
+        # non admins are not allowed
+        response = client.post("/recalibration/init", headers=non_admin_headers)
+        assert response.status_code == 403
+        assert response.json() == {"detail": "Forbidden"}
+
+        before_request_timestamp = datetime.now(timezone.utc)
+        # admins are allowed
+        response = client.post(
+            "/recalibration/init",
+            headers=admin_headers,
+            params={"interval": new_interval},
+        )
+        actual_output = response.json()
+
+        assert response.status_code == 200
+        assert actual_output == {"status": "success"}
+
+        _wait_on_rq_worker(
+            worker,
+            max_jobs=2,
+            max_idle_time=initial_interval + max_queue_time,
+            with_scheduler=True,
+            queue=queue,
+        )
+
+        final_rq_job_id = queue.finished_job_registry.get_job_ids(start=-1, end=-1)[0]
+        final_rq_job = RqJob.fetch(final_rq_job_id, connection=redis_conn)
+        final_rq_interval = final_rq_job.meta.get("interval", None)
+        final_actual_interval = (
+            final_rq_job.started_at - before_request_timestamp
+        ).total_seconds()
+        with open(quantify_seed_file, "r") as file:
+            seed_file_content = toml.load(file)
+
+        assert initial_rq_interval == initial_interval
+        assert final_rq_interval == new_interval
+        assert final_rq_job.is_finished
+        assert initial_rq_job.is_canceled
+        assert math.isclose(final_actual_interval, new_interval, abs_tol=1)
+        assert seed_file_content == _EXPECTED_RECALIBRATION_SEED_CONTENT
+
+
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
+@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
+def test_init_recalibration_without_interval(
+    client, redis_conn: Redis, worker, quantify_seed_file
+):
+    """Init recalibration restarts the calibration sequence without interval continues with the default interval"""
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS)
+        user = users[0]
+        user_id = user["id"]
+        queue_prefix = client.app.state.QUEUE_CONTEXT["queue_prefix"]
+        queue_name = f"{queue_prefix}_recalibration"
+        queue = _get_queue_by_name(worker, queue_name)
+        initial_interval = TEST_DEFAULT_RECALIBRATION_INTERVAL
+        max_queue_time = TEST_MAX_RECALIBRATION_QUEUE_TIME
+        admin_headers = create_mss_headers(user_id, is_admin=True)
+        initial_rq_job = queue.jobs[-1]
+        initial_rq_interval = initial_rq_job.meta.get("interval", None)
+
+        before_request_timestamp = datetime.now(timezone.utc)
+        # admins are allowed
+        response = client.post(
+            "/recalibration/init",
+            headers=admin_headers,
+        )
+        actual_output = response.json()
+
+        assert response.status_code == 200
+        assert actual_output == {"status": "success"}
+
+        _wait_on_rq_worker(
+            worker,
+            max_jobs=2,
+            max_idle_time=initial_interval + max_queue_time,
+            with_scheduler=True,
+            queue=queue,
+        )
+
+        final_rq_job_id = queue.finished_job_registry.get_job_ids(start=-1, end=-1)[0]
+        final_rq_job = RqJob.fetch(final_rq_job_id, connection=redis_conn)
+        final_rq_interval = final_rq_job.meta.get("interval", None)
+        final_actual_interval = (
+            final_rq_job.started_at - before_request_timestamp
+        ).total_seconds()
+        with open(quantify_seed_file, "r") as file:
+            seed_file_content = toml.load(file)
+
+        assert initial_rq_interval == initial_interval
+        assert final_rq_interval == initial_interval
+        assert final_rq_job.is_finished
+        assert initial_rq_job.is_canceled
+        assert math.isclose(final_actual_interval, initial_interval, abs_tol=1)
+        assert seed_file_content == _EXPECTED_RECALIBRATION_SEED_CONTENT
+
+
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
+@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
+def test_init_recalibration_with_start_time(
+    client, redis_conn: Redis, worker, quantify_seed_file
+):
+    """POST /recalibration/cancel restarts the recalibration sequence at a given start time in future"""
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS)
+        user = users[0]
+        user_id = user["id"]
+        queue_prefix = client.app.state.QUEUE_CONTEXT["queue_prefix"]
+        queue_name = f"{queue_prefix}_recalibration"
+        queue = _get_queue_by_name(worker, queue_name)
+        initial_interval = TEST_DEFAULT_RECALIBRATION_INTERVAL
+        max_queue_time = TEST_MAX_RECALIBRATION_QUEUE_TIME
+        headers = create_mss_headers(user_id, is_admin=True)
+
+        start_timestamp = datetime.now(timezone.utc) + timedelta(seconds=2)
+        # admins are allowed
+        response = client.post(
+            "/recalibration/init",
+            headers=headers,
+            params={"start_timestamp": start_timestamp.isoformat()},
+        )
+        actual_output = response.json()
+
+        assert response.status_code == 200
+        assert actual_output == {"status": "success"}
+
+        _wait_on_rq_worker(
+            worker,
+            max_jobs=1,
+            max_idle_time=initial_interval + max_queue_time,
+            with_scheduler=True,
+            queue=queue,
+        )
+
+        first_rq_job_id = queue.finished_job_registry.get_job_ids(start=0, end=1)[0]
+        first_rq_job = RqJob.fetch(first_rq_job_id, connection=redis_conn)
+        with open(quantify_seed_file, "r") as file:
+            seed_file_content = toml.load(file)
+
+        assert first_rq_job.is_finished
+        assert math.isclose(
+            first_rq_job.started_at.timestamp(), start_timestamp.timestamp(), abs_tol=1
+        )
+        assert seed_file_content == _EXPECTED_RECALIBRATION_SEED_CONTENT
+
+
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
+@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
+def test_get_recalibration_info(client, redis_conn: Redis, worker, quantify_seed_file):
+    """Get /recalibration/info gets recalibration info retrieves the basic recalibration info"""
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS)
+        user = users[0]
+        user_id = user["id"]
+        queue_prefix = client.app.state.QUEUE_CONTEXT["queue_prefix"]
+        queue_name = f"{queue_prefix}_recalibration"
+        queue = _get_queue_by_name(worker, queue_name)
+        initial_interval = TEST_DEFAULT_RECALIBRATION_INTERVAL
+        max_queue_time = TEST_MAX_RECALIBRATION_QUEUE_TIME
+        new_interval = 4.0
+
+        headers = create_mss_headers(user_id, is_admin=True)
+        response = client.get("/recalibration/info", headers=headers)
+        assert response.status_code == 200
+        initial_info = response.json()
+
+        headers = create_mss_headers(user_id, is_admin=True)
+        start_timestamp = datetime.now(timezone.utc) + timedelta(seconds=2)
+        response = client.post(
+            "/recalibration/init",
+            headers=headers,
+            params={
+                "start_timestamp": start_timestamp.isoformat(),
+                "interval": new_interval,
+            },
+        )
+        assert response.status_code == 200
+
+        # get info after altering recalibration
+        headers = create_mss_headers(user_id, is_admin=True)
+        response = client.get("/recalibration/info", headers=headers)
+        assert response.status_code == 200
+        pre_run_info = response.json()
+
+        _wait_on_rq_worker(
+            worker,
+            max_jobs=2,
+            max_idle_time=initial_interval + max_queue_time,
+            with_scheduler=True,
+            queue=queue,
+        )
+
+        # get info after running the worker
+        headers = create_mss_headers(user_id, is_admin=True)
+        response = client.get("/recalibration/info", headers=headers)
+        assert response.status_code == 200
+        post_run_info = response.json()
+
+        cancelled_rq_job_id = queue.canceled_job_registry.get_job_ids(start=0, end=1)[0]
+        cancelled_rq_job = RqJob.fetch(cancelled_rq_job_id, connection=redis_conn)
+
+        first_finished_rq_job_id = queue.finished_job_registry.get_job_ids(
+            start=0, end=1
+        )[0]
+
+        last_finished_rq_job_id = queue.finished_job_registry.get_job_ids(
+            start=-1, end=-1
+        )[0]
+        last_finished_rq_job = RqJob.fetch(
+            last_finished_rq_job_id, connection=redis_conn
+        )
+
+        next_rq_job_id = queue.scheduled_job_registry.get_job_ids(start=0, end=1)[0]
+
+        def to_datetime_str(v: datetime) -> str:
+            return get_timestamp_str(v, timespec="microseconds")
+
+        # asserts of info shown
+        assert initial_info == {
+            "current_job_id": None,
+            "current_job_status": None,
+            "current_job_started_at": None,
+            "previous_job_id": None,
+            "previous_job_status": None,
+            "previous_job_started_at": None,
+            "previous_job_ended_at": None,
+            "previous_job_error": None,
+            "next_job_id": cancelled_rq_job_id,
+            "next_job_status": "queued",
+            "next_job_enqueued_at": to_datetime_str(cancelled_rq_job.enqueued_at),
+            "interval": initial_interval,
+        }
+        assert pre_run_info == {
+            "current_job_id": None,
+            "current_job_status": None,
+            "current_job_started_at": None,
+            "previous_job_id": None,
+            "previous_job_status": None,
+            "previous_job_started_at": None,
+            "previous_job_ended_at": None,
+            "previous_job_error": None,
+            "next_job_id": first_finished_rq_job_id,
+            "next_job_status": "scheduled",
+            "next_job_enqueued_at": None,
+            "interval": new_interval,
+        }
+        assert post_run_info == {
+            "current_job_id": None,
+            "current_job_status": None,
+            "current_job_started_at": None,
+            "previous_job_id": last_finished_rq_job_id,
+            "previous_job_status": "finished",
+            "previous_job_started_at": to_datetime_str(last_finished_rq_job.started_at),
+            "previous_job_ended_at": to_datetime_str(last_finished_rq_job.ended_at),
+            "previous_job_error": None,
+            "next_job_id": next_rq_job_id,
+            "next_job_status": "scheduled",
+            "next_job_enqueued_at": None,
+            "interval": new_interval,
+        }
+
+
+@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
+def test_cancel_default_recalibration(client, redis_conn: Redis, worker):
+    """POST /recalibration/cancel cancels the default recalibration started on startup"""
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS)
+        user = users[0]
+        user_id = user["id"]
+        queue_prefix = client.app.state.QUEUE_CONTEXT["queue_prefix"]
+        queue_name = f"{queue_prefix}_recalibration"
+        queue = _get_queue_by_name(worker, queue_name)
+
+        headers = create_mss_headers(user_id, is_admin=True)
+        response = client.post("/recalibration/cancel", headers=headers)
+        assert response.status_code == 200
+        assert response.json() == {"status": "success"}
+        assert queue.jobs == []
+        assert queue.canceled_job_registry.count == 1
+        assert queue.scheduled_job_registry.count == 0
+        assert queue.finished_job_registry.count == 0
+        assert queue.failed_job_registry.count == 0
+        assert queue.deferred_job_registry.count == 0
+
+
+@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
+def test_cancel_restarted_recalibration(client, redis_conn: Redis, worker):
+    """POST /recalibration/cancel cancels any recalibration restarted even after cancellation"""
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS)
+        user = users[0]
+        user_id = user["id"]
+        queue_prefix = client.app.state.QUEUE_CONTEXT["queue_prefix"]
+        queue_name = f"{queue_prefix}_recalibration"
+        queue = _get_queue_by_name(worker, queue_name)
+
+        # first cancel the recalibration
+        headers = create_mss_headers(user_id, is_admin=True)
+        response = client.post("/recalibration/cancel", headers=headers)
+        assert response.status_code == 200
+
+        # restart the recalibration with a given interval
+        headers = create_mss_headers(user_id, is_admin=True)
+        start_timestamp = datetime.now(timezone.utc) + timedelta(seconds=2)
+        response = client.post(
+            "/recalibration/init",
+            headers=headers,
+            params={
+                "start_timestamp": start_timestamp.isoformat(),
+                "interval": 4.0,
+            },
+        )
+        assert response.status_code == 200
+
+        assert queue.canceled_job_registry.count == 1
+        assert queue.scheduled_job_registry.count == 1
+
+        # Cancel the recalibration again
+        headers = create_mss_headers(user_id, is_admin=True)
+        response = client.post("/recalibration/cancel", headers=headers)
+        assert response.status_code == 200
+        assert response.json() == {"status": "success"}
+
+        assert queue.jobs == []
+        assert queue.canceled_job_registry.count == 2
+        assert queue.scheduled_job_registry.count == 0
+        assert queue.finished_job_registry.count == 0
+        assert queue.failed_job_registry.count == 0
+        assert queue.deferred_job_registry.count == 0
+
+
 def _cancel_job_via_mss(
     client: "TestClient",
     user_id: str,
@@ -2844,12 +3248,32 @@ def _remove_dates(dynamic_properties: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _get_queue_by_name(worker: SimpleWorker, name: str) -> RqQueue:
+    """Gets the rq queue by name
+
+    Args:
+        worker: the worker running the queues
+        name: the name of the queue
+
+    Returns:
+        the rq queue object
+
+    Raises:
+        KeyError: if the queue doesn't exist
+    """
+    try:
+        return [v for v in worker.queues if v.name == name][0]
+    except IndexError:
+        raise KeyError(f"queue '{name}' not found")
+
+
 def _wait_on_rq_worker(
     worker: SimpleWorker,
     max_idle_time: int = TEST_RQ_MAX_QUEUE_WAIT_TIME,
     burst: bool = True,
     max_jobs: Optional[int] = None,
     with_scheduler: bool = False,
+    queue: RqQueue = None,
     **kwargs,
 ):
     """Waits for the worker to complete its worker
@@ -2858,33 +3282,49 @@ def _wait_on_rq_worker(
         worker: the rq worker to wait on
         max_idle_time: the number of seconds beyond which a timeout is raised
         with_scheduler: whether to run in a scheduler
+        queue: the queue to wait on; defaults to the first queue i.e. the general queue
         kwargs: extra kwargs to pass to the work() method of the worker.
             See the signature of that method
 
     Raises:
         TimeoutError: Worker took longer than {max_idle_time} seconds
+        KeyError: if the queue of given name doesn't exist
     """
-    general_queue = worker.queues[0]
-    deadline = datetime.now() + timedelta(seconds=max_idle_time)
+    if queue is None:
+        queue = worker.queues[0]
 
-    while general_queue.scheduled_job_registry.count > 0:
+    # in order to avoid this from hanging,
+    # whenever with_scheduler is True, burst must be True so that it quits
+    # immediately after starting the scheduler.
+    # With burst=True, the locks are released immediately after running the jobs
+    if with_scheduler:
+        burst = True
+
+    deadline = datetime.now() + timedelta(seconds=max_idle_time)
+    initial_completed_jobs = (
+        queue.finished_job_registry.count + queue.failed_job_registry.count
+    )
+    pending_jobs = queue.scheduled_job_registry.count + len(queue.jobs)
+    total_run_jobs = 0
+
+    while pending_jobs > 0 and (max_jobs is None or total_run_jobs < max_jobs):
         now = datetime.now()
         if now > deadline:
             raise TimeoutError(f"Worker took longer than {max_idle_time} seconds")
 
-        # in order to avoid this from hanging,
-        # whenever with_scheduler is True, burst must be True so that it quits
-        # immediately after starting the scheduler.
-        # With burst=True, the locks are released immediately after running the jobs
-        if with_scheduler:
-            burst = True
         worker.work(
             burst=burst,
             with_scheduler=with_scheduler,
-            # max_idle_time=1,
             max_jobs=max_jobs,
             **kwargs,
         )
+
+        # refresh variables
+        pending_jobs = queue.scheduled_job_registry.count + len(queue.jobs)
+        current_completed_jobs = (
+            queue.finished_job_registry.count + queue.failed_job_registry.count
+        )
+        total_run_jobs = current_completed_jobs - initial_completed_jobs
 
 
 class _PaginatedList(TypedDict, Generic[T]):

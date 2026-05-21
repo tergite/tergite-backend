@@ -193,8 +193,10 @@ start_auto_env_export;
 ENV_FILE="${ENV_FILE:-".env"}"
 load_env "$ENV_FILE";
 
-DEFAULT_PREFIX="${DEFAULT_PREFIX:-qiskit_pulse_1q}";
+DEFAULT_PREFIX="${DEFAULT_PREFIX:-default}";
 UVICORN_LOG_LEVEL="${UVICORN_LOG_LEVEL:-info}"
+EXECUTOR_TYPE="${EXECUTOR_TYPE:-quantify}"
+DEP_GROUP="${EXECUTOR_TYPE%%_*}";
 PORT_NUMBER="${BCC_PORT:-8000}"
 should_be_int "$PORT_NUMBER" "Config Error. Use BCC_PORT=<int> in the .env file.";
 
@@ -240,7 +242,10 @@ if [ "$IS_SYSTEMD" = "true" ]; then
   if conda_activate ./env ; then
     echo "env activated";
   else
-    conda create -y --prefix=env python=3.12 && conda_activate ./env && pip install .;
+    conda create -y --prefix=env python=3.12;
+    conda_activate ./env;
+    pip install -U pip;
+    pip install ."[$DEP_GROUP]";
     echo "env created, activated, and dependencies installed";
   fi
 fi
@@ -260,6 +265,7 @@ rq worker -u "$REDIS_URL" "$WORKER_FLAG" "${DEFAULT_PREFIX}_preprocessing" &
 rq worker -u "$REDIS_URL" "$WORKER_FLAG" "${DEFAULT_PREFIX}_normal_execution" &
 rq worker -u "$REDIS_URL" "$WORKER_FLAG" "${DEFAULT_PREFIX}_booked_execution" &
 rq worker -u "$REDIS_URL" "$WORKER_FLAG" "${DEFAULT_PREFIX}_postprocessing" &
+rq worker -u "$REDIS_URL" "$WORKER_FLAG" "${DEFAULT_PREFIX}_recalibration" &
 
 # REST-API
 extra_params=$([[ "$IS_SYSTEMD" = "true" ]] && echo "--proxy-headers" || echo "--reload")

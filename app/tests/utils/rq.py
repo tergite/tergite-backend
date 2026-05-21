@@ -43,6 +43,7 @@ def get_rq_pool_worker(queue_pool: QueuePool) -> SimpleWorker:
         queue_pool.normal_execution,
         queue_pool.preprocessing,
         queue_pool.postprocessing,
+        queue_pool.recalibration,
     ]
     return get_rq_worker(queues, is_async=queue_pool._is_async)
 

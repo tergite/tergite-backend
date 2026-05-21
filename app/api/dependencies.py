@@ -36,7 +36,7 @@ from ..services.booking.models import MSSTokenClaims
 from ..services.booking.service import get_user_job_id_pair_from_token
 from ..services.booking.store import get_bookings_sql_engine
 from ..services.external.mss.service import AsyncMssClientPipe, connect_to_mss
-from ..services.scheduler import get_job
+from ..services.scheduler import get_job, init_recalibration, stop_recalibration
 from ..services.scheduler.queues import QueuePool
 from ..services.scheduler.utils import (
     init_executor,
@@ -74,6 +74,10 @@ async def lifespan(app: FastAPI):
         quantify_config_file=settings.QUANTIFY_CONFIG_FILE,
         quantify_metadata_file=settings.QUANTIFY_METADATA_FILE,
         should_restore_currents=settings.SHOULD_RESTORE_CURRENTS,
+        data_directory=settings.EXECUTOR_DATA_DIR,
+        calibration_node_config=settings.CALIBRATION_NODE_CONFIG_FILE,
+        calibration_device_config=settings.CALIBRATION_DEVICE_CONFIG_FILE,
+        calibration_spi_config=settings.CALIBRATION_SPI_CONFIG_FILE,
     )
     QUEUE_CONTEXT = {
         "queue_prefix": settings.DEFAULT_PREFIX,
@@ -90,7 +94,10 @@ async def lifespan(app: FastAPI):
         "execution_timeout": settings.MAX_EXECUTION_TIME,
         "postprocessing_timeout": settings.MAX_POSTPROCESSING_TIME,
         "general_queue_timeout": settings.MAX_GENERAL_QUEUE_TIME,
+        "recalibration_queue_timeout": settings.MAX_RECALIBRATION_QUEUE_TIME,
+        "default_recalibration_interval": settings.DEFAULT_RECALIBRATION_INTERVAL,
     }
+    app.state.QUEUE_CONTEXT = QUEUE_CONTEXT
 
     with get_redis_connection(settings.RQ_REDIS_URL, is_async=False) as redis_conn:
         _REDIS_CONNECTION = redis_conn
@@ -112,6 +119,8 @@ async def lifespan(app: FastAPI):
                     backend_config=executor_options.backend_config,
                     mss_client_pipe=mss_client_pipe,
                 )
+            init_recalibration(QUEUE_CONTEXT, queues=QUEUE_POOL)
+
             print(f"starting app at {get_utc_now()}")
             yield
         except TimeoutError as e:
@@ -131,6 +140,7 @@ async def lifespan(app: FastAPI):
                 logging.exception(f"Error shutting down MSS connection task: {exp}")
 
             DB_ENGINE = None
+            stop_recalibration(QUEUE_CONTEXT, queues=QUEUE_POOL, ignore_errors=True)
             executor.close()
 
 
@@ -473,6 +483,7 @@ def _get_executor_and_options(
     executor_options = ExecutorOptions(
         backend_name=initial_backend_config.name,
         backend_config=initial_backend_config,
+        calibration_seed_file=calibration_seed_file,
         **kwargs,
     )
     executor = init_executor(executor_options, reset=True)

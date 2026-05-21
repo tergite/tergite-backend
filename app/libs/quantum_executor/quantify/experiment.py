@@ -21,18 +21,18 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Mapping, Optional, Set, Tuple, Type
+from typing import Dict, List, Optional, Set, Tuple, Type
 
-from qiskit.qobj import (
+from quantify_scheduler import Schedule
+from quantify_scheduler.operations.pulse_library import IdlePulse, ResetClockPhase
+from quantify_scheduler.resources import ClockResource
+
+from app.libs.qiskit.qobj import (
     PulseQobjConfig,
     PulseQobjExperiment,
     PulseQobjInstruction,
     QobjExperimentHeader,
 )
-from quantify_scheduler import Schedule
-from quantify_scheduler.operations.pulse_library import IdlePulse, ResetClockPhase
-from quantify_scheduler.resources import ClockResource
-
 from app.libs.quantum_executor.base.experiment import (
     NativeExperiment,
     copy_expt_header_with,

@@ -18,7 +18,6 @@ from typing import Any, Dict, List, Optional
 from uuid import uuid4 as uuid
 
 import numpy as np
-from qiskit.qobj import PulseQobjConfig, PulseQobjInstruction
 
 # Instead of constructing bare Operation objects, we now import the new API classes:
 from quantify_scheduler import Operation
@@ -38,6 +37,7 @@ from quantify_scheduler.operations.pulse_library import (
     SquarePulse,
 )
 
+from app.libs.qiskit.qobj import PulseQobjConfig, PulseQobjInstruction
 from app.libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
 from app.libs.quantum_executor.quantify.channel import (
     QuantifyChannel,

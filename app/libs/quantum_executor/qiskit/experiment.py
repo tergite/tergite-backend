@@ -20,8 +20,12 @@ from typing import Dict, List, Optional, Tuple, Type
 
 import qiskit.qpy as qpy
 from qiskit.pulse.schedule import Schedule
-from qiskit.qobj import PulseQobjConfig, PulseQobjExperiment, PulseQobjInstruction
 
+from app.libs.qiskit.qobj import (
+    PulseQobjConfig,
+    PulseQobjExperiment,
+    PulseQobjInstruction,
+)
 from app.libs.quantum_executor.base.experiment import (
     NativeExperiment,
     copy_expt_header_with,

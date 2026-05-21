@@ -5,7 +5,7 @@
 # (1) General
 # Set the default file prefix and the backend name for the backend application.
 # If you are using any of the backends from the mongoDB, please enter this name for DEFAULT_PREFIX
-DEFAULT_PREFIX=qiskit_pulse_1q
+DEFAULT_PREFIX=default
 
 # (2) Jobs and workers
 # This first block can be left as is. Do not change any variable unless you know what you are doing!
@@ -163,6 +163,16 @@ MAX_POSTPROCESSING_TIME=180
 #
 # default: 3 minutes
 MAX_GENERAL_QUEUE_TIME=180
+
+# Maximum time in seconds that jobs on the recalibration queue should take
+#
+# default: 2 hours
+MAX_RECALIBRATION_QUEUE_TIME=7200
+
+# The default time in seconds between consecutive recalibration runs
+#
+# default: 1 day
+DEFAULT_RECALIBRATION_INTERVAL=86400
 
 # Whether the jobs should be run in the same main process (synchronously) or on workers (asynchronously)
 # this is useful for testing rq

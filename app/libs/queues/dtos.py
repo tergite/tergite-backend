@@ -42,9 +42,8 @@ from pydantic import (
 )
 from pydantic_core import CoreSchema, core_schema
 from pydantic_core.core_schema import SerializationInfo
-from qiskit.qobj import PulseQobj
 
-import settings
+from app.libs.qiskit.qobj import PulseQobj
 
 from ...utils.datetime import get_utc_now, to_utc, utc_now_str
 from ...utils.exc import JobAlreadyCompleteError
@@ -483,6 +482,10 @@ class ExecutorOptions:
         backend_name: name of backend
         should_restore_currents: whether the executor should restore SPI currents
         are_clusters_resettable: whether the clusters for this executor can be reset
+        data_directory: the directory where to save experiment data; default = settings.EXECUTOR_DATA_DIR
+        calibration_node_config: the configuration file for the nodes during calibration
+        calibration_device_config: the configuration file for the entire devices during calibration
+        calibration_spi_config: the configuration file for the spi during calibration
     """
 
     executor_type: str
@@ -490,8 +493,13 @@ class ExecutorOptions:
     backend_config: BackendConfig
     quantify_config_file: Optional[PathLike] = None
     quantify_metadata_file: Optional[PathLike] = None
-    should_restore_currents: bool = settings.SHOULD_RESTORE_CURRENTS
-    are_clusters_resettable: bool = settings.ARE_CLUSTERS_RESETTABLE
+    should_restore_currents: bool = False
+    are_clusters_resettable: bool = False
+    data_directory: Optional[PathLike[str]] = None
+    calibration_node_config: Optional[PathLike[str]] = None
+    calibration_device_config: Optional[PathLike[str]] = None
+    calibration_spi_config: Optional[PathLike[str]] = None
+    calibration_seed_file: Optional[PathLike[str]] = None
 
 
 class QueueContext(TypedDict):
@@ -509,6 +517,8 @@ class QueueContext(TypedDict):
         execution_timeout: the maximum time tasks should run on the execution queue
         postprocessing_timeout: the maximum time tasks should run on the postprocessing queue
         general_queue_timeout: the maximum time tasks should run on the general queue
+        recalibration_queue_timeout: the maximum time tasks should run on the recalibration queue
+        default_recalibration_interval: the default recalibration interval in seconds
     """
 
     queue_prefix: str
@@ -525,6 +535,8 @@ class QueueContext(TypedDict):
     preprocessing_timeout: int
     postprocessing_timeout: int
     general_queue_timeout: int
+    recalibration_queue_timeout: int
+    default_recalibration_interval: float
 
 
 _STAGE_VERBOSE_NAME_MAP: Dict[Stage, str] = {

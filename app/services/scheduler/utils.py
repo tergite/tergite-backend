@@ -14,7 +14,7 @@
 #
 """Utility functions for the scheduler service"""
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 from numpy import typing as npt
@@ -24,14 +24,9 @@ from sklearn.utils.extmath import safe_sparse_dot
 import settings
 
 from ...libs.device_parameters import (
-    BackendConfig,
     DeviceCalibration,
-    get_backend_config,
-    save_all_device_params,
 )
 from ...libs.quantum_executor.base.executor import QuantumExecutor
-from ...libs.quantum_executor.qiskit.executor import QiskitDynamicsExecutor
-from ...libs.quantum_executor.quantify.executor import QuantifyExecutor
 from ...libs.quantum_executor.utils.serialization import iqx_rld
 from ...libs.queues.dtos import (
     ExecutorOptions,
@@ -41,7 +36,6 @@ from ...libs.queues.dtos import (
     JobStage,
     JobStatus,
     LogLevel,
-    QueueContext,
     Stage,
     Timestamps,
 )
@@ -49,7 +43,6 @@ from ...utils.datetime import utc_now_str
 from ...utils.redis_store import Collection
 from ..external.mss.dtos import DeviceEvent, DeviceEventName, EventResponse
 from ..external.mss.service import (
-    AsyncMssClientPipe,
     MssClientPipe,
 )
 
@@ -318,14 +311,26 @@ def init_executor(options: ExecutorOptions, reset: bool = False) -> QuantumExecu
     backend_config = options.backend_config
 
     if executor_type == "qiskit_pulse_1q":
+        # only import this if the executor is of the qiskit_pulse so
+        # that the rest of the code is independent of qiskit
+        from ...libs.quantum_executor.qiskit.executor import QiskitDynamicsExecutor
+
         return QiskitDynamicsExecutor.new_one_qubit(
             backend_config=backend_config, reset=reset
         )
 
     elif executor_type == "qiskit_pulse_2q":
+        # only import this if the executor is of the qiskit_pulse so
+        # that the rest of the code is independent of qiskit
+        from ...libs.quantum_executor.qiskit.executor import QiskitDynamicsExecutor
+
         return QiskitDynamicsExecutor.new_two_qubit(
             backend_config=backend_config, reset=reset
         )
+
+    # only import this if the executor is of the quantify so
+    # that the rest of the code is independent of quantify
+    from ...libs.quantum_executor.quantify.executor import QuantifyExecutor
 
     return QuantifyExecutor(
         quantify_config_file=options.quantify_config_file,
@@ -334,6 +339,11 @@ def init_executor(options: ExecutorOptions, reset: bool = False) -> QuantumExecu
         reset=reset,
         should_restore_currents=options.should_restore_currents,
         are_clusters_resettable=options.are_clusters_resettable,
+        data_dir=options.data_directory,
+        calib_node_conf=options.calibration_node_config,
+        calib_device_conf=options.calibration_device_config,
+        calib_seed_file=options.calibration_seed_file,
+        calib_spi_conf=options.calibration_spi_config,
     )
 
 

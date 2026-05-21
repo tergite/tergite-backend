@@ -20,13 +20,55 @@ from typing import Any, Optional, Type, Union
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict
-from qiskit.qobj import PulseQobj
-from quantify_scheduler.enums import BinMode
 
+from app.libs.qiskit.qobj import PulseQobj
 from app.libs.qiskit_providers.utils import json_decoder
 from app.libs.qiskit_providers.utils.json_encoder import IQXJsonEncoder
 
 from .typing import QJobResult
+
+
+class BinMode(str, Enum):
+    """
+    Describes how to handle `Acquisitions` that write to the same `AcquisitionIndex`.
+    """
+
+    # Repository: https://gitlab.com/quantify-os/quantify-scheduler
+    # Licensed according to the LICENCE file on the main branch
+    # BSD 3-Clause License
+    #
+    # Copyright (c) 2020-2024, The Quantify consortium.
+    # All rights reserved.
+    #
+    # Redistribution and use in source and binary forms, with or without modification,
+    # are permitted provided that the following conditions are met:
+    #
+    # 1. Redistributions of source code must retain the above copyright notice,
+    #   this list of conditions and the following disclaimer.
+    #
+    # 2. Redistributions in binary form must reproduce the above copyright notice,
+    #   this list of conditions and the following disclaimer in the documentation
+    #   and/or other materials provided with the distribution.
+    #
+    # 3. Neither the name of the copyright holder nor the names of its contributors
+    #   may be used to endorse or promote products derived from this software without
+    #   specific prior written permission.
+    #
+    # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+    # AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+    # THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+    # IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+    # SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+    # SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+    # HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+    # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+    # EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+    APPEND = "append"
+    AVERAGE = "average"
+    FIRST = "first"
+    DISTRIBUTION = "distribution"
+    SUM = "sum"
 
 
 class MeasLvl(int, Enum):

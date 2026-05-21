@@ -81,6 +81,15 @@ All signed CLAs are emails to us at <quantum-nextlabs@chalmers.se>.
 ## How to Test
 
 - Ensure you have a [redis server](https://redis.io/docs/install/install-redis/) installed on your local machine.
+- Ensure you have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed. 
+ (_You could simply have python +3.12 installed instead._)
+
+```shell
+wget -qO- https://astral.sh/uv/install.sh | sh
+# or use curl
+# curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
 - Clone the repo
 
 ```shell
@@ -88,17 +97,20 @@ git clone git@github.com:tergite/tergite-backend.git
 cd tergite-backend
 ```
 
-- Create a conda environment with python 3.12
+- Install dependencies. Note that we can either use the simulators (`qiskit`) or connect to Qblox clusters (`quantify`).
+  To install for simulators, use `--extra qiskit` and to install for Qblox, use `--extra quantify`.  
+  **Take note that you can use both at the same time because they conflict with each other**.
 
 ```shell
-conda create -n bcc python=3.12
+uv sync --dev --extra quantify
+# or for simulators only
+# uv sync --dev --extra qiskit
 ```
 
-- Install requirements
+- Activate your environment
 
 ```shell
-conda activate bcc
-pip install ."[dev]"
+source .venv/bin/activate
 ```
 
 - Start the redis server in another terminal on port 6378

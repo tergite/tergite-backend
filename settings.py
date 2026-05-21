@@ -16,6 +16,7 @@
 import logging
 import os
 import sys
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
@@ -23,6 +24,19 @@ from typing import List, Optional
 import redis
 from starlette.config import Config
 from starlette.datastructures import URL, CommaSeparatedStrings
+
+HAS_QISKIT_DYNAMICS = False
+HAS_QUANTIFY = False
+
+with suppress(ImportError):
+    import qiskit_dynamics
+
+    HAS_QISKIT_DYNAMICS = True
+
+with suppress(ImportError):
+    import quantify_scheduler
+
+    HAS_QUANTIFY = True
 
 _ROOT_PATH = Path(__file__).parent
 # NOTE: shell env variables take precedence over the configuration file
@@ -81,6 +95,32 @@ BACKEND_SETTINGS = config(
 CALIBRATION_SEED = config(
     "CALIBRATION_SEED", cast=str, default=_ROOT_PATH / "calibration.seed.toml"
 )
+
+CALIBRATION_NODE_CONFIG_FILE = config(
+    "CALIBRATION_NODE_CONFIG_FILE", cast=Path, default=_ROOT_PATH / "node_config.toml"
+)
+if HAS_QUANTIFY and not CALIBRATION_NODE_CONFIG_FILE.exists():
+    raise FileNotFoundError(
+        f"CALIBRATION_NODE_CONFIG_FILE: {CALIBRATION_NODE_CONFIG_FILE} not found."
+    )
+
+CALIBRATION_DEVICE_CONFIG_FILE = config(
+    "CALIBRATION_DEVICE_CONFIG_FILE",
+    cast=Path,
+    default=_ROOT_PATH / "calib_device_config.toml",
+)
+if HAS_QUANTIFY and not CALIBRATION_DEVICE_CONFIG_FILE.exists():
+    raise FileNotFoundError(
+        f"CALIBRATION_DEVICE_CONFIG_FILE: {CALIBRATION_DEVICE_CONFIG_FILE} not found."
+    )
+
+CALIBRATION_SPI_CONFIG_FILE = config(
+    "CALIBRATION_SPI_CONFIG_FILE", cast=Path, default=_ROOT_PATH / "spi_config.toml"
+)
+if HAS_QUANTIFY and not CALIBRATION_SPI_CONFIG_FILE.exists():
+    raise FileNotFoundError(
+        f"CALIBRATION_SPI_CONFIG_FILE: {CALIBRATION_SPI_CONFIG_FILE} not found."
+    )
 
 # Connectivity settings
 MSS_MACHINE_ROOT_URL: URL = config(
@@ -211,6 +251,16 @@ MAX_POSTPROCESSING_TIME = max(
 
 # default: 3 minutes
 MAX_GENERAL_QUEUE_TIME = max(0, config("MAX_GENERAL_QUEUE_TIME", cast=int, default=180))
+
+# default: 1.5 hours
+MAX_RECALIBRATION_QUEUE_TIME = max(
+    0, config("MAX_RECALIBRATION_QUEUE_TIME", cast=int, default=5400)
+)
+
+# default: 1 day
+DEFAULT_RECALIBRATION_INTERVAL = config(
+    "DEFAULT_RECALIBRATION_INTERVAL", cast=float, default=86_400
+)
 
 # default: True
 IS_ASYNC = config("IS_ASYNC", cast=bool, default="True")

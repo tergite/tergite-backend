@@ -15,12 +15,8 @@ import time
 
 import pytest
 import yaml
-from qblox_instruments import SpiRack
 
-from ...libs.quantum_executor.quantify import spi_dac as spi_module
-from ...libs.quantum_executor.quantify.spi_dac import SpiDAC
-from ...libs.quantum_executor.utils.config import QuantifyMetadata, SpiRackConfig
-from ..conftest import SPI_DUMMY_METADATA_FILE
+from ..conftest import HAS_QUANTIFY, SPI_DUMMY_METADATA_FILE
 from ..utils.fixtures import get_fixture_path, load_fixture
 
 _SPI_HARDWARE_CONFIG = load_fixture("spi_hardware_quantify-metadata.yml", fmt="yaml")
@@ -30,8 +26,12 @@ _SPI_NO_COUPLER_CONFIG_PATH = get_fixture_path("spi_missing_coupler_metadata.yml
 # FIXME: Remove tests of internal/private functions
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 def test_init_spi_dacs():
     """init_spi_dacs() should return a map of SpiDac instances from the given quantify metadata, with keys as the names"""
+    from ...libs.quantum_executor.quantify import spi_dac as spi_module
+    from ...libs.quantum_executor.quantify.utils.config import QuantifyMetadata
+
     quantify_metadata = QuantifyMetadata.from_yaml(SPI_DUMMY_METADATA_FILE)
 
     spi_dacs_map = spi_module.init_spi_dacs(quantify_metadata)
@@ -46,8 +46,11 @@ def test_init_spi_dacs():
         assert spi_dac.coupler_map["u0"].dac_name == "dac0"
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 def test_instantiation_uses_dummy_driver_and_returns_dummy_dac(spi_dac_dummy):
     """Instantiating an SpiDAC defaults to a dummy driver and dummy dac"""
+    from qblox_instruments import SpiRack
+
     # We really created a qblox-instruments SpiRack (dummy)
     assert isinstance(spi_dac_dummy.spi_rack, SpiRack)
 
@@ -58,6 +61,7 @@ def test_instantiation_uses_dummy_driver_and_returns_dummy_dac(spi_dac_dummy):
     )
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 def test_set_dacs_zero_calls_underlying_rack(spi_dac_dummy, mocker):
     """set_dacs_zero_calls should call underlying rack when called."""
     called = {"hit": False}
@@ -70,6 +74,7 @@ def test_set_dacs_zero_calls_underlying_rack(spi_dac_dummy, mocker):
     assert called["hit"] is True
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.mark.skipif(
     not os.environ.get("SPI_TEST_PORT"),
     reason="Set SPI_TEST_PORT=/dev/ttyXXX (or COMX) to run hardware tests.",
@@ -81,6 +86,11 @@ def test_ramp_behavior_on_real_rack(tmp_path, redis_client):
       - Final value within 5 µA of target.
       - Duration in a reasonable envelope for the default ramp rate.
     """
+    from ...libs.quantum_executor.quantify.spi_dac import SpiDAC
+    from ...libs.quantum_executor.quantify.utils.config import (
+        QuantifyMetadata,
+        SpiRackConfig,
+    )
 
     port = os.environ["SPI_TEST_PORT"]
     name = os.environ["DEFAULT_PREFIX"]

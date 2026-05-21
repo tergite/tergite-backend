@@ -1,0 +1,9 @@
+[q12_q13]
+spi_module_number = 1
+dac_name = "dac1"
+edge_group = 1
+
+[q12_q14]
+spi_module_number = 1
+dac_name = "dac2"
+edge_group = 2

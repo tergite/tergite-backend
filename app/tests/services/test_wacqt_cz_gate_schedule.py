@@ -16,15 +16,43 @@ from types import SimpleNamespace
 
 import pandas as pd
 import pytest
-from qiskit.qobj import PulseQobj
-from quantify_scheduler.backends.graph_compilation import SerialCompiler
-from quantify_scheduler.device_under_test.quantum_device import QuantumDevice
 
-# SUT pieces
-from app.libs.quantum_executor.quantify.experiment import QuantifyExperiment
-from app.libs.quantum_executor.utils.config import load_quantify_config
-from app.libs.quantum_executor.utils.portclock import generate_hardware_map
+from app.libs.qiskit.qobj import PulseQobj
+from app.tests.conftest import HAS_QUANTIFY
 from app.tests.utils.fixtures import get_fixture_path, load_fixture
+
+
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
+def test_compiled_schedule_matches_fixture():
+    """
+    Compile the provided Qobj and verify the timing table matches the expected
+    fixture (normalized comparison with rounded floats and op types).
+    """
+
+    fixture_path = Path(get_fixture_path())
+    quantify_config_path = fixture_path / "two-qubit_quantify-config.json"
+    expected_table_path = fixture_path / "compiled_schedule_expected.csv"
+    qobj_dict = load_fixture("two-qubit_cz_qobj.json")
+
+    if not expected_table_path.exists():
+        pytest.skip(f"{expected_table_path} not found.")
+    # compile & normalize actual timing table
+    _, actual_df = _compile_schedule_from_qobj(qobj_dict, quantify_config_path)
+
+    # load expected (CSV) & normalize columns just like actual
+    expected_df_raw = pd.read_csv(expected_table_path)
+    expected_df = _normalize_timing_table(expected_df_raw)
+
+    # Allow tiny numeric jitter (floats) with atol = 1e-12 s
+    pd.testing.assert_frame_equal(
+        actual_df.reset_index(drop=True),
+        expected_df.reset_index(drop=True),
+        check_dtype=False,
+        atol=1e-12,
+        rtol=0,
+        check_exact=False,
+        obj="compiled schedule timing table",
+    )
 
 
 def _normalize_timing_table(df: pd.DataFrame) -> pd.DataFrame:
@@ -119,6 +147,14 @@ def _timing_table_df(compiled_schedule):
 
 
 def _compile_schedule_from_qobj(qobj_dict: dict, quantify_config_path: Path):
+    # SUT pieces
+    from quantify_scheduler.backends.graph_compilation import SerialCompiler
+    from quantify_scheduler.device_under_test.quantum_device import QuantumDevice
+
+    from app.libs.quantum_executor.quantify.experiment import QuantifyExperiment
+    from app.libs.quantum_executor.quantify.utils.config import load_quantify_config
+    from app.libs.quantum_executor.quantify.utils.portclock import generate_hardware_map
+
     # 1) Load config into QuantumDevice
     qcfg = load_quantify_config(quantify_config_path)
     qdev = QuantumDevice("DUT")
@@ -160,35 +196,3 @@ def _compile_schedule_from_qobj(qobj_dict: dict, quantify_config_path: Path):
     compiled = compiler.compile(schedule=expt.schedule, config=comp_cfg)
     df = _timing_table_df(compiled)
     return compiled, _normalize_timing_table(pd.DataFrame(df))
-
-
-def test_compiled_schedule_matches_fixture():
-    """
-    Compile the provided Qobj and verify the timing table matches the expected
-    fixture (normalized comparison with rounded floats and op types).
-    """
-
-    fixture_path = Path(get_fixture_path())
-    quantify_config_path = fixture_path / "two-qubit_quantify-config.json"
-    expected_table_path = fixture_path / "compiled_schedule_expected.csv"
-    qobj_dict = load_fixture("two-qubit_cz_qobj.json")
-
-    if not expected_table_path.exists():
-        pytest.skip(f"{expected_table_path} not found.")
-    # compile & normalize actual timing table
-    _, actual_df = _compile_schedule_from_qobj(qobj_dict, quantify_config_path)
-
-    # load expected (CSV) & normalize columns just like actual
-    expected_df_raw = pd.read_csv(expected_table_path)
-    expected_df = _normalize_timing_table(expected_df_raw)
-
-    # Allow tiny numeric jitter (floats) with atol = 1e-12 s
-    pd.testing.assert_frame_equal(
-        actual_df.reset_index(drop=True),
-        expected_df.reset_index(drop=True),
-        check_dtype=False,
-        atol=1e-12,
-        rtol=0,
-        check_exact=False,
-        obj="compiled schedule timing table",
-    )

@@ -12,11 +12,13 @@
 # that they have been altered from the originals.
 import os
 from os import environ
+from pathlib import Path
 
 from app.tests.utils.fixtures import get_fixture_path
 
-_TESTS_FOLDER = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_PATH_TO_TEST_SQL_DB = os.path.join(_TESTS_FOLDER, "test_booking.db")
+_PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.resolve()
+_TESTS_FOLDER = _PROJECT_ROOT / "app" / "tests"
+_PATH_TO_TEST_SQL_DB = _PROJECT_ROOT / "test_booking.db"
 
 TEST_DEFAULT_PREFIX = "system_test"
 TEST_STORAGE_ROOT = "/tmp/jobs"
@@ -37,6 +39,10 @@ TEST_BCC_MACHINE_ROOT_URL = "http://localhost:8000"
 TEST_BCC_PORT = 8000
 
 TEST_MSS_APP_TOKEN = "some-mss-app-token-for-testing"
+
+TEST_CALIBRATION_NODE_CONFIG_FILE = _PROJECT_ROOT / "node_config.example.toml"
+TEST_CALIBRATION_SPI_CONFIG_FILE = get_fixture_path("dummy_spi_config.calib.toml")
+TEST_CALIBRATION_DEVICE_CONFIG_FILE = _PROJECT_ROOT / "calib_device_config.example.toml"
 
 TEST_QUANTIFY_CONFIG_FILE = get_fixture_path("dummy-quantify-config.json")
 TEST_QUANTIFY_METADATA_FILE = get_fixture_path("dummy-quantify-metadata.yml")
@@ -86,6 +92,10 @@ TEST_MAX_PREPROCESSING_TIME = int(os.getenv("MAX_PREPROCESSING_TIME", "300"))
 TEST_MAX_EXECUTION_TIME = int(os.getenv("MAX_EXECUTION_TIME", "600"))
 TEST_MAX_POSTPROCESSING_TIME = int(os.getenv("MAX_POSTPROCESSING_TIME", "180"))
 TEST_MAX_GENERAL_QUEUE_TIME = int(os.getenv("MAX_GENERAL_QUEUE_TIME", "180"))
+TEST_MAX_RECALIBRATION_QUEUE_TIME = int(os.getenv("MAX_RECALIBRATION_QUEUE_TIME", "4"))
+TEST_DEFAULT_RECALIBRATION_INTERVAL = float(
+    os.getenv("DEFAULT_RECALIBRATION_INTERVAL", "10")
+)
 
 
 def setup_test_env():
@@ -101,6 +111,9 @@ def setup_test_env():
 
     environ["QUANTIFY_CONFIG_FILE"] = TEST_QUANTIFY_CONFIG_FILE
     environ["QUANTIFY_METADATA_FILE"] = TEST_QUANTIFY_METADATA_FILE
+    environ["CALIBRATION_NODE_CONFIG_FILE"] = f"{TEST_CALIBRATION_NODE_CONFIG_FILE}"
+    environ["CALIBRATION_DEVICE_CONFIG_FILE"] = f"{TEST_CALIBRATION_DEVICE_CONFIG_FILE}"
+    environ["CALIBRATION_SPI_CONFIG_FILE"] = f"{TEST_CALIBRATION_SPI_CONFIG_FILE}"
 
     environ["LOGFILE_DOWNLOAD_POOL_DIRNAME"] = TEST_LOGFILE_DOWNLOAD_POOL_DIRNAME
     environ["JOB_UPLOAD_POOL_DIRNAME"] = TEST_JOB_UPLOAD_POOL_DIRNAME
@@ -123,6 +136,8 @@ def setup_test_env():
     environ["MAX_POSTPROCESSING_TIME"] = f"{TEST_MAX_POSTPROCESSING_TIME}"
     environ["MAX_PREPROCESSING_TIME"] = f"{TEST_MAX_PREPROCESSING_TIME}"
     environ["MAX_GENERAL_QUEUE_TIME"] = f"{TEST_MAX_GENERAL_QUEUE_TIME}"
+    environ["MAX_RECALIBRATION_QUEUE_TIME"] = f"{TEST_MAX_RECALIBRATION_QUEUE_TIME}"
+    environ["DEFAULT_RECALIBRATION_INTERVAL"] = f"{TEST_DEFAULT_RECALIBRATION_INTERVAL}"
     environ["MAX_IDLE_TIME"] = f"{TEST_MAX_IDLE_TIME}"
     environ["IS_ASYNC"] = f"{TEST_IS_ASYNC}"
     environ["BOOKING_DB_URL"] = f"{TEST_BOOKING_DB_URL}"

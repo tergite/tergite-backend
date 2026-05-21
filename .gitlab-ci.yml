@@ -2,40 +2,45 @@ stages:
   - tests
 
 variables:
-  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   PYTHON_VERSION: "3.12"
   REDIS_PORT: 6378
   TEST_RQ_MAX_QUEUE_WAIT_TIME: 45
   FF_NETWORK_PER_BUILD: 1
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.cache/uv"
 
-tests:
-  stage: tests
+.setup_venv: &setup_venv
   image: python:${PYTHON_VERSION}
-  script:
+  before_script:
     # Install redis
     - apt-get update
+    # install dependencies for recalibration
+    - if [ "$DEPS_GROUP" = "quantify" ]; then apt-get install libgl1 -y; fi
     - apt-get install redis -y
     # Run the redis server
     - redis-server --daemonize yes --port "$REDIS_PORT"
+    # install uv
+    - pip install uv
+    # Ensure uv uses the project-local venv for easier sourcing
+    - export UV_PROJECT_ENVIRONMENT="$CI_PROJECT_DIR/.venv"
 
+tests:
+  stage: tests
+  <<: *setup_venv
+  parallel:
+    matrix:
+      - DEPS_GROUP: [ qiskit, quantify ]
+  script:
+    - echo "Testing $DEPS_GROUP"
     # Install project dependencies
-    - pip install ."[dev]"
-
+    - uv sync --dev --extra $DEPS_GROUP
+    - source .venv/bin/activate
     # Check formatting
     - black --check app
     - isort --check-only app
-
     # Run unit tests
-    - CPU_COUNT=$(python -c "import os; print(os.cpu_count())")
-    - WORKER_COUNT=$(python -c "import os; print(min(os.cpu_count(), 4))")
-    - echo "CPUs - $CPU_COUNT, WORKERS - $WORKER_COUNT"
-    - echo "PYTEST_ARGS=$PYTEST_ARGS"
-    - |
-      if [ -z "$PYTEST_ARGS" ]; then 
-        pytest app; 
-      else 
-        pytest $PYTEST_ARGS; 
-      fi
+    - pytest app
   cache:
+    key: "uv-cache-$EXTRA_NAME-$CI_COMMIT_REF_SLUG"
     paths:
-      - .cache/pip
+      - .cache/uv
+      - .venv

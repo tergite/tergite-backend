@@ -19,6 +19,7 @@ jobs:
     strategy:
       matrix:
         python-version: [ "3.12", "3.13" ]
+        deps-group: [ "qiskit", "quantify" ]
 
     services:
       redis:
@@ -32,27 +33,19 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
           python-version: ${{ matrix.python-version }}
-          cache: 'pip'
+          enable-cache: true
+          cache-suffix: ${{ matrix.deps-group }}
       - name: Run tests
         run: |
-          pip install ."[dev]"
+          uv sync --dev --extra ${{ matrix.deps-group }}
           black --check app
           isort --check-only app
-          PYTEST_ARGS=${{ vars.PYTEST_ARGS }}
-          CPU_COUNT=$(python -c "import os; print(os.cpu_count())")
-          WORKER_COUNT=$(python -c "import os; print(min(os.cpu_count(), 4))")
-          echo "CPUs - $CPU_COUNT, WORKERS - $WORKER_COUNT"
-          echo "PYTEST_ARGS=$PYTEST_ARGS"
-          if [ -z "$PYTEST_ARGS" ]; then 
-            pytest app; 
-          else 
-            pytest $PYTEST_ARGS; 
-          fi
+          pytest app;
         env:
           REDIS_HOST: localhost
           REDIS_PORT: 6379
@@ -63,9 +56,12 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ startsWith(github.ref, 'refs/tags/') && vars.SHOULD_PUBLISH_TO_STAGING == 'true' }}
     needs: tests
+    strategy:
+      matrix:
+        deps-group: [ "qiskit", "quantify" ]
     steps:
       - name: Checkout the commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -79,23 +75,41 @@ jobs:
           registry: ${{ secrets.STAGING_CONTAINER_REGISTRY }}
           username: ${{ secrets.STAGING_DOCKER_USERNAME }}
           password: ${{ secrets.STAGING_DOCKER_PASSWORD }}
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.STAGING_CONTAINER_REGISTRY }}/${{ github.event.repository.name }}
+          flavor: |
+            suffix=-${{ matrix.deps-group }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest
 
-      - name: Publish
-        run: |
-          docker buildx create --name multi-platform-builder --bootstrap --use
-          docker buildx build --platform ${{ vars.DOCKER_IMAGE_PLATFORMS }} \
-              -t ${{ secrets.STAGING_CONTAINER_REGISTRY }}/${{ github.event.repository.name }}:${{ github.ref_name }} \
-              -t ${{ secrets.STAGING_CONTAINER_REGISTRY }}/${{ github.event.repository.name }}:latest \
-              --push .
+      - name: Build and Push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: ${{ vars.DOCKER_IMAGE_PLATFORMS }}
+          push: true
+          build-args: |
+            DEPS_GROUP=${{ matrix.deps-group }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.deps-group }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.deps-group }}
 
   release-production:
     name: Release Production
     runs-on: ubuntu-latest
     if: ${{ startsWith(github.ref, 'refs/tags/') && vars.SHOULD_PUBLISH_TO_PROD == 'true' }}
     needs: tests
+    strategy:
+      matrix:
+        deps-group: [ "qiskit", "quantify" ]
     steps:
       - name: Checkout the commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -106,13 +120,29 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Publish
-        run: |
-          docker buildx create --name multi-platform-builder --bootstrap --use
-          docker buildx build --platform ${{ vars.DOCKER_IMAGE_PLATFORMS }} \
-              -t tergite/${{ github.event.repository.name }}:${{ github.ref_name }} \
-              -t tergite/${{ github.event.repository.name }}:latest \
-              --push .
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: tergite/${{ github.event.repository.name }}
+          flavor: |
+            suffix=-${{ matrix.deps-group }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest
+
+      - name: Build and Push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: ${{ vars.DOCKER_IMAGE_PLATFORMS }}
+          push: true
+          build-args: |
+            DEPS_GROUP=${{ matrix.deps-group }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.deps-group }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.deps-group }}
 
   upstream:
     name: Update upstream

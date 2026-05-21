@@ -16,77 +16,45 @@
 # Refactored by Chalmers Next Labs 2025
 
 """
-This module implements the executor.
+This module implements the quantify executor.
 """
 
 import logging
 import os
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Union
 
 import qblox_instruments
 from qcodes import Instrument
-from qiskit.qobj import PulseQobj
+from quantify_core.data.handling import set_datadir
 from quantify_scheduler.backends.graph_compilation import SerialCompiler
 from quantify_scheduler.device_under_test.quantum_device import QuantumDevice
 from quantify_scheduler.instrument_coordinator import InstrumentCoordinator
 from quantify_scheduler.instrument_coordinator.components.qblox import ClusterComponent
 
+import settings
 from app.libs.device_parameters.dtos import BackendConfig
+from app.libs.qiskit.qobj import PulseQobj
 from app.libs.quantum_executor.base.executor import QuantumExecutor
 from app.libs.quantum_executor.base.quantum_job import get_experiment_name
 from app.libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
 from app.libs.quantum_executor.base.quantum_job.typing import QExperimentResult
 from app.libs.quantum_executor.quantify.experiment import QuantifyExperiment
-from app.libs.quantum_executor.utils.config import (
+from app.libs.quantum_executor.quantify.utils.config import (
     QuantifyMetadata,
     load_quantify_config,
 )
+from app.libs.quantum_executor.quantify.utils.portclock import generate_hardware_map
 from app.libs.quantum_executor.utils.logger import ExperimentLogger
-from app.libs.quantum_executor.utils.portclock import generate_hardware_map
+from app.utils.compat import MeasurementMode, SPIMode
 
+from ...device_parameters import DeviceCalibration
 from .spi_dac import init_spi_dacs
+from .utils.calibration import recalibrate
 
 worker_logger = logging.getLogger(__name__)
-
-
-def _extract_lo_frequencies(quantify_config: Any) -> Dict[str, float]:
-    modulation_frequencies = (
-        getattr(quantify_config.hardware_options, "modulation_frequencies", {}) or {}
-    )
-    results: Dict[str, float] = {}
-    for key, entry in modulation_frequencies.items():
-        lo_freq = getattr(entry, "lo_freq", None)
-        if lo_freq is None and isinstance(entry, dict):
-            lo_freq = entry.get("lo_freq")
-        if lo_freq is None:
-            continue
-        results[key] = float(lo_freq)
-
-    return results
-
-
-def _extract_drive_frequencies(backend_config: BackendConfig) -> Dict[str, float]:
-    calibration_config = backend_config.calibration_config
-    if calibration_config is None:
-        return {}
-
-    results: Dict[str, float] = {}
-    for qubit in calibration_config.qubit:
-        qubit_id = qubit.get("id")
-        frequency_hz = qubit.get("frequency")
-        if qubit_id is None or frequency_hz is None:
-            continue
-
-        results[_to_drive_clock(qubit_id)] = float(frequency_hz)
-
-    return results
-
-
-def _to_drive_clock(qubit_id: Any) -> str:
-    stripped = str(qubit_id).strip().lstrip("q")
-    return f"q{int(stripped):02d}.01"
 
 
 class QuantifyExecutor(QuantumExecutor):
@@ -104,6 +72,15 @@ class QuantifyExecutor(QuantumExecutor):
         should_restore_currents: bool = False,
         reset: bool = False,
         are_clusters_resettable: bool = False,
+        data_dir: Path | os.PathLike[str] = settings.EXECUTOR_DATA_DIR,
+        calib_node_conf: (
+            Path | os.PathLike[str]
+        ) = settings.CALIBRATION_NODE_CONFIG_FILE,
+        calib_device_conf: (
+            Path | os.PathLike[str]
+        ) = settings.CALIBRATION_DEVICE_CONFIG_FILE,
+        calib_spi_conf: Path | os.PathLike[str] = settings.CALIBRATION_SPI_CONFIG_FILE,
+        calib_seed_file: Path | os.PathLike[str] = settings.CALIBRATION_SEED,
     ):
         """
         Args:
@@ -113,7 +90,15 @@ class QuantifyExecutor(QuantumExecutor):
             should_restore_currents: whether to restore current state; default = False
             reset: whether to reset the whole executor; default = False
             are_clusters_resettable: whether the clusters can be reset for this executor; default = False
+            data_dir: the directory where to save experiment data; default = settings.EXECUTOR_DATA_DIR
+            calib_node_conf: the configuration file for the nodes during calibration
+            calib_device_conf: the configuration file for the entire devices during calibration
+            calib_spi_conf: the configuration file for the spi during calibration
         """
+        self.calib_seed_file = calib_seed_file
+        self.calib_spi_conf = calib_spi_conf
+        self.calib_device_conf = calib_device_conf
+        self.calib_node_conf = calib_node_conf
         self.quantify_config = load_quantify_config(quantify_config_file)
         self.quantify_metadata = QuantifyMetadata.from_yaml(quantify_metadata_file)
         self.device_name = backend_config.general_config.name
@@ -131,6 +116,9 @@ class QuantifyExecutor(QuantumExecutor):
             coupling_dict=coupling_dict,
             quantify_config=self.quantify_config,
         )
+
+        self.data_dir = data_dir
+        set_datadir(data_dir)
         super().__init__(
             hardware_map=self.hardware_map,
             backend_config=backend_config,
@@ -184,6 +172,66 @@ class QuantifyExecutor(QuantumExecutor):
         self._quantum_device.hardware_config(self.quantify_config)
         self._compiler = SerialCompiler(name=f"{self.device_name}_compiler")
         self._compilation_config = self._quantum_device.generate_compilation_config()
+
+    def recalibrate(self, redis_url: str, **kwargs) -> DeviceCalibration | None:
+        """Recalibrates the executor
+
+        Args:
+            redis_url: the redis url where intermediate calibration data is stored
+
+        Returns:
+            the final device calibration state after recalibration
+        """
+        data_dir = Path(self.data_dir)
+        backend_config = self.backend_config
+        calib_device_conf = self.calib_device_conf
+        calib_node_conf = self.calib_node_conf
+        calib_spi_conf = self.calib_spi_conf
+        qubits = backend_config.device_config.qubit_ids
+        couplers = [
+            f"{q1}_{q2}"
+            for q1, q2 in backend_config.device_config.coupling_dict.values()
+        ]
+        fixed_duration_couplers = backend_config.device_config.fixed_duration_couplers
+        reverse_phase_qubits = backend_config.device_config.reverse_phase_qubits
+        cluster_config = self.quantify_config
+
+        results = None
+        for name, conf in self.quantify_metadata.root.items():
+            if conf.instrument_type == "Cluster":
+                cluster_mode = (
+                    MeasurementMode.dummy if conf.is_dummy else MeasurementMode.real
+                )
+                logging.info(f"recalibrating {name} in {cluster_mode} mode...")
+
+                results = recalibrate(
+                    backend_config=self.backend_config,
+                    cluster_mode=cluster_mode,
+                    stdout_log_level=25,
+                    file_log_level=25,
+                    cluster_ip=conf.ip_address,
+                    redis_url=redis_url,
+                    data_dir=data_dir,
+                    spi_mode=SPIMode.dummy,
+                    qubits=qubits,
+                    couplers=couplers,
+                    is_recalibration=True,
+                    ignore_spec=True,
+                    save_plot=False,
+                    fixed_duration_couplers=fixed_duration_couplers,
+                    reverse_phase_qubits=reverse_phase_qubits,
+                    cluster_config=cluster_config,
+                    spi_config=calib_spi_conf,
+                    device_config=calib_device_conf,
+                    node_config=calib_node_conf,
+                )
+
+        if isinstance(results, DeviceCalibration):
+            calib_seed_file = self.calib_seed_file
+            logging.info(f"calibration complete. Saving to {calib_seed_file}...")
+            results.to_toml(calib_seed_file)
+
+        return results
 
     def _to_native_experiments(
         self, qobj: PulseQobj, native_config: NativeQobjConfig, /
@@ -304,3 +352,41 @@ class QuantifyExecutor(QuantumExecutor):
         qblox_instruments.Cluster.close_all()
         self._coordinator.close_all()
         self.__class__._non_gc_instruments[self.device_name].clear()
+
+
+def _extract_lo_frequencies(quantify_config: Any) -> Dict[str, float]:
+    modulation_frequencies = (
+        getattr(quantify_config.hardware_options, "modulation_frequencies", {}) or {}
+    )
+    results: Dict[str, float] = {}
+    for key, entry in modulation_frequencies.items():
+        lo_freq = getattr(entry, "lo_freq", None)
+        if lo_freq is None and isinstance(entry, dict):
+            lo_freq = entry.get("lo_freq")
+        if lo_freq is None:
+            continue
+        results[key] = float(lo_freq)
+
+    return results
+
+
+def _extract_drive_frequencies(backend_config: BackendConfig) -> Dict[str, float]:
+    calibration_config = backend_config.calibration_config
+    if calibration_config is None:
+        return {}
+
+    results: Dict[str, float] = {}
+    for qubit in calibration_config.qubit:
+        qubit_id = qubit.get("id")
+        frequency_hz = qubit.get("frequency")
+        if qubit_id is None or frequency_hz is None:
+            continue
+
+        results[_to_drive_clock(qubit_id)] = float(frequency_hz)
+
+    return results
+
+
+def _to_drive_clock(qubit_id: Any) -> str:
+    stripped = str(qubit_id).strip().lstrip("q")
+    return f"q{int(stripped):02d}.01"

@@ -19,27 +19,37 @@ If you are reading this on GitHub, then you are looking at a mirror.
 
 ## Quick Start
 
-- Ensure you have [conda](https://docs.anaconda.com/free/miniconda/index.html) installed. 
+- Ensure you have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed. 
  (_You could simply have python +3.12 installed instead._)
+
+```shell
+wget -qO- https://astral.sh/uv/install.sh | sh
+# or use curl
+# curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
 - Ensure you have the [Redis](https://redis.io/) server running
 - Clone the repo
 
 ```shell
 git clone git@github.com:tergite/tergite-backend.git
-```
-
-- Create conda environment
-
-```shell
-conda create -n bcc -y python=3.12
-conda activate bcc
-```
-
-- Install dependencies
-
-```shell
 cd tergite-backend
-pip install ."[dev]"
+```
+
+- Install dependencies. Note that we can either use the simulators (`qiskit`) or connect to Qblox clusters (`quantify`).
+  To install for simulators, use `--extra qiskit` and to install for Qblox, use `--extra quantify`.  
+  **Take note that you can use both at the same time because they conflict with each other**.
+
+```shell
+uv sync --dev --extra quantify
+# or for simulators only
+# uv sync --dev --extra qiskit
+```
+
+- Activate your environment
+
+```shell
+source .venv/bin/activate
 ```
 
 - If you don't have a key certificate pair for MSS, generate them on the MSS machine 

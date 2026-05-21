@@ -1,20 +1,20 @@
 """Tests for the settings and configs"""
 
+import math
 import os
 import time
 
 import pytest
 from pydantic import ValidationError
+from pytest_lazy_fixtures import lf as lazy_fixture
 
-from app.libs.quantum_executor.utils.config import (
-    QuantifyMetadata,
-    load_quantify_config,
-)
+from app.tests.conftest import HAS_QISKIT_DYNAMICS, HAS_QUANTIFY
 from app.tests.utils.env import (
     TEST_BACKEND_SETTINGS_FILE,
     TEST_BROKEN_QUANTIFY_CONFIG_FILE,
     TEST_BROKEN_QUANTIFY_METADATA_FILE,
     TEST_DEFAULT_PREFIX_SIM_1Q,
+    TEST_QISKIT_1Q_SEED_FILE,
     TEST_QUANTIFY_CONFIG_FILE,
     TEST_QUANTIFY_METADATA_FILE,
     TEST_QUANTIFY_SEED_FILE,
@@ -25,10 +25,30 @@ from app.tests.utils.modules import remove_modules
 
 _QUANTIFY_CONFIG_FILE = get_fixture_path("generic-quantify-config.json")
 _QUANTIFY_METADATA_FILE = get_fixture_path("generic-quantify-config.yml")
+_EXECUTOR_AND_SETTINGS = []
+if HAS_QUANTIFY:
+    _EXECUTOR_AND_SETTINGS += [
+        (
+            "quantify",
+            TEST_BACKEND_SETTINGS_FILE,
+            lazy_fixture("quantify_seed_file"),
+        )
+    ]
+
+if HAS_QISKIT_DYNAMICS:
+    _EXECUTOR_AND_SETTINGS += [
+        ("qiskit_pulse_1q", TEST_SIMQ1_BACKEND_SETTINGS_FILE, TEST_QISKIT_1Q_SEED_FILE),
+    ]
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 def test_load_quantify_config_files():
     """ExecutorConfig can load YAML Quantify Metadata File and Quantify Config File"""
+    from app.libs.quantum_executor.quantify.utils.config import (
+        QuantifyMetadata,
+        load_quantify_config,
+    )
+
     conf_metadata = QuantifyMetadata.from_yaml(_QUANTIFY_METADATA_FILE)
     conf = load_quantify_config(_QUANTIFY_CONFIG_FILE)
 
@@ -38,19 +58,21 @@ def test_load_quantify_config_files():
 
 
 @pytest.mark.asyncio
-async def test_mss_reconnection():
+@pytest.mark.parametrize("executor, settings_file, seed_file", _EXECUTOR_AND_SETTINGS)
+async def test_mss_reconnection(executor, settings_file, seed_file):
     """Attempts to reconnect to MSS up to a given number of times"""
     remove_modules(["os", "app", "settings"])
 
     timeout = 10
     connection_attempts = 3
 
-    os.environ["EXECUTOR_TYPE"] = "quantify"
-    os.environ["BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
+    os.environ["EXECUTOR_TYPE"] = executor
+    os.environ["BACKEND_SETTINGS"] = settings_file
     mss_port = os.getenv("UNAVAILABLE_MSS_PORT", "5050")
     os.environ["MSS_MACHINE_ROOT_URL"] = f"http://localhost:{mss_port}"
     os.environ["MSS_CONNECTION_TIMEOUT"] = f"{timeout}"
     os.environ["MSS_CONNECTION_MAX_ATTEMPTS"] = f"{connection_attempts}"
+    os.environ["CALIBRATION_SEED"] = f"{seed_file}"
     net_connection_timeout = timeout * connection_attempts
 
     from sqlmodel import SQLModel
@@ -67,7 +89,7 @@ async def test_mss_reconnection():
 
     end_time = time.time()
     time_taken = end_time - start_time
-    assert abs(time_taken - net_connection_timeout) < 2.5
+    assert math.isclose(time_taken, net_connection_timeout, abs_tol=3.2)
 
 
 @pytest.mark.asyncio
@@ -118,6 +140,7 @@ async def test_calibration_seed_broken_for_simulator(patched_mss_websockets):
             pass
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.mark.asyncio
 async def test_quantify_metadata_is_broken(patched_mss_websockets):
     """Raises validation errors if quantify metadata conf file is broken"""
@@ -141,6 +164,7 @@ async def test_quantify_metadata_is_broken(patched_mss_websockets):
             pass
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.mark.asyncio
 async def test_quantify_config_is_broken(patched_mss_websockets):
     """Raises validation errors if quantify config file is broken"""

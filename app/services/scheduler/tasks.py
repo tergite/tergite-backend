@@ -26,10 +26,12 @@ from typing import Any, Optional, Tuple, Type
 import redis
 import rq.job
 from pydantic import ValidationError
-from qiskit.qobj import PulseQobj
 from rq import Repeat, get_current_job
 
+from app.libs.qiskit.qobj import PulseQobj
+
 from ...libs.device_parameters import (
+    DeviceCalibration,
     get_device_calibration_info,
 )
 from ...libs.qiskit_providers.utils import json_decoder
@@ -56,6 +58,7 @@ from ..booking import get_active_booking
 from ..booking.models import Booking
 from ..booking.service import get_booking, get_next_booking
 from ..booking.store import get_bookings_sql_engine
+from ..external.mss.dtos import DeviceEvent, DeviceEventName
 from ..external.mss.service import MssClientPipe
 from .store import get_jobs_store, init_jobs_store
 from .utils import (
@@ -413,6 +416,79 @@ def postprocessing_failure_callback(
                 reason="error during post processing",
             )
             update_job_in_mss(mss_client_pipe, payload=job)
+
+
+def recalibrate(
+    context: QueueContext, interval: Optional[float] = None
+) -> Optional[rq.job.Job]:
+    """Recalibrates the device
+
+    Args:
+        context: the context required when running a job on a queue
+        interval: the interval in seconds between two concurrent jobs; default = None i.e. no repeat
+
+    Returns:
+        the rq.job.Job that is constructed and enqueued to schedule next recalibration, or None if interval was not set
+    """
+    from .queues import get_recalibration_queue
+
+    executor_options = context["executor_options"]
+    jobs_store_url = context["jobs_store_url"]
+
+    # ensure recalibration runs without interference
+    with get_executor_lock():
+        executor = init_executor(executor_options)
+        results = executor.recalibrate(redis_url=jobs_store_url)
+
+        if isinstance(results, DeviceCalibration):
+            logging.info(f"Updating MSS...")
+            with MssClientPipe() as mss_client_pipe:
+                response = mss_client_pipe.send_event(
+                    DeviceEvent(
+                        name=DeviceEventName.RECALIBRATED,
+                        data=results,
+                    ),
+                    error_prefix="error sending recalibration info: ",
+                )
+                if response["status"] != "success":
+                    raise RuntimeError(
+                        f"Error sending recalibration info: {response["detail"]}"
+                    )
+
+            logging.info(
+                f"calibration data updated in MSS with response: {response["status"]}"
+            )
+
+    # schedule next run
+    if isinstance(interval, float):
+        # enqueue next run
+        queue_prefix = context["queue_prefix"]
+        is_async = context["is_async"]
+        recalibration_queue_timeout = context["recalibration_queue_timeout"]
+
+        redis_connection = get_current_job().connection
+        recalibration_queue = get_recalibration_queue(
+            prefix=queue_prefix,
+            connection=redis_connection,
+            default_timeout=recalibration_queue_timeout,
+            is_async=is_async,
+        )
+
+        func_name = f"{__name__}.{recalibrate.__qualname__}"
+
+        job = recalibration_queue.enqueue_in(
+            timedelta(seconds=interval),
+            func_name,
+            context=context,
+            interval=interval,
+        )
+
+        # save some metadata on the job for later retrieval
+        job.meta["interval"] = interval
+        job.save_meta()
+
+        return job
+    return None
 
 
 def _is_job_shorter(storage_id: StorageID, duration: float) -> bool:
