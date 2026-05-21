@@ -9,7 +9,7 @@ ARG DEPS_GROUP="quantify"
 # Install dependencies for recalibration
 RUN  if [ "$DEPS_GROUP" = "quantify" ]; then \
         apt-get update && \
-        apt-get install -y --no-install-recommends libgl1 && \
+        apt-get install -y --no-install-recommends  python3-pyqt5 libgl1 && \
         rm -rf /var/lib/apt/lists/*; \
     fi
 
