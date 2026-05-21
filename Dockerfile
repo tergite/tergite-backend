@@ -65,4 +65,7 @@ ENV MSS_NONCE_TTL=300
 # ENV VAULT_ADDR
 # ENV VAULT_TOKEN
 
+HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=10 \
+  CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:$BCC_PORT/docs', timeout=3)" || exit 1
+
 ENTRYPOINT ["/code/start_bcc.sh"]
