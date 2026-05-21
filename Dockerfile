@@ -1,4 +1,4 @@
-FROM python:3.12-bullseye
+FROM python:3.12-slim-bookworm
 
 WORKDIR /code
 
@@ -9,13 +9,13 @@ ARG DEPS_GROUP="quantify"
 # Install dependencies for recalibration
 RUN  if [ "$DEPS_GROUP" = "quantify" ]; then \
         apt-get update && \
-        apt-get install libgl1 -y && \
+        apt-get install -y --no-install-recommends libgl1 && \
         rm -rf /var/lib/apt/lists/*; \
     fi
 
 # Install uv
 ENV PIP_ROOT_USER_ACTION=ignore
-RUN pip install uv
+RUN pip install --no-cache-dir uv
 
 # Install prod-only dependencies in system python's packages
 ENV UV_PROJECT_ENVIRONMENT="/usr/local"
@@ -23,7 +23,9 @@ ENV UV_NO_DEV=1
 RUN uv sync --no-python-downloads --python-preference only-system --extra "$DEPS_GROUP"
 
 # uninstall uv
-RUN pip uninstall uv -y
+RUN pip uninstall uv -y && \
+    apt-get purge -y --auto-remove && \
+    rm -rf /root/.cache/uv /root/.cache/pip
 
 COPY . /code/
 RUN chmod +x /code/start_bcc.sh

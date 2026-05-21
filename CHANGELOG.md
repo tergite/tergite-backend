@@ -20,6 +20,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   `2026.06.1-qiskit`, `2026.06.1-quantify`, `latest-quantify`, `latest-qiskit`
 - Removed the extra dependencies in pyproject that are not explicitly used by the code.
   These were originally put there to help the pip resolver when resolving nested dependencies.
+- Changed base Docker image to python:3.12-bookworm-slim in Dockerfile
 
 ### Added
 
