@@ -79,6 +79,24 @@ QUANTIFY_CONFIG_FILE="quantify-config.json"
 #
 # Default: "quantify-metadata.yml"
 QUANTIFY_METADATA_FILE="quantify-metadata.yml"
+
+# The config file with the initial values for the device
+# configuration.
+#
+# Default: "device_config.calib.toml"
+CALIBRATION_DEVICE_CONFIG_FILE="device_config.calib.toml"
+
+# The config file that configures the wiring on the QBlox SPI rack.
+#
+# Default: "spi_config.calib.toml"
+CALIBRATION_SPI_CONFIG_FILE="spi_config.calib.toml"
+
+
+# The config file with the runtime values for the calibration nodes.
+#
+# Default: "node_config.calib.toml"
+CALIBRATION_NODE_CONFIG_FILE="node_config.calib.toml"
+
 # Whether the clusters (especially on quantify executor) can be reset
 #
 # Default: False
