@@ -6,6 +6,7 @@
         "unit": "Hz",
         "value": -170000000.0
       },
+      "control_qubit": null,
       "control_rz_lambda": {
         "date": "NOW-PLACEHOLDER",
         "unit": "rad",
@@ -61,12 +62,15 @@
         "unit": "Hz",
         "value": -15000000.0
       },
+      "full_name": null,
       "id": 0,
       "pulse_type": {
         "date": "NOW-PLACEHOLDER",
         "unit": "",
         "value": "wacqt_cz_gate_pulse"
       },
+      "short_name": "u0",
+      "target_qubit": null,
       "target_rz_lambda": {
         "date": "NOW-PLACEHOLDER",
         "unit": "rad",
@@ -104,7 +108,7 @@
       },
       "id": 0,
       "index": null,
-      "pi_pulse_motzoi": null,
+      "name": "q0",
       "pi_pulse_amplitude": {
         "date": "NOW-PLACEHOLDER",
         "unit": "",
@@ -115,11 +119,8 @@
         "unit": "",
         "value": 5.6e-8
       },
-      "pulse_sigma": {
-        "date": "NOW-PLACEHOLDER",
-        "unit": "",
-        "value": 7e-9
-      },
+      "pi_pulse_motzoi": null,
+      "pulse_sigma": { "date": "NOW-PLACEHOLDER", "unit": "", "value": 7e-9 },
       "pulse_type": {
         "date": "NOW-PLACEHOLDER",
         "unit": "",
@@ -154,7 +155,7 @@
       },
       "id": 1,
       "index": null,
-      "pi_pulse_motzoi": null,
+      "name": "q1",
       "pi_pulse_amplitude": {
         "date": "NOW-PLACEHOLDER",
         "unit": "",
@@ -165,11 +166,8 @@
         "unit": "",
         "value": 5.6e-8
       },
-      "pulse_sigma": {
-        "date": "NOW-PLACEHOLDER",
-        "unit": "",
-        "value": 7e-9
-      },
+      "pi_pulse_motzoi": null,
+      "pulse_sigma": { "date": "NOW-PLACEHOLDER", "unit": "", "value": 7e-9 },
       "pulse_type": {
         "date": "NOW-PLACEHOLDER",
         "unit": "",
@@ -194,85 +192,55 @@
   ],
   "resonators": [
     {
-      "acq_delay": {
-        "date": "NOW-PLACEHOLDER",
-        "unit": "s",
-        "value": 0.0
-      },
+      "acq_delay": { "date": "NOW-PLACEHOLDER", "unit": "s", "value": 0.0 },
       "acq_integration_time": {
         "date": "NOW-PLACEHOLDER",
         "unit": "s",
         "value": 0.0
       },
-      "frequency": {
-        "date": "NOW-PLACEHOLDER",
-        "unit": "Hz",
-        "value": 0.0
-      },
+      "frequency": { "date": "NOW-PLACEHOLDER", "unit": "Hz", "value": 0.0 },
       "id": 0,
       "index": null,
+      "name": "q0",
       "pulse_amplitude": {
         "date": "NOW-PLACEHOLDER",
         "unit": "",
         "value": 0.0
       },
-      "pulse_delay": {
-        "date": "NOW-PLACEHOLDER",
-        "unit": "s",
-        "value": 0.0
-      },
+      "pulse_delay": { "date": "NOW-PLACEHOLDER", "unit": "s", "value": 0.0 },
       "pulse_duration": {
         "date": "NOW-PLACEHOLDER",
         "unit": "s",
         "value": 0.0
       },
-      "pulse_type": {
-        "date": "NOW-PLACEHOLDER",
-        "unit": "",
-        "value": ""
-      },
+      "pulse_type": { "date": "NOW-PLACEHOLDER", "unit": "", "value": "" },
       "readout_line": null,
       "x_position": null,
       "y_position": null
     },
     {
-      "acq_delay": {
-        "date": "NOW-PLACEHOLDER",
-        "unit": "s",
-        "value": 0.0
-      },
+      "acq_delay": { "date": "NOW-PLACEHOLDER", "unit": "s", "value": 0.0 },
       "acq_integration_time": {
         "date": "NOW-PLACEHOLDER",
         "unit": "s",
         "value": 0.0
       },
-      "frequency": {
-        "date": "NOW-PLACEHOLDER",
-        "unit": "Hz",
-        "value": 0.0
-      },
+      "frequency": { "date": "NOW-PLACEHOLDER", "unit": "Hz", "value": 0.0 },
       "id": 1,
       "index": null,
+      "name": "q1",
       "pulse_amplitude": {
         "date": "NOW-PLACEHOLDER",
         "unit": "",
         "value": 0.0
       },
-      "pulse_delay": {
-        "date": "NOW-PLACEHOLDER",
-        "unit": "s",
-        "value": 0.0
-      },
+      "pulse_delay": { "date": "NOW-PLACEHOLDER", "unit": "s", "value": 0.0 },
       "pulse_duration": {
         "date": "NOW-PLACEHOLDER",
         "unit": "s",
         "value": 0.0
       },
-      "pulse_type": {
-        "date": "NOW-PLACEHOLDER",
-        "unit": "",
-        "value": ""
-      },
+      "pulse_type": { "date": "NOW-PLACEHOLDER", "unit": "", "value": "" },
       "readout_line": null,
       "x_position": null,
       "y_position": null

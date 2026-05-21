@@ -6,6 +6,12 @@ COPY . /code/
 
 ARG DEPS_GROUP="quantify"
 
+# Install dependencies for recalibration
+RUN  if [ "$DEPS_GROUP" = "quantify" ]; then \
+      apt-get update && apt-get install libgl1 -y \
+      && rm -rf /var/lib/apt/lists/* \
+    fi
+
 # Install uv
 RUN pip install uv
 

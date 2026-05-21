@@ -21,22 +21,19 @@
       },
       "id": 0,
       "index": null,
+      "name": "q0",
       "pi_pulse_amplitude": {
         "date": "NOW-PLACEHOLDER",
         "unit": "",
         "value": 0.0284977
       },
-      "pi_pulse_motzoi": null,
       "pi_pulse_duration": {
         "date": "NOW-PLACEHOLDER",
         "unit": "",
         "value": 5.6e-8
       },
-      "pulse_sigma": {
-        "date": "NOW-PLACEHOLDER",
-        "unit": "",
-        "value": 7e-9
-      },
+      "pi_pulse_motzoi": null,
+      "pulse_sigma": { "date": "NOW-PLACEHOLDER", "unit": "", "value": 7e-9 },
       "pulse_type": {
         "date": "NOW-PLACEHOLDER",
         "unit": "",
@@ -61,11 +58,7 @@
   ],
   "resonators": [
     {
-      "acq_delay": {
-        "date": "NOW-PLACEHOLDER",
-        "unit": "s",
-        "value": 5e-8
-      },
+      "acq_delay": { "date": "NOW-PLACEHOLDER", "unit": "s", "value": 5e-8 },
       "acq_integration_time": {
         "date": "NOW-PLACEHOLDER",
         "unit": "s",
@@ -78,16 +71,13 @@
       },
       "id": 0,
       "index": null,
+      "name": "q0",
       "pulse_amplitude": {
         "date": "NOW-PLACEHOLDER",
         "unit": "",
         "value": 0.1266499392606423
       },
-      "pulse_delay": {
-        "date": "NOW-PLACEHOLDER",
-        "unit": "s",
-        "value": 0.0
-      },
+      "pulse_delay": { "date": "NOW-PLACEHOLDER", "unit": "s", "value": 0.0 },
       "pulse_duration": {
         "date": "NOW-PLACEHOLDER",
         "unit": "s",
