@@ -43,9 +43,9 @@ jobs:
       - name: Run tests
         run: |
           uv sync --dev --extra ${{ matrix.deps-group }}
-          black --check app
-          isort --check-only app
-          pytest app;
+          uv run black --check app
+          uv run isort --check-only app
+          uv run pytest app;
         env:
           REDIS_HOST: localhost
           REDIS_PORT: 6379
