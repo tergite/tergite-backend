@@ -55,7 +55,7 @@ class QiskitDynamicsExecutor(QuantumExecutor):
         super().__init__(backend_config=backend_config, **kwargs)
         self.backend = backend_cls(backend_config=backend_config, **kwargs)
 
-    def recalibrate(self) -> None:
+    def recalibrate(self, **kwargs) -> None:
         pass
 
     def _run_native(

@@ -9,7 +9,7 @@ ARG DEPS_GROUP="quantify"
 # Install dependencies for recalibration
 RUN  if [ "$DEPS_GROUP" = "quantify" ]; then \
         apt-get update && \
-        apt-get install -y --no-install-recommends libgl1 && \
+        apt-get install -y --no-install-recommends  python3-pyqt5 libgl1 && \
         rm -rf /var/lib/apt/lists/*; \
     fi
 
@@ -64,5 +64,8 @@ ENV MSS_NONCE_TTL=300
 # ENV CORS_ORIGINS="127.0.0.1,localhost"
 # ENV VAULT_ADDR
 # ENV VAULT_TOKEN
+
+HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=10 \
+  CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:$BCC_PORT/docs', timeout=3)" || exit 1
 
 ENTRYPOINT ["/code/start_bcc.sh"]
