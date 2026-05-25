@@ -7,6 +7,12 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.06.0-rc.3] - 2026-05-25
+
+### Fixed
+
+- Fixed the 'sops command not found' error on startup when run in docker with encrypted env file
+
 ## [2026.06.0-rc.2] - 2026-05-21
 
 ### Changed

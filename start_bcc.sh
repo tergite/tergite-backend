@@ -148,7 +148,7 @@ function load_env() {
 
   # required software 
   if ! _is_installed sops; then 
-    _install_sops "$sops_version" &> /dev/null;
+    _install_sops "$sops_version" > /dev/null;
   fi 
 
   if [ ! -f "$file_path" ]; then
