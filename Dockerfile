@@ -6,12 +6,15 @@ COPY pyproject.toml uv.lock* setup.py /code/
 
 ARG DEPS_GROUP="quantify"
 
-# Install dependencies for recalibration
-RUN  if [ "$DEPS_GROUP" = "quantify" ]; then \
-        apt-get update && \
-        apt-get install -y --no-install-recommends  python3-pyqt5 libgl1 && \
-        rm -rf /var/lib/apt/lists/*; \
+RUN apt-get update && apt-get install -y --no-install-recommends curl;
+
+# Install dependencies for recalibration \
+RUN if [ "$DEPS_GROUP" = "quantify" ]; then \
+        apt-get install -y --no-install-recommends  python3-pyqt5 libgl1; \
     fi
+
+# cleanup the apt package lists
+RUN rm -rf /var/lib/apt/lists/*;
 
 # Install uv
 ENV PIP_ROOT_USER_ACTION=ignore
@@ -22,10 +25,10 @@ ENV UV_PROJECT_ENVIRONMENT="/usr/local"
 ENV UV_NO_DEV=1
 RUN uv sync --no-python-downloads --python-preference only-system --extra "$DEPS_GROUP"
 
-# uninstall uv
+# Clean up
 RUN pip uninstall uv -y && \
     apt-get purge -y --auto-remove && \
-    rm -rf /root/.cache/uv /root/.cache/pip
+    rm -rf /root/.cache/uv /root/.cache/pip;
 
 COPY . /code/
 RUN chmod +x /code/start_bcc.sh
@@ -66,6 +69,6 @@ ENV MSS_NONCE_TTL=300
 # ENV VAULT_TOKEN
 
 HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=10 \
-  CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:$BCC_PORT/docs', timeout=3)" || exit 1
+  CMD curl --fail "http://localhost:8000/docs"
 
 ENTRYPOINT ["/code/start_bcc.sh"]
