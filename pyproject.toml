@@ -34,7 +34,7 @@ authors = [
 maintainers = [
     {name = "Chalmers Next Labs AB", email = "contact@quantum.chalmersnextlabs.se"}
 ]
-version = "v2026.06.0-rc.2"
+version = "v2026.06.0-rc.3"
 description = "the Backend of the Tergite software stack of the WACQT Quantum Computer."
 readme = "README.md"
 requires-python = ">=3.12"
