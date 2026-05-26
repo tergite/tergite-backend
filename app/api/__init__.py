@@ -46,6 +46,7 @@ from app.utils.exc import (
     ConflictError,
     InvalidJobIdInUploadedFileError,
     InvalidRequestError,
+    IsOfflineError,
     JobAlreadyCancelled,
     JobAlreadyCompleteError,
     MaxBookingsError,
@@ -80,6 +81,7 @@ from .dependencies import (
     get_cached_redis_connection,
     get_db_engine,
     get_mss_token_claims_dep,
+    get_queue_context_if_online,
     get_queue_pool,
     get_unverified_mss_is_admin,
     get_verified_mss_admin_user_id,
@@ -113,8 +115,10 @@ app.add_exception_handler(ValueError, to_http_error(500, "Unexpected server erro
 app.add_exception_handler(IndexError, to_http_error(500, "Unexpected server error"))
 app.add_exception_handler(TypeError, to_http_error(500, "Unexpected server error"))
 app.add_exception_handler(RuntimeError, to_http_error(500, "Unexpected server error"))
+app.add_exception_handler(TimeoutError, to_http_error(500, "Unexpected server error"))
 app.add_exception_handler(InvalidJobIdInUploadedFileError, to_http_error(400))
 app.add_exception_handler(JobAlreadyCancelled, to_http_error(406))
+app.add_exception_handler(IsOfflineError, to_http_error(404))
 
 # setup CORS if CORS_ORIGINS are set
 if len(settings.CORS_ORIGINS) > 0:
@@ -241,7 +245,7 @@ async def view_profile(
 @app.delete("/me")
 async def delete_profile(
     user_id: str = Depends(get_verified_mss_user_id),
-    context: QueueContext = Depends(get_cached_queue_context),
+    context: QueueContext = Depends(get_queue_context_if_online),
     queue_pool: QueuePool = Depends(get_queue_pool),
 ) -> GeneralMessage:
     """Deletes the profile of the current user
@@ -327,7 +331,7 @@ async def create_user(
 @app.delete("/users/{user_id}", dependencies=[Depends(get_verified_mss_admin_user_id)])
 async def remove_user(
     user_id: str,
-    context: QueueContext = Depends(get_cached_queue_context),
+    context: QueueContext = Depends(get_queue_context_if_online),
     queue_pool: QueuePool = Depends(get_queue_pool),
 ) -> GeneralMessage:
     """Deletes the user of the given user_id
@@ -374,7 +378,7 @@ async def view_users(
 @app.post("/bookings")
 async def create_booking(
     data: NewBookingInfo,
-    context: QueueContext = Depends(get_cached_queue_context),
+    context: QueueContext = Depends(get_queue_context_if_online),
     user_id: str = Depends(get_verified_mss_user_id),
     queue_pool: QueuePool = Depends(get_queue_pool),
     db_engine: Engine = Depends(get_db_engine),
@@ -404,7 +408,7 @@ async def create_booking(
 @app.post("/bookings/{booking_id}/cancel")
 async def cancel_booking(
     booking_id: str,
-    context: QueueContext = Depends(get_cached_queue_context),
+    context: QueueContext = Depends(get_queue_context_if_online),
     user_id: str = Depends(get_verified_mss_user_id),
     queue_pool: QueuePool = Depends(get_queue_pool),
     is_mss_admin: bool = Depends(get_unverified_mss_is_admin),
@@ -482,7 +486,7 @@ async def view_bookings_config() -> BookingsConfig:
 
 @app.post("/jobs")
 async def submit_job(
-    context: QueueContext = Depends(get_cached_queue_context),
+    context: QueueContext = Depends(get_queue_context_if_online),
     upload_file: Annotated[UploadFile, Depends(validate_job_file)] = File(...),
     token_claims: MSSTokenClaims = Depends(get_mss_token_claims_dep(job_exists=False)),
     queue_pool: QueuePool = Depends(get_queue_pool),
@@ -516,7 +520,7 @@ async def view_job(
     job_id: str,
     user_id: str = Depends(get_verified_mss_user_id),
     is_mss_admin: bool = Depends(get_unverified_mss_is_admin),
-    context: QueueContext = Depends(get_cached_queue_context),
+    context: QueueContext = Depends(get_queue_context_if_online),
 ) -> Job:
     """View the job of given job_id if job belongs to current user or if user is admin
 
@@ -538,7 +542,7 @@ async def view_job(
 async def cancel_job(
     job_id: str,
     details: CancellationDetails,
-    context: QueueContext = Depends(get_cached_queue_context),
+    context: QueueContext = Depends(get_queue_context_if_online),
     mss_auth_details: MSSAuthDetails = Depends(get_verified_mss_details),
     queue_pool: QueuePool = Depends(get_queue_pool),
 ) -> GeneralMessage:
@@ -573,7 +577,7 @@ async def cancel_job(
 @app.delete("/jobs/{job_id}")
 async def remove_job(
     job_id: str,
-    context: QueueContext = Depends(get_cached_queue_context),
+    context: QueueContext = Depends(get_queue_context_if_online),
     user_id: str = Depends(get_verified_mss_user_id),
     queue_pool: QueuePool = Depends(get_queue_pool),
     is_mss_admin: bool = Depends(get_unverified_mss_is_admin),
@@ -605,7 +609,7 @@ async def remove_job(
 
 @app.get("/jobs")
 async def view_jobs(
-    context: QueueContext = Depends(get_cached_queue_context),
+    context: QueueContext = Depends(get_queue_context_if_online),
     user_id: str = Depends(get_verified_mss_user_id),
     status: Optional[JobStatus] = Query(default=None),
     skip: int = Query(default=0),
@@ -632,7 +636,7 @@ async def view_jobs(
 
 @app.post("/recalibration/init", dependencies=[Depends(get_verified_mss_admin_user_id)])
 async def initialize_recalibration(
-    context: QueueContext = Depends(get_cached_queue_context),
+    context: QueueContext = Depends(get_queue_context_if_online),
     queue_pool: QueuePool = Depends(get_queue_pool),
     start_timestamp: Optional[datetime] = Query(None),
     interval: Optional[float] = Query(None),
@@ -661,7 +665,7 @@ async def get_recalibration_info(
 ) -> RecalibrationInfo:
     """Gets the current information about the recalibration
 
-    Only MSS admin users can initialize recalibration
+    Only MSS admin users can get recalibration info
 
     Args:
         queue_pool: the collection of queues to run the recalibration on
@@ -676,7 +680,7 @@ async def get_recalibration_info(
     "/recalibration/cancel", dependencies=[Depends(get_verified_mss_admin_user_id)]
 )
 async def cancel_recalibration(
-    context: QueueContext = Depends(get_cached_queue_context),
+    context: QueueContext = Depends(get_queue_context_if_online),
     queue_pool: QueuePool = Depends(get_queue_pool),
     ignore_errors: bool = Query(False),
 ) -> GeneralMessage:
@@ -696,3 +700,55 @@ async def cancel_recalibration(
         context, queues=queue_pool, ignore_errors=ignore_errors
     )
     return {"status": "success"}
+
+
+@app.post("/switch/off", dependencies=[Depends(get_verified_mss_admin_user_id)])
+async def switch_off(
+    context: QueueContext = Depends(get_queue_context_if_online),
+) -> GeneralMessage:
+    """Switches off this device
+
+    Only MSS admin users can switch on and off this device
+
+    Args:
+        context: the queue context for the recalibration
+
+    Returns:
+        general information on the status of the request
+    """
+    await scheduler.switch_off(context)
+    return {"status": "success"}
+
+
+@app.post("/switch/on", dependencies=[Depends(get_verified_mss_admin_user_id)])
+async def switch_on(
+    context: QueueContext = Depends(get_cached_queue_context),
+) -> GeneralMessage:
+    """Switches on this device
+
+    Only MSS admin users can switch on and off this device
+
+    Args:
+        context: the queue context for the recalibration
+
+    Returns:
+        general information on the status of the request
+    """
+    await scheduler.switch_on(context)
+    return {"status": "success"}
+
+
+@app.get("/switch/status", dependencies=[Depends(get_verified_mss_user_id)])
+async def get_switch_status(
+    context: QueueContext = Depends(get_cached_queue_context),
+):
+    """Gets the status of this device
+
+    Args:
+        context: the queue context for the recalibration
+
+    Returns:
+        general information on the status of the request
+    """
+    status = "OFF" if scheduler.is_offline(context) else "ON"
+    return {"status": status}

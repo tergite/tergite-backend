@@ -24,7 +24,13 @@ from websockets import ClientProtocol, HeadersLike
 from websockets.http11 import USER_AGENT
 from websockets.uri import parse_uri
 
-_MESSAGE_TYPES = ("initialized", "recalibrated", "job_updated")
+_MESSAGE_TYPES = (
+    "initialized",
+    "recalibrated",
+    "job_updated",
+    "switched_on",
+    "switched_off",
+)
 _WS_PATH_PATTERN = re.compile(r"/devices/ws/(?P<name>[a-zA-Z0-9_-]+)")
 type Data = Union[bytes, str]
 

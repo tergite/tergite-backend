@@ -20,7 +20,10 @@ from .service import (
     get_many_jobs,
     get_recalibration_info,
     init_recalibration,
+    is_offline,
     stop_recalibration,
     submit_booking,
     submit_job_file,
+    switch_off,
+    switch_on,
 )

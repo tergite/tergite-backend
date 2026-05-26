@@ -22,10 +22,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
+import redis
 from fastapi import UploadFile
 from pydantic import ValidationError
+from rq import Worker
 from rq import exceptions as rq_errors
-from rq.job import Job as RqJob
+from rq.suspension import is_suspended, resume, suspend
 from sqlmodel import or_
 
 from ...libs.device_parameters import get_device_calibration_info
@@ -53,6 +55,8 @@ from ..booking.service import (
     get_user,
 )
 from ..booking.store import get_bookings_sql_engine
+from ..external.mss.dtos import DeviceEvent, DeviceEventName, DeviceSwitchData
+from ..external.mss.service import AsyncMssClientPipe, MssClientPipe
 from .dtos import RecalibrationInfo
 from .queues import QueuePool
 from .store import get_jobs_store, init_jobs_store
@@ -502,6 +506,9 @@ def init_recalibration(
 
     Returns:
         the general message indicating status of request
+
+    Raises:
+        IsOfflineError: the scheduler is offline
     """
     # just make sure no other recalibration is running or scheduled before starting again
     stop_recalibration(context, queues=queues, ignore_errors=True)
@@ -544,6 +551,7 @@ def stop_recalibration(
     Raises:
         ItemNotFoundError: if the job does not exist
         JobAlreadyCancelled: if the job is already cancelled
+        IsOfflineError: the scheduler is offline
     """
     jobs_store_url = context["jobs_store_url"]
     pending_job_ids = queues.recalibration.get_job_ids()
@@ -572,6 +580,74 @@ def get_recalibration_info(queues: QueuePool) -> RecalibrationInfo:
         RuntimeError: multiple current jobs found: [...]
     """
     return RecalibrationInfo.from_queue(queues.recalibration)
+
+
+async def switch_off(
+    context: QueueContext,
+):
+    """Switches off the scheduler
+
+    Args:
+        context: the context of the queues
+
+    Raises:
+        ValueError – error sending switch off data: {error message}
+        TimeoutError – error sending switch off data: response took longer than timeout
+    """
+    jobs_store_url = context["jobs_store_url"]
+
+    with get_redis_connection(jobs_store_url, is_async=False) as redis_conn:
+        suspend(redis_conn)
+
+    # update MSS
+    async with AsyncMssClientPipe() as mss_client_pipe:
+        await mss_client_pipe.send_event(
+            DeviceEvent(
+                name=DeviceEventName.SWITCHED_OFF,
+                data=DeviceSwitchData(date=get_utc_now()),
+            ),
+            error_prefix="error sending switch off data: ",
+        )
+
+
+async def switch_on(
+    context: QueueContext,
+):
+    """Switches on the scheduler
+
+    Args:
+        context: the context of the queues
+
+    Raises:
+        ValueError – error sending switch on data: {error message}
+        TimeoutError – error sending switch on data: response took longer than timeout
+    """
+    jobs_store_url = context["jobs_store_url"]
+    with get_redis_connection(jobs_store_url, is_async=False) as redis_conn:
+        resume(redis_conn)
+
+    # update MSS
+    async with AsyncMssClientPipe() as mss_client_pipe:
+        await mss_client_pipe.send_event(
+            DeviceEvent(
+                name=DeviceEventName.SWITCHED_ON,
+                data=DeviceSwitchData(date=get_utc_now()),
+            ),
+            error_prefix="error sending switch on data: ",
+        )
+
+
+def is_offline(
+    context: QueueContext,
+):
+    """Checks if the scheduler is offline
+
+    Args:
+        context: the context of the queues
+    """
+    jobs_store_url = context["jobs_store_url"]
+    with get_redis_connection(jobs_store_url, is_async=False) as redis_conn:
+        return is_suspended(redis_conn)
 
 
 def _cancel_job_in_queues(queues: QueuePool, job: Job, ignore_errors: bool = False):

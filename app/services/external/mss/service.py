@@ -171,7 +171,7 @@ class BaseMssClientPipe(ABC):
     def __init__(
         self,
         device: str = settings.DEFAULT_PREFIX,
-        timeout: float = 120,
+        timeout: float = settings.MSS_RESPONSE_TIMEOUT,
         redis_url: str = settings.RQ_REDIS_URL,
         **kwargs,
     ):
@@ -215,8 +215,14 @@ class BaseMssClientPipe(ABC):
 class MssClientPipe(BaseMssClientPipe):
     """Pipe to MSS client that is synchronous, to be used on the RQ side mainly"""
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(
+        self,
+        device: str = settings.DEFAULT_PREFIX,
+        timeout: float = settings.MSS_RESPONSE_TIMEOUT,
+        redis_url: str = settings.RQ_REDIS_URL,
+        **kwargs,
+    ):
+        super().__init__(device=device, timeout=timeout, redis_url=redis_url, **kwargs)
         self._redis: Redis = get_redis_connection(self._redis_url)
         self._inbox: PubSub = self._redis.pubsub(ignore_subscribe_messages=True)
 
@@ -282,8 +288,14 @@ class MssClientPipe(BaseMssClientPipe):
 class AsyncMssClientPipe(BaseMssClientPipe):
     """Pipe to MSS client that is asynchronous, to be used on the FastAPI side"""
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(
+        self,
+        device: str = settings.DEFAULT_PREFIX,
+        timeout: float = settings.MSS_RESPONSE_TIMEOUT,
+        redis_url: str = settings.RQ_REDIS_URL,
+        **kwargs,
+    ):
+        super().__init__(device=device, timeout=timeout, redis_url=redis_url, **kwargs)
         self._redis: AsyncRedis = get_redis_connection(self._redis_url, is_async=True)
         self._inbox: AsyncPubSub = self._redis.pubsub(ignore_subscribe_messages=True)
 

@@ -9,7 +9,7 @@
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
-
+from datetime import datetime
 from enum import Enum
 from typing import Dict, Type, Union
 
@@ -26,9 +26,15 @@ class DeviceEventName(str, Enum):
     INITIALIZED = "initialized"
     RECALIBRATED = "recalibrated"
     JOB_UPDATED = "job_updated"
+    SWITCHED_OFF = "switched_off"
+    SWITCHED_ON = "switched_on"
 
 
-type DeviceEventData = Union[Device, DeviceCalibration, Job]
+class DeviceSwitchData(BaseModel):
+    date: datetime
+
+
+type DeviceEventData = Union[Device, DeviceCalibration, Job, DeviceSwitchData]
 """Data type for the data attached to device events"""
 
 
@@ -45,6 +51,8 @@ class DeviceEvent(BaseModel):
         DeviceEventName.INITIALIZED: Device,
         DeviceEventName.RECALIBRATED: DeviceCalibration,
         DeviceEventName.JOB_UPDATED: Job,
+        DeviceEventName.SWITCHED_OFF: DeviceSwitchData,
+        DeviceEventName.SWITCHED_ON: DeviceSwitchData,
     }
 
     id: str = Field(default_factory=uuid_str)

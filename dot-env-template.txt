@@ -48,6 +48,10 @@ MSS_DEVICE_EVENTS_ENDPOINT=ws://host:port/devices/ws/{DEFAULT_PREFIX}
 # The timeout in seconds for the socket connection to MSS
 # default = 5
 MSS_CONNECTION_TIMEOUT=5
+#
+# The timeout in seconds for receiving a response from MSS after pushing an event
+# default = 120
+MSS_RESPONSE_TIMEOUT=120
 
 # (5) Instrument interfacing and simulators
 # This is to configure the hardware or simulated measurement instruments.
