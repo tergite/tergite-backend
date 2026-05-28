@@ -7,6 +7,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.06.0-rc.4] - 2026-05-28
+
 ### Added
 
 - Added `/switch/on`, `/switch/off` and `/switch/status` to control the ON/OFF of the device
