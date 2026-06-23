@@ -438,6 +438,9 @@ class AsyncMssClient(websockets.connect):
         await self._redis.publish(self._inbox_pubsub, response_str)
 
     async def __aenter__(self) -> ClientConnection:
+        # Create a fresh PubSub on each (re)connection so we never reuse a
+        # socket that may be in a broken state from a previous iteration.
+        self.outbox = self._redis.pubsub(ignore_subscribe_messages=True)
         await self.outbox.subscribe(**{self._outbox_pubsub: self._outbox_handler})
         loop = asyncio.get_running_loop()
 
@@ -452,8 +455,13 @@ class AsyncMssClient(websockets.connect):
         exc_value: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        await self.outbox.unsubscribe()
+        # Cancel and fully await the run() task BEFORE touching the pubsub
+        # socket. Calling unsubscribe() while run() is reading causes:
+        # "RuntimeError: read() called while another coroutine is already
+        # waiting for incoming data".
         self.__outbox_task.cancel()
+        await asyncio.gather(self.__outbox_task, return_exceptions=True)
+        await self.outbox.aclose()
         await super().__aexit__(exc_type, exc_value, traceback)
 
 
@@ -463,10 +471,15 @@ async def _pubsub_exception_handler(e: BaseException, pubsub: AsyncPubSub):
     Args:
         e: the exception raised
         pubsub: the PubSub instance
+
+    Note:
+        We intentionally do not re-raise here. redis-py's run() loop catches the
+        exception, calls this handler, and then retries get_message() — so raising
+        would kill the loop permanently. We also do not unsubscribe because doing so
+        leaves the pubsub with no channels and causes run() to exit silently.
     """
-    logging.error(e)
-    await pubsub.unsubscribe()
-    raise e
+    logging.error(f"PubSub error (will retry): {e}")
+    await asyncio.sleep(1)  # prevent tight spin on persistent errors
 
 
 def _create_headers(
