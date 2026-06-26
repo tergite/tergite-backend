@@ -7,6 +7,50 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.06.0] - 2026-06-26
+
+This is part of the tergite release v2026.06.0.
+
+### Added
+
+- Added `/switch/on`, `/switch/off` and `/switch/status` to control the ON/OFF of the device
+- Added recalibration offering to the scheduler service, to start on startup
+- Added recalibration endpoints to the API to restart (`/recalibration/init`),  
+  view (`/recalibration/info`), and cancel (`/recalibration/cancel`) recalibration.
+- Added the `tergite-tuner` library as a dependency
+- Added the `name` on `QubitCalibration`, `short_name`, `full_name`, `control_qubit`  
+  and `target_qubit` on `CouplerCalibration`.
+
+### Changed
+
+- Changed to use `uv` for managing dependencies due to the complicated hierarchy of
+  dependencies in this project
+- Moved the 'dev' dependencies from 'optional-dependencies' to 'dependency-groups' in
+  pyproject.toml
+- [BREAKING] optional-dependencies under the `quantify` group now explicitly conflict
+  with those under the `qiskit` group meaning one can't use the same environment for both
+- [BREAKING] Separated the Docker images produced for this project to have tags like
+  `2026.06.0-qiskit`, `2026.06.0-quantify`, `latest-quantify`, `latest-qiskit`
+- Removed the extra dependencies in pyproject that are not explicitly used by the code
+- Changed base Docker image to python:3.12-bookworm-slim in Dockerfile
+
+### Fixed
+
+- Fixed errors when websocket fails to connect or disconnects while the server is running
+- Fixed the 'sops command not found' error on startup when run in docker with encrypted env file
+- Fixed meas mode avg issue in post-processing
+- Fixed experiments sorted numerically to avoid mixup
+
+### Contributors
+
+- Martin Ahindura
+
+## [2026.06.0-rc.4] - 2026-05-28
+
+### Added
+
+- Added `/switch/on`, `/switch/off` and `/switch/status` to control the ON/OFF of the device
+
 ## [2026.06.0-rc.3] - 2026-05-25
 
 ### Fixed

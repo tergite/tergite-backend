@@ -15,6 +15,7 @@
 import copy
 import json
 import math
+import os
 import time
 from contextlib import suppress
 from datetime import datetime, timedelta, timezone
@@ -42,6 +43,7 @@ from redis import Redis
 from rq import Queue as RqQueue
 from rq import SimpleWorker
 from rq.job import Job as RqJob
+from rq.suspension import is_suspended
 
 from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps
 from app.services.booking.models import Booking
@@ -2639,6 +2641,119 @@ def test_cancel_restarted_recalibration(client, redis_conn: Redis, worker):
         assert queue.finished_job_registry.count == 0
         assert queue.failed_job_registry.count == 0
         assert queue.deferred_job_registry.count == 0
+
+
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_switch_off(client, redis_conn, jobs_folder, worker, job, mocker):
+    """POST '/switch/off' switches off the scheduler and does not allow jobs"""
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS[:2])
+        raw_jobs = _get_raw_jobs(job, durations=[0.2])
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
+        job_info = job_metadata_list[0]
+
+        user = users[0]
+        user_id = user["id"]
+
+        headers = create_mss_headers(user_id, is_admin=True)
+        response = client.post("/switch/off", headers=headers)
+        assert response.status_code == 200
+        assert response.json() == {"status": "success"}
+        assert is_suspended(redis_conn)
+
+        # submit many jobs from many users
+        with open(job_info["file_path"], "rb") as file:
+            response = client.post(
+                "/jobs", files={"upload_file": file}, headers=job_info["headers"]
+            )
+
+        name = os.environ.get("DEFAULT_PREFIX")
+        assert response.status_code == 404
+        assert response.json() == {"detail": f"{name} is offline"}
+
+        worker.work(burst=True)
+
+        jobs_in_redis = _get_jobs_in_redis(redis_conn)
+        assert jobs_in_redis == []
+
+
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_switch_on(client, redis_conn, jobs_folder, worker, job, mocker):
+    """POST '/switch/on' switches on the scheduler and allowing jobs"""
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS[:2])
+        raw_jobs = _get_raw_jobs(job, durations=[0.2])
+        job_metadata_list = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
+        job_info = job_metadata_list[0]
+
+        user = users[0]
+        user_id = user["id"]
+
+        # first switch off
+        headers = create_mss_headers(user_id, is_admin=True)
+        response = client.post("/switch/off", headers=headers)
+        assert response.status_code == 200
+
+        # switch on again
+        headers = create_mss_headers(user_id, is_admin=True)
+        response = client.post("/switch/on", headers=headers)
+        assert response.status_code == 200
+        assert response.json() == {"status": "success"}
+        assert not is_suspended(redis_conn)
+
+        # submit many jobs from many users
+        with open(job_info["file_path"], "rb") as file:
+            response = client.post(
+                "/jobs", files={"upload_file": file}, headers=job_info["headers"]
+            )
+
+        assert response.status_code == 200
+
+        worker.work(burst=True)
+
+        jobs_in_redis = _get_jobs_in_redis(redis_conn)
+        assert len(jobs_in_redis) == 1
+
+
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_switch_status(client, redis_conn, jobs_folder, worker, job, mocker):
+    """GET '/switch/status' shows the status of the device if ON or OFF"""
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS[:2])
+        user = users[0]
+        user_id = user["id"]
+
+        # check the status
+        headers = create_mss_headers(user_id, is_admin=True)
+        response = client.get("/switch/status", headers=headers)
+        assert response.status_code == 200
+        assert response.json() == {"status": "ON"}
+
+        # first switch off
+        headers = create_mss_headers(user_id, is_admin=True)
+        response = client.post("/switch/off", headers=headers)
+        assert response.status_code == 200
+
+        # check status after switching off
+        headers = create_mss_headers(user_id, is_admin=True)
+        response = client.get("/switch/status", headers=headers)
+        assert response.status_code == 200
+        assert response.json() == {"status": "OFF"}
+
+        # switch on again
+        headers = create_mss_headers(user_id, is_admin=True)
+        response = client.post("/switch/on", headers=headers)
+        assert response.status_code == 200
+
+        # check the status
+        headers = create_mss_headers(user_id, is_admin=True)
+        response = client.get("/switch/status", headers=headers)
+        assert response.status_code == 200
+        assert response.json() == {"status": "ON"}
 
 
 def _cancel_job_via_mss(

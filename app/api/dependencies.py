@@ -36,7 +36,12 @@ from ..services.booking.models import MSSTokenClaims
 from ..services.booking.service import get_user_job_id_pair_from_token
 from ..services.booking.store import get_bookings_sql_engine
 from ..services.external.mss.service import AsyncMssClientPipe, connect_to_mss
-from ..services.scheduler import get_job, init_recalibration, stop_recalibration
+from ..services.scheduler import (
+    get_job,
+    init_recalibration,
+    is_offline,
+    stop_recalibration,
+)
 from ..services.scheduler.queues import QueuePool
 from ..services.scheduler.utils import (
     init_executor,
@@ -46,6 +51,7 @@ from ..utils.datetime import get_utc_now
 from ..utils.exc import (
     ConflictError,
     InvalidJobIdInUploadedFileError,
+    IsOfflineError,
     ItemNotFoundError,
     NotAuthenticatedError,
     UnauthorizedError,
@@ -167,6 +173,19 @@ def get_db_engine() -> Engine:
 def get_cached_queue_context() -> QueueContext:
     """Dependency injector to retrieve the cached queue context"""
     return QUEUE_CONTEXT
+
+
+def get_queue_context_if_online(
+    context: QueueContext = Depends(get_cached_queue_context),
+) -> QueueContext:
+    """Dependency injector to retrieve the queue context only if online
+
+    Raises:
+        IsOfflineError: {context["queue_prefix"]} is offline
+    """
+    if is_offline(context):
+        raise IsOfflineError(f"{context["queue_prefix"]} is offline")
+    return context
 
 
 def get_job_id_dependency(job_id_field: str):

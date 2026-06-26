@@ -86,3 +86,7 @@ class InvalidJobIdInUploadedFileError(BaseBccException):
 
 class InvalidRequestError(BaseBccException):
     """Exception when an invalid HTTP request is made"""
+
+
+class IsOfflineError(BaseBccException):
+    """Exception when a device is offline"""
