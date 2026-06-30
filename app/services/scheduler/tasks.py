@@ -115,10 +115,13 @@ def preprocess(
         # --- In-place decode complex values
         # [[a,b],[c,d],...] -> [a + ib,c + id,...]
         json_decoder.decode_pulse_qobj(qobj)
-        executor = init_executor(executor_options)
-        duration, _ = executor.preprocess(
-            PulseQobj.from_dict(qobj), job_id=job_id, results_folder=results_folder
-        )
+        with get_executor_lock():
+            with init_executor(executor_options) as executor:
+                duration, _ = executor.preprocess(
+                    PulseQobj.from_dict(qobj),
+                    job_id=job_id,
+                    results_folder=results_folder,
+                )
         job = jobs_store.update(job.job_id, {"estimated_duration": duration})
 
         if booking_id is None:
@@ -266,8 +269,8 @@ def execute(
 
         # Just a locking mechanism to ensure jobs don't interfere with each other
         with get_executor_lock():
-            executor = init_executor(executor_options)
-            results_file = executor.run(job_id, inputs_folder=preprocessing_dir)
+            with init_executor(executor_options) as executor:
+                results_file = executor.run(job_id, inputs_folder=preprocessing_dir)
 
         job: Job = jobs_store.get_one((job_id,))
         if job.status == JobStatus.CANCELLED:
@@ -437,8 +440,8 @@ def recalibrate(
 
     # ensure recalibration runs without interference
     with get_executor_lock():
-        executor = init_executor(executor_options)
-        results = executor.recalibrate(redis_url=jobs_store_url)
+        with init_executor(executor_options) as executor:
+            results = executor.recalibrate(redis_url=jobs_store_url)
 
         if isinstance(results, DeviceCalibration):
             logging.info(f"Updating MSS...")

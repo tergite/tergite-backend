@@ -25,7 +25,6 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any, Callable, Dict, Generator, Optional
 
-import pynng
 import websockets
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -46,63 +45,6 @@ from .dtos import DeviceEvent, EventResponse
 # Initialize your Redis & RQ connection
 redis_conn = Redis(host="redis", port=6379)
 job_queue = Queue("quantum_jobs", connection=redis_conn)
-
-
-def handle_job_submission(data: dict) -> dict:
-    """Handles parsing the NNG data payload and putting it into RQ"""
-    # This replaces your old FastAPI dependency injection and route handler
-    job_id = data.get("job_id")
-    circuit_payload = data.get("circuit")
-
-    # Enqueue your actual long-running task to rq workers
-    # (Assuming 'tasks.run_quantum_job' is your worker target)
-    job = job_queue.enqueue("tasks.run_quantum_job", job_id, circuit_payload)
-
-    return {"status": "enqueued", "job_id": job_id, "rq_id": job.id}
-
-
-def handle_job_cancellation(data: dict) -> dict:
-    job_id = data.get("job_id")
-    # Logic to fetch from RQ and cancel/kill the worker job
-    return {"status": "cancelled", "job_id": job_id}
-
-
-# Map strings to functions to act as your "Router"
-ROUTER = {"JOB.SUBMIT": handle_job_submission, "JOB.CANCEL": handle_job_cancellation}
-
-
-async def start_nng_interface():
-    # Bind to your container port. Standard NNG connection mechanics apply:
-    # It doesn't care if the frontend is online yet; it just sits and listens.
-    with pynng.Rep0(listen="tcp://0.0.0.0:9001") as rep:
-        print("Tergite Backend NNG Interface Online (Port 9001)...")
-
-        while True:
-            raw_bytes = await rep.arecv()
-            try:
-                packet = json.loads(raw_bytes.decode("utf-8"))
-                event = packet.get("event")
-                data = packet.get("data", {})
-
-                handler = ROUTER.get(event)
-                if handler:
-                    result = handler(data)
-                    response = {"success": True, "data": result}
-                else:
-                    response = {
-                        "success": False,
-                        "error": f"Unknown event rule: {event}",
-                    }
-
-            except Exception as e:
-                response = {"success": False, "error": f"Internal crash: {str(e)}"}
-
-            # Instantly return the result frame to the frontend
-            await rep.asend(json.dumps(response).encode("utf-8"))
-
-
-if __name__ == "__main__":
-    asyncio.run(start_nng_interface())
 
 _BCC_PRIVATE_KEYS: Dict[str, RSAPrivateKey] = {}
 _MSS_CLIENT_PIPE: Optional["MssClientPipe"] = None
