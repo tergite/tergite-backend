@@ -676,6 +676,7 @@ def test_submit_jobs_no_booking(
     device,
     jobs_folder,
     mocker: MockerFixture,
+    jobs_store_connection_spy,
 ):
     """POST '/jobs' when there is no booking should run the jobs in FIFO (first in, first out)"""
     with client as client:
@@ -694,6 +695,8 @@ def test_submit_jobs_no_booking(
 
         # Run the queue
         worker.work(burst=True)
+
+        assert jobs_store_connection_spy.call_count == 1
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
         jobs_in_redis.sort(key=lambda v: v.timestamps.execution.start_timestamp)
@@ -763,6 +766,7 @@ def test_submit_jobs_in_active_booking(
     job,
     jobs_folder,
     mocker: MockerFixture,
+    jobs_store_connection_spy,
 ):
     """POST '/jobs' when there is an active booking runs the booker jobs first then runs the other jobs after booking."""
 
@@ -791,6 +795,8 @@ def test_submit_jobs_in_active_booking(
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
         _wait_on_rq_worker(worker, with_scheduler=True)
+
+        assert jobs_store_connection_spy.call_count == 1
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
         jobs_in_redis.sort(key=lambda v: v.timestamps.execution.start_timestamp)
@@ -826,6 +832,7 @@ def test_submit_jobs_in_idle_booking(
     job,
     jobs_folder,
     mocker,
+    jobs_store_connection_spy,
 ):
     """POST '/jobs' when there is an idle booking runs the non booker jobs even during the booking."""
     with client as client:
@@ -853,6 +860,8 @@ def test_submit_jobs_in_idle_booking(
         # Run the queue; try to wait for waitlist to transfer things to execution queue
         _wait_on_rq_worker(worker, with_scheduler=True)
 
+        assert jobs_store_connection_spy.call_count == 1
+
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
 
         jobs_in_redis.sort(key=lambda v: v.timestamps.execution.start_timestamp)
@@ -874,10 +883,10 @@ def test_submit_jobs_in_idle_booking(
             assert first_non_booker_job_start < booking_end_timestamp
 
 
-# _SIMPLE_UPLOAD_JOB_PARAMS[:-2] because the real simulator execution takes some time that is hard to precisely estimate
-@pytest.mark.parametrize(
-    "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-2]
+@pytest.mark.skipif(
+    not HAS_QUANTIFY, reason="real simulator execution is hard to estimate precisely"
 )
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_submit_jobs_in_idle_booking_before_another(
     client,
     worker,
@@ -982,10 +991,10 @@ def test_submit_jobs_in_idle_booking_before_another(
         )
 
 
-# _SIMPLE_UPLOAD_JOB_PARAMS[:-2] because the real simulator execution takes some time that is hard to precisely estimate
-@pytest.mark.parametrize(
-    "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-2]
+@pytest.mark.skipif(
+    not HAS_QUANTIFY, reason="real simulator execution is hard to estimate precisely"
 )
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_submit_long_jobs_before_booking(
     client,
     worker,
@@ -993,6 +1002,7 @@ def test_submit_long_jobs_before_booking(
     job,
     jobs_folder,
     mocker,
+    jobs_store_connection_spy,
 ):
     """POST long jobs to '/jobs' before booking starts waitlists them but runs the shorter ones"""
     with client as client:
@@ -1020,6 +1030,8 @@ def test_submit_long_jobs_before_booking(
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
         _wait_on_rq_worker(worker, with_scheduler=True)
+
+        assert jobs_store_connection_spy.call_count == 1
 
         jobs_in_db = _get_jobs_in_redis(redis_conn)
         jobs_in_db.sort(key=lambda v: v.start_utc)
@@ -1469,7 +1481,14 @@ def test_cancel_completed_booking(
 
 @pytest.mark.parametrize("client, worker, job, device_name, user", _VIEW_JOB_PARAMS)
 def test_view_job(
-    client, worker, job, device_name, user, jobs_folder, mocker: MockerFixture
+    client,
+    worker,
+    job,
+    device_name,
+    user,
+    jobs_folder,
+    mocker: MockerFixture,
+    jobs_store_connection_spy,
 ):
     """GET '/jobs/{job_id}' by a user can show the job for the job_id if job belongs to them"""
     job_file_path = _save_job_file(folder=jobs_folder, job=job)
@@ -1499,6 +1518,8 @@ def test_view_job(
 
         # Run the queue to run the job and see that it is updated
         worker.work(burst=True)
+
+        assert jobs_store_connection_spy.call_count == 1
 
         complete_job, _ = _view_job(client, user_id=user_id, job_id=job_id)
         expected_completed_job = Job(
@@ -1871,7 +1892,9 @@ def test_unauthenticated_view_jobs(
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
-def test_cancel_job_via_mss(client, redis_conn, jobs_folder, worker, job, mocker):
+def test_cancel_job_via_mss(
+    client, redis_conn, jobs_folder, worker, job, mocker, jobs_store_connection_spy
+):
     """An MSS POST to '/jobs/{id}/cancel' cancels the job of the job_id if the job belongs to the current user"""
     with client as client:
         cancellation_reason = "just testing"
@@ -1895,6 +1918,8 @@ def test_cancel_job_via_mss(client, redis_conn, jobs_folder, worker, job, mocker
 
         # Run the queue to run the job and see that it is updated
         worker.work(burst=True, max_jobs=1)
+
+        assert jobs_store_connection_spy.call_count == 1
 
         response = _cancel_job_via_mss(
             client, user_id=user_id, job_id=job_id, reason=cancellation_reason
@@ -1938,7 +1963,9 @@ def test_cancel_job_via_mss(client, redis_conn, jobs_folder, worker, job, mocker
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
-def test_cancel_job_directly(client, redis_conn, jobs_folder, worker, job, mocker):
+def test_cancel_job_directly(
+    client, redis_conn, jobs_folder, worker, job, mocker, jobs_store_connection_spy
+):
     """A POST to '/jobs/{id}/cancel' with JWT token cancels the job of the job_id if the job belongs to user"""
     with client as client:
         cancellation_reason = "just testing"
@@ -1962,6 +1989,8 @@ def test_cancel_job_directly(client, redis_conn, jobs_folder, worker, job, mocke
 
         # Run the queue to run the job and see that it is updated
         worker.work(burst=True, max_jobs=1)
+
+        assert jobs_store_connection_spy.call_count == 1
 
         response = client.post(
             f"/jobs/{job_id}/cancel",

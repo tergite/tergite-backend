@@ -274,8 +274,13 @@ IS_ASYNC = config("IS_ASYNC", cast=bool, default="True")
 BOOKING_DB_URL = config("BOOKING_DB_URL", default="sqlite:///booking_db.db")
 
 # default: "redis://localhost:6379/0"
-_REDIS_URL = f"{REDIS_SCHEME}://{REDIS_USER or ''}:{REDIS_PASSWORD or ''}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
-RQ_REDIS_URL = config("RQ_REDIS_URL", default=_REDIS_URL)
+_REDIS_CREDENTIALS = ""
+if REDIS_USER or REDIS_PASSWORD:
+    _REDIS_CREDENTIALS = f"{REDIS_USER or ''}:{REDIS_PASSWORD or ''}@"
+_DEFAULT_REDIS_URL = (
+    f"{REDIS_SCHEME}://{_REDIS_CREDENTIALS}{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+)
+RQ_REDIS_URL = config("RQ_REDIS_URL", default=_DEFAULT_REDIS_URL)
 if RQ_REDIS_URL.startswith("rediss:"):
     REDIS_CONNECTION = redis.Redis.from_url(RQ_REDIS_URL, ssl=True)
 else:

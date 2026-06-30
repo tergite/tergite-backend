@@ -12,6 +12,8 @@
 #
 """Module containing the store for the scheduler service"""
 
+from functools import lru_cache
+
 from redis import Redis
 
 import settings
@@ -21,10 +23,28 @@ from ...utils.redis import get_redis_connection
 from ...utils.redis_store import Collection
 
 
+@lru_cache(maxsize=None)
+def get_jobs_store_connection(url: str) -> Redis:
+    """Returns a cached Redis connection for the jobs store.
+
+    Caching lives here rather than on get_jobs_store so the same connection
+    is reused regardless of how get_jobs_store is called (positional vs
+    keyword args) and regardless of whether the caller goes through
+    get_jobs_store or init_jobs_store directly.
+
+    Args:
+        url: the database URL for the redis server
+
+    Returns:
+        a Redis connection
+    """
+    return get_redis_connection(url=url)
+
+
 def get_jobs_store(
     url: str,
     default_ttl: float = settings.JOBS_STORE_TTL,
-    cleanup_interval=settings.JOBS_STORE_CLEAN_INTERVAL,
+    cleanup_interval: float = settings.JOBS_STORE_CLEAN_INTERVAL,
 ) -> Collection[Job]:
     """Gets the store for the given url for the jobs
 
@@ -36,7 +56,7 @@ def get_jobs_store(
     Returns:
         the RedisCollection containing the jobs
     """
-    connection = get_redis_connection(url=url)
+    connection = get_jobs_store_connection(url)
     return init_jobs_store(
         connection=connection,
         default_ttl=default_ttl,

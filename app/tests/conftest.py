@@ -156,8 +156,6 @@ PAGINATION: List["PaginationInfo"] = load_fixture("pagination.json")
 RECALIBRATION_MOCKS: Dict[Literal["qubit", "coupler"], Dict[str, Any]] = load_fixture(
     "recalibration-mocks.json"
 )
-SPI_DUMMY_METADATA_FILE = get_fixture_path("spi_dummy_quantify-metadata.yml")
-TEST_SPI_LOGGER_NAME = "test.spi_dac.verbose"
 
 JOBS_HASH_NAME = f"{Job.__module__}.{Job.__qualname__}".lower()
 
@@ -386,78 +384,22 @@ def storage_root():
     shutil.rmtree(path, ignore_errors=True)
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.fixture
-def spi_rack_config():
-    from app.libs.quantum_executor.quantify.utils.config import (
-        QuantifyMetadata,
-        SpiRackConfig,
-    )
+def jobs_store_connection_spy(mocker: MockerFixture):
+    """Spy on get_jobs_store_connection to count Redis connections opened for
+    the jobs store during a test.
 
-    conf = QuantifyMetadata.from_yaml(SPI_DUMMY_METADATA_FILE)
-    yield SpiRackConfig.model_validate(conf.root["spi_rack"].model_dump())
-
-
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
-@pytest.fixture
-def spi_dac_dummy(redis_client, spi_rack_config):
+    With @lru_cache on get_jobs_store_connection, this spy is called exactly
+    once regardless of how many times or in what style (positional vs keyword)
+    get_jobs_store is invoked with the same URL.
+    Without @lru_cache the count equals the number of get_jobs_store calls.
     """
-    Construct SpiDAC bound to the dummy SPI-Rack.
-    """
-    from qblox_instruments import SpiRack
+    from app.services.scheduler import store
+    from app.services.scheduler.store import get_jobs_store_connection
 
-    from app.libs.quantum_executor.quantify.spi_dac import SpiDAC
-
-    name = os.environ.get("DEFAULT_PREFIX", "quantify")
-
-    if SpiDAC.exist(name):
-        SpiRack.find_instrument(name).close()
-
-    spi_dac = SpiDAC(
-        name=name,
-        conf=spi_rack_config,
-    )
-    yield spi_dac
-
-    with suppress(Exception):
-        spi_dac.close()
-
-
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
-@pytest.fixture
-def verbose_spi_dac_dummy(redis_client, mocker, spi_rack_config):
-    """
-    Construct SpiDAC bound to the dummy SPI-Rack.
-    """
-    from qblox_instruments import SpiRack
-
-    from ..libs.quantum_executor.quantify.spi_dac import SpiDAC
-
-    name = os.environ.get("DEFAULT_PREFIX", "quantify")
-
-    testlog = logging.getLogger(TEST_SPI_LOGGER_NAME)
-    testlog.setLevel(logging.DEBUG)
-
-    for fn in [
-        "__init__",
-        "exist",
-        "reset_to_parking_current",
-        "ramp_to_target_currents",
-        "close",
-    ]:
-        make_attr_verbose(SpiDAC, mock_fixture=mocker, logger=testlog, attr_name=fn)
-
-    if SpiDAC.exist(name):
-        SpiRack.find_instrument(name).close()
-
-    spi_dac = SpiDAC(
-        name=name,
-        conf=spi_rack_config,
-    )
-    yield spi_dac
-
-    with suppress(Exception):
-        spi_dac.close()
+    get_jobs_store_connection.cache_clear()
+    yield mocker.spy(store, "get_redis_connection")
+    get_jobs_store_connection.cache_clear()
 
 
 @pytest.fixture(autouse=True, scope="session")
