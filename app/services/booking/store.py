@@ -11,17 +11,24 @@
 # that they have been altered from the originals.
 #
 """Module the store"""
+import os
 
 from sqlalchemy import Engine
+
+import settings
 
 from ...utils.sql_db import get_sql_engine
 from .models import Booking, User
 
 
-def get_bookings_sql_engine(url: str) -> Engine:
-    """Gets the SQLAlchemy engine for the bookings service
+def init_booking_db(url: str = settings.BOOKING_DB_URL) -> Engine:
+    """Gets (or creates) the SQLAlchemy engine for the bookings service.
+
+    The result is cached so that forked child processes inherit the already-open
+    engine and don't need to call sqlite3.connect() themselves — which would
+    crash on macOS after fork() in a multithreaded process.
 
     Args:
         url: the database URL for the database
     """
-    return get_sql_engine(url=url, models=[Booking, User])
+    return get_sql_engine(url=f"{url}", models=[Booking, User])

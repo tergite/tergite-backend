@@ -57,15 +57,16 @@ from ...utils.rq import cancel_rq_job
 from ..booking import get_active_booking
 from ..booking.models import Booking
 from ..booking.service import get_booking, get_next_booking
-from ..booking.store import get_bookings_sql_engine
+from ..booking.store import init_booking_db
 from ..external.mss.dtos import DeviceEvent, DeviceEventName
-from ..external.mss.service import MssClientPipe
-from .store import get_jobs_store, init_jobs_store
+from ..external.mss.service import get_mss_client
+from .store import get_jobs_store
 from .utils import (
     apply_linear_discriminator,
     decompress_qobj,
+    get_executor_and_options,
+    get_quantum_executor,
     get_rq_job_id,
-    init_executor,
     log_job_failure,
     move_file,
     update_job_in_mss,
@@ -98,9 +99,8 @@ def preprocess(
         the pair of the updated job's job ID and the context
     """
     job_id = job.job_id
-    jobs_store = get_jobs_store(url=context["jobs_store_url"])
+    jobs_store = get_jobs_store()
     results_folder = Path(context["preprocessing_folder"])
-    executor_options = context["executor_options"]
 
     try:
         with job_file.open() as file:
@@ -116,12 +116,12 @@ def preprocess(
         # [[a,b],[c,d],...] -> [a + ib,c + id,...]
         json_decoder.decode_pulse_qobj(qobj)
         with get_executor_lock():
-            with init_executor(executor_options) as executor:
-                duration, _ = executor.preprocess(
-                    PulseQobj.from_dict(qobj),
-                    job_id=job_id,
-                    results_folder=results_folder,
-                )
+            executor = get_quantum_executor()
+            duration, _ = executor.preprocess(
+                PulseQobj.from_dict(qobj),
+                job_id=job_id,
+                results_folder=results_folder,
+            )
         job = jobs_store.update(job.job_id, {"estimated_duration": duration})
 
         if booking_id is None:
@@ -144,7 +144,7 @@ def preprocess(
         raise exp
 
 
-def post_booking_cleanup(booking_id: str, context: QueueContext):
+def post_booking_cleanup(booking_id: str, **kwargs):
     """Cleans up after the booking of the given booking_id
 
     It should cancel the idle time interval job and allow for all the jobs on the booked_execution queues to clear out.
@@ -152,11 +152,8 @@ def post_booking_cleanup(booking_id: str, context: QueueContext):
 
     Args:
         booking_id: the unique identifier of the booking
-        context: the variables in the environment in which the job is to run
     """
-    booking_db_url = context["booking_db_url"]
-
-    bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
+    bookings_sql_engine = init_booking_db()
     booking = get_booking(bookings_sql_engine, Booking.id == booking_id)
     redis_connection = get_current_job().connection
 
@@ -169,7 +166,7 @@ def post_booking_cleanup(booking_id: str, context: QueueContext):
 
     # push to normal execution queue all jobs that have duration
     # small enough to run before next booking
-    _pop_waitlist_to_normal_queue(context)
+    _pop_waitlist_to_normal_queue()
 
 
 def reset_idleness_timer(
@@ -193,23 +190,15 @@ def reset_idleness_timer(
     Returns:
         the refreshed rq.job.Job that is constructed and enqueued to track the time or None if end_utc is in the past
     """
-    from .queues import get_general_queue
+    from .queues import get_queue_pool
 
-    queue_prefix = context["queue_prefix"]
-    is_async = context["is_async"]
-    booking_db_url = context["booking_db_url"]
-    general_queue_timeout = context["general_queue_timeout"]
     if max_idle_time is None:
         max_idle_time = context["max_idle_time"]
 
-    bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
+    bookings_sql_engine = init_booking_db()
     redis_connection = get_current_job().connection
-    general_queue = get_general_queue(
-        prefix=queue_prefix,
-        connection=redis_connection,
-        default_timeout=general_queue_timeout,
-        is_async=is_async,
-    )
+    queue_pool = get_queue_pool()
+    general_queue = queue_pool.general
 
     booking = get_booking(bookings_sql_engine, Booking.id == booking_id)
     if booking is None:
@@ -253,35 +242,27 @@ def execute(
     Returns:
         the tuple of the updated job's job ID and the context and the results file path
     """
-    from .queues import get_postprocessing_queue
+    from .queues import get_queue_pool
 
     job_id = job.job_id
-    connection = get_current_job().connection
-    queue_prefix = context["queue_prefix"]
-    is_async = context["is_async"]
-    jobs_store = get_jobs_store(url=context["jobs_store_url"])
+    jobs_store = get_jobs_store()
     preprocessing_dir = Path(context["preprocessing_folder"])
-    executor_options = context["executor_options"]
-    postprocessing_timeout = context["postprocessing_timeout"]
 
     try:
         update_job_stage(jobs_store, job_id=job_id, stage=Stage.EXEC_W)
 
         # Just a locking mechanism to ensure jobs don't interfere with each other
         with get_executor_lock():
-            with init_executor(executor_options) as executor:
-                results_file = executor.run(job_id, inputs_folder=preprocessing_dir)
+            executor = get_quantum_executor()
+            results_file = executor.run(job_id, inputs_folder=preprocessing_dir)
 
         job: Job = jobs_store.get_one((job_id,))
         if job.status == JobStatus.CANCELLED:
             raise JobAlreadyCancelled("cancelled")
 
-        postproc_queue = get_postprocessing_queue(
-            prefix=queue_prefix,
-            connection=connection,
-            default_timeout=postprocessing_timeout,
-            is_async=is_async,
-        )
+        queue_pool = get_queue_pool()
+
+        postproc_queue = queue_pool.postprocessing
         job = update_job_stage(jobs_store, job_id=job_id, stage=Stage.PST_PROC_Q)
         postproc_queue.enqueue(
             job,
@@ -324,46 +305,43 @@ def postprocess(
 
     job_id = job.job_id
     working_folder = Path(context["postprocessing_folder"])
-    backend_name = context["executor_options"].backend_name
+    _, executor_options = get_executor_and_options()
+    backend_name = executor_options.backend_name
 
-    with get_redis_connection(context["jobs_store_url"]) as redis_conn:
-        jobs_store = init_jobs_store(connection=redis_conn)
-        new_file = move_file(results_file_path, new_folder=working_folder, ext=".hdf5")
-        logging.info(f"Moved the logfile to {str(new_file)}")
+    jobs_store = get_jobs_store()
+    new_file = move_file(results_file_path, new_folder=working_folder, ext=".hdf5")
+    logging.info(f"Moved the logfile to {str(new_file)}")
 
-        update_job_stage(jobs_store, job_id=job_id, stage=Stage.PST_PROC_W)
+    update_job_stage(jobs_store, job_id=job_id, stage=Stage.PST_PROC_W)
 
-        quantum_job = read_job_from_hdf5(new_file)
+    quantum_job = read_job_from_hdf5(new_file)
+    redis_conn = get_redis_connection()
 
-        try:
-            with MssClientPipe() as mss_client_pipe:
-                if quantum_job.meas_level == MeasLvl.DISCRIMINATED:
-                    calibration = get_device_calibration_info(
-                        redis_conn, backend_name=backend_name
-                    )
-                    discriminator = functools.partial(
-                        apply_linear_discriminator, calibration
-                    )
+    try:
+        mss_client = get_mss_client()
+        if quantum_job.meas_level == MeasLvl.DISCRIMINATED:
+            calibration = get_device_calibration_info(
+                redis_conn, backend_name=backend_name
+            )
+            discriminator = functools.partial(apply_linear_discriminator, calibration)
 
-                    memory = discriminate_results(
-                        quantum_job,
-                        discriminator=discriminator,
-                        calibration=calibration,
-                    )
-                    job = update_job_results(jobs_store, job_id=job_id, data=memory)
-                    update_job_in_mss(mss_client_pipe, payload=job)
-                elif quantum_job.meas_level == MeasLvl.INTEGRATED:
-                    memory = xarray_to_list(quantum_job)
-                    job = update_job_results(jobs_store, job_id=job_id, data=memory)
-                    update_job_in_mss(mss_client_pipe, payload=job)
-                else:
-                    raise NotImplementedError(
-                        f"meas_level {job.meas_level} is not supported"
-                    )
+            memory = discriminate_results(
+                quantum_job,
+                discriminator=discriminator,
+                calibration=calibration,
+            )
+            job = update_job_results(jobs_store, job_id=job_id, data=memory)
+            update_job_in_mss(mss_client, payload=job)
+        elif quantum_job.meas_level == MeasLvl.INTEGRATED:
+            memory = xarray_to_list(quantum_job)
+            job = update_job_results(jobs_store, job_id=job_id, data=memory)
+            update_job_in_mss(mss_client, payload=job)
+        else:
+            raise NotImplementedError(f"meas_level {job.meas_level} is not supported")
 
-            return job.job_id, context
-        except Exception as exp:
-            raise PostProcessingError(exp=exp, job_id=job.job_id)
+        return job.job_id, context
+    except Exception as exp:
+        raise PostProcessingError(exp=exp, job_id=job.job_id)
 
 
 def postprocessing_success_callback(
@@ -377,17 +355,17 @@ def postprocessing_success_callback(
         result: the result from the postprocessing worker handler
     """
     job_id, context = result
-    jobs_store = get_jobs_store(context["jobs_store_url"])
+    jobs_store = get_jobs_store()
 
     job = update_job_stage(jobs_store, job_id=job_id, stage=Stage.FINAL_Q)
-    with MssClientPipe() as mss_client_pipe:
-        if job.status == JobStatus.SUCCESSFUL:
-            job = update_job_stage(jobs_store, job_id=job_id, stage=Stage.FINAL_W)
-            print(f"Job with ID {job_id} has finished")
-        else:
-            print(f"Job {job_id}, has failed: aborting. Status: {job.status}")
+    mss_client = get_mss_client()
+    if job.status == JobStatus.SUCCESSFUL:
+        job = update_job_stage(jobs_store, job_id=job_id, stage=Stage.FINAL_W)
+        print(f"Job with ID {job_id} has finished")
+    else:
+        print(f"Job {job_id}, has failed: aborting. Status: {job.status}")
 
-        update_job_in_mss(mss_client_pipe, payload=job)
+    update_job_in_mss(mss_client, payload=job)
 
 
 def postprocessing_failure_callback(
@@ -407,18 +385,18 @@ def postprocessing_failure_callback(
         value: the value passed to the callback from the handler
         traceback: the error traceback
     """
-    with MssClientPipe() as mss_client_pipe:
-        if isinstance(value, PostProcessingError):
-            jobs_store = init_jobs_store(_rq_connection)
-            job_id = value.job_id
+    mss_client = get_mss_client()
+    if isinstance(value, PostProcessingError):
+        jobs_store = get_jobs_store()
+        job_id = value.job_id
 
-            logging.error(value.exp)
-            job = log_job_failure(
-                jobs_store,
-                job_id=job_id,
-                reason="error during post processing",
-            )
-            update_job_in_mss(mss_client_pipe, payload=job)
+        logging.error(value.exp)
+        job = log_job_failure(
+            jobs_store,
+            job_id=job_id,
+            reason="error during post processing",
+        )
+        update_job_in_mss(mss_client, payload=job)
 
 
 def recalibrate(
@@ -433,30 +411,23 @@ def recalibrate(
     Returns:
         the rq.job.Job that is constructed and enqueued to schedule next recalibration, or None if interval was not set
     """
-    from .queues import get_recalibration_queue
-
-    executor_options = context["executor_options"]
-    jobs_store_url = context["jobs_store_url"]
+    from .queues import get_queue_pool
 
     # ensure recalibration runs without interference
     with get_executor_lock():
-        with init_executor(executor_options) as executor:
-            results = executor.recalibrate(redis_url=jobs_store_url)
+        executor = get_quantum_executor()
+        results = executor.recalibrate()
 
         if isinstance(results, DeviceCalibration):
             logging.info(f"Updating MSS...")
-            with MssClientPipe() as mss_client_pipe:
-                response = mss_client_pipe.send_event(
-                    DeviceEvent(
-                        name=DeviceEventName.RECALIBRATED,
-                        data=results,
-                    ),
-                    error_prefix="error sending recalibration info: ",
-                )
-                if response["status"] != "success":
-                    raise RuntimeError(
-                        f"Error sending recalibration info: {response["detail"]}"
-                    )
+            mss_client = get_mss_client()
+            response = mss_client.send_event(
+                DeviceEvent(
+                    name=DeviceEventName.RECALIBRATED,
+                    data=results,
+                ),
+                error_prefix="error sending recalibration info: ",
+            )
 
             logging.info(
                 f"calibration data updated in MSS with response: {response["status"]}"
@@ -465,17 +436,8 @@ def recalibrate(
     # schedule next run
     if isinstance(interval, float):
         # enqueue next run
-        queue_prefix = context["queue_prefix"]
-        is_async = context["is_async"]
-        recalibration_queue_timeout = context["recalibration_queue_timeout"]
-
-        redis_connection = get_current_job().connection
-        recalibration_queue = get_recalibration_queue(
-            prefix=queue_prefix,
-            connection=redis_connection,
-            default_timeout=recalibration_queue_timeout,
-            is_async=is_async,
-        )
+        queue_pool = get_queue_pool()
+        recalibration_queue = queue_pool.recalibration
 
         func_name = f"{__name__}.{recalibrate.__qualname__}"
 
@@ -537,26 +499,16 @@ def _try_enqueue_on_normal_queue(
     Returns:
         the pair of the updated job's job ID and the context
     """
-    from .queues import get_normal_execution_queue
+    from .queues import get_queue_pool
 
-    booking_db_url = context["booking_db_url"]
-    queue_prefix = context["queue_prefix"]
-    is_async = context["is_async"]
-    execution_timeout = context["execution_timeout"]
     job_id = job.job_id
 
-    bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
-    jobs_store = get_jobs_store(url=context["jobs_store_url"])
+    bookings_sql_engine = init_booking_db()
+    jobs_store = get_jobs_store()
 
     next_booking = get_next_booking(bookings_sql_engine)
-
-    connection = get_current_job().connection
-    queue = get_normal_execution_queue(
-        prefix=queue_prefix,
-        connection=connection,
-        default_timeout=execution_timeout,
-        is_async=is_async,
-    )
+    queue_pool = get_queue_pool()
+    queue = queue_pool.normal_execution
 
     if next_booking:
         time_to_next_booking = (next_booking.start_utc - get_utc_now()).total_seconds()
@@ -601,30 +553,21 @@ def _try_enqueue_on_booked_queue(
     Returns:
         the pair of the updated job's job ID and the context
     """
-    from .queues import get_booked_execution_queue
+    from .queues import get_queue_pool
 
-    queue_prefix = context["queue_prefix"]
-    is_async = context["is_async"]
-    execution_timeout = context["execution_timeout"]
     force_normal_queue = context.get("force_normal_queue")
     user_id = job.user_id
-    booking_db_url = context["booking_db_url"]
     job_id = job.job_id
 
-    job_store = get_jobs_store(url=context["jobs_store_url"])
-    bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
+    job_store = get_jobs_store()
+    bookings_sql_engine = init_booking_db()
 
     active_booking = None
     if booking_id:
         active_booking = get_booking(bookings_sql_engine, Booking.id == booking_id)
 
-    connection = get_current_job().connection
-    queue = get_booked_execution_queue(
-        prefix=queue_prefix,
-        connection=connection,
-        default_timeout=execution_timeout,
-        is_async=is_async,
-    )
+    queue_pool = get_queue_pool()
+    queue = queue_pool.booked_execution
 
     usable_time = 0
     is_booker = False
@@ -677,13 +620,12 @@ def _push_to_waitlist(
     Returns:
         a tuple of the job_id and context
     """
-    from .queues import get_waitlist
+    from .queues import get_queue_pool
 
-    connection = get_current_job().connection
-    prefix = context["queue_prefix"]
-    waitlist = get_waitlist(prefix=prefix, connection=connection)
+    queue_pool = get_queue_pool()
+    waitlist = queue_pool.waitlist
 
-    jobs_store = get_jobs_store(context["jobs_store_url"])
+    jobs_store = get_jobs_store()
     uptodate_job = jobs_store.get_one(job_id)
 
     waitlist.add(
@@ -709,24 +651,14 @@ def _pop_waitlist_to_booking(
     Returns:
         a tuple of job_id/None and context
     """
-    from .queues import get_booked_execution_queue, get_waitlist
+    from .queues import get_queue_pool
 
-    booking_db_url = context["booking_db_url"]
-    jobs_store_url = context["jobs_store_url"]
-    queue_prefix = context["queue_prefix"]
-    is_async = context["is_async"]
-    execution_timeout = context["execution_timeout"]
-    connection = get_current_job().connection
+    queue_pool = get_queue_pool()
 
-    waitlist = get_waitlist(prefix=queue_prefix, connection=connection)
-    bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
-    job_store = get_jobs_store(jobs_store_url)
-    queue = get_booked_execution_queue(
-        prefix=queue_prefix,
-        connection=connection,
-        default_timeout=execution_timeout,
-        is_async=is_async,
-    )
+    waitlist = queue_pool.waitlist
+    bookings_sql_engine = init_booking_db()
+    job_store = get_jobs_store()
+    queue = queue_pool.booked_execution
 
     usable_time = float("inf")
     next_booking = get_next_booking(bookings_sql_engine)
@@ -756,42 +688,26 @@ def _pop_waitlist_to_booking(
     return job.job_id, context
 
 
-def _pop_waitlist_to_normal_queue(context: QueueContext):
+def _pop_waitlist_to_normal_queue():
     """Moves to the normal execution queue, the waitlisted jobs that can finish before the next booking
-
-    Args:
-        context: extra variables that describe the environment the job is to run in
 
     Returns:
         a tuple of job_id/None and context
     """
-    from .queues import (
-        get_normal_execution_queue,
-        get_waitlist,
-    )
+    from .queues import get_queue_pool
 
-    booking_db_url = context["booking_db_url"]
-    jobs_store_url = context["jobs_store_url"]
-    queue_prefix = context["queue_prefix"]
-    execution_timeout = context["execution_timeout"]
-    is_async = context["is_async"]
-    redis_connection = get_current_job().connection
-
-    bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
-    job_store = get_jobs_store(jobs_store_url)
-    waitlist = get_waitlist(prefix=queue_prefix, connection=redis_connection)
+    bookings_sql_engine = init_booking_db()
+    job_store = get_jobs_store()
+    queue_pool = get_queue_pool()
+    waitlist = queue_pool.waitlist
     next_booking = get_next_booking(bookings_sql_engine)
     max_total_duration = None
     if next_booking:
         max_total_duration = (next_booking.start_utc - get_utc_now()).total_seconds()
 
     job_tuples = waitlist.pop_many(max_total_duration=max_total_duration)
-    normal_queue = get_normal_execution_queue(
-        prefix=queue_prefix,
-        connection=redis_connection,
-        default_timeout=execution_timeout,
-        is_async=is_async,
-    )
+    normal_queue = queue_pool.normal_execution
+
     for job, args, kwargs in job_tuples:
         job = update_job_stage(job_store, job_id=job.job_id, stage=Stage.EXEC_Q)
         normal_queue.enqueue(job, *args, **kwargs)

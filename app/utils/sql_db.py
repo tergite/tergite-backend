@@ -35,6 +35,7 @@ def get_sql_engine(
     """
     tables = [v.__table__ for v in models if hasattr(v, "__table__")]
     engine = create_engine(url)
+    SQLModel.metadata.clear()
     SQLModel.metadata.create_all(engine, tables=tables, checkfirst=checkfirst)
     return engine
 

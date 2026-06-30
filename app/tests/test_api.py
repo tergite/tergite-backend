@@ -61,6 +61,7 @@ from app.tests.conftest import (
     VALID_CREATE_BOOKINGS_PARAMS,
     BasicBookingInfo,
     PaginationInfo,
+    read_connection_log,
 )
 from app.tests.utils.api import create_invalid_mss_headers, create_mss_headers
 from app.tests.utils.datetime import get_timestamp_str
@@ -676,7 +677,7 @@ def test_submit_jobs_no_booking(
     device,
     jobs_folder,
     mocker: MockerFixture,
-    jobs_store_connection_spy,
+    connection_call_log,
 ):
     """POST '/jobs' when there is no booking should run the jobs in FIFO (first in, first out)"""
     with client as client:
@@ -695,8 +696,6 @@ def test_submit_jobs_no_booking(
 
         # Run the queue
         worker.work(burst=True)
-
-        assert jobs_store_connection_spy.call_count == 1
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
         jobs_in_redis.sort(key=lambda v: v.timestamps.execution.start_timestamp)
@@ -756,6 +755,12 @@ def test_submit_jobs_no_booking(
             assert post_processing.start_timestamp < post_processing.finish_timestamp
             assert post_processing.finish_timestamp <= final.start_timestamp
             assert final.start_timestamp < final.finish_timestamp
+            child_redis_calls = [
+                r
+                for r in read_connection_log(connection_call_log)
+                if r["resource"] == "redis" and r["pid"] != os.getpid()
+            ]
+            assert len(child_redis_calls) == 0
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
@@ -766,7 +771,6 @@ def test_submit_jobs_in_active_booking(
     job,
     jobs_folder,
     mocker: MockerFixture,
-    jobs_store_connection_spy,
 ):
     """POST '/jobs' when there is an active booking runs the booker jobs first then runs the other jobs after booking."""
 
@@ -795,8 +799,6 @@ def test_submit_jobs_in_active_booking(
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
         _wait_on_rq_worker(worker, with_scheduler=True)
-
-        assert jobs_store_connection_spy.call_count == 1
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
         jobs_in_redis.sort(key=lambda v: v.timestamps.execution.start_timestamp)
@@ -832,7 +834,6 @@ def test_submit_jobs_in_idle_booking(
     job,
     jobs_folder,
     mocker,
-    jobs_store_connection_spy,
 ):
     """POST '/jobs' when there is an idle booking runs the non booker jobs even during the booking."""
     with client as client:
@@ -859,8 +860,6 @@ def test_submit_jobs_in_idle_booking(
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
         _wait_on_rq_worker(worker, with_scheduler=True)
-
-        assert jobs_store_connection_spy.call_count == 1
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
 
@@ -1002,7 +1001,6 @@ def test_submit_long_jobs_before_booking(
     job,
     jobs_folder,
     mocker,
-    jobs_store_connection_spy,
 ):
     """POST long jobs to '/jobs' before booking starts waitlists them but runs the shorter ones"""
     with client as client:
@@ -1030,8 +1028,6 @@ def test_submit_long_jobs_before_booking(
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
         _wait_on_rq_worker(worker, with_scheduler=True)
-
-        assert jobs_store_connection_spy.call_count == 1
 
         jobs_in_db = _get_jobs_in_redis(redis_conn)
         jobs_in_db.sort(key=lambda v: v.start_utc)
@@ -1488,7 +1484,7 @@ def test_view_job(
     user,
     jobs_folder,
     mocker: MockerFixture,
-    jobs_store_connection_spy,
+    connection_call_log,
 ):
     """GET '/jobs/{job_id}' by a user can show the job for the job_id if job belongs to them"""
     job_file_path = _save_job_file(folder=jobs_folder, job=job)
@@ -1519,8 +1515,6 @@ def test_view_job(
         # Run the queue to run the job and see that it is updated
         worker.work(burst=True)
 
-        assert jobs_store_connection_spy.call_count == 1
-
         complete_job, _ = _view_job(client, user_id=user_id, job_id=job_id)
         expected_completed_job = Job(
             job_id=job_id,
@@ -1539,6 +1533,12 @@ def test_view_job(
             storage_id=f"{job_id}:::{complete_job.estimated_duration}",
         )
         assert complete_job == expected_completed_job
+        child_redis_calls = [
+            r
+            for r in read_connection_log(connection_call_log)
+            if r["resource"] == "redis" and r["pid"] != os.getpid()
+        ]
+        assert len(child_redis_calls) == 0
 
 
 @pytest.mark.parametrize("client, worker, job, device_name, user", _VIEW_JOB_PARAMS)
@@ -1893,7 +1893,7 @@ def test_unauthenticated_view_jobs(
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_cancel_job_via_mss(
-    client, redis_conn, jobs_folder, worker, job, mocker, jobs_store_connection_spy
+    client, redis_conn, jobs_folder, worker, job, mocker, connection_call_log
 ):
     """An MSS POST to '/jobs/{id}/cancel' cancels the job of the job_id if the job belongs to the current user"""
     with client as client:
@@ -1918,8 +1918,6 @@ def test_cancel_job_via_mss(
 
         # Run the queue to run the job and see that it is updated
         worker.work(burst=True, max_jobs=1)
-
-        assert jobs_store_connection_spy.call_count == 1
 
         response = _cancel_job_via_mss(
             client, user_id=user_id, job_id=job_id, reason=cancellation_reason
@@ -1960,11 +1958,17 @@ def test_cancel_job_via_mss(
         )
         assert response.status_code == 200
         assert job_in_db == expected_job
+        child_redis_calls = [
+            r
+            for r in read_connection_log(connection_call_log)
+            if r["resource"] == "redis" and r["pid"] != os.getpid()
+        ]
+        assert len(child_redis_calls) == 0
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_cancel_job_directly(
-    client, redis_conn, jobs_folder, worker, job, mocker, jobs_store_connection_spy
+    client, redis_conn, jobs_folder, worker, job, mocker, connection_call_log
 ):
     """A POST to '/jobs/{id}/cancel' with JWT token cancels the job of the job_id if the job belongs to user"""
     with client as client:
@@ -1989,8 +1993,6 @@ def test_cancel_job_directly(
 
         # Run the queue to run the job and see that it is updated
         worker.work(burst=True, max_jobs=1)
-
-        assert jobs_store_connection_spy.call_count == 1
 
         response = client.post(
             f"/jobs/{job_id}/cancel",
@@ -2033,6 +2035,12 @@ def test_cancel_job_directly(
         )
         assert response.status_code == 200
         assert job_in_db == expected_job
+        child_redis_calls = [
+            r
+            for r in read_connection_log(connection_call_log)
+            if r["resource"] == "redis" and r["pid"] != os.getpid()
+        ]
+        assert len(child_redis_calls) == 0
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)

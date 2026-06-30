@@ -145,6 +145,9 @@ MSS_DEVICE_EVENTS_ENDPOINT: URL = config(
 MSS_CONNECTION_TIMEOUT = config("MSS_CONNECTION_TIMEOUT", cast=float, default=5)
 MSS_CONNECTION_MAX_ATTEMPTS = config("MSS_CONNECTION_MAX_ATTEMPTS", cast=int, default=5)
 MSS_RESPONSE_TIMEOUT = config("MSS_RESPONSE_TIMEOUT", cast=float, default=120)
+MSS_MAX_RECONNECTION_DELAY = config(
+    "MSS_MAX_RECONNECTION_DELAY", cast=float, default=60
+)
 
 BCC_MACHINE_ROOT_URL = config(
     "BCC_MACHINE_ROOT_URL", cast=URL, default="http://localhost:8000"
@@ -282,9 +285,9 @@ _DEFAULT_REDIS_URL = (
 )
 RQ_REDIS_URL = config("RQ_REDIS_URL", default=_DEFAULT_REDIS_URL)
 if RQ_REDIS_URL.startswith("rediss:"):
-    REDIS_CONNECTION = redis.Redis.from_url(RQ_REDIS_URL, ssl=True)
+    _REDIS_CONNECTION = redis.Redis.from_url(RQ_REDIS_URL, ssl=True)
 else:
-    REDIS_CONNECTION = redis.Redis.from_url(RQ_REDIS_URL)
+    _REDIS_CONNECTION = redis.Redis.from_url(RQ_REDIS_URL)
 
 JWT_SECRET = config("JWT_SECRET")
 

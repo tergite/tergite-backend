@@ -10,368 +10,67 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 
-"""Utility for the client that connects to MSS server"""
-import abc
-import asyncio
-import base64
+"""Websocket connection that is synchronous connecting to MSS"""
+from __future__ import annotations
 
-# backend/entrypoint.py
 import json
-import logging
+import math
 import time
-import uuid
-from abc import ABC
+from contextlib import suppress
 from pathlib import Path
-from types import TracebackType
-from typing import Any, Callable, Dict, Generator, Optional
+from typing import Any, Optional, cast
 
-import websockets
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding
-from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
-from redis import Redis
-from redis.asyncio import Redis as AsyncRedis
-from redis.asyncio.client import PubSub as AsyncPubSub
-from redis.client import PubSub
-from rq import Queue
-from websockets import ClientConnection, ConnectionClosed, InvalidMessage, InvalidStatus
+from websockets import ConnectionClosed, WebSocketException
+from websockets.sync.client import ClientConnection, connect
 
 import settings
 from app.utils.logging import err_logger
-from app.utils.redis import get_redis_connection
 
+from .auth import create_headers
 from .dtos import DeviceEvent, EventResponse
 
-# Initialize your Redis & RQ connection
-redis_conn = Redis(host="redis", port=6379)
-job_queue = Queue("quantum_jobs", connection=redis_conn)
-
-_BCC_PRIVATE_KEYS: Dict[str, RSAPrivateKey] = {}
-_MSS_CLIENT_PIPE: Optional["MssClientPipe"] = None
+_MSS_CLIENT: Optional["MssClient"] = None
 
 
-async def connect_to_mss(
-    connection_event: asyncio.Event,
-    uri: str = str(settings.MSS_DEVICE_EVENTS_ENDPOINT),
-    device: str = settings.DEFAULT_PREFIX,
-    private_key_file=settings.PRIVATE_KEY_FILE,
-    key_password: Optional[bytes] = settings.PRIVATE_KEY_PASSWORD,
-    open_timeout: float = settings.MSS_CONNECTION_TIMEOUT,
-    redis_url: str = settings.RQ_REDIS_URL,
-    **kwargs: Any,
-) -> None:
-    """Keeps a live MSS websocket, reconnecting automatically on disconnection.
-    It sets the connection_event once it successfully connects
-
-    Args:
-        connection_event (asyncio.Event): Event that fires when the connection is established
-        uri: the URI to connect to; default = settings.MSS_DEVICE_EVENTS_ENDPOINT
-        device: the name of the device; default = settings.DEFAULT_PREFIX
-        private_key_file: the path to the private key file; default = settings.PRIVATE_KEY_FILE
-        key_password: the password for the private key file; defaults = settings.PRIVATE_KEY_PASSWORD
-        open_timeout: the timeout for opening the websocket in seconds; default = settings.MSS_CONNECTION_TIMEOUT
-        redis_url: the redis URL connection to use for PubSub; default = settings.RQ_REDIS_URL
-        kwargs: additional options to pass to websockets.connect
-
-    """
-    async for mss_client in AsyncMssClient(
-        uri=uri,
-        device=device,
-        private_key_file=private_key_file,
-        key_password=key_password,
-        open_timeout=open_timeout,
-        redis_url=redis_url,
-        **kwargs,
-    ):
-        try:
-            connection_event.set()
-            await mss_client.wait_closed()
-        except ConnectionClosed:
-            logging.warning("MSS websocket closed; reconnecting...")
-            continue
-        except Exception as e:
-            err_logger.error(f"Unexpected error connecting to MSS websocket: {e}")
-            await asyncio.sleep(5)
-            continue
-
-
-def get_inbox_channel_name(device: str = settings.DEFAULT_PREFIX) -> str:
-    """Get the name of the inbox channel for the MSS client
-
-    This is where we see messages received from the MSS server
-
-    Args:
-        device: The name of this device
-
-    Returns:
-        the name of the inbox channel
-    """
-    return f"{device}:mss:inbox"
-
-
-def get_outbox_channel_name(device: str = settings.DEFAULT_PREFIX) -> str:
-    """Get the name of the outbox channel for the MSS client
-
-    This is where we send messages to be sent to the MSS server
-
-    Args:
-        device: The name of this device
-
-    Returns:
-        the name of the inbox channel
-    """
-    return f"{device}:mss:outbox"
-
-
-def _process_websocket_exception(exc: Exception) -> Exception | None:
-    """
-    Determine whether a connection error is retryable or fatal.
-
-    When reconnecting automatically with ``async for ... in connect(...)``, if a
-    connection attempt fails, :func:`process_exception` is called to determine
-    whether to retry connecting or to raise the exception.
-
-    This function defines the default behavior, which is to retry on:
-
-    * :exc:`EOFError`, :exc:`OSError`, :exc:`asyncio.TimeoutError`: network
-      errors;
-    * :exc:`~websockets.exceptions.InvalidStatus` when the status code is 500,
-      502, 503, or 504: server or proxy errors.
-
-    All other exceptions are considered fatal.
-
-    Return :obj:`None` if the exception is retryable i.e. when the error could
-    be transient and trying to reconnect with the same parameters could succeed.
-    The exception will be logged at the ``INFO`` level.
-
-    Return an exception, either ``exc`` or a new exception, if the exception is
-    fatal i.e. when trying to reconnect will most likely produce the same error.
-    That exception will be raised, breaking out of the retry loop.
-
-    """
-    # This catches python-socks' ProxyConnectionError and ProxyTimeoutError.
-    # Remove asyncio.TimeoutError when dropping Python < 3.11.
-    if isinstance(exc, (OSError, TimeoutError, asyncio.TimeoutError, EOFError)):
-        f"Network error encountered ({type(exc).__name__}). Retrying..."
-        return None
-    if isinstance(exc, InvalidMessage) and isinstance(exc.__cause__, EOFError):
-        f"Network error encountered ({type(exc).__name__}). Retrying..."
-        return None
-    if isinstance(exc, InvalidStatus) and exc.response.status_code in [
-        400,  # invalid request
-        404,  # server unavailable
-        500,  # Internal Server Error
-        502,  # Bad Gateway
-        503,  # Service Unavailable
-        504,  # Gateway Timeout
-    ]:
-        err_logger.warning(
-            f"Handshake failed with HTTP {exc.response.status_code}. Retrying..."
+def get_mss_client() -> "MssClient":
+    """Returns a new MssClient."""
+    global _MSS_CLIENT
+    if _MSS_CLIENT is None:
+        _MSS_CLIENT = MssClient(
+            uri=str(settings.MSS_DEVICE_EVENTS_ENDPOINT),
+            device=settings.DEFAULT_PREFIX,
+            private_key_file=settings.PRIVATE_KEY_FILE,
+            key_password=settings.PRIVATE_KEY_PASSWORD,
+            open_timeout=settings.MSS_CONNECTION_TIMEOUT,
+            response_timeout=settings.MSS_RESPONSE_TIMEOUT,
+            max_reconnection_delay=settings.MSS_MAX_RECONNECTION_DELAY,
+            max_reconnections=settings.MSS_CONNECTION_MAX_ATTEMPTS,
         )
-        return None
-    return exc
+
+    return _MSS_CLIENT
 
 
-class BaseMssClientPipe(ABC):
-    """The pipe for sending messages and receiving messages from MSS"""
+def disconnect_mss_client(ignore_errors: bool = False):
+    """Disconnects the MSSClient, resetting its connections
 
-    def __init__(
-        self,
-        device: str = settings.DEFAULT_PREFIX,
-        timeout: float = settings.MSS_RESPONSE_TIMEOUT,
-        redis_url: str = settings.RQ_REDIS_URL,
-        **kwargs,
-    ):
-        """
-        Args:
-            device: The name of this device
-            redis_url: The URL to the redis connection where the PubSub is
-            timeout: The timeout for receiving a response from the pipe
-            is_async: Whether the pipe is asynchronous or not
-        """
-        self._device = device
-        self._outbox_name: str = get_outbox_channel_name(device)
-        self._inbox_name: str = get_inbox_channel_name(device)
-        self._timeout: float = timeout
-        self._redis_url: str = redis_url
+    Args:
+        ignore_errors: Whether to ignore errors when disconnecting. Defaults to False.
+    """
+    global _MSS_CLIENT
+    if isinstance(_MSS_CLIENT, MssClient):
+        try:
+            _MSS_CLIENT.close()
+        except Exception as exp:
+            if ignore_errors:
+                err_logger.warning(f"error closing MSSClient: {exp}")
+            else:
+                raise exp
 
-    @abc.abstractmethod
-    def send_event(self, payload: DeviceEvent, error_prefix: str = "") -> EventResponse:
-        """Sends an event payload to MSS
-
-        Call this only in synchronous code
-
-        Args:
-            payload: the payload to send to MSS
-            error_prefix: the prefix to append to the error message
-
-        Returns:
-            the event response got from MSS
-
-        Raises:
-            ValueError: {error_prefix}{error message}
-            TimeoutError: {error_prefix}response took longer than timeout
-            RuntimeError: loop is already running
-        """
-
-    @abc.abstractmethod
-    def close(self) -> None:
-        """Close the pipe connection to the MSS client"""
+    _MSS_CLIENT = None
 
 
-class MssClientPipe(BaseMssClientPipe):
-    """Pipe to MSS client that is synchronous, to be used on the RQ side mainly"""
-
-    def __init__(
-        self,
-        device: str = settings.DEFAULT_PREFIX,
-        timeout: float = settings.MSS_RESPONSE_TIMEOUT,
-        redis_url: str = settings.RQ_REDIS_URL,
-        **kwargs,
-    ):
-        super().__init__(device=device, timeout=timeout, redis_url=redis_url, **kwargs)
-        self._redis: Redis = get_redis_connection(self._redis_url)
-        self._inbox: PubSub = self._redis.pubsub(ignore_subscribe_messages=True)
-
-    def send_event(self, payload: DeviceEvent, error_prefix: str = "") -> EventResponse:
-        """Sends an event payload to MSS
-
-        Args:
-            payload: the payload to send to MSS
-            error_prefix: Optional prefix to prepend to error messages
-
-        Returns:
-            the event response
-
-        Raises:
-            ValueError: {error_prefix}{error message}
-            TimeoutError: {error_prefix}response took longer than timeout
-        """
-        event_id = payload.id
-        event_json = payload.model_dump_json()
-        self._inbox.subscribe(self._inbox_name)
-        self._redis.publish(self._outbox_name, event_json)
-
-        start_time = time.time()
-        while True:
-            if time.time() - start_time > self._timeout:
-                raise TimeoutError(
-                    f"{error_prefix}response took longer than timeout {self._timeout}s"
-                )
-
-            channel_resp = self._inbox.get_message(timeout=self._timeout)
-            if channel_resp is None:
-                continue
-
-            response = json.loads(channel_resp["data"])  # type: EventResponse
-            # ignore responses that are not for this event
-            if response["id"] != event_id:
-                continue
-
-            if response["status"] != "success":
-                raise ValueError(f"{error_prefix}{response['detail']}")
-
-            return response
-
-    def close(self) -> None:
-        """Close the pipe connection to the MSS client"""
-        self._inbox.unsubscribe()
-        self._inbox.close()
-        self._redis.close()
-
-    def __enter__(self) -> "MssClientPipe":
-        self._inbox.subscribe(self._inbox_name)
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        self.close()
-
-
-class AsyncMssClientPipe(BaseMssClientPipe):
-    """Pipe to MSS client that is asynchronous, to be used on the FastAPI side"""
-
-    def __init__(
-        self,
-        device: str = settings.DEFAULT_PREFIX,
-        timeout: float = settings.MSS_RESPONSE_TIMEOUT,
-        redis_url: str = settings.RQ_REDIS_URL,
-        **kwargs,
-    ):
-        super().__init__(device=device, timeout=timeout, redis_url=redis_url, **kwargs)
-        self._redis: AsyncRedis = get_redis_connection(self._redis_url, is_async=True)
-        self._inbox: AsyncPubSub = self._redis.pubsub(ignore_subscribe_messages=True)
-
-    async def send_event(
-        self, payload: DeviceEvent, error_prefix: str = ""
-    ) -> EventResponse:
-        """Sends an event payload to MSS asynchronously
-
-        Args:
-            payload: the payload to send to MSS
-            error_prefix: Optional prefix to prepend to error messages
-
-        Returns:
-            the event response
-
-        Raises:
-            ValueError: {error_prefix}{error message}
-            TimeoutError: {error_prefix}response took longer than timeout
-        """
-        event_id = payload.id
-        event_json = payload.model_dump_json()
-        await self._inbox.subscribe(self._inbox_name)
-        await self._redis.publish(self._outbox_name, event_json)
-
-        start_time = time.time()
-        while True:
-            # to allow other tasks to run, we wait
-            await asyncio.sleep(0.01)
-
-            if time.time() - start_time > self._timeout:
-                raise TimeoutError(
-                    f"{error_prefix}response took longer than timeout {self._timeout}s"
-                )
-
-            channel_resp = await self._inbox.get_message(timeout=self._timeout)
-            if channel_resp is None:
-                continue
-
-            response = json.loads(channel_resp["data"])  # type: EventResponse
-            # ignore responses that are not for this event
-            if response["id"] != event_id:
-                continue
-
-            if response["status"] != "success":
-                raise ValueError(f"{error_prefix}{response['detail']}")
-
-            return response
-
-    async def close(self) -> None:
-        """Close the pipe connection to the MSS client asynchronously"""
-        await self._inbox.unsubscribe()
-        await self._inbox.aclose()
-        await self._redis.aclose()
-
-    async def __aenter__(self) -> "AsyncMssClientPipe":
-        await self._inbox.subscribe(self._inbox_name)
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        await self.close()
-
-
-class AsyncMssClient(websockets.connect):
-    """An asynchronous client for making requests to a Main Service Server (MSS) Instance in the background"""
+class MssClient:
+    """A blocking client for making requests to a Main Service Server (MSS) Instance"""
 
     def __init__(
         self,
@@ -380,10 +79,9 @@ class AsyncMssClient(websockets.connect):
         private_key_file=settings.PRIVATE_KEY_FILE,
         key_password: Optional[bytes] = settings.PRIVATE_KEY_PASSWORD,
         open_timeout: float = settings.MSS_CONNECTION_TIMEOUT,
-        redis_url: str = settings.RQ_REDIS_URL,
-        process_exception: Callable[
-            [Exception], Exception | None
-        ] = _process_websocket_exception,
+        response_timeout: float = settings.MSS_RESPONSE_TIMEOUT,
+        max_reconnection_delay: float = 60,
+        max_reconnections: int | None = None,
         **kwargs: Any,
     ):
         """
@@ -393,170 +91,167 @@ class AsyncMssClient(websockets.connect):
             private_key_file: the path to the private key file; default = settings.PRIVATE_KEY_FILE
             key_password: the password for the private key file; defaults = settings.PRIVATE_KEY_PASSWORD
             open_timeout: the timeout for opening the websocket in seconds; default = settings.MSS_CONNECTION_TIMEOUT
-            redis_url: the redis URL connection to use for PubSub; default = settings.RQ_REDIS_URL
-            process_exception: the exception handling function; default = process_exception
+            response_timeout: The timeout for receiving a response from MSS; default = settings.MSS_RESPONSE_TIMEOUT
+            max_reconnection_delay: the maximum number of seconds between reconnections; default = 60
+            max_reconnections: the maximum number of times to reconnect; default = None, meaning no limit
             kwargs: additional options to pass to websockets.connect
         """
-        super().__init__(
-            uri,
-            open_timeout=open_timeout,
-            process_exception=process_exception,
-            **kwargs,
-        )
-
-        self.__uri = uri
-
-        self._outbox_pubsub: str = get_outbox_channel_name(device)
-        self._inbox_pubsub: str = get_inbox_channel_name(device)
-        self._redis: AsyncRedis = get_redis_connection(url=redis_url, is_async=True)
-        self.outbox: AsyncPubSub = self._redis.pubsub(ignore_subscribe_messages=True)
-
+        self._uri = uri
+        self._response_timeout = response_timeout
+        self._device = device
         self._private_key_file: Path = private_key_file
         self._private_key_password: bytes = key_password
+        self._open_timeout = open_timeout
+        self._max_reconnection_delay = max_reconnection_delay
         self._device = device
+        self._kwargs = kwargs
+        self._client: Optional[ClientConnection] = None
+        self._max_reconnections = (
+            math.inf if max_reconnections is None else max_reconnections
+        )
+        self.__current_delay: float = 1
 
-    def _refresh_auth_headers(self):
-        """Refresh the auth headers of the connection as these are based on a timestamp
+    def __connect(self, **kwargs: Any) -> ClientConnection:
+        """Connects to MSS returning a new connection
 
-        On reconnection, we need to make sure a new timestamp is used
+        Args:
+            kwargs: additional options to pass to websockets.connect
+
+        Returns:
+            The new connection
         """
-        auth_headers = _create_headers(
+        auth_headers = create_headers(
             private_key_file=self._private_key_file,
             device=self._device,
             key_password=self._private_key_password,
         )
-        try:
-            self.additional_headers.update(auth_headers)
-        except AttributeError:
-            self.additional_headers = auth_headers
+        options = {**self._kwargs, **kwargs}
+        return connect(
+            self._uri,
+            open_timeout=self._open_timeout,
+            additional_headers=auth_headers,
+            **options,
+        )
 
-    def __await__(self) -> Generator[Any, None, ClientConnection]:
-        self._refresh_auth_headers()
-        return super().__await__()
-
-    async def _outbox_handler(self, msg: dict) -> None:
-        """Handles messages sent to the outbox
+    def send(self, payload: str):
+        """Sends payload to MSS
 
         Args:
-            msg: the message to process
+            payload: the payload to send to MSS
         """
-        await self.connection.send(msg["data"], text=True)
-        response_str = await self.connection.recv(decode=False)
-        await self._redis.publish(self._inbox_pubsub, response_str)
+        delay = 1
+        start_time = time.time()
+        timeout = self._response_timeout
+        is_sent = False
+        attempts = 0
+        max_attempts = self._max_reconnections + 1
 
-    async def __aenter__(self) -> ClientConnection:
-        # Create a fresh PubSub on each (re)connection so we never reuse a
-        # socket that may be in a broken state from a previous iteration.
-        self.outbox = self._redis.pubsub(ignore_subscribe_messages=True)
-        await self.outbox.subscribe(**{self._outbox_pubsub: self._outbox_handler})
-        loop = asyncio.get_running_loop()
+        while not is_sent:
+            try:
+                if time.time() - start_time > timeout:
+                    raise TimeoutError(f"response took longer than timeout {timeout}s")
 
-        self.__outbox_task = loop.create_task(
-            self.outbox.run(exception_handler=_pubsub_exception_handler)
-        )
-        return await super().__aenter__()
+                if attempts >= max_attempts:
+                    raise TimeoutError(
+                        f"maximum connection attempts {max_attempts} exceeded"
+                    )
 
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        # Cancel and fully await the run() task BEFORE touching the pubsub
-        # socket. Calling unsubscribe() while run() is reading causes:
-        # "RuntimeError: read() called while another coroutine is already
-        # waiting for incoming data".
-        self.__outbox_task.cancel()
-        await asyncio.gather(self.__outbox_task, return_exceptions=True)
-        await self.outbox.aclose()
-        await super().__aexit__(exc_type, exc_value, traceback)
+                if not self._client:
+                    attempts += 1
+                    self._client = self.__connect()
 
+                self._client.send(payload, text=True)
+                is_sent = True
+            except (ConnectionClosed, WebSocketException) as e:
+                err_logger.warning(
+                    f"Connection lost ({e}). Reconnecting in {delay} seconds..."
+                )
+                self._client = None
+                time.sleep(delay)
+                delay = min(delay * 2, self._max_reconnection_delay)
 
-async def _pubsub_exception_handler(e: BaseException, pubsub: AsyncPubSub):
-    """Handles exceptions raised by PubSub
+    def recv(
+        self, filters: dict | None = None, error_prefix: str = ""
+    ) -> dict[str, Any]:
+        """Receives response from MSS
 
-    Args:
-        e: the exception raised
-        pubsub: the PubSub instance
+        Args:
+            filters: the filter that the message should match; default = None, meaning the first message to arrive
+            error_prefix: Optional prefix to prepend to error messages
 
-    Note:
-        We intentionally do not re-raise here. redis-py's run() loop catches the
-        exception, calls this handler, and then retries get_message() — so raising
-        would kill the loop permanently. We also do not unsubscribe because doing so
-        leaves the pubsub with no channels and causes run() to exit silently.
-    """
-    logging.error(f"PubSub error (will retry): {e}")
-    await asyncio.sleep(1)  # prevent tight spin on persistent errors
+        Raises:
+            TimeoutError: response took longer than `self._response_timeout`
+        """
+        delay = 1
+        start_time = time.time()
+        filters = filters or {}
+        timeout = self._response_timeout
+        max_attempts = self._max_reconnections + 1
+        attempts = 0
 
+        while True:
+            try:
+                if time.time() - start_time > timeout:
+                    raise TimeoutError(
+                        f"{error_prefix}response took longer than timeout {timeout}s"
+                    )
+                if attempts >= max_attempts:
+                    raise TimeoutError(
+                        f"{error_prefix}maximum connection attempts {max_attempts} exceeded"
+                    )
 
-def _create_headers(
-    private_key_file: Path,
-    device: str = "",
-    key_password: Optional[bytes] = None,
-) -> dict[str, str]:
-    """Creates headers to show that the request is a valid one from BCC
+                if not self._client:
+                    attempts += 1
+                    self._client = self.__connect()
 
-    Args:
-        private_key_file: the path to the private key file
-        device: the name of this device
-        key_password: the password used to encrypt the key PEM file
+                raw_data = self._client.recv(decode=False, timeout=timeout)
+                with suppress(json.JSONDecodeError):
+                    response = json.loads(raw_data)
+                    if all(response.get(k) == v for k, v in filters.items()):
+                        return response
 
-    Returns:
-        The dict of headers that show a given request is from BCC
-    """
-    request_id = str(uuid.uuid4())
-    timestamp = time.time()
-    message = f"{device}-{request_id}-{timestamp}"
-    signature = _sign_message(private_key_file, message=message, password=key_password)
-    return {
-        "x-request-id": request_id,
-        "x-timestamp": f"{timestamp}",
-        "x-signature": signature,
-        "x-id": device,
-    }
+            except (ConnectionClosed, WebSocketException) as e:
+                err_logger.warning(
+                    f"Connection lost ({e}). Reconnecting in {delay} seconds..."
+                )
+                self._client = None
+                time.sleep(delay)
+                delay = min(delay * 2, self._max_reconnection_delay)
 
+    def send_event(self, payload: DeviceEvent, error_prefix: str = "") -> EventResponse:
+        """Sends an event payload to MSS
 
-def _sign_message(key_file: Path, message: str, password: Optional[bytes]) -> str:
-    """Creates an BCC-signed signature given a message
+        It does an exponential backoff reconnection in case of a disconnection
 
-    Args:
-        key_file: the path to the private RSA key
-        message: the message
-        password: the password used to encrypt the key PEM file
+        Args:
+            payload: the payload to send to MSS
+            error_prefix: Optional prefix to prepend to error messages
 
-    Returns:
-        the string form of the signature
-    """
-    mss_private_key = _get_private_key(key_file, password=password)
-    signature = mss_private_key.sign(
-        message.encode(),
-        padding.PSS(
-            mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH
-        ),
-        hashes.SHA256(),
-    )
-    return base64.b64encode(signature).decode()
+        Returns:
+            the event response
 
+        Raises:
+            ValueError: {error_prefix}{error message}
+            TimeoutError: {error_prefix}response took longer than timeout
+            RuntimeError: {error_prefix}no connection yet
+        """
+        event_id = payload.id
+        event_json = payload.model_dump_json()
+        self.send(event_json)
+        resp = self.recv(filters={"id": event_id}, error_prefix=error_prefix)
+        if resp.get("status") != "success":
+            raise ValueError(f"{error_prefix}{resp.get('detail')}")
+        return cast(EventResponse, resp)
 
-def _get_private_key(key_file: Path, password: Optional[bytes]) -> RSAPrivateKey:
-    """Loads the private key for BCC
+    def __enter__(self):
+        """Creates a context manager that yields MSSClient instance"""
+        return self
 
-    Args:
-        key_file: the path to the private key file
-        password: the password that the private key was encrypted with
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Exits from the context manager"""
+        self._client.close()
 
-    Returns:
-        the private key of the BCC
-    """
-    global _BCC_PRIVATE_KEYS
-
-    key_file_str = str(key_file)
-
-    try:
-        return _BCC_PRIVATE_KEYS[key_file_str]
-    except KeyError:
-        with open(key_file, "rb") as file:
-            key = _BCC_PRIVATE_KEYS[key_file_str] = serialization.load_pem_private_key(
-                file.read(), password=password
-            )
-        return key
+    def close(self) -> None:
+        """Closes client to MSS"""
+        if self._client:
+            self._client.close()

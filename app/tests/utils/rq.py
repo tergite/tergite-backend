@@ -12,11 +12,12 @@
 
 """Utilities for testing rq workers and queues"""
 import sys
-from typing import List
+from typing import List, Union
 
-from rq import Queue, SimpleWorker
+from rq import Queue, SimpleWorker, Worker
 from rq.timeouts import TimerDeathPenalty
 
+from app.api.worker import PreloadedRqWorker
 from app.services.scheduler.queues import QueuePool
 
 
@@ -31,7 +32,13 @@ class PseudoSimpleWorker(SimpleWorker):
         return True
 
 
-def get_rq_pool_worker(queue_pool: QueuePool) -> SimpleWorker:
+class PreloadedTestWorker(PreloadedRqWorker):
+    """Fork-based RQ Worker for integration tests."""
+
+    death_penalty_class = TimerDeathPenalty
+
+
+def get_rq_pool_worker(queue_pool: QueuePool) -> Union[Worker, SimpleWorker]:
     """Returns an rq worker to run the given queue pool
 
     Args:
@@ -48,14 +55,16 @@ def get_rq_pool_worker(queue_pool: QueuePool) -> SimpleWorker:
     return get_rq_worker(queues, is_async=queue_pool._is_async)
 
 
-def get_rq_worker(queues: List[Queue], is_async: bool = True) -> SimpleWorker:
+def get_rq_worker(
+    queues: List[Queue], is_async: bool = True
+) -> Union[Worker, SimpleWorker]:
     """Returns an rq worker to run a set of queues
 
     They must share the same redis connection
 
     Args:
-        queues: the set of queue to run
-        is_async: whether the jobs should be run in separate processed
+        queues: the set of queues to run
+        is_async: whether the jobs should be run in separate processes
     """
     connection = queues[0].connection
     if not is_async:
@@ -64,4 +73,4 @@ def get_rq_worker(queues: List[Queue], is_async: bool = True) -> SimpleWorker:
     if sys.platform.startswith("win32"):
         return WindowsSimpleWorker(queues=queues, connection=connection)
 
-    return SimpleWorker(queues=queues, connection=connection)
+    return PreloadedTestWorker(queues=queues, connection=connection)

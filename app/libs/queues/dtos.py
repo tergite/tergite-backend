@@ -28,6 +28,7 @@ from typing import (
     TypeAlias,
     TypedDict,
     Union,
+    cast,
 )
 
 from pydantic import (
@@ -35,6 +36,7 @@ from pydantic import (
     ConfigDict,
     Field,
     GetCoreSchemaHandler,
+    RedisDsn,
     computed_field,
     field_serializer,
     field_validator,
@@ -43,10 +45,12 @@ from pydantic import (
 from pydantic_core import CoreSchema, core_schema
 from pydantic_core.core_schema import SerializationInfo
 
+import settings
 from app.libs.qiskit.qobj import PulseQobj
 
 from ...utils.datetime import get_utc_now, to_utc, utc_now_str
 from ...utils.exc import JobAlreadyCompleteError
+from ...utils.logging import err_logger
 from ...utils.model import PartialMeta
 from ...utils.redis_store import Schema
 from ...utils.strings import uuid_str
@@ -68,6 +72,41 @@ JobStage: TypeAlias = Literal[
     "post_processing",
     "final",
 ]
+
+_QUEUE_CONTEXT: Optional["QueueContext"] = None
+
+
+def get_queue_context() -> "QueueContext":
+    """Retrieves the queue context for this process"""
+    global _QUEUE_CONTEXT
+    if _QUEUE_CONTEXT is None:
+        _QUEUE_CONTEXT = {
+            "queue_prefix": settings.DEFAULT_PREFIX,
+            "booking_db_url": settings.BOOKING_DB_URL,
+            "jobs_store_url": settings.RQ_REDIS_URL,
+            "force_normal_queue": False,
+            "max_idle_time": settings.MAX_IDLE_TIME,
+            "is_async": settings.IS_ASYNC,
+            "postprocessing_folder": f"{settings.LOG_FILE_POOL}",
+            "preprocessing_folder": f"{settings.PREPROCESSED_JOB_POOL}",
+            "job_upload_folder": f"{settings.JOB_UPLOAD_POOL}",
+            "preprocessing_timeout": settings.MAX_PREPROCESSING_TIME,
+            "execution_timeout": settings.MAX_EXECUTION_TIME,
+            "postprocessing_timeout": settings.MAX_POSTPROCESSING_TIME,
+            "general_queue_timeout": settings.MAX_GENERAL_QUEUE_TIME,
+            "recalibration_queue_timeout": settings.MAX_RECALIBRATION_QUEUE_TIME,
+            "default_recalibration_interval": settings.DEFAULT_RECALIBRATION_INTERVAL,
+        }
+        err_logger.info("Initializing queue context")
+        _QUEUE_CONTEXT = cast(QueueContext, _QUEUE_CONTEXT)
+
+    return _QUEUE_CONTEXT
+
+
+def clear_queue_context():
+    """Clears the queue context"""
+    global _QUEUE_CONTEXT
+    _QUEUE_CONTEXT = None
 
 
 @unique
@@ -486,11 +525,13 @@ class ExecutorOptions:
         calibration_node_config: the configuration file for the nodes during calibration
         calibration_device_config: the configuration file for the entire devices during calibration
         calibration_spi_config: the configuration file for the spi during calibration
+        redis_url: the redis url where temp data e.g. recalibration data is stored
     """
 
     executor_type: str
     backend_name: str
     backend_config: BackendConfig
+    redis_url: RedisDsn | str
     quantify_config_file: Optional[PathLike] = None
     quantify_metadata_file: Optional[PathLike] = None
     should_restore_currents: bool = False
@@ -507,12 +548,9 @@ class QueueContext(TypedDict):
 
     Attributes:
         queue_prefix: the prefix attached to all queues
-        booking_db_url: the URL to the database containing bookings
-        jobs_store_url: the URL to the store containing the jobs
         force_normal_queue: the flag for whether to force the usage of the normal queue
         max_idle_time: the maximum time a booking can remain idle
         is_async: whether jobs should be run in async workers or in the same process; good for testing
-        executor_options: the options used when initializing the executor
         preprocessing_timeout: the maximum time tasks should run on the preprocessing queue
         execution_timeout: the maximum time tasks should run on the execution queue
         postprocessing_timeout: the maximum time tasks should run on the postprocessing queue
@@ -522,15 +560,12 @@ class QueueContext(TypedDict):
     """
 
     queue_prefix: str
-    booking_db_url: str
-    jobs_store_url: str
     force_normal_queue: NotRequired[bool]
     postprocessing_folder: str
     preprocessing_folder: str
     job_upload_folder: str
     max_idle_time: int
     is_async: bool
-    executor_options: ExecutorOptions
     execution_timeout: int
     preprocessing_timeout: int
     postprocessing_timeout: int

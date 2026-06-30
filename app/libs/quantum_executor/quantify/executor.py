@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Union
 
 import qblox_instruments
+from pydantic import RedisDsn
 from qcodes import Instrument
 from quantify_core.data.handling import set_datadir
 from quantify_scheduler.backends.graph_compilation import SerialCompiler
@@ -79,6 +80,7 @@ class QuantifyExecutor(QuantumExecutor):
         ) = settings.CALIBRATION_DEVICE_CONFIG_FILE,
         calib_spi_conf: Path | os.PathLike[str] = settings.CALIBRATION_SPI_CONFIG_FILE,
         calib_seed_file: Path | os.PathLike[str] = settings.CALIBRATION_SEED,
+        redis_url: RedisDsn | str = settings.RQ_REDIS_URL,
         **kwargs,
     ):
         """
@@ -92,6 +94,7 @@ class QuantifyExecutor(QuantumExecutor):
             calib_node_conf: the configuration file for the nodes during calibration
             calib_device_conf: the configuration file for the entire devices during calibration
             calib_spi_conf: the configuration file for the spi during calibration
+            redis_url: the redis url where data, e.g. recalibration data, is temporarily stored
         """
         self.calib_seed_file = calib_seed_file
         self.calib_spi_conf = calib_spi_conf
@@ -103,6 +106,7 @@ class QuantifyExecutor(QuantumExecutor):
         self.are_clusters_resettable = are_clusters_resettable
         self.lo_frequencies = _extract_lo_frequencies(self.quantify_config)
         self.drive_frequencies = _extract_drive_frequencies(backend_config)
+        self._redis_url = redis_url
 
         qubit_ids = backend_config.device_config.qubit_ids
         coupling_dict = backend_config.device_config.coupling_dict
@@ -168,11 +172,8 @@ class QuantifyExecutor(QuantumExecutor):
         self._compiler = SerialCompiler(name=f"{self.device_name}_compiler")
         self._compilation_config = self._quantum_device.generate_compilation_config()
 
-    def recalibrate(self, redis_url: str, **kwargs) -> DeviceCalibration | None:
+    def recalibrate(self, **kwargs) -> DeviceCalibration | None:
         """Recalibrates the executor
-
-        Args:
-            redis_url: the redis url where intermediate calibration data is stored
 
         Returns:
             the final device calibration state after recalibration
@@ -205,7 +206,7 @@ class QuantifyExecutor(QuantumExecutor):
                     stdout_log_level=25,
                     file_log_level=25,
                     cluster_ip=conf.ip_address,
-                    redis_url=redis_url,
+                    redis_url=self._redis_url,
                     data_dir=data_dir,
                     spi_mode=SPIMode.dummy,
                     qubits=qubits,
@@ -326,4 +327,4 @@ def _extract_drive_frequencies(backend_config: BackendConfig) -> Dict[str, float
 
 def _to_drive_clock(qubit_id: Any) -> str:
     stripped = str(qubit_id).strip().lstrip("q")
-    return f"q{int(stripped):02d}.01"
+    return f"q{int(float(stripped)):02d}.01"

@@ -482,6 +482,13 @@ class CouplerCalibration(CalibrationValueSet):
             return int(v.lstrip("u"))
         return v
 
+    @field_validator("full_name", mode="before")
+    @classmethod
+    def validate_full_name(cls, v):
+        if isinstance(v, dict):
+            return v.get("value")
+        return v
+
     @computed_field
     @cached_property
     def short_name(self) -> Optional[str]:

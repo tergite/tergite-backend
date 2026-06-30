@@ -56,10 +56,10 @@ from app.utils.exc import (
 )
 
 from ..libs import device_parameters as props_lib
-from ..libs.queues.dtos import Job, JobStatus, QueueContext
+from ..libs.queues.dtos import Job, JobStatus, QueueContext, get_queue_context
 from ..services.booking import get_user
 from ..services.scheduler.dtos import RecalibrationInfo
-from ..services.scheduler.queues import QueuePool
+from ..services.scheduler.queues import QueuePool, get_queue_pool
 from ..utils.api import (
     CancellationDetails,
     GeneralMessage,
@@ -70,6 +70,7 @@ from ..utils.api import (
     get_request_logs_store,
     to_http_error,
 )
+from ..utils.redis import get_redis_connection
 from ..utils.redis_store import ItemNotFoundError
 from ..utils.sql_db import convert_http_sort_to_db_sort
 from ..utils.strings import uuid_str
@@ -77,12 +78,9 @@ from .dependencies import (
     MSSAuthDetails,
     get_backend_name,
     get_bearer_token,
-    get_cached_queue_context,
-    get_cached_redis_connection,
-    get_db_engine,
+    get_booking_db,
     get_mss_token_claims_dep,
     get_queue_context_if_online,
-    get_queue_pool,
     get_unverified_mss_is_admin,
     get_verified_mss_admin_user_id,
     get_verified_mss_details,
@@ -206,7 +204,7 @@ async def download_logfile(logfile_id: UUID):
 
 @app.get("/static-properties", dependencies=[Depends(get_verified_mss_user_id)])
 async def get_static_properties(
-    redis: Redis = Depends(get_cached_redis_connection),
+    redis: Redis = Depends(get_redis_connection),
     backend_name: str = Depends(get_backend_name),
 ):
     """Retrieves the device properties that are not changing"""
@@ -215,7 +213,7 @@ async def get_static_properties(
 
 @app.get("/dynamic-properties", dependencies=[Depends(get_verified_mss_user_id)])
 async def get_dynamic_properties(
-    redis: Redis = Depends(get_cached_redis_connection),
+    redis: Redis = Depends(get_redis_connection),
     backend_name: str = Depends(get_backend_name),
 ):
     """Retrieves the device properties that are changing with time i.e. calibration data"""
@@ -224,7 +222,7 @@ async def get_dynamic_properties(
 
 @app.get("/me")
 async def view_profile(
-    db_engine: Engine = Depends(get_db_engine),
+    db_engine: Engine = Depends(get_booking_db),
     user_id: str = Depends(get_verified_mss_user_id),
 ) -> UserProfile:
     """Views the profile of the current user
@@ -269,7 +267,7 @@ async def delete_profile(
 async def get_mss_token(
     body: MSSTokenClaims,
     mss_user_id: str = Depends(get_verified_mss_user_id),
-    db_engine: Engine = Depends(get_db_engine),
+    db_engine: Engine = Depends(get_booking_db),
 ) -> TokenResponse:
     """Get a token specific to the associated MSS instance for the provided token claims.
 
@@ -311,7 +309,7 @@ async def get_mss_token(
 
 @app.post("/users", dependencies=[Depends(get_verified_mss_admin_user_id)])
 async def create_user(
-    data: NewUserInfo, db_engine: Engine = Depends(get_db_engine)
+    data: NewUserInfo, db_engine: Engine = Depends(get_booking_db)
 ) -> UserProfile:
     """Creates a user given the name and email
 
@@ -333,6 +331,7 @@ async def remove_user(
     user_id: str,
     context: QueueContext = Depends(get_queue_context_if_online),
     queue_pool: QueuePool = Depends(get_queue_pool),
+    db_engine: Engine = Depends(get_booking_db),
 ) -> GeneralMessage:
     """Deletes the user of the given user_id
 
@@ -342,6 +341,7 @@ async def remove_user(
         user_id: the unique identifier of the user
         context: the context of the queues for all jobs
         queue_pool: the collection of queues to run the jobs on
+        db_engine: the SQL database to query
 
     Raises:
         ItemNotFoundError: user not found
@@ -349,7 +349,9 @@ async def remove_user(
     Returns:
         A general message object with status
     """
-    scheduler.delete_user_profile(context, queues=queue_pool, user_id=user_id)
+    scheduler.delete_user_profile(
+        context, queues=queue_pool, user_id=user_id, db_engine=db_engine
+    )
     return GeneralMessage(status="success", detail="User deleted")
 
 
@@ -357,7 +359,7 @@ async def remove_user(
 async def view_users(
     skip: int = Query(default=0),
     limit: Optional[int] = Query(default=None),
-    db_engine: Engine = Depends(get_db_engine),
+    db_engine: Engine = Depends(get_booking_db),
 ) -> PaginatedListResponse[UserProfile]:
     """Views all users
 
@@ -381,7 +383,7 @@ async def create_booking(
     context: QueueContext = Depends(get_queue_context_if_online),
     user_id: str = Depends(get_verified_mss_user_id),
     queue_pool: QueuePool = Depends(get_queue_pool),
-    db_engine: Engine = Depends(get_db_engine),
+    db_engine: Engine = Depends(get_booking_db),
 ) -> Booking:
     """Creates a booking for the user of the given token
 
@@ -401,7 +403,11 @@ async def create_booking(
         booking.create_random_user(db_engine, user_id)
 
     return scheduler.submit_booking(
-        context, queues=queue_pool, user_id=user_id, booking_info=data
+        context,
+        queues=queue_pool,
+        user_id=user_id,
+        booking_info=data,
+        db_engine=db_engine,
     )
 
 
@@ -412,6 +418,7 @@ async def cancel_booking(
     user_id: str = Depends(get_verified_mss_user_id),
     queue_pool: QueuePool = Depends(get_queue_pool),
     is_mss_admin: bool = Depends(get_unverified_mss_is_admin),
+    db_engine: Engine = Depends(get_booking_db),
 ) -> GeneralMessage:
     """Cancels a booking of given id for the user of the given token
 
@@ -421,6 +428,7 @@ async def cancel_booking(
         user_id: the MSS user_id as sent by MSS
         queue_pool: the collection of queues to run the jobs on
         is_mss_admin: whether the user is an admin in MSS or not
+        db_engine: the SQL database to submit data to
 
     Returns:
         the general message object with the status
@@ -431,6 +439,7 @@ async def cancel_booking(
         user_id=user_id,
         booking_id=booking_id,
         is_mss_admin=is_mss_admin,
+        db_engine=db_engine,
     )
     return {"status": "success", "detail": f"Booking of id {booking_id} cancelled"}
 
@@ -443,7 +452,7 @@ async def view_bookings(
     min_start_utc: Optional[datetime] = Query(default=None),
     max_start_utc: Optional[datetime] = Query(default=None),
     user_id: Optional[str] = Query(default=None),
-    db_engine: Engine = Depends(get_db_engine),
+    db_engine: Engine = Depends(get_booking_db),
 ) -> PaginatedListResponse[Booking]:
     """Views all available bookings
 
@@ -490,6 +499,8 @@ async def submit_job(
     upload_file: Annotated[UploadFile, Depends(validate_job_file)] = File(...),
     token_claims: MSSTokenClaims = Depends(get_mss_token_claims_dep(job_exists=False)),
     queue_pool: QueuePool = Depends(get_queue_pool),
+    backend_name: str = Depends(get_backend_name),
+    booking_db_engine: Engine = Depends(get_booking_db),
     force_normal_queue: bool = Query(default=False),
 ) -> Job:
     """Receives quantum jobs to process. This can be done by any IP address
@@ -499,6 +510,8 @@ async def submit_job(
         token_claims: the user_id and job_id associated with this request
         queue_pool: the collection of queues to run the jobs on
         context: the queue context for the job in the queue
+        backend_name: the backend to use for the job
+        booking_db_engine: the SQL database engine to query
         force_normal_queue: whether to force the job to run on the normal queue or not
 
     Returns:
@@ -512,6 +525,8 @@ async def submit_job(
         queues=queue_pool,
         upload_file=upload_file,
         credentials=token_claims,
+        backend_name=backend_name,
+        db_engine=booking_db_engine,
     )
 
 
@@ -521,6 +536,7 @@ async def view_job(
     user_id: str = Depends(get_verified_mss_user_id),
     is_mss_admin: bool = Depends(get_unverified_mss_is_admin),
     context: QueueContext = Depends(get_queue_context_if_online),
+    db_engine: Engine = Depends(get_booking_db),
 ) -> Job:
     """View the job of given job_id if job belongs to current user or if user is admin
 
@@ -529,12 +545,17 @@ async def view_job(
         job_id: the unique identifier of the job
         user_id: the user_id as provided by MSS
         is_mss_admin: whether the user is an mss admin or not
+        db_engine: the SQL database engine to query
 
     Returns:
         the job of the given job_id
     """
     return scheduler.get_job(
-        context, job_id=job_id, user_id=user_id, is_mss_admin=is_mss_admin
+        context,
+        job_id=job_id,
+        user_id=user_id,
+        is_mss_admin=is_mss_admin,
+        db_engine=db_engine,
     )
 
 
@@ -581,6 +602,7 @@ async def remove_job(
     user_id: str = Depends(get_verified_mss_user_id),
     queue_pool: QueuePool = Depends(get_queue_pool),
     is_mss_admin: bool = Depends(get_unverified_mss_is_admin),
+    db_engine: Engine = Depends(get_booking_db),
 ) -> GeneralMessage:
     """Deletes the job of given job_id if job belongs to current user or if user is admin
 
@@ -590,6 +612,7 @@ async def remove_job(
         user_id: the JWT token for the user, transformed into user_id by callback
         queue_pool: the collection of queues to run the jobs on
         is_mss_admin: whether the user is an mss admin or not
+        db_engine: the SQL database engine to query
 
     Returns:
         a general message showing status
@@ -603,6 +626,7 @@ async def remove_job(
         job_id=job_id,
         user_id=user_id,
         is_mss_admin=is_mss_admin,
+        db_engine=db_engine,
     )
     return {"status": "success", "detail": f"Job of id {job_id} deleted"}
 
@@ -722,7 +746,7 @@ async def switch_off(
 
 @app.post("/switch/on", dependencies=[Depends(get_verified_mss_admin_user_id)])
 async def switch_on(
-    context: QueueContext = Depends(get_cached_queue_context),
+    context: QueueContext = Depends(get_queue_context),
 ) -> GeneralMessage:
     """Switches on this device
 
@@ -740,7 +764,7 @@ async def switch_on(
 
 @app.get("/switch/status", dependencies=[Depends(get_verified_mss_user_id)])
 async def get_switch_status(
-    context: QueueContext = Depends(get_cached_queue_context),
+    context: QueueContext = Depends(get_queue_context),
 ):
     """Gets the status of this device
 

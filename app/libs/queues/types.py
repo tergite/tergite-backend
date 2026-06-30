@@ -128,6 +128,10 @@ class StaticQueue:
         except ValidationError:
             return None
 
+    def empty(self):
+        """Empties the queue. This is an alias for clear()"""
+        return self.clear()
+
     def clear(self):
         """Removes all items on the queue"""
         # network request 1

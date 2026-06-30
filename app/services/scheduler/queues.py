@@ -12,8 +12,8 @@
 # that they have been altered from the originals.
 #
 """Module containing all the queues relevant for this application"""
-
-from typing import Self
+from functools import cached_property
+from typing import Optional, Self
 
 from redis import Redis
 from rq import Queue as RqQueue
@@ -21,6 +21,7 @@ from rq import Queue as RqQueue
 import settings
 
 from ...libs.queues.types import RunnerQueue, StaticQueue
+from ...utils.logging import err_logger
 from ...utils.redis import get_redis_connection
 from .tasks import (
     execute,
@@ -29,6 +30,39 @@ from .tasks import (
     postprocessing_success_callback,
     preprocess,
 )
+
+_QUEUE_POOL: Optional["QueuePool"] = None
+
+
+def get_queue_pool() -> "QueuePool":
+    """Gets the queue pool"""
+    global _QUEUE_POOL
+    if _QUEUE_POOL is None:
+        _QUEUE_POOL = QueuePool.from_settings()
+
+    return _QUEUE_POOL
+
+
+def clear_queue_pool(empty_queues: bool = False, ignore_errors: bool = False) -> None:
+    """Clears the queue pool
+
+    Args:
+        empty_queues: Whether to empty the queues before clearing it
+        ignore_errors: Whether to ignore any errors raised by this function. Defaults to False
+    """
+    global _QUEUE_POOL
+    if isinstance(_QUEUE_POOL, QueuePool) and empty_queues:
+        try:
+            _QUEUE_POOL.empty()
+        except ExceptionGroup as exp_group:
+            if ignore_errors:
+                err_logger.warning(
+                    f"errors emptying queue pool: {exp_group.exceptions}"
+                )
+            else:
+                raise exp_group
+
+    _QUEUE_POOL = None
 
 
 class QueuePool:
@@ -109,6 +143,19 @@ class QueuePool:
         # static queues
         self.waitlist = get_waitlist(prefix, connection=connection)
 
+    @cached_property
+    def queues(self) -> dict[str, StaticQueue | RqQueue | RunnerQueue]:
+        """Mapping of the queues in the pool, keyed by name"""
+        return {
+            self.preprocessing.name: self.preprocessing,
+            self.normal_execution.name: self.normal_execution,
+            self.booked_execution.name: self.booked_execution,
+            self.general.name: self.general,
+            self.postprocessing.name: self.postprocessing,
+            self.recalibration.name: self.recalibration,
+            self.waitlist.name: self.waitlist,
+        }
+
     @classmethod
     def from_settings(cls) -> Self:
         """Constructs a queue pool from the settings"""
@@ -122,6 +169,22 @@ class QueuePool:
             recalibration_timeout=settings.MAX_RECALIBRATION_QUEUE_TIME,
             is_async=settings.IS_ASYNC,
         )
+
+    def empty(self):
+        """Empties the pool's queues
+
+        Raises:
+            ExceptionGroup: if any of the attempts to empty the queues errored out
+        """
+        errs: list[Exception] = []
+        for queue in self.queues.values():
+            try:
+                queue.empty()
+            except Exception as exp:
+                errs.append(exp)
+
+        if errs:
+            raise ExceptionGroup("Errors emptying the queues", errs)
 
 
 def get_waitlist(prefix: str, connection: Redis) -> StaticQueue:

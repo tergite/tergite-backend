@@ -12,8 +12,8 @@
 #
 """Module containing the store for the scheduler service"""
 
-from functools import lru_cache
 
+from pydantic import RedisDsn
 from redis import Redis
 
 import settings
@@ -22,27 +22,11 @@ from ...libs.queues.dtos import Job
 from ...utils.redis import get_redis_connection
 from ...utils.redis_store import Collection
 
-
-@lru_cache(maxsize=None)
-def get_jobs_store_connection(url: str) -> Redis:
-    """Returns a cached Redis connection for the jobs store.
-
-    Caching lives here rather than on get_jobs_store so the same connection
-    is reused regardless of how get_jobs_store is called (positional vs
-    keyword args) and regardless of whether the caller goes through
-    get_jobs_store or init_jobs_store directly.
-
-    Args:
-        url: the database URL for the redis server
-
-    Returns:
-        a Redis connection
-    """
-    return get_redis_connection(url=url)
+_JOB_STORES: dict[str, Collection[Job]] = {}
 
 
 def get_jobs_store(
-    url: str,
+    url: RedisDsn | str = settings.RQ_REDIS_URL,
     default_ttl: float = settings.JOBS_STORE_TTL,
     cleanup_interval: float = settings.JOBS_STORE_CLEAN_INTERVAL,
 ) -> Collection[Job]:
@@ -56,15 +40,27 @@ def get_jobs_store(
     Returns:
         the RedisCollection containing the jobs
     """
-    connection = get_jobs_store_connection(url)
-    return init_jobs_store(
-        connection=connection,
-        default_ttl=default_ttl,
-        cleanup_interval=cleanup_interval,
-    )
+    global _JOB_STORES
+    url = f"{url}"
+    job_store = _JOB_STORES.get(url)
+    if job_store is None:
+        connection = get_redis_connection(url)
+        job_store = _init_jobs_store(
+            connection=connection,
+            default_ttl=default_ttl,
+            cleanup_interval=cleanup_interval,
+        )
+        _JOB_STORES[url] = job_store
+    return job_store
 
 
-def init_jobs_store(
+def clear_jobs_stores_registry() -> None:
+    """Clears the jobs stores registry"""
+    global _JOB_STORES
+    _JOB_STORES.clear()
+
+
+def _init_jobs_store(
     connection: Redis,
     default_ttl: float = settings.JOBS_STORE_TTL,
     cleanup_interval=settings.JOBS_STORE_CLEAN_INTERVAL,
