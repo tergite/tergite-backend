@@ -59,6 +59,7 @@ from ..utils.exc import (
     UnauthorizedError,
 )
 from ..utils.redis import clear_redis_connections, get_redis_connection
+from ..utils.sql_db import clear_sql_engine_cache
 from ..utils.strings import validate_uuid4_str
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -67,7 +68,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handles functions to run before and after the application"""
-    get_bookings_sql_engine(settings.BOOKING_DB_URL)
+    get_bookings_sql_engine()
     executor, executor_options = get_executor_and_options()
 
     queue_context = get_queue_context()
@@ -93,6 +94,7 @@ async def lifespan(app: FastAPI):
     disconnect_mss_client(ignore_errors=True)
     clear_redis_connections(ignore_errors=True)
     clear_jobs_stores_registry()
+    clear_sql_engine_cache()
 
 
 def get_booking_db() -> Engine:

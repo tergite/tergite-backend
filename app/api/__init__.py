@@ -245,6 +245,7 @@ async def delete_profile(
     user_id: str = Depends(get_verified_mss_user_id),
     context: QueueContext = Depends(get_queue_context_if_online),
     queue_pool: QueuePool = Depends(get_queue_pool),
+    db_engine: Engine = Depends(get_booking_db),
 ) -> GeneralMessage:
     """Deletes the profile of the current user
 
@@ -252,6 +253,7 @@ async def delete_profile(
         user_id: the user_id as submitted by MSS
         context: the queue context of the queues for all jobs
         queue_pool: the collection of queues where the jobs run
+        db_engine: the SQL database to query
 
     Raises:
         ItemNotFoundError (404): user not found
@@ -259,7 +261,9 @@ async def delete_profile(
     Returns:
         A general message object with status
     """
-    scheduler.delete_user_profile(context, queues=queue_pool, user_id=user_id)
+    scheduler.delete_user_profile(
+        context, queues=queue_pool, user_id=user_id, db_engine=db_engine
+    )
     return GeneralMessage(status="success", detail="Profile deleted")
 
 
@@ -566,6 +570,7 @@ async def cancel_job(
     context: QueueContext = Depends(get_queue_context_if_online),
     mss_auth_details: MSSAuthDetails = Depends(get_verified_mss_details),
     queue_pool: QueuePool = Depends(get_queue_pool),
+    db_engine: Engine = Depends(get_booking_db),
 ) -> GeneralMessage:
     """Cancels the job of given job_id if job belongs to current user or if user is admin
 
@@ -575,6 +580,7 @@ async def cancel_job(
         context: the queue context for the job in the queue
         mss_auth_details: the auth details from MSS for this request
         queue_pool: the collection of queues to run the jobs on
+        db_engine: the SQL database engine to query
 
     Returns:
         a general message showing status
@@ -591,6 +597,7 @@ async def cancel_job(
         user_id=mss_auth_details.user_id,
         is_mss_admin=mss_auth_details.is_mss_admin,
         reason=details.reason,
+        db_engine=db_engine,
     )
     return {"status": "success", "detail": f"Job of id {job_id} cancelled"}
 
@@ -774,5 +781,5 @@ async def get_switch_status(
     Returns:
         general information on the status of the request
     """
-    status = "OFF" if scheduler.is_offline(context) else "ON"
+    status = "OFF" if scheduler.is_offline() else "ON"
     return {"status": status}

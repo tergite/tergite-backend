@@ -18,11 +18,9 @@
 #
 """Module containing the tasks to run on the job"""
 import functools
-import json
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Optional, Tuple, Type
 
 import redis
@@ -56,6 +54,10 @@ from ...utils.datetime import get_utc_now
 from ...utils.exc import JobAlreadyCancelled, PostProcessingError
 from ...utils.redis import get_redis_connection
 from ...utils.rq import cancel_rq_job
+from ..booking import get_active_booking
+from ..booking.models import Booking
+from ..booking.service import get_booking, get_next_booking
+from ..booking.store import get_bookings_sql_engine
 from ..external.mss.dtos import DeviceEvent, DeviceEventName
 from ..external.mss.service import get_mss_client
 from .store import get_jobs_store
@@ -71,23 +73,6 @@ from .utils import (
     update_job_results,
     update_job_stage,
 )
-
-
-def _read_booking_cache(redis_connection, cache_key: str) -> Optional[SimpleNamespace]:
-    """Reads and deserializes a booking entry from the Redis pre-cache.
-
-    Returns a SimpleNamespace with datetime fields already parsed, or None
-    if the key is absent.  The cache is written by PreloadedRqWorker.execute_job
-    in the parent process before os.fork(), so the child never touches SQLite.
-    """
-    raw = redis_connection.get(cache_key)
-    if raw is None:
-        return None
-    d = json.loads(raw)
-    for field in ("start_utc", "end_utc"):
-        if field in d and d[field] is not None:
-            d[field] = datetime.fromisoformat(d[field])
-    return SimpleNamespace(**d)
 
 
 def preprocess(
@@ -169,11 +154,10 @@ def post_booking_cleanup(booking_id: str, context: QueueContext):
         booking_id: the unique identifier of the booking
         context: extra variables that describe the environment the job is to run in
     """
+    booking_db_url = context["booking_db_url"]
+    bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
+    booking = get_booking(bookings_sql_engine, Booking.id == booking_id)
     redis_connection = get_current_job().connection
-    prefix = context["queue_prefix"]
-    booking = _read_booking_cache(
-        redis_connection, f"{prefix}:_cache:booking:{booking_id}"
-    )
 
     if booking is None:
         logging.error(f"no booking found with id {booking_id}")
@@ -213,23 +197,12 @@ def reset_idleness_timer(
     if max_idle_time is None:
         max_idle_time = context["max_idle_time"]
 
+    bookings_sql_engine = get_bookings_sql_engine(context["booking_db_url"])
     redis_connection = get_current_job().connection
-    prefix = context["queue_prefix"]
     queue_pool = get_queue_pool()
     general_queue = queue_pool.general
 
-    booking = _read_booking_cache(
-        redis_connection, f"{prefix}:_cache:booking:{booking_id}"
-    )
-    if booking is None:
-        # Fall back to active_booking cache (reset_idleness_timer is often
-        # called with booking_id == active_booking.id from within a job whose
-        # specific-booking cache was not pre-populated).
-        active = _read_booking_cache(
-            redis_connection, f"{prefix}:_cache:active_booking"
-        )
-        if active is not None and active.id == booking_id:
-            booking = active
+    booking = get_booking(bookings_sql_engine, Booking.id == booking_id)
     if booking is None:
         logging.error(f"no booking found with id {booking_id}")
         return None
@@ -532,13 +505,10 @@ def _try_enqueue_on_normal_queue(
 
     job_id = job.job_id
 
+    bookings_sql_engine = get_bookings_sql_engine(context["booking_db_url"])
     jobs_store = get_jobs_store()
-    redis_connection = get_current_job().connection
-    prefix = context["queue_prefix"]
 
-    next_booking = _read_booking_cache(
-        redis_connection, f"{prefix}:_cache:next_booking"
-    )
+    next_booking = get_next_booking(bookings_sql_engine)
     queue_pool = get_queue_pool()
     queue = queue_pool.normal_execution
 
@@ -592,21 +562,18 @@ def _try_enqueue_on_booked_queue(
     job_id = job.job_id
 
     job_store = get_jobs_store()
-    redis_connection = get_current_job().connection
-    prefix = context["queue_prefix"]
+    bookings_sql_engine = get_bookings_sql_engine(context["booking_db_url"])
 
     active_booking = None
     if booking_id:
-        active_booking = _read_booking_cache(
-            redis_connection, f"{prefix}:_cache:booking:{booking_id}"
-        )
+        active_booking = get_booking(bookings_sql_engine, Booking.id == booking_id)
 
     queue_pool = get_queue_pool()
     queue = queue_pool.booked_execution
 
     usable_time = 0
     is_booker = False
-    if active_booking is not None:
+    if isinstance(active_booking, Booking):
         usable_time = active_booking.total_duration - queue.total_duration
         is_booker = user_id == active_booking.user_id
 
@@ -691,17 +658,15 @@ def _pop_waitlist_to_booking(
     queue_pool = get_queue_pool()
 
     waitlist = queue_pool.waitlist
+    booking_db_url = context["booking_db_url"]
     jobs_store_url = context["jobs_store_url"]
+    bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
     job_store = get_jobs_store(jobs_store_url)
     queue = queue_pool.booked_execution
-    redis_connection = get_current_job().connection
-    prefix = context["queue_prefix"]
 
     usable_time = float("inf")
-    next_booking = _read_booking_cache(
-        redis_connection, f"{prefix}:_cache:next_booking"
-    )
-    if next_booking is not None:
+    next_booking = get_next_booking(bookings_sql_engine)
+    if isinstance(next_booking, Booking):
         usable_time = (next_booking.start_utc - get_utc_now()).total_seconds()
 
     next_job_tuple = waitlist.pop_first(_is_job_shorter, usable_time)
@@ -709,10 +674,8 @@ def _pop_waitlist_to_booking(
         return None, context
 
     job, args, kwargs = next_job_tuple
-    active_booking = _read_booking_cache(
-        redis_connection, f"{prefix}:_cache:active_booking"
-    )
-    if active_booking is not None:
+    active_booking = get_active_booking(bookings_sql_engine)
+    if active_booking:
         # restart the timer to run once to push next waitlisted job to this queue
         # immediately after this job is done.
         # This will be canceled if a new job from the booker is sent to run on this queue
@@ -740,15 +703,13 @@ def _pop_waitlist_to_normal_queue(context: QueueContext):
     """
     from .queues import get_queue_pool
 
+    booking_db_url = context["booking_db_url"]
     jobs_store_url = context["jobs_store_url"]
+    bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
     job_store = get_jobs_store(jobs_store_url)
     queue_pool = get_queue_pool()
     waitlist = queue_pool.waitlist
-    redis_connection = get_current_job().connection
-    prefix = context["queue_prefix"]
-    next_booking = _read_booking_cache(
-        redis_connection, f"{prefix}:_cache:next_booking"
-    )
+    next_booking = get_next_booking(bookings_sql_engine)
     max_total_duration = None
     if next_booking is not None:
         max_total_duration = (next_booking.start_utc - get_utc_now()).total_seconds()

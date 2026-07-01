@@ -1,129 +1,152 @@
+# New calibration section for the loke backend (values only)
+
 [calibration_config]
-[[calibration_config.qubit]]
-frequency = 4741499559.458488
-pi_pulse_amplitude = 0.7308488204080522
-pi_pulse_duration = 2.8e-8
-pi_pulse_motzoi = -0.05384615384615388
-pulse_type = "Gaussian"
-pulse_sigma = 0.0
-id = 12.0
-name = "q12"
 
-[[calibration_config.qubit]]
-frequency = 4741499559.458488
-pi_pulse_amplitude = 0.7308488204080522
-pi_pulse_duration = 2.8e-8
-pi_pulse_motzoi = -0.05384615384615388
-pulse_type = "Gaussian"
-pulse_sigma = 0.0
-id = 13.0
-name = "q13"
-
-[[calibration_config.qubit]]
-frequency = 4741499559.458488
-pi_pulse_amplitude = 0.7308488204080522
-pi_pulse_duration = 2.8e-8
-pi_pulse_motzoi = -0.05384615384615388
-pulse_type = "Gaussian"
-pulse_sigma = 0.0
-id = 14.0
-name = "q14"
-
-[[calibration_config.readout_resonator]]
-acq_delay = 2.2e-7
-acq_integration_time = 2.5e-6
-frequency = 6826355555.555555
-pulse_amplitude = 0.035539772727272725
-pulse_delay = 0.0
-pulse_duration = 2.5e-6
-pulse_type = "Square"
-id = 12.0
-name = "q12"
-
-[[calibration_config.readout_resonator]]
-acq_delay = 2.2e-7
-acq_integration_time = 2.5e-6
-frequency = 6826355555.555555
-pulse_amplitude = 0.035539772727272725
-pulse_delay = 0.0
-pulse_duration = 2.5e-6
-pulse_type = "Square"
-id = 13.0
-name = "q13"
-
-[[calibration_config.readout_resonator]]
-acq_delay = 2.2e-7
-acq_integration_time = 2.5e-6
-frequency = 6826355555.555555
-pulse_amplitude = 0.035539772727272725
-pulse_delay = 0.0
-pulse_duration = 2.5e-6
-pulse_type = "Square"
-id = 14.0
-name = "q14"
-
-[[calibration_config.coupler]]
-frequency = 4176200000.0
-cz_pulse_duration_constant = 3.8e-7
-control_rz_lambda = 2.111848394913139
-target_rz_lambda = 2.3387411976724017
-pulse_type = "wacqt_cz"
-id = 0.0
-full_name = "q12_q13"
-short_name = "u0"
-control_qubit = "q12"
-target_qubit = "q13"
-
-[[calibration_config.coupler]]
-frequency = 4176200000.0
-cz_pulse_duration_constant = 3.8e-7
-control_rz_lambda = 2.111848394913139
-target_rz_lambda = 2.3387411976724017
-pulse_type = "wacqt_cz"
-id = 1.0
-full_name = "q12_q14"
-short_name = "u1"
-control_qubit = "q12"
-target_qubit = "q14"
+# -- Units --
 
 [calibration_config.units.qubit]
 frequency = "Hz"
-pi_pulse_amplitude = ""
-pi_pulse_duration = "s"
-pi_pulse_motzoi = ""
-pulse_type = ""
-pulse_sigma = ""
+t1_decoherence = "s"
+t2_decoherence = "s"
+anharmonicity = "Hz"
 
-[calibration_config.units.coupler]
-frequency = "Hz"
-cz_pulse_duration_constant = "s"
-control_rz_lambda = "rad"
-target_rz_lambda = "rad"
-pulse_type = ""
-full_name = "q12_q13"
 
 [calibration_config.units.readout_resonator]
 acq_delay = "s"
 acq_integration_time = "s"
 frequency = "Hz"
-pulse_amplitude = ""
 pulse_delay = "s"
 pulse_duration = "s"
+pulse_amplitude = ""
 pulse_type = ""
 
-[calibration_config.units.discriminators]
+[calibration_config.units.coupler]
+frequency = "Hz"
+frequency_detuning = "Hz"
+anharmonicity = "Hz"
+coupling_strength_02 = "Hz"
+coupling_strength_12 = "Hz"
+cz_pulse_amplitude = ""
+cz_pulse_dc_bias = ""
+cz_pulse_phase_offset = "rad"
+cz_pulse_duration_before = "s"
+cz_pulse_duration_rise = "s"
+cz_pulse_duration_constant = "s"
+pulse_type = ""
+
+
+# -- Qubits --
+
+[[calibration_config.qubit]]
+id="q12"
+t1_decoherence      = 3.4e-5
+t2_decoherence      = 3.3e-5
+frequency           = 4511480043.556283
+pi_pulse_amplitude  = 0.17555712637424228
+pi_pulse_duration   = 5.6e-8
+pulse_type          = "Gaussian"
+pulse_sigma         = 7e-9
+
+[[calibration_config.qubit]]
+id="q13"
+t1_decoherence      = 3.4e-5
+t2_decoherence      = 3.3e-5
+frequency           = 4677112343.360253
+pi_pulse_amplitude  = 0.17535338530538067
+pi_pulse_duration   = 5.6e-8
+pulse_type          = "Gaussian"
+pulse_sigma         = 7e-9
+
+[[calibration_config.qubit]]
+id="q14"
+t1_decoherence      = 3.4e-5
+t2_decoherence      = 3.3e-5
+frequency           = 5770226599.80365
+pi_pulse_amplitude  = 0.17873594718151276
+pi_pulse_duration   = 5.6e-8
+pulse_type          = "Gaussian"
+pulse_sigma         = 7e-9
+
+
+# -- Resonators --
+
+[[calibration_config.readout_resonator]]
+id="q12"
+acq_delay            = 5e-8
+acq_integration_time = 1e-6
+frequency            = 7260080000.0
+pulse_amplitude      = 0.1266499392606423
+pulse_delay          = 0.0
+pulse_duration       = 9e-7
+pulse_type           = "Square"
+
+[[calibration_config.readout_resonator]]
+id="q13"
+acq_delay            = 5e-8
+acq_integration_time = 1e-6
+frequency            = 7380000000.0
+pulse_amplitude      = 0.12660078572926436
+pulse_delay          = 0.0
+pulse_duration       = 9e-7
+pulse_type           = "Square"
+
+[[calibration_config.readout_resonator]]
+id="q14"
+acq_delay            = 5e-8
+acq_integration_time = 1e-6
+frequency            = 7502000000.0
+pulse_amplitude      = 0.08245560237524203
+pulse_delay          = 0.0
+pulse_duration       = 9e-7
+pulse_type           = "Square"
+
+[[calibration_config.coupler]]
+id = "u0"
+frequency = 0
+frequency_detuning = 0
+anharmonicity = 0
+coupling_strength_02 = 0
+coupling_strength_12 = 0
+cz_pulse_amplitude = 0
+cz_pulse_dc_bias = 0
+cz_pulse_phase_offset = 0
+cz_pulse_duration_before = 0
+cz_pulse_duration_rise = 0
+cz_pulse_duration_constant = 0
+control_rz_lambda = 0.6
+target_rz_lambda = 0.3
+pulse_type = ""
+
+[[calibration_config.coupler]]
+id = "u1"
+frequency = 0
+frequency_detuning = 0
+anharmonicity = 0
+coupling_strength_02 = 0
+coupling_strength_12 = 0
+cz_pulse_amplitude = 0
+cz_pulse_dc_bias = 0
+cz_pulse_phase_offset = 0
+cz_pulse_duration_before = 0
+cz_pulse_duration_rise = 0
+cz_pulse_duration_constant = 0
+control_rz_lambda = 0.6
+target_rz_lambda = 0.3
+pulse_type = ""
+
+# -- Discriminators --
 
 [calibration_config.discriminators.lda.q12]
-coef_0 = 66.43380014248888
-coef_1 = 971.3756882612579
-intercept = -9.025023646657276
+intercept = -38.4344477840827
+coef_0    = -98953.87504155144
+coef_1    = -114154.48696231026
 
 [calibration_config.discriminators.lda.q13]
-coef_0 = 66.43380014248888
-coef_1 = 971.3756882612579
-intercept = -9.025023646657276
+intercept = -42.05181160328822
+coef_0    = -107941.00358803963
+coef_1    = -124239.32054386326
 
 [calibration_config.discriminators.lda.q14]
-coef_0 = 66.43380014248888
-coef_1 = 971.3756882612579
-intercept = -9.025023646657276
+intercept = -22.684588212281916
+coef_0    = -191087.42493249022
+coef_1    = -20803.06874845618
