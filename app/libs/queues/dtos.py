@@ -548,6 +548,8 @@ class QueueContext(TypedDict):
 
     Attributes:
         queue_prefix: the prefix attached to all queues
+        booking_db_url: the database URL for the bookings SQLAlchemy engine
+        jobs_store_url: the Redis URL for the jobs store
         force_normal_queue: the flag for whether to force the usage of the normal queue
         max_idle_time: the maximum time a booking can remain idle
         is_async: whether jobs should be run in async workers or in the same process; good for testing
@@ -560,6 +562,8 @@ class QueueContext(TypedDict):
     """
 
     queue_prefix: str
+    booking_db_url: str
+    jobs_store_url: str
     force_normal_queue: NotRequired[bool]
     postprocessing_folder: str
     preprocessing_folder: str

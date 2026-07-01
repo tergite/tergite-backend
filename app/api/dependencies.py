@@ -34,7 +34,7 @@ from ..libs.queues.dtos import (
 )
 from ..services.booking.models import MSSTokenClaims
 from ..services.booking.service import get_user_job_id_pair_from_token
-from ..services.booking.store import init_booking_db
+from ..services.booking.store import get_bookings_sql_engine
 from ..services.external.mss.service import disconnect_mss_client, get_mss_client
 from ..services.scheduler import (
     get_job,
@@ -62,14 +62,12 @@ from ..utils.redis import clear_redis_connections, get_redis_connection
 from ..utils.strings import validate_uuid4_str
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-_DB_ENGINE: Engine | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handles functions to run before and after the application"""
-    global _DB_ENGINE
-    _DB_ENGINE = init_booking_db()
+    get_bookings_sql_engine(settings.BOOKING_DB_URL)
     executor, executor_options = get_executor_and_options()
 
     queue_context = get_queue_context()
@@ -95,15 +93,11 @@ async def lifespan(app: FastAPI):
     disconnect_mss_client(ignore_errors=True)
     clear_redis_connections(ignore_errors=True)
     clear_jobs_stores_registry()
-    _DB_ENGINE = None
 
 
 def get_booking_db() -> Engine:
     """Gets the SQLAlchemy engine for the bookings service"""
-    global _DB_ENGINE
-    if _DB_ENGINE is None:
-        _DB_ENGINE = init_booking_db()
-    return _DB_ENGINE
+    return get_bookings_sql_engine(settings.BOOKING_DB_URL)
 
 
 def get_backend_name() -> str:

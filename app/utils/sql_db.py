@@ -15,6 +15,7 @@
 from typing import Iterable, List, Type
 
 from sqlalchemy import Engine
+from sqlalchemy.pool import NullPool
 from sqlmodel import SQLModel, col, create_engine, desc
 
 from .exc import InvalidRequestError
@@ -34,8 +35,15 @@ def get_sql_engine(
         the SQLStore associated with the given URL
     """
     tables = [v.__table__ for v in models if hasattr(v, "__table__")]
-    engine = create_engine(url)
-    SQLModel.metadata.clear()
+    # Use NullPool for SQLite to avoid fork-safety issues on macOS.
+    # SQLAlchemy's default QueuePool runs a background maintenance thread; if that
+    # thread holds a libsqlite3 internal mutex at fork time, the child process will
+    # deadlock or SIGSEGV on its first sqlite3_connect() call.  NullPool has no
+    # background threads, so no lock is held at fork time.
+    kwargs = {}
+    if str(url).startswith("sqlite"):
+        kwargs["poolclass"] = NullPool
+    engine = create_engine(url, **kwargs)
     SQLModel.metadata.create_all(engine, tables=tables, checkfirst=checkfirst)
     return engine
 
