@@ -1634,6 +1634,7 @@ def test_admin_view_job(
         assert received_job == expected_job
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="real simulator takes too long")
 @pytest.mark.parametrize("client, _redis, worker, job, device", _VIEW_JOBS_PARAMS)
 def test_view_jobs(
     client, _redis, worker, job, device, jobs_folder, mocker: MockerFixture
@@ -1722,6 +1723,7 @@ def test_view_jobs(
         assert completed_jobs_resp == _paginate(expected_jobs)
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="real simulator takes too long")
 @pytest.mark.parametrize("client, _redis, worker, job, device", _VIEW_JOBS_PARAMS)
 def test_view_jobs_by_status(
     client, _redis, worker, job, device, jobs_folder, mocker: MockerFixture

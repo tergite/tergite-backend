@@ -7,6 +7,17 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Changed
+
+- Replaced the async websocket MSS connection with a blocking synchronous one, removing
+  the `asyncio` event loop and `AsyncMssClient` complexity from the MSS service
+- Replaced Redis PubSub inter-process communication (between FastAPI and RQ worker
+  processes) with direct singleton access to shared connection objects
+- Made DB, MSS, and Redis connections singletons (cached per URL) to prevent port
+  exhaustion from creating a new connection on every request or job execution
+- Executor is now closed immediately after each RQ task completes to avoid `TIME_WAIT`
+  socket accumulation under rapid job throughput
+
 ## [2026.06.0] - 2026-06-26
 
 This is part of the tergite release v2026.06.0.
