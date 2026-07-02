@@ -24,6 +24,7 @@ from typing import (
     Literal,
     NotRequired,
     Optional,
+    Self,
     Tuple,
     TypeAlias,
     TypedDict,
@@ -541,6 +542,29 @@ class ExecutorOptions:
     calibration_device_config: Optional[PathLike[str]] = None
     calibration_spi_config: Optional[PathLike[str]] = None
     calibration_seed_file: Optional[PathLike[str]] = None
+
+    @classmethod
+    def from_settings(cls) -> Self:
+        """Generates executor options from settings"""
+        backend_config = BackendConfig.from_toml(
+            settings.BACKEND_SETTINGS,
+            seed_file=settings.CALIBRATION_SEED,
+        )
+        return cls(
+            executor_type=settings.EXECUTOR_TYPE,
+            backend_name=backend_config.name,
+            backend_config=backend_config,
+            calibration_seed_file=settings.CALIBRATION_SEED,
+            quantify_config_file=settings.QUANTIFY_CONFIG_FILE,
+            quantify_metadata_file=settings.QUANTIFY_METADATA_FILE,
+            should_restore_currents=settings.SHOULD_RESTORE_CURRENTS,
+            are_clusters_resettable=False,
+            data_directory=settings.EXECUTOR_DATA_DIR,
+            calibration_node_config=settings.CALIBRATION_NODE_CONFIG_FILE,
+            calibration_device_config=settings.CALIBRATION_DEVICE_CONFIG_FILE,
+            calibration_spi_config=settings.CALIBRATION_SPI_CONFIG_FILE,
+            redis_url=settings.RQ_REDIS_URL,
+        )
 
 
 class QueueContext(TypedDict):

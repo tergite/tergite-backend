@@ -19,7 +19,7 @@ from rq import Worker
 
 
 class PreloadedRqWorker(Worker):
-    """RQ Worker that has important libraries, connections etc. preloaded"""
+    """RQ Worker that has important libraries, connections etc. preloaded."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

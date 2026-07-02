@@ -230,7 +230,6 @@ def rq_worker_for_simulator_2q(
     yield get_rq_pool_worker(queue_pool)
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.fixture
 def quantify_seed_file(tmp_path) -> Generator[str, Any, None]:
     """Returns a path to a temporary copy of the dummy quantify calibration seed file"""
@@ -247,7 +246,6 @@ def quantify_seed_file(tmp_path) -> Generator[str, Any, None]:
     new_seed_file.unlink(missing_ok=True)
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.fixture
 def quantify_rest_client(
     mocker, redis_client, quantify_seed_file
@@ -273,6 +271,9 @@ def quantify_rest_client(
 
     import app
     import settings
+    from app.services.scheduler.utils import clear_quantum_executor
+
+    clear_quantum_executor(ignore_errors=True)
 
     importlib.reload(settings)
     importlib.reload(app)
@@ -280,6 +281,7 @@ def quantify_rest_client(
 
     yield TestClient(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
+    clear_quantum_executor(ignore_errors=True)
 
 
 @pytest.fixture
@@ -291,7 +293,6 @@ def patched_mss_websockets(mocker) -> Generator[MockerFixture, Any, None]:
     yield mocker
 
 
-@pytest.mark.skipif(not HAS_QISKIT_DYNAMICS, reason="requires qiskit")
 @pytest.fixture
 def qiskit_1q_rest_client(mocker) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
@@ -316,6 +317,9 @@ def qiskit_1q_rest_client(mocker) -> Generator[TestClient, Any, None]:
 
     import app
     import settings
+    from app.services.scheduler.utils import clear_quantum_executor
+
+    clear_quantum_executor(ignore_errors=True)
 
     importlib.reload(settings)
     importlib.reload(app)
@@ -324,9 +328,9 @@ def qiskit_1q_rest_client(mocker) -> Generator[TestClient, Any, None]:
     yield TestClient(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
     _redis_connection.flushall()
+    clear_quantum_executor(ignore_errors=True)
 
 
-@pytest.mark.skipif(not HAS_QISKIT_DYNAMICS, reason="requires qiskit")
 @pytest.fixture
 def qiskit_2q_rest_client(mocker) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
@@ -349,6 +353,9 @@ def qiskit_2q_rest_client(mocker) -> Generator[TestClient, Any, None]:
 
     import app
     import settings
+    from app.services.scheduler.utils import clear_quantum_executor
+
+    clear_quantum_executor(ignore_errors=True)
 
     importlib.reload(settings)
     importlib.reload(app)
@@ -357,6 +364,7 @@ def qiskit_2q_rest_client(mocker) -> Generator[TestClient, Any, None]:
     yield TestClient(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
     _redis_connection.flushall()
+    clear_quantum_executor(ignore_errors=True)
 
 
 @pytest.fixture(scope="session")
@@ -399,128 +407,49 @@ def _clear_connection_caches():
     from app.services.scheduler.store import clear_jobs_stores_registry
     from app.services.scheduler.utils import clear_quantum_executor
     from app.utils.redis import clear_redis_connections
+    from app.utils.sql_db import clear_sql_engine_cache
 
     clear_redis_connections(ignore_errors=True)
     clear_jobs_stores_registry()
     disconnect_mss_client(ignore_errors=True)
     clear_quantum_executor(ignore_errors=True)
+    # Must also clear the SQL engine cache so that _clear_test_db's drop_all
+    # forces a fresh create_all on the next test (cache hit skips create_all).
+    clear_sql_engine_cache()
     yield
     clear_redis_connections(ignore_errors=True)
     clear_jobs_stores_registry()
     disconnect_mss_client(ignore_errors=True)
     clear_quantum_executor(ignore_errors=True)
+    clear_sql_engine_cache()
 
 
 @pytest.fixture
-def redis_from_url_spy(mocker: MockerFixture):
-    """Spy on redis.Redis.from_url to count new Redis connections opened during a test."""
-    import redis
+def redis_conn_spy(mocker):
+    """Spies on calls to redis.Redis.from_url."""
+    from redis import Redis
 
-    yield mocker.spy(redis.Redis, "from_url")
-
-
-@pytest.fixture
-def mss_connect_spy(mocker: MockerFixture):
-    """Spy on websockets.sync.client.connect (as imported in mss.service) to count
-    new MSS websocket connections opened during a test.
-    """
-    import app.services.external.mss.service as _svc
-
-    yield mocker.spy(_svc, "connect")
+    return mocker.patch("redis.Redis.from_url", wraps=Redis.from_url)
 
 
 @pytest.fixture
-def sql_engine_spy(mocker: MockerFixture):
-    """Spy on create_engine (as imported in app.utils.sql_db) to count new
-    SQLAlchemy engines created during a test.
-    """
-    from app.utils import sql_db
+def mss_conn_spy(mocker):
+    """Spies on calls to websockets.sync.client.connect (as imported in mss.service).
 
-    yield mocker.spy(sql_db, "create_engine")
+    Uses side_effect=mock_sync_connect so this doesn't override the MSS mock
+    already installed by client fixtures (qiskit_1q_rest_client etc.).
+    """
+    return mocker.patch(
+        "app.services.external.mss.service.connect", side_effect=mock_sync_connect
+    )
 
 
 @pytest.fixture
-def connection_call_log(tmp_path):
-    """Patches all connection factories to append JSON call records to a file.
+def sql_engine_spy(mocker):
+    """Spies on calls to create_engine (as imported in app.utils.sql_db)."""
+    from sqlalchemy import create_engine
 
-    Works across fork boundaries — PreloadedTestWorker forks a child for each
-    job, and the child inherits the patched functions, so every connection-open
-    call from any process is recorded.  Each line written to the file is:
-
-        {"resource": "redis"|"mss"|"sql_engine", "pid": <int>, "url": <str>}
-
-    Typical assertion pattern::
-
-        def test_connections_reused(connection_call_log, rq_worker, ...):
-            # ... enqueue and run jobs ...
-            records = read_connection_log(connection_call_log)
-            redis_calls = [r for r in records if r["resource"] == "redis"]
-            # created once in the parent (preload), never again in children
-            assert len(redis_calls) == 1
-            assert redis_calls[0]["pid"] == os.getpid()
-
-    Note: set up this fixture *before* creating the rq_worker so the patches
-    are already in place when _preload() runs.
-    """
-    import json
-
-    import app.services.external.mss.service as _mss_svc
-    from app.utils import sql_db
-
-    log_path = tmp_path / "connection_calls.jsonl"
-
-    _orig_from_url = redis.Redis.from_url
-    _orig_connect = _mss_svc.connect
-    _orig_create_engine = sql_db.create_engine
-
-    def _track_from_url(url, **kwargs):
-        with open(log_path, "a") as f:
-            f.write(
-                json.dumps({"resource": "redis", "pid": os.getpid(), "url": str(url)})
-                + "\n"
-            )
-        return _orig_from_url(url, **kwargs)
-
-    def _track_connect(uri, **kwargs):
-        with open(log_path, "a") as f:
-            f.write(
-                json.dumps({"resource": "mss", "pid": os.getpid(), "url": str(uri)})
-                + "\n"
-            )
-        return _orig_connect(uri, **kwargs)
-
-    def _track_create_engine(*args, **kwargs):
-        url = str(args[0]) if args else str(kwargs.get("url", ""))
-        with open(log_path, "a") as f:
-            f.write(
-                json.dumps({"resource": "sql_engine", "pid": os.getpid(), "url": url})
-                + "\n"
-            )
-        return _orig_create_engine(*args, **kwargs)
-
-    redis.Redis.from_url = staticmethod(_track_from_url)
-    _mss_svc.connect = _track_connect
-    sql_db.create_engine = _track_create_engine
-
-    yield str(log_path)
-
-    redis.Redis.from_url = staticmethod(_orig_from_url)
-    _mss_svc.connect = _orig_connect
-    sql_db.create_engine = _orig_create_engine
-
-
-def read_connection_log(log_path: str) -> list:
-    """Parse the JSONL file written by the connection_call_log fixture.
-
-    Returns a list of dicts, each with keys: resource, pid, url.
-    """
-    import json
-
-    try:
-        with open(log_path) as f:
-            return [json.loads(line) for line in f if line.strip()]
-    except FileNotFoundError:
-        return []
+    return mocker.patch("app.utils.sql_db.create_engine", wraps=create_engine)
 
 
 @pytest.fixture(autouse=True, scope="session")

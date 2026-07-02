@@ -98,6 +98,7 @@ dev = [
     "rq-dashboard~=0.8.3.2",
     "requests-mock>=1.11.0",
     "pytest-mock~=3.14.1",
+    "pytest-timeout~=2.3.1",
     "pytest-xdist~=3.8.0",
     "psutil~=7.0.0",
     # deps of deps
@@ -132,11 +133,26 @@ profile = "black"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+log_level = "ERROR"
+timeout = 120
+timeout_method = "thread"
 filterwarnings = [
   "ignore:This package has reached its end of life\\.:DeprecationWarning:quantify_scheduler\\..*",
   "ignore:qiskit\\.providers\\.models is deprecated since Qiskit 1\\.2 and will be removed in Qiskit 2\\.0\\.:DeprecationWarning:app\\.libs\\.quantum_executor\\.qiskit\\.backends\\..*",
   # Qiskit Qobj / BackendV1 workflow deprecation
   "ignore:.*The `Qobj` class and related functionality are part of the deprecated `BackendV1` workflow.*:DeprecationWarning",
+  # NetworkX edges= kwarg change (message starts with \n so .*edges=.* won't match)
+  "ignore::FutureWarning:networkx\\..*",
+  # Starlette .env file not found (expected in tests)
+  "ignore:Config file.*not found\\..*:UserWarning:starlette\\..*",
+  # QCoDeS third-party deprecation
+  "ignore:.*Call get directly on the parameter.*:DeprecationWarning:qblox_instruments\\..*",
+  # Pydantic v2 class-based config
+  "ignore:.*Support for class-based `config`.*:DeprecationWarning:pydantic\\..*",
+  # pytest-freezegun distutils
+  "ignore:.*distutils Version classes are deprecated.*:DeprecationWarning:pytest_freezegun.*",
+  # SQLModel autoflush session warning
+  "ignore:.*Object of type.*not in session.*:sqlalchemy.exc.SAWarning",
 ]
 
 [tool.uv]

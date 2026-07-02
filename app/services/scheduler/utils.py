@@ -13,8 +13,6 @@
 # that they have been altered from the originals.
 #
 """Utility functions for the scheduler service"""
-from __future__ import annotations
-
 import dataclasses
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -27,7 +25,6 @@ from sklearn.utils.extmath import safe_sparse_dot
 import settings
 
 from ...libs.device_parameters import (
-    BackendConfig,
     DeviceCalibration,
 )
 from ...libs.quantum_executor.base.executor import QuantumExecutor
@@ -78,62 +75,19 @@ _STAGE_STATUS_MAP: Dict[Stage, JobStatus] = {
 }
 
 
-def get_executor_and_options(
-    executor_type=settings.EXECUTOR_TYPE,
-    backend_config_file=settings.BACKEND_SETTINGS,
-    calibration_seed_file=settings.CALIBRATION_SEED,
-    quantify_config_file=settings.QUANTIFY_CONFIG_FILE,
-    quantify_metadata_file=settings.QUANTIFY_METADATA_FILE,
-    should_restore_currents=settings.SHOULD_RESTORE_CURRENTS,
-    are_clusters_resettable: bool = False,
-    data_directory=settings.EXECUTOR_DATA_DIR,
-    calibration_node_config=settings.CALIBRATION_NODE_CONFIG_FILE,
-    calibration_device_config=settings.CALIBRATION_DEVICE_CONFIG_FILE,
-    calibration_spi_config=settings.CALIBRATION_SPI_CONFIG_FILE,
-    redis_url=settings.RQ_REDIS_URL,
-) -> Tuple[QuantumExecutor, ExecutorOptions]:
+def get_executor_and_options() -> Tuple[QuantumExecutor, ExecutorOptions]:
     """Gets the executor and its options that will be passed around in the queue
-
-    Args:
-        backend_config_file: the path to the general backend configuration file
-        calibration_seed_file: the path to the calibration seed file
-        executor_type: the executor type to return
-        quantify_config_file: the path to the quantify configuration file of the executor
-        quantify_metadata_file: the path to the quantify metadata file of the executor
-        should_restore_currents: whether the executor should restore SPI currents
-        are_clusters_resettable: whether the clusters for this executor can be reset
-        data_directory: the directory where to save experiment data; default = settings.EXECUTOR_DATA_DIR
-        calibration_node_config: the configuration file for the nodes during calibration
-        calibration_device_config: the configuration file for the entire devices during calibration
-        calibration_spi_config: the configuration file for the spi during calibration
-        redis_url: the redis url of the redis where temp data e.g. recalibration data is stored
 
     Returns:
         the executor and executor options constructed from the above settings
     """
     global _QUANTUM_EXECUTOR_AND_OPTS
     if _QUANTUM_EXECUTOR_AND_OPTS is None:
-        initial_backend_config = BackendConfig.from_toml(
-            backend_config_file, seed_file=calibration_seed_file
-        )
-        backend_name = initial_backend_config.name
-        executor_options = ExecutorOptions(
-            executor_type=executor_type,
-            backend_name=backend_name,
-            backend_config=initial_backend_config,
-            calibration_seed_file=calibration_seed_file,
-            quantify_config_file=quantify_config_file,
-            quantify_metadata_file=quantify_metadata_file,
-            should_restore_currents=should_restore_currents,
-            are_clusters_resettable=are_clusters_resettable,
-            data_directory=data_directory,
-            calibration_node_config=calibration_node_config,
-            calibration_device_config=calibration_device_config,
-            calibration_spi_config=calibration_spi_config,
-            redis_url=redis_url,
-        )
+        executor_options = ExecutorOptions.from_settings()
         executor = _init_executor(executor_options, reset=True)
-        err_logger.info(f"QuantumExecutor initialised for backend '{backend_name}'.'")
+        err_logger.info(
+            f"QuantumExecutor initialised for backend '{executor_options.backend_name}'.'"
+        )
 
         # update the backend_config with the updated version got from the executor
         executor_options = dataclasses.replace(

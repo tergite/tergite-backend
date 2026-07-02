@@ -11,8 +11,6 @@
 # that they have been altered from the originals.
 
 """Websocket connection that is synchronous connecting to MSS"""
-from __future__ import annotations
-
 import json
 import math
 import time
@@ -162,7 +160,9 @@ class MssClient:
 
                 self._client.send(payload, text=True)
                 is_sent = True
-            except (ConnectionClosed, WebSocketException) as e:
+            except TimeoutError as e:
+                raise e
+            except (ConnectionClosed, WebSocketException, OSError) as e:
                 err_logger.warning(
                     f"Connection lost ({e}). Reconnecting in {delay} seconds..."
                 )
@@ -209,8 +209,9 @@ class MssClient:
                     response = json.loads(raw_data)
                     if all(response.get(k) == v for k, v in filters.items()):
                         return response
-
-            except (ConnectionClosed, WebSocketException) as e:
+            except TimeoutError as e:
+                raise e
+            except (ConnectionClosed, WebSocketException, OSError) as e:
                 err_logger.warning(
                     f"Connection lost ({e}). Reconnecting in {delay} seconds..."
                 )
