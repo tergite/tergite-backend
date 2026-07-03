@@ -1,8 +1,6 @@
 """Tests for the settings and configs"""
 
-import math
 import os
-import time
 
 import pytest
 from pydantic import ValidationError
@@ -58,38 +56,45 @@ def test_load_quantify_config_files():
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(30)
 @pytest.mark.parametrize("executor, settings_file, seed_file", _EXECUTOR_AND_SETTINGS)
-async def test_mss_reconnection(executor, settings_file, seed_file):
-    """Attempts to reconnect to MSS up to a given number of times"""
+async def test_mss_reconnection(executor, settings_file, seed_file, mocker):
+    """MSS_CONNECTION_MAX_ATTEMPTS is respected: connect is retried exactly that
+    many times before a TimeoutError is raised.
+    """
     remove_modules(["os", "app", "settings"])
 
-    timeout = 10
-    connection_attempts = 3
+    connection_attempts = 2  # MSS_CONNECTION_MAX_ATTEMPTS
 
     os.environ["EXECUTOR_TYPE"] = executor
     os.environ["BACKEND_SETTINGS"] = settings_file
-    mss_port = os.getenv("UNAVAILABLE_MSS_PORT", "5050")
-    os.environ["MSS_MACHINE_ROOT_URL"] = f"http://localhost:{mss_port}"
-    os.environ["MSS_CONNECTION_TIMEOUT"] = f"{timeout}"
+    os.environ["MSS_MACHINE_ROOT_URL"] = "http://localhost:19999"
+    os.environ["MSS_CONNECTION_TIMEOUT"] = "0.05"
     os.environ["MSS_CONNECTION_MAX_ATTEMPTS"] = f"{connection_attempts}"
+    # Large enough that the response-timeout path is never hit first.
+    os.environ["MSS_RESPONSE_TIMEOUT"] = "3600"
     os.environ["CALIBRATION_SEED"] = f"{seed_file}"
-    net_connection_timeout = timeout * connection_attempts
+
+    mock_connect = mocker.patch(
+        "app.services.external.mss.service.connect",
+        side_effect=OSError("Connection refused"),
+    )
+    # Suppress actual sleeping so the test is instant.
+    mock_sleep = mocker.patch("time.sleep")
 
     from sqlmodel import SQLModel
 
     SQLModel.metadata.clear()
 
-    start_time = time.time()
-    with pytest.raises(TimeoutError, match=r"Connection to MSS took longer than"):
+    with pytest.raises(TimeoutError, match=r"maximum connection attempts"):
         from app.api import app
 
-        # just to run the startup events
         async with app.router.lifespan_context(app):
             pass
 
-    end_time = time.time()
-    time_taken = end_time - start_time
-    assert math.isclose(time_taken, net_connection_timeout, abs_tol=3.2)
+    expected_connect_calls = connection_attempts + 1
+    assert mock_connect.call_count == expected_connect_calls
+    assert mock_sleep.call_count == expected_connect_calls
 
 
 @pytest.mark.asyncio

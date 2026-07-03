@@ -31,9 +31,7 @@ from .dtos import (
 )
 
 if TYPE_CHECKING:
-    from ...services.external.mss.service import (
-        AsyncMssClientPipe,
-    )
+    from ...services.external.mss.service import MssClient
 
 
 def get_backend_config(
@@ -93,15 +91,15 @@ def get_device_calibration_info(
     return calib_store.get_one(backend_name)
 
 
-async def save_all_device_params(
-    redis: Redis, backend_config: BackendConfig, mss_client_pipe: "AsyncMssClientPipe"
+def save_all_device_params(
+    redis: Redis, backend_config: BackendConfig, mss_client: "MssClient"
 ):
     """Saves all device parameters in both redis and in MSS
 
     Args:
         redis: connection to redis
         backend_config: the configuration of the backend
-        mss_client_pipe: the pipe to the MSS client
+        mss_client: the MSS client
 
     Raises:
         ValueError: error message from MSS when it attempts to update mss
@@ -114,8 +112,8 @@ async def save_all_device_params(
     save_backend_config(redis, data=backend_config)
 
     # update MSS of this backend's configuration
-    await send_device_params_to_mss(
-        mss_client_pipe, device_info=device_info, calibration_info=calib_info
+    send_device_params_to_mss(
+        mss_client, device_info=device_info, calibration_info=calib_info
     )
 
 
@@ -152,8 +150,8 @@ def save_backend_config(connection: Redis, data: BackendConfig):
     configs_store.insert(data)
 
 
-async def send_device_params_to_mss(
-    mss_client_pipe: "AsyncMssClientPipe",
+def send_device_params_to_mss(
+    mss_client: "MssClient",
     device_info: Device,
     calibration_info: DeviceCalibration,
 ):
@@ -161,7 +159,7 @@ async def send_device_params_to_mss(
     Sends this backend's information to MSS
 
     Args:
-        mss_client_pipe: the pipe connected to the MSS client
+        mss_client: the MSS client
         device_info: the static device info to send to the MSS
         calibration_info: the dynamic device properties to send to MSS
 
@@ -179,10 +177,10 @@ async def send_device_params_to_mss(
         data=calibration_info,
     )
 
-    await mss_client_pipe.send_event(
+    mss_client.send_event(
         initialization_event, error_prefix="error sending initialization info: "
     )
 
-    await mss_client_pipe.send_event(
+    mss_client.send_event(
         recalibration_event, error_prefix="error sending recalibration info: "
     )

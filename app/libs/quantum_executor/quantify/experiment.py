@@ -15,9 +15,6 @@
 # Refactored by Stefan Hill (2024)
 # Refactored by Chalmers Next Labs 2025
 
-
-from __future__ import annotations
-
 import math
 from collections import defaultdict
 from dataclasses import dataclass

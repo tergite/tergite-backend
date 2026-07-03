@@ -10,41 +10,43 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Dependencies useful for the FastAPI API"""
-import asyncio
-import dataclasses
 import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
-from os import PathLike
-from typing import Optional, Tuple, Unpack
+from typing import Optional
 
 from cryptography.exceptions import InvalidSignature
 from fastapi import Depends, FastAPI, HTTPException, UploadFile, status
 from fastapi.requests import Request
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, ValidationError
-from redis import Redis
 from sqlalchemy import Engine
 
 import settings
 
-from ..libs.device_parameters import BackendConfig, save_all_device_params
-from ..libs.quantum_executor.base.executor import QuantumExecutor
-from ..libs.queues.dtos import ExecutorOptions, JobFile, QueueContext
+from ..libs.device_parameters import save_all_device_params
+from ..libs.queues.dtos import (
+    JobFile,
+    QueueContext,
+    clear_queue_context,
+    get_queue_context,
+)
 from ..services.booking.models import MSSTokenClaims
 from ..services.booking.service import get_user_job_id_pair_from_token
 from ..services.booking.store import get_bookings_sql_engine
-from ..services.external.mss.service import AsyncMssClientPipe, connect_to_mss
+from ..services.external.mss.service import disconnect_mss_client, get_mss_client
 from ..services.scheduler import (
     get_job,
     init_recalibration,
     is_offline,
     stop_recalibration,
 )
-from ..services.scheduler.queues import QueuePool
+from ..services.scheduler.queues import clear_queue_pool, get_queue_pool
+from ..services.scheduler.store import clear_jobs_stores_registry
 from ..services.scheduler.utils import (
-    init_executor,
+    clear_quantum_executor,
+    get_executor_and_options,
 )
 from ..utils.api import get_request_logs_store, verify_mss_signature
 from ..utils.datetime import get_utc_now
@@ -56,134 +58,65 @@ from ..utils.exc import (
     NotAuthenticatedError,
     UnauthorizedError,
 )
-from ..utils.redis import get_redis_connection
+from ..utils.redis import clear_redis_connections, get_redis_connection
+from ..utils.sql_db import clear_sql_engine_cache
 from ..utils.strings import validate_uuid4_str
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-DB_ENGINE = get_bookings_sql_engine(settings.BOOKING_DB_URL)
-QUEUE_POOL = QueuePool.from_settings()
-QUEUE_CONTEXT: Optional[QueueContext] = None
-_REDIS_CONNECTION: Optional[Redis] = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Handles functions to run before and after the application"""
-    global DB_ENGINE, QUEUE_POOL, QUEUE_CONTEXT, _REDIS_CONNECTION
+    get_bookings_sql_engine()
+    executor, executor_options = get_executor_and_options()
 
-    DB_ENGINE = get_bookings_sql_engine(settings.BOOKING_DB_URL)
-    QUEUE_POOL = QueuePool.from_settings()
-    executor, executor_options = _get_executor_and_options(
-        executor_type=settings.EXECUTOR_TYPE,
-        backend_config_file=settings.BACKEND_SETTINGS,
-        calibration_seed_file=settings.CALIBRATION_SEED,
-        quantify_config_file=settings.QUANTIFY_CONFIG_FILE,
-        quantify_metadata_file=settings.QUANTIFY_METADATA_FILE,
-        should_restore_currents=settings.SHOULD_RESTORE_CURRENTS,
-        data_directory=settings.EXECUTOR_DATA_DIR,
-        calibration_node_config=settings.CALIBRATION_NODE_CONFIG_FILE,
-        calibration_device_config=settings.CALIBRATION_DEVICE_CONFIG_FILE,
-        calibration_spi_config=settings.CALIBRATION_SPI_CONFIG_FILE,
+    queue_context = get_queue_context()
+    queue_pool = get_queue_pool()
+    app.state.QUEUE_CONTEXT = queue_context
+    mss_client = get_mss_client()
+    redis_conn = get_redis_connection()
+
+    save_all_device_params(
+        redis=redis_conn,
+        backend_config=executor_options.backend_config,
+        mss_client=mss_client,
     )
-    QUEUE_CONTEXT = {
-        "queue_prefix": settings.DEFAULT_PREFIX,
-        "booking_db_url": settings.BOOKING_DB_URL,
-        "jobs_store_url": settings.RQ_REDIS_URL,
-        "force_normal_queue": False,
-        "max_idle_time": settings.MAX_IDLE_TIME,
-        "is_async": settings.IS_ASYNC,
-        "postprocessing_folder": f"{settings.LOG_FILE_POOL}",
-        "preprocessing_folder": f"{settings.PREPROCESSED_JOB_POOL}",
-        "job_upload_folder": f"{settings.JOB_UPLOAD_POOL}",
-        "executor_options": executor_options,
-        "preprocessing_timeout": settings.MAX_PREPROCESSING_TIME,
-        "execution_timeout": settings.MAX_EXECUTION_TIME,
-        "postprocessing_timeout": settings.MAX_POSTPROCESSING_TIME,
-        "general_queue_timeout": settings.MAX_GENERAL_QUEUE_TIME,
-        "recalibration_queue_timeout": settings.MAX_RECALIBRATION_QUEUE_TIME,
-        "default_recalibration_interval": settings.DEFAULT_RECALIBRATION_INTERVAL,
-    }
-    app.state.QUEUE_CONTEXT = QUEUE_CONTEXT
+    init_recalibration(queue_context, queues=queue_pool)
 
-    with get_redis_connection(settings.RQ_REDIS_URL, is_async=False) as redis_conn:
-        _REDIS_CONNECTION = redis_conn
-        net_connection_timeout = (
-            settings.MSS_CONNECTION_TIMEOUT * settings.MSS_CONNECTION_MAX_ATTEMPTS
-        )
-        mss_conn_event = asyncio.Event()
-        mss_connection_task = asyncio.create_task(
-            connect_to_mss(mss_conn_event), name="mss-connection-runner"
-        )
+    logging.info(f"starting app at {get_utc_now()}")
+    yield
 
-        try:
-            async with asyncio.timeout(net_connection_timeout):
-                await mss_conn_event.wait()
-
-            async with AsyncMssClientPipe() as mss_client_pipe:
-                await save_all_device_params(
-                    redis=redis_conn,
-                    backend_config=executor_options.backend_config,
-                    mss_client_pipe=mss_client_pipe,
-                )
-            init_recalibration(QUEUE_CONTEXT, queues=QUEUE_POOL)
-
-            print(f"starting app at {get_utc_now()}")
-            yield
-        except TimeoutError as e:
-            if mss_connection_task.done():
-                # let the error during connection be returned to main process
-                mss_connection_task.result()
-            else:
-                raise TimeoutError(
-                    f"Connection to MSS took longer than {net_connection_timeout}s"
-                ) from e
-
-        finally:
-            mss_connection_task.cancel()
-            try:
-                await mss_connection_task
-            except (asyncio.CancelledError, Exception) as exp:
-                logging.exception(f"Error shutting down MSS connection task: {exp}")
-
-            DB_ENGINE = None
-            stop_recalibration(QUEUE_CONTEXT, queues=QUEUE_POOL, ignore_errors=True)
-            executor.close()
+    stop_recalibration(queue_context, queues=queue_pool, ignore_errors=True)
+    clear_queue_pool(ignore_errors=True)
+    clear_quantum_executor(ignore_errors=True)
+    clear_queue_context()
+    disconnect_mss_client(ignore_errors=True)
+    clear_redis_connections(ignore_errors=True)
+    clear_jobs_stores_registry()
+    clear_sql_engine_cache()
 
 
-def get_cached_redis_connection() -> Redis:
-    """Dependency injector to get the redis database connection"""
-    return _REDIS_CONNECTION
+def get_booking_db() -> Engine:
+    """Gets the SQLAlchemy engine for the bookings service"""
+    return get_bookings_sql_engine(settings.BOOKING_DB_URL)
 
 
 def get_backend_name() -> str:
     """Dependency injector to get the backend name"""
-    return QUEUE_CONTEXT["executor_options"].backend_name
-
-
-def get_queue_pool() -> QueuePool:
-    """Dependency injector to retrieve the latest queue pool"""
-    return QUEUE_POOL
-
-
-def get_db_engine() -> Engine:
-    """Dependency injector to retrieve the latest sql db engine"""
-    return DB_ENGINE
-
-
-def get_cached_queue_context() -> QueueContext:
-    """Dependency injector to retrieve the cached queue context"""
-    return QUEUE_CONTEXT
+    _, executor_options = get_executor_and_options()
+    return executor_options.backend_name
 
 
 def get_queue_context_if_online(
-    context: QueueContext = Depends(get_cached_queue_context),
+    context: QueueContext = Depends(get_queue_context),
 ) -> QueueContext:
     """Dependency injector to retrieve the queue context only if online
 
     Raises:
         IsOfflineError: {context["queue_prefix"]} is offline
     """
-    if is_offline(context):
+    if is_offline():
         raise IsOfflineError(f"{context["queue_prefix"]} is offline")
     return context
 
@@ -363,9 +296,10 @@ def get_mss_token_claims_dep(
     """
 
     def dependency_injector(
-        context: QueueContext = Depends(get_cached_queue_context),
+        context: QueueContext = Depends(get_queue_context),
         job_id: str = Depends(get_job_id_dependency(job_id_field=job_id_field)),
         token: Optional[str] = Depends(get_bearer_token),
+        db_engine: Engine = Depends(get_booking_db),
     ) -> MSSTokenClaims:
         """Gets a valid user_id-job_id pair.
 
@@ -373,6 +307,7 @@ def get_mss_token_claims_dep(
             context: the of the queues running the jobs
             job_id: the job_id as got from the parameters or from the uploaded file
             token: the bearer token in the authorization header
+            db_engine: the database engine to use
 
         Returns:
             the MSSTokenClaims of the user_id and the job_id
@@ -388,7 +323,7 @@ def get_mss_token_claims_dep(
             raise UnauthorizedError(f"unexpected job id {job_id}")
 
         try:
-            get_job(context, job_id=job_id, user_id=user_id)
+            get_job(context, job_id=job_id, user_id=user_id, db_engine=db_engine)
             if not job_exists:
                 raise ConflictError(f"job {job_id} already exists")
         except NotAuthenticatedError:
@@ -479,35 +414,3 @@ def get_verified_mss_details(request: Request) -> MSSAuthDetails:
         if token_job_id != job_id:
             raise UnauthorizedError("forbidden")
         return MSSAuthDetails(user_id=user_id, job_id=job_id)
-
-
-def _get_executor_and_options(
-    backend_config_file: PathLike,
-    calibration_seed_file: PathLike,
-    **kwargs: Unpack[ExecutorOptions],
-) -> Tuple[QuantumExecutor, ExecutorOptions]:
-    """Gets the executor and its options that will be passed around in the queue
-
-    Args:
-        backend_config_file: the path to the general backend configuration file
-        calibration_seed_file: the path to the calibration seed file
-        kwargs: keyword arguments to pass to the executor options
-
-    Returns:
-        the executor and executor options constructed from the above settings
-    """
-    initial_backend_config = BackendConfig.from_toml(
-        backend_config_file, seed_file=calibration_seed_file
-    )
-    executor_options = ExecutorOptions(
-        backend_name=initial_backend_config.name,
-        backend_config=initial_backend_config,
-        calibration_seed_file=calibration_seed_file,
-        **kwargs,
-    )
-    executor = init_executor(executor_options, reset=True)
-    # update the backend_config with the updated version got from the executor
-    executor_options = dataclasses.replace(
-        executor_options, backend_config=executor.backend_config
-    )
-    return executor, executor_options

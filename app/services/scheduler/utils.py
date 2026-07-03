@@ -13,6 +13,7 @@
 # that they have been altered from the originals.
 #
 """Utility functions for the scheduler service"""
+import dataclasses
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -40,11 +41,13 @@ from ...libs.queues.dtos import (
     Timestamps,
 )
 from ...utils.datetime import utc_now_str
+from ...utils.logging import err_logger
 from ...utils.redis_store import Collection
 from ..external.mss.dtos import DeviceEvent, DeviceEventName, EventResponse
-from ..external.mss.service import (
-    MssClientPipe,
-)
+from ..external.mss.service import MssClient
+
+_QUANTUM_EXECUTOR_AND_OPTS: tuple[QuantumExecutor, ExecutorOptions] | None = None
+
 
 _STAGE_TIMESTAMPS_MAP: Dict[Stage, Tuple[Tuple[JobStage, JobEvent], ...]] = {
     Stage.REG_Q: (),
@@ -70,6 +73,53 @@ _STAGE_STATUS_MAP: Dict[Stage, JobStatus] = {
     Stage.FINAL_Q: JobStatus.EXECUTING,
     Stage.FINAL_W: JobStatus.SUCCESSFUL,
 }
+
+
+def get_executor_and_options() -> Tuple[QuantumExecutor, ExecutorOptions]:
+    """Gets the executor and its options that will be passed around in the queue
+
+    Returns:
+        the executor and executor options constructed from the above settings
+    """
+    global _QUANTUM_EXECUTOR_AND_OPTS
+    if _QUANTUM_EXECUTOR_AND_OPTS is None:
+        executor_options = ExecutorOptions.from_settings()
+        executor = _init_executor(executor_options, reset=True)
+        err_logger.info(
+            f"QuantumExecutor initialised for backend '{executor_options.backend_name}'.'"
+        )
+
+        # update the backend_config with the updated version got from the executor
+        executor_options = dataclasses.replace(
+            executor_options, backend_config=executor.backend_config
+        )
+        _QUANTUM_EXECUTOR_AND_OPTS = (executor, executor_options)
+    return _QUANTUM_EXECUTOR_AND_OPTS
+
+
+def get_quantum_executor() -> QuantumExecutor:
+    """Returns the process-level QuantumExecutor."""
+    executor, options = get_executor_and_options()
+    return executor
+
+
+def clear_quantum_executor(ignore_errors: bool = False) -> None:
+    """Clears the global quantum executor.
+
+    Args:
+        ignore_errors: If True, ignores any errors raised by executor.
+    """
+    global _QUANTUM_EXECUTOR_AND_OPTS
+    if isinstance(_QUANTUM_EXECUTOR_AND_OPTS, tuple):
+        try:
+            _QUANTUM_EXECUTOR_AND_OPTS[0].close()
+        except Exception as exp:
+            if ignore_errors:
+                err_logger.warning(f"QuantumExecutor closed error: {exp}")
+            else:
+                raise exp
+
+    _QUANTUM_EXECUTOR_AND_OPTS = None
 
 
 def log_job_msg(message: str, level: LogLevel = LogLevel.INFO) -> None:
@@ -211,11 +261,11 @@ def update_job_results(
     )
 
 
-def update_job_in_mss(mss_client_pipe: MssClientPipe, payload: Job) -> EventResponse:
+def update_job_in_mss(mss_client: MssClient, payload: Job) -> EventResponse:
     """Updates the job in MSS with the given payload
 
     Args:
-        mss_client_pipe: the pipe connected to the MSS client
+        mss_client: the MSS client
         payload: the new updates to apply to the given job in MSS
 
     Returns:
@@ -226,7 +276,7 @@ def update_job_in_mss(mss_client_pipe: MssClientPipe, payload: Job) -> EventResp
     """
     job_update_event = DeviceEvent(name=DeviceEventName.JOB_UPDATED, data=payload)
     try:
-        resp = mss_client_pipe.send_event(
+        resp = mss_client.send_event(
             job_update_event, error_prefix="error sending job to MSS: "
         )
     except ValueError as exp:
@@ -297,7 +347,7 @@ def decompress_qobj(qobj_dict: Dict[str, Any]) -> Dict[str, Any]:
     return qobj_dict
 
 
-def init_executor(options: ExecutorOptions, reset: bool = False) -> QuantumExecutor:
+def _init_executor(options: ExecutorOptions, reset: bool = False) -> QuantumExecutor:
     """Initializes the executor
 
     Args:
@@ -344,6 +394,7 @@ def init_executor(options: ExecutorOptions, reset: bool = False) -> QuantumExecu
         calib_device_conf=options.calibration_device_config,
         calib_seed_file=options.calibration_seed_file,
         calib_spi_conf=options.calibration_spi_config,
+        redis_url=options.redis_url,
     )
 
 

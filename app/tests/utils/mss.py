@@ -15,13 +15,18 @@
 import json
 import logging
 import re
+import threading
+from collections.abc import Iterable
 from datetime import datetime
-from typing import AsyncIterable, Awaitable, Dict, Iterable, List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 import websockets
 from cryptography.exceptions import InvalidSignature
 from websockets import ClientProtocol, HeadersLike
+from websockets.frames import CloseCode
 from websockets.http11 import USER_AGENT
+from websockets.sync.client import ClientConnection
+from websockets.typing import DataLike
 from websockets.uri import parse_uri
 
 _MESSAGE_TYPES = (
@@ -31,17 +36,19 @@ _MESSAGE_TYPES = (
     "switched_on",
     "switched_off",
 )
+
 _WS_PATH_PATTERN = re.compile(r"/devices/ws/(?P<name>[a-zA-Z0-9_-]+)")
 type Data = Union[bytes, str]
 
 _default_protocol = ClientProtocol(uri=parse_uri("ws://localhost:8000"))
 
 
-class MockWebsocket(websockets.ClientConnection):
-    """A mock of the websocket.WebSocket"""
+class MockWebsocket(ClientConnection):
+    """Sync mock of websockets.sync.client.ClientConnection for testing MSS."""
 
-    def __init__(self, protocol=_default_protocol, *args, **kwargs):
-        super().__init__(protocol, *args, **kwargs)
+    def __init__(self, sock=None, protocol=_default_protocol, *args, **kwargs):
+        # Skip super().__init__() — it starts a recv_events thread that
+        # performs real socket I/O; our mock overrides all I/O methods.
         self.__message_types = _MESSAGE_TYPES
         self.__url: Optional[str] = None
         self.__conn_kwargs: Dict[str, str] = {}
@@ -50,16 +57,15 @@ class MockWebsocket(websockets.ClientConnection):
         self.__pings: List[datetime] = []
         self._connected = False
 
-    async def handshake(
+    def handshake(
         self,
         additional_headers: HeadersLike | None = None,
         user_agent_header: str | None = USER_AGENT,
+        timeout: float | None = None,
     ) -> None:
         """Handshake the websocket"""
         if self._connected:
             raise RuntimeError("Connection already established")
-
-        # self.transport.close()
 
         _verify_headers(additional_headers)
 
@@ -68,21 +74,23 @@ class MockWebsocket(websockets.ClientConnection):
         self.__pings = []
         self._connected = True
 
-    async def ping(self, data: Data | None = None) -> Awaitable[float]:
-        """Pretends to send pings"""
-        self.__pings.append(datetime.now())
-
-        async def get_latency():
-            return 4
-
-        return get_latency()
-
-    async def send(
+    def ping(
         self,
-        message: Data | Iterable[Data] | AsyncIterable[Data],
+        data: DataLike | None = None,
+        ack_on_close: bool = False,
+    ) -> threading.Event:
+        """Pretends to send a ping; returns a pre-set Event (pong already received)."""
+        self.__pings.append(datetime.now())
+        event = threading.Event()
+        event.set()
+        return event
+
+    def send(
+        self,
+        message: DataLike | Iterable[DataLike],
         text: bool | None = None,
     ) -> None:
-        """Send a payload and returns the frame length"""
+        """Send a payload and enqueue the mock response."""
         if not self._connected:
             raise websockets.ConnectionClosed(
                 rcvd=websockets.Close(code=1008, reason="socket is already closed."),
@@ -93,7 +101,7 @@ class MockWebsocket(websockets.ClientConnection):
             raise websockets.ConnectionClosed(
                 rcvd=websockets.Close(
                     code=1008,
-                    reason=f"invalid data type: websocket only supports text data",
+                    reason="invalid data type: websocket only supports text data",
                 ),
                 sent=None,
             )
@@ -121,8 +129,8 @@ class MockWebsocket(websockets.ClientConnection):
 
         self.__inbox.append(json.dumps(response_json))
 
-    async def recv(self, decode: bool | None = None) -> Union[bytes, str]:
-        """Receive a payload and returns the opcode"""
+    def recv(self, timeout: float | None = None, decode: bool | None = None) -> Data:
+        """Receive the next mock response."""
         if not self._connected:
             raise websockets.ConnectionClosed(
                 rcvd=websockets.Close(code=1008, reason="socket is already closed."),
@@ -130,9 +138,22 @@ class MockWebsocket(websockets.ClientConnection):
             )
         return self.__inbox.pop()
 
-    async def close(self, code: int = 1000, reason: str = ""):
-        """Shutdown the connection"""
+    def close(
+        self, code: CloseCode | int = CloseCode.NORMAL_CLOSURE, reason: str = ""
+    ) -> None:
+        """Shutdown the connection."""
         self._connected = False
+
+
+def mock_sync_connect(uri: str, **kwargs) -> MockWebsocket:
+    """Replacement for websockets.sync.client.connect used in tests.
+
+    Mirrors what the real connect() does: constructs the connection and then
+    calls handshake() so that _connected is True before the caller sends data.
+    """
+    ws = MockWebsocket(uri=uri, **kwargs)
+    ws.handshake(additional_headers=kwargs.get("additional_headers"))
+    return ws
 
 
 async def mock_mss_websocket_handler(websocket: websockets.ServerConnection):

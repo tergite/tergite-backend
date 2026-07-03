@@ -12,12 +12,20 @@
 #
 """Module the SQL store"""
 
-from typing import Iterable, List, Type
+from typing import Dict, Iterable, List, Type
 
 from sqlalchemy import Engine
+from sqlalchemy.pool import NullPool
 from sqlmodel import SQLModel, col, create_engine, desc
 
 from .exc import InvalidRequestError
+
+_ENGINE_CACHE: Dict[str, Engine] = {}
+
+
+def clear_sql_engine_cache() -> None:
+    """Clears the SQL engine cache"""
+    _ENGINE_CACHE.clear()
 
 
 def get_sql_engine(
@@ -33,9 +41,19 @@ def get_sql_engine(
     Returns:
         the SQLStore associated with the given URL
     """
-    tables = [v.__table__ for v in models if hasattr(v, "__table__")]
-    engine = create_engine(url)
-    SQLModel.metadata.create_all(engine, tables=tables, checkfirst=checkfirst)
+    url = str(url)
+    engine = _ENGINE_CACHE.get(url)
+    if engine is None:
+        tables = [v.__table__ for v in models if hasattr(v, "__table__")]
+        kwargs = {}
+        if url.startswith("sqlite"):
+            # to avoid prefork-errors with sqlite since we are running in multiple processes,
+            # we use NullPool
+            kwargs["poolclass"] = NullPool
+
+        engine = create_engine(url, **kwargs)
+        SQLModel.metadata.create_all(engine, tables=tables, checkfirst=checkfirst)
+        _ENGINE_CACHE[url] = engine
     return engine
 
 

@@ -44,6 +44,7 @@ from typing import (
     Optional,
     Tuple,
     TypedDict,
+    Union,
 )
 
 import numpy as np
@@ -53,16 +54,15 @@ from fastapi.testclient import TestClient
 from pytest_lazy_fixtures import lf as lazy_fixture
 from pytest_mock import MockerFixture
 from redis.client import Redis
-from rq import SimpleWorker
+from rq import SimpleWorker, Worker
 from sqlalchemy import create_engine
 from sqlmodel import SQLModel
 
 from ..libs.queues.dtos import Job
 from ..services.scheduler.queues import QueuePool
 from .utils.analysis import MockLinearDiscriminantAnalysis
-from .utils.fixtures import get_fixture_path, load_fixture
-from .utils.mocks import make_attr_verbose
-from .utils.mss import MockWebsocket
+from .utils.fixtures import load_fixture
+from .utils.mss import mock_sync_connect
 from .utils.rq import get_rq_pool_worker
 
 HAS_QISKIT_DYNAMICS = False
@@ -156,8 +156,6 @@ PAGINATION: List["PaginationInfo"] = load_fixture("pagination.json")
 RECALIBRATION_MOCKS: Dict[Literal["qubit", "coupler"], Dict[str, Any]] = load_fixture(
     "recalibration-mocks.json"
 )
-SPI_DUMMY_METADATA_FILE = get_fixture_path("spi_dummy_quantify-metadata.yml")
-TEST_SPI_LOGGER_NAME = "test.spi_dac.verbose"
 
 JOBS_HASH_NAME = f"{Job.__module__}.{Job.__qualname__}".lower()
 
@@ -181,7 +179,7 @@ def redis_client() -> Generator[Redis, Any, None]:
 
 
 @pytest.fixture
-def rq_worker(redis_client) -> Generator[SimpleWorker, Any, None]:
+def rq_worker(redis_client) -> Generator[Union[Worker, SimpleWorker], Any, None]:
     """Get the rq worker for running async tasks asynchronously for the default backend"""
     queue_pool = QueuePool(
         prefix=TEST_DEFAULT_PREFIX,
@@ -197,7 +195,9 @@ def rq_worker(redis_client) -> Generator[SimpleWorker, Any, None]:
 
 
 @pytest.fixture
-def rq_worker_for_simulator_1q(redis_client) -> Generator[SimpleWorker, Any, None]:
+def rq_worker_for_simulator_1q(
+    redis_client,
+) -> Generator[Union[Worker, SimpleWorker], Any, None]:
     """Get the rq worker for running async tasks asynchronously for the 1 qubit simulator"""
     queue_pool = QueuePool(
         prefix=TEST_DEFAULT_PREFIX_SIM_1Q,
@@ -213,7 +213,9 @@ def rq_worker_for_simulator_1q(redis_client) -> Generator[SimpleWorker, Any, Non
 
 
 @pytest.fixture
-def rq_worker_for_simulator_2q(redis_client) -> Generator[SimpleWorker, Any, None]:
+def rq_worker_for_simulator_2q(
+    redis_client,
+) -> Generator[Union[Worker, SimpleWorker], Any, None]:
     """Get the rq worker for running async tasks asynchronously for the 2 qubit simulator"""
     queue_pool = QueuePool(
         prefix=TEST_DEFAULT_PREFIX_SIM_2Q,
@@ -228,7 +230,6 @@ def rq_worker_for_simulator_2q(redis_client) -> Generator[SimpleWorker, Any, Non
     yield get_rq_pool_worker(queue_pool)
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.fixture
 def quantify_seed_file(tmp_path) -> Generator[str, Any, None]:
     """Returns a path to a temporary copy of the dummy quantify calibration seed file"""
@@ -245,7 +246,6 @@ def quantify_seed_file(tmp_path) -> Generator[str, Any, None]:
     new_seed_file.unlink(missing_ok=True)
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.fixture
 def quantify_rest_client(
     mocker, redis_client, quantify_seed_file
@@ -271,6 +271,9 @@ def quantify_rest_client(
 
     import app
     import settings
+    from app.services.scheduler.utils import clear_quantum_executor
+
+    clear_quantum_executor(ignore_errors=True)
 
     importlib.reload(settings)
     importlib.reload(app)
@@ -278,16 +281,18 @@ def quantify_rest_client(
 
     yield TestClient(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
+    clear_quantum_executor(ignore_errors=True)
 
 
 @pytest.fixture
 def patched_mss_websockets(mocker) -> Generator[MockerFixture, Any, None]:
     """Patch the websocket used to connect to MSS"""
-    mocker.patch("websockets.connect.create_connection", side_effect=MockWebsocket)
+    mocker.patch(
+        "app.services.external.mss.service.connect", side_effect=mock_sync_connect
+    )
     yield mocker
 
 
-@pytest.mark.skipif(not HAS_QISKIT_DYNAMICS, reason="requires qiskit")
 @pytest.fixture
 def qiskit_1q_rest_client(mocker) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
@@ -298,7 +303,9 @@ def qiskit_1q_rest_client(mocker) -> Generator[TestClient, Any, None]:
 
     from .utils.executors.qiskit import MockQiskitDynamicsExecutor
 
-    mocker.patch("websockets.connect.create_connection", side_effect=MockWebsocket)
+    mocker.patch(
+        "app.services.external.mss.service.connect", side_effect=mock_sync_connect
+    )
     mocker.patch(
         "app.libs.quantum_executor.qiskit.executor.QiskitDynamicsExecutor",
         new=MockQiskitDynamicsExecutor,
@@ -310,6 +317,9 @@ def qiskit_1q_rest_client(mocker) -> Generator[TestClient, Any, None]:
 
     import app
     import settings
+    from app.services.scheduler.utils import clear_quantum_executor
+
+    clear_quantum_executor(ignore_errors=True)
 
     importlib.reload(settings)
     importlib.reload(app)
@@ -318,9 +328,9 @@ def qiskit_1q_rest_client(mocker) -> Generator[TestClient, Any, None]:
     yield TestClient(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
     _redis_connection.flushall()
+    clear_quantum_executor(ignore_errors=True)
 
 
-@pytest.mark.skipif(not HAS_QISKIT_DYNAMICS, reason="requires qiskit")
 @pytest.fixture
 def qiskit_2q_rest_client(mocker) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
@@ -343,6 +353,9 @@ def qiskit_2q_rest_client(mocker) -> Generator[TestClient, Any, None]:
 
     import app
     import settings
+    from app.services.scheduler.utils import clear_quantum_executor
+
+    clear_quantum_executor(ignore_errors=True)
 
     importlib.reload(settings)
     importlib.reload(app)
@@ -351,6 +364,7 @@ def qiskit_2q_rest_client(mocker) -> Generator[TestClient, Any, None]:
     yield TestClient(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
     _redis_connection.flushall()
+    clear_quantum_executor(ignore_errors=True)
 
 
 @pytest.fixture(scope="session")
@@ -386,78 +400,56 @@ def storage_root():
     shutil.rmtree(path, ignore_errors=True)
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
+@pytest.fixture(autouse=True)
+def _clear_connection_caches():
+    """Reset all module-level connection caches before every test."""
+    from app.services.external.mss.service import disconnect_mss_client
+    from app.services.scheduler.store import clear_jobs_stores_registry
+    from app.services.scheduler.utils import clear_quantum_executor
+    from app.utils.redis import clear_redis_connections
+    from app.utils.sql_db import clear_sql_engine_cache
+
+    clear_redis_connections(ignore_errors=True)
+    clear_jobs_stores_registry()
+    disconnect_mss_client(ignore_errors=True)
+    clear_quantum_executor(ignore_errors=True)
+    # Must also clear the SQL engine cache so that _clear_test_db's drop_all
+    # forces a fresh create_all on the next test (cache hit skips create_all).
+    clear_sql_engine_cache()
+    yield
+    clear_redis_connections(ignore_errors=True)
+    clear_jobs_stores_registry()
+    disconnect_mss_client(ignore_errors=True)
+    clear_quantum_executor(ignore_errors=True)
+    clear_sql_engine_cache()
+
+
 @pytest.fixture
-def spi_rack_config():
-    from app.libs.quantum_executor.quantify.utils.config import (
-        QuantifyMetadata,
-        SpiRackConfig,
+def redis_conn_spy(mocker):
+    """Spies on calls to redis.Redis.from_url."""
+    from redis import Redis
+
+    return mocker.patch("redis.Redis.from_url", wraps=Redis.from_url)
+
+
+@pytest.fixture
+def mss_conn_spy(mocker):
+    """Spies on calls to websockets.sync.client.connect (as imported in mss.service).
+
+    Uses side_effect=mock_sync_connect so this doesn't override the MSS mock
+    already installed by client fixtures (qiskit_1q_rest_client etc.).
+    """
+    return mocker.patch(
+        "app.services.external.mss.service.connect", side_effect=mock_sync_connect
     )
 
-    conf = QuantifyMetadata.from_yaml(SPI_DUMMY_METADATA_FILE)
-    yield SpiRackConfig.model_validate(conf.root["spi_rack"].model_dump())
 
-
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.fixture
-def spi_dac_dummy(redis_client, spi_rack_config):
-    """
-    Construct SpiDAC bound to the dummy SPI-Rack.
-    """
-    from qblox_instruments import SpiRack
+def sql_engine_spy(mocker):
+    """Spies on calls to create_engine (as imported in app.utils.sql_db)."""
+    from sqlalchemy import create_engine
 
-    from app.libs.quantum_executor.quantify.spi_dac import SpiDAC
-
-    name = os.environ.get("DEFAULT_PREFIX", "quantify")
-
-    if SpiDAC.exist(name):
-        SpiRack.find_instrument(name).close()
-
-    spi_dac = SpiDAC(
-        name=name,
-        conf=spi_rack_config,
-    )
-    yield spi_dac
-
-    with suppress(Exception):
-        spi_dac.close()
-
-
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
-@pytest.fixture
-def verbose_spi_dac_dummy(redis_client, mocker, spi_rack_config):
-    """
-    Construct SpiDAC bound to the dummy SPI-Rack.
-    """
-    from qblox_instruments import SpiRack
-
-    from ..libs.quantum_executor.quantify.spi_dac import SpiDAC
-
-    name = os.environ.get("DEFAULT_PREFIX", "quantify")
-
-    testlog = logging.getLogger(TEST_SPI_LOGGER_NAME)
-    testlog.setLevel(logging.DEBUG)
-
-    for fn in [
-        "__init__",
-        "exist",
-        "reset_to_parking_current",
-        "ramp_to_target_currents",
-        "close",
-    ]:
-        make_attr_verbose(SpiDAC, mock_fixture=mocker, logger=testlog, attr_name=fn)
-
-    if SpiDAC.exist(name):
-        SpiRack.find_instrument(name).close()
-
-    spi_dac = SpiDAC(
-        name=name,
-        conf=spi_rack_config,
-    )
-    yield spi_dac
-
-    with suppress(Exception):
-        spi_dac.close()
+    return mocker.patch("app.utils.sql_db.create_engine", wraps=create_engine)
 
 
 @pytest.fixture(autouse=True, scope="session")
@@ -501,7 +493,9 @@ def _patch_async_client(mocker, *extra_patches: Tuple[str, Dict[str, Any]]):
         mocker: the pytest mocker object
         extra_patches: extra patches to patch with the mocker object
     """
-    mocker.patch("websockets.connect.create_connection", side_effect=MockWebsocket)
+    mocker.patch(
+        "app.services.external.mss.service.connect", side_effect=mock_sync_connect
+    )
     os.environ["BLACKLISTED"] = ""
 
     for url, kwargs in extra_patches:

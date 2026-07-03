@@ -14,12 +14,14 @@
 
 from sqlalchemy import Engine
 
+import settings
+
 from ...utils.sql_db import get_sql_engine
 from .models import Booking, User
 
 
-def get_bookings_sql_engine(url: str) -> Engine:
-    """Gets the SQLAlchemy engine for the bookings service
+def get_bookings_sql_engine(url: str = settings.BOOKING_DB_URL) -> Engine:
+    """Gets the SQLAlchemy engine for the bookings service.
 
     Args:
         url: the database URL for the database

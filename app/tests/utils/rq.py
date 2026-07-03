@@ -11,17 +11,12 @@
 # that they have been altered from the originals.
 
 """Utilities for testing rq workers and queues"""
-import sys
-from typing import List
+from typing import List, Union
 
-from rq import Queue, SimpleWorker
+from rq import Queue, SimpleWorker, Worker
 from rq.timeouts import TimerDeathPenalty
 
 from app.services.scheduler.queues import QueuePool
-
-
-class WindowsSimpleWorker(SimpleWorker):
-    death_penalty_class = TimerDeathPenalty
 
 
 class PseudoSimpleWorker(SimpleWorker):
@@ -31,7 +26,34 @@ class PseudoSimpleWorker(SimpleWorker):
         return True
 
 
-def get_rq_pool_worker(queue_pool: QueuePool) -> SimpleWorker:
+class PreloadedSimpleWorker(SimpleWorker):
+    """RQ SimpleWorker used in all test environments (no forking)."""
+
+    death_penalty_class = TimerDeathPenalty
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # initialize connections and other globals up front
+        # so the in-process job execution finds them already cached
+        from app.libs.queues.dtos import get_queue_context
+        from app.services.booking.store import get_bookings_sql_engine
+        from app.services.external.mss.service import get_mss_client
+        from app.services.scheduler.queues import get_queue_pool
+        from app.services.scheduler.store import get_jobs_store
+        from app.services.scheduler.utils import get_quantum_executor
+        from app.utils.redis import get_redis_connection
+
+        _executor = get_quantum_executor()
+        _redis_connection = get_redis_connection()
+        _mss_client = get_mss_client()
+        _queue_context = get_queue_context()
+        _queue_pool = get_queue_pool()
+        _jobs_store = get_jobs_store()
+        _db_engine = get_bookings_sql_engine()
+
+
+def get_rq_pool_worker(queue_pool: QueuePool) -> Union[Worker, SimpleWorker]:
     """Returns an rq worker to run the given queue pool
 
     Args:
@@ -48,20 +70,19 @@ def get_rq_pool_worker(queue_pool: QueuePool) -> SimpleWorker:
     return get_rq_worker(queues, is_async=queue_pool._is_async)
 
 
-def get_rq_worker(queues: List[Queue], is_async: bool = True) -> SimpleWorker:
+def get_rq_worker(
+    queues: List[Queue], is_async: bool = True
+) -> Union[Worker, SimpleWorker]:
     """Returns an rq worker to run a set of queues
 
     They must share the same redis connection
 
     Args:
-        queues: the set of queue to run
-        is_async: whether the jobs should be run in separate processed
+        queues: the set of queues to run
+        is_async: whether the jobs should be run in separate processes
     """
     connection = queues[0].connection
     if not is_async:
         return PseudoSimpleWorker(queues=queues, connection=connection)
 
-    if sys.platform.startswith("win32"):
-        return WindowsSimpleWorker(queues=queues, connection=connection)
-
-    return SimpleWorker(queues=queues, connection=connection)
+    return PreloadedSimpleWorker(queues=queues, connection=connection)

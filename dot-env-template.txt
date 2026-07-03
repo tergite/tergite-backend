@@ -53,6 +53,11 @@ MSS_CONNECTION_TIMEOUT=5
 # default = 120
 MSS_RESPONSE_TIMEOUT=120
 
+#
+# The maximum delay we can have between reconnection attempts to MSS
+# default = 60
+MSS_MAX_RECONNECTION_DELAY=60
+
 # (5) Instrument interfacing and simulators
 # This is to configure the hardware or simulated measurement instruments.
 # The type of instrument setup to run.

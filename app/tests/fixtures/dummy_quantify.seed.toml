@@ -2,7 +2,7 @@
 
 [calibration_config]
 
-# -- Units -- 
+# -- Units --
 
 [calibration_config.units.qubit]
 frequency = "Hz"

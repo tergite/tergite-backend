@@ -254,9 +254,9 @@ fi
 # Keep below the env variable extraction procedures
 set -e # exit if any step fails
 
-WORKER_FLAG="";
+WORKER_CLASS="app.api.worker.PreloadedRqWorker";
 if [[ "${DEBUG:-}" = "true" ]]; then
-  WORKER_FLAG="-w app.utils.logging.LoggingRqWorker";
+  WORKER_CLASS="-w app.utils.logging.LoggingRqWorker";
 fi
 
 # Worker processes

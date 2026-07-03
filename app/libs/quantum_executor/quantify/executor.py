@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Union
 
 import qblox_instruments
+from pydantic import RedisDsn
 from qcodes import Instrument
 from quantify_core.data.handling import set_datadir
 from quantify_scheduler.backends.graph_compilation import SerialCompiler
@@ -51,7 +52,6 @@ from app.libs.quantum_executor.utils.logger import ExperimentLogger
 from app.utils.compat import MeasurementMode, SPIMode
 
 from ...device_parameters import DeviceCalibration
-from .spi_dac import init_spi_dacs
 from .utils.calibration import recalibrate
 
 worker_logger = logging.getLogger(__name__)
@@ -69,7 +69,6 @@ class QuantifyExecutor(QuantumExecutor):
         quantify_metadata_file: Union[str, bytes, os.PathLike],
         backend_config: BackendConfig,
         *,
-        should_restore_currents: bool = False,
         reset: bool = False,
         are_clusters_resettable: bool = False,
         data_dir: Path | os.PathLike[str] = settings.EXECUTOR_DATA_DIR,
@@ -81,19 +80,21 @@ class QuantifyExecutor(QuantumExecutor):
         ) = settings.CALIBRATION_DEVICE_CONFIG_FILE,
         calib_spi_conf: Path | os.PathLike[str] = settings.CALIBRATION_SPI_CONFIG_FILE,
         calib_seed_file: Path | os.PathLike[str] = settings.CALIBRATION_SEED,
+        redis_url: RedisDsn | str = settings.RQ_REDIS_URL,
+        **kwargs,
     ):
         """
         Args:
             quantify_config_file: path to the quantify specific config file
             quantify_metadata_file: path to our custom quantify specific metadata
             backend_config: the general backend configuration regardless of executor type
-            should_restore_currents: whether to restore current state; default = False
             reset: whether to reset the whole executor; default = False
             are_clusters_resettable: whether the clusters can be reset for this executor; default = False
             data_dir: the directory where to save experiment data; default = settings.EXECUTOR_DATA_DIR
             calib_node_conf: the configuration file for the nodes during calibration
             calib_device_conf: the configuration file for the entire devices during calibration
             calib_spi_conf: the configuration file for the spi during calibration
+            redis_url: the redis url where data, e.g. recalibration data, is temporarily stored
         """
         self.calib_seed_file = calib_seed_file
         self.calib_spi_conf = calib_spi_conf
@@ -102,10 +103,10 @@ class QuantifyExecutor(QuantumExecutor):
         self.quantify_config = load_quantify_config(quantify_config_file)
         self.quantify_metadata = QuantifyMetadata.from_yaml(quantify_metadata_file)
         self.device_name = backend_config.general_config.name
-        self.should_restore_currents = should_restore_currents
         self.are_clusters_resettable = are_clusters_resettable
         self.lo_frequencies = _extract_lo_frequencies(self.quantify_config)
         self.drive_frequencies = _extract_drive_frequencies(backend_config)
+        self._redis_url = redis_url
 
         qubit_ids = backend_config.device_config.qubit_ids
         coupling_dict = backend_config.device_config.coupling_dict
@@ -160,8 +161,6 @@ class QuantifyExecutor(QuantumExecutor):
                 component_name = self._coordinator.add_component(cluster_component)
                 no_gc_instruments_cache[component_name] = cluster_component
 
-        self.spi_dacs = init_spi_dacs(metadata=self.quantify_metadata)
-
         try:
             self._quantum_device = Instrument.find_instrument(
                 self.device_name, QuantumDevice
@@ -173,11 +172,8 @@ class QuantifyExecutor(QuantumExecutor):
         self._compiler = SerialCompiler(name=f"{self.device_name}_compiler")
         self._compilation_config = self._quantum_device.generate_compilation_config()
 
-    def recalibrate(self, redis_url: str, **kwargs) -> DeviceCalibration | None:
+    def recalibrate(self, **kwargs) -> DeviceCalibration | None:
         """Recalibrates the executor
-
-        Args:
-            redis_url: the redis url where intermediate calibration data is stored
 
         Returns:
             the final device calibration state after recalibration
@@ -210,7 +206,7 @@ class QuantifyExecutor(QuantumExecutor):
                     stdout_log_level=25,
                     file_log_level=25,
                     cluster_ip=conf.ip_address,
-                    redis_url=redis_url,
+                    redis_url=self._redis_url,
                     data_dir=data_dir,
                     spi_mode=SPIMode.dummy,
                     qubits=qubits,
@@ -274,21 +270,6 @@ class QuantifyExecutor(QuantumExecutor):
         logger.log_Q1ASM_programs(compiled_schedule)
         logger.log_schedule(compiled_schedule)
 
-        initial_bias_currents_map = {}
-        if self.should_restore_currents:
-            initial_bias_currents_map = {
-                spi_name: spi_dac.get_current_biases()
-                for spi_name, spi_dac in self.spi_dacs.items()
-            }
-
-        bias_currents = self._extract_bias(experiment)
-        if bias_currents:
-            print("Bias currents requested: %s", bias_currents)
-            for spi_dac in self.spi_dacs.values():
-                spi_dac.ramp_to_target_currents(bias_currents)
-        else:
-            print("No dc_bias extracted from schedule; skipping bias set.")
-
         self._coordinator.prepare(compiled_schedule)
         t3 = datetime.now()
         self._coordinator.start()
@@ -298,53 +279,10 @@ class QuantifyExecutor(QuantumExecutor):
         t4 = datetime.now()
         print(t4 - t3, "DURATION OF MEASURING")
 
-        # reset SPI DACs
-        for spi_name, spi_dac in self.spi_dacs.items():
-            if self.should_restore_currents:
-                # return currents to their original values
-                initial_biases = initial_bias_currents_map[spi_name]
-                spi_dac.ramp_to_target_currents(initial_biases)
-
-            spi_dac.close()
-
         return QExperimentResult.from_xarray(results)
-
-    def _extract_bias(self, expt: QuantifyExperiment) -> dict[str, float]:
-        """Return {'uN': current[A]} for every WACQT-CZ instruction.
-        If multiple pulses hit the same coupler, keep the largest |current|.
-
-        Args:
-            expt: The experiment to extract bias from.
-
-        Returns:
-            dictionary of coupler and maximum bias current to set to as got from experiment.
-        """
-        # TODO: very ad-hoc extraction, refactor later integrating better with microwave parameters extraction in experiment.py
-        print("Scanning %d channels for dc_bias...", len(expt.channel_registry))
-        bias: dict[str, float] = {}
-        dc_bias_alias = "theta"
-        for ch in expt.channel_registry.values():
-            for inst in ch.instructions:
-                if inst.name == "wacqt_cz" and dc_bias_alias in inst.parameters:
-                    port = inst.port
-                    try:
-                        coupler = self._port_to_coupler[port]  # normalize to 'uN'
-                    except KeyError as e:
-                        raise KeyError(
-                            f"Unknown coupler port '{port}'. "
-                            f"Make sure hardware_map has an entry for the coupler "
-                            f"and that it’s connected to canonical ID via _port_to_coupler."
-                        ) from e
-
-                    bias_current = float(inst.parameters[dc_bias_alias])
-                    if coupler not in bias or abs(bias_current) > abs(bias[coupler]):
-                        bias[coupler] = bias_current
-        return bias
 
     def close(self) -> None:
         self._coordinator.stop()
-        for spi_dac in self.spi_dacs.values():
-            spi_dac.close()
         # FIXME: This global is unnatural but QCoDeS is forcing us to do this
         #   Unfortunately, this means closing one instance of this class closes
         #   all clusters of all other instances. But if we don't, __init__ will be a problem
@@ -389,4 +327,4 @@ def _extract_drive_frequencies(backend_config: BackendConfig) -> Dict[str, float
 
 def _to_drive_clock(qubit_id: Any) -> str:
     stripped = str(qubit_id).strip().lstrip("q")
-    return f"q{int(stripped):02d}.01"
+    return f"q{int(float(stripped)):02d}.01"

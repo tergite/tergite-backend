@@ -22,12 +22,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
-import redis
 from fastapi import UploadFile
 from pydantic import ValidationError
-from rq import Worker
 from rq import exceptions as rq_errors
 from rq.suspension import is_suspended, resume, suspend
+from sqlalchemy import Engine
 from sqlmodel import or_
 
 from ...libs.device_parameters import get_device_calibration_info
@@ -54,18 +53,21 @@ from ..booking.service import (
     get_booking,
     get_user,
 )
-from ..booking.store import get_bookings_sql_engine
 from ..external.mss.dtos import DeviceEvent, DeviceEventName, DeviceSwitchData
-from ..external.mss.service import AsyncMssClientPipe, MssClientPipe
+from ..external.mss.service import get_mss_client
 from .dtos import RecalibrationInfo
 from .queues import QueuePool
-from .store import get_jobs_store, init_jobs_store
+from .store import get_jobs_store
 from .tasks import post_booking_cleanup, recalibrate, reset_idleness_timer
 from .utils import get_rq_job_id
 
 
 def submit_booking(
-    context: QueueContext, queues: QueuePool, user_id: str, booking_info: NewBookingInfo
+    context: QueueContext,
+    queues: QueuePool,
+    user_id: str,
+    booking_info: NewBookingInfo,
+    db_engine: Engine,
 ) -> Booking:
     """Submits a booking for registration
 
@@ -91,14 +93,12 @@ def submit_booking(
         queues: the collection of queues on which jobs run.
         booking_info: the details for the booking
         user_id: the ID of user submitting the booking
+        db_engine: the SQLAlchemy engine to use
 
     Returns:
         the submitted booking
     """
-    booking_db_url = context["booking_db_url"]
-
     # create the new booking
-    db_engine = get_bookings_sql_engine(url=booking_db_url)
     booking = create_booking(db_engine, user_id=user_id, data=booking_info)
 
     # at the start_utc, reset the idle time tracker
@@ -129,6 +129,7 @@ def cancel_booking(
     queues: QueuePool,
     user_id: str,
     booking_id: str,
+    db_engine: Engine,
     is_mss_admin: bool = False,
 ):
     """Cancels the given booking as long as the user is the owner or is admin
@@ -140,6 +141,7 @@ def cancel_booking(
         queues: the collection of queues on which jobs run.
         booking_id: the unique identifier of the booking to cancel
         user_id: the ID of the user cancelling the booking
+        db_engine: the SQLAlchemy engine to use
         is_mss_admin: whether the user is an MSS admin
 
     Raises:
@@ -148,9 +150,6 @@ def cancel_booking(
         BookingAlreadyActive: the booking of id {booking_id} is already active
         BookingAlreadyComplete: the booking of id {booking_id} is already completed.
     """
-    booking_db_url = context["booking_db_url"]
-
-    db_engine = get_bookings_sql_engine(url=booking_db_url)
     user = get_user(db_engine, User.id == user_id)
     if user is None:
         raise ItemNotFoundError(f"the user of id {user_id} was not found")
@@ -182,6 +181,8 @@ def submit_job_file(
     queues: QueuePool,
     upload_file: UploadFile,
     credentials: MSSTokenClaims,
+    backend_name: str,
+    db_engine: Engine,
 ) -> Job:
     """Submits the job for processing
 
@@ -210,58 +211,56 @@ def submit_job_file(
         queues: the collection of queues that are to run the job.
         upload_file: the job file containing the job to submit for the next steps of processing
         credentials: MSS login details as got from the headers and the parameters or body
+        backend_name: the name of the backend to use for the job
+        db_engine: the database engine for the booking
 
     Returns:
         the submitted job
     """
-    jobs_store_url = context["jobs_store_url"]
-    booking_db_url = context["booking_db_url"]
     upload_folder = Path(context["job_upload_folder"])
-    backend_name = context["executor_options"].backend_name
+    redis_conn = get_redis_connection()
 
-    with get_redis_connection(jobs_store_url, is_async=False) as redis_conn:
-        # We save the job first in the jobs store before we put it on the queue
-        # because it will be picked from the jobs store when the worker is running.
-        # It would be harder to pass the job payload itself across each worker because it would have
-        # to be pickled.
-        jobs_store = init_jobs_store(connection=redis_conn)
+    # We save the job first in the jobs store before we put it on the queue
+    # because it will be picked from the jobs store when the worker is running.
+    # It would be harder to pass the job payload itself across each worker because it would have
+    # to be pickled.
+    jobs_store = get_jobs_store()
 
-        job_id = credentials.job_id
-        user_id = credentials.user_id
-        if jobs_store.exists(job_id):
-            raise ConflictError(f"job_id {job_id} already exists")
+    job_id = credentials.job_id
+    user_id = credentials.user_id
+    if jobs_store.exists(job_id):
+        raise ConflictError(f"job_id {job_id} already exists")
 
-        # save job file
-        new_file_path = upload_folder / job_id
-        job_file_path = save_uploaded_file(upload_file, target=new_file_path)
+    # save job file
+    new_file_path = upload_folder / job_id
+    job_file_path = save_uploaded_file(upload_file, target=new_file_path)
 
-        # save job in database
-        calibration_info = get_device_calibration_info(redis_conn, backend_name)
-        job = Job(
-            job_id=job_id,
-            device=backend_name,
-            calibration_date=calibration_info.last_calibrated,
-            user_id=user_id,
-            stage=Stage.PRE_PROC_Q,
-        )
+    # save job in database
+    calibration_info = get_device_calibration_info(redis_conn, backend_name)
+    job = Job(
+        job_id=job_id,
+        device=backend_name,
+        calibration_date=calibration_info.last_calibrated,
+        user_id=user_id,
+        stage=Stage.PRE_PROC_Q,
+    )
 
-        jobs_store.insert(job)
+    jobs_store.insert(job)
 
-        bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
-        active_booking = get_active_booking(db_engine=bookings_sql_engine)
-        booking_id = None
-        if active_booking:
-            booking_id = active_booking.id
+    active_booking = get_active_booking(db_engine=db_engine)
+    booking_id = None
+    if active_booking:
+        booking_id = active_booking.id
 
-        queues.preprocessing.enqueue(
-            job,
-            context,
-            booking_id=booking_id,
-            job_file=job_file_path,
-            job_id=get_rq_job_id(job_id, Stage.PRE_PROC_Q),
-        )
+    queues.preprocessing.enqueue(
+        job,
+        context,
+        booking_id=booking_id,
+        job_file=job_file_path,
+        job_id=get_rq_job_id(job_id, Stage.PRE_PROC_Q),
+    )
 
-        return job
+    return job
 
 
 def cancel_job(
@@ -269,6 +268,7 @@ def cancel_job(
     queues: QueuePool,
     job_id: str,
     user_id: str,
+    db_engine: Engine,
     is_mss_admin: bool = False,
     reason: Optional[str] = None,
 ) -> Job:
@@ -279,6 +279,7 @@ def cancel_job(
         queues: the collection of queues on which jobs run.
         job_id: the unique identifier of the job
         user_id: the user_id of the user requesting the job
+        db_engine: the database engine for the job
         is_mss_admin: whether the user is an MSS admin
         reason: the justification for the cancellation
 
@@ -291,16 +292,12 @@ def cancel_job(
         rq.exceptions.InvalidJobOperationError: if the job has already been cancelled
         rq.exceptions.InvalidJobOperation: if the job has already been cancelled
     """
-    booking_db_url = context["booking_db_url"]
-    jobs_store_url = context["jobs_store_url"]
-
-    bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
-    user = get_user(bookings_sql_engine, User.id == user_id)
+    user = get_user(db_engine, User.id == user_id)
 
     if user is None:
         raise NotAuthenticatedError("user not found")
 
-    job_store = get_jobs_store(url=jobs_store_url)
+    job_store = get_jobs_store()
     job: Job = job_store.get_one(job_id)
 
     is_owner = job.user_id == user_id
@@ -327,6 +324,7 @@ def delete_job(
     queues: QueuePool,
     job_id: str,
     user_id: str,
+    db_engine: Engine,
     is_mss_admin: bool = False,
 ) -> Job:
     """Deletes the job of a given job_id if it belongs to the user or the user is admin
@@ -336,6 +334,7 @@ def delete_job(
         queues: the collection of queues on which jobs run.
         job_id: the unique identifier of the job
         user_id: the user_id of the user requesting the job
+        db_engine: the database engine for the job
         is_mss_admin: whether the user is an MSS admin
 
     Returns:
@@ -352,9 +351,10 @@ def delete_job(
             job_id=job_id,
             user_id=user_id,
             is_mss_admin=is_mss_admin,
+            db_engine=db_engine,
         )
 
-    job_store = get_jobs_store(url=context["jobs_store_url"])
+    job_store = get_jobs_store()
 
     try:
         job_store.delete_many((job_id,))
@@ -366,7 +366,11 @@ def delete_job(
 
 
 def get_job(
-    context: QueueContext, job_id: str, user_id: str, is_mss_admin: bool = False
+    context: QueueContext,
+    job_id: str,
+    user_id: str,
+    db_engine: Engine,
+    is_mss_admin: bool = False,
 ) -> Job:
     """Get the job of a given job_id if it belongs to the user or the user is admin
 
@@ -374,6 +378,7 @@ def get_job(
         context: the context of the queue for the job
         job_id: the unique identifier of the job
         user_id: the user_id of the user requesting the job
+        db_engine: the database engine for the job
         is_mss_admin: whether the user is an MSS admin
 
     Returns:
@@ -383,16 +388,12 @@ def get_job(
         NotAuthenticatedError: user not found
         ItemNotFoundError: Job {job_id} not found
     """
-    booking_db_url = context["booking_db_url"]
-    jobs_store_url = context["jobs_store_url"]
-
-    bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
-    user = get_user(bookings_sql_engine, User.id == user_id)
+    user = get_user(db_engine, User.id == user_id)
 
     if user is None:
         raise NotAuthenticatedError("user not found")
 
-    job_store = get_jobs_store(url=jobs_store_url)
+    job_store = get_jobs_store()
     job: Job = job_store.get_one(job_id)
 
     is_owner = job.user_id == user_id
@@ -421,9 +422,7 @@ def get_many_jobs(
     Returns:
         the list of job
     """
-    jobs_store_url = context["jobs_store_url"]
-
-    job_store = get_jobs_store(url=jobs_store_url)
+    job_store = get_jobs_store()
     filters = {}
     if status:
         filters["status"] = status
@@ -433,7 +432,9 @@ def get_many_jobs(
     return job_store.find_by_index(filters, skip=skip, limit=limit)
 
 
-def delete_user_profile(context: QueueContext, queues: QueuePool, user_id: str):
+def delete_user_profile(
+    context: QueueContext, queues: QueuePool, user_id: str, db_engine: Engine
+) -> None:
     """Deletes the user profile for the given user_id
 
     On top of deleting the user, the user's active and pending bookings
@@ -443,20 +444,17 @@ def delete_user_profile(context: QueueContext, queues: QueuePool, user_id: str):
         context: the context of the queue for all jobs
         queues: the collection of queues on which jobs run.
         user_id: the ID of the user whose profile is to be deleted
+        db_engine: the database engine for the jobs
 
     Raises:
         ItemNotFoundError: the user of id {user_id} was not found
     """
-    booking_db_url = context["booking_db_url"]
-    jobs_store_url = context["jobs_store_url"]
-
-    db_engine = get_bookings_sql_engine(url=booking_db_url)
     user = get_user(db_engine, User.id == user_id)
     if user is None:
         raise ItemNotFoundError(f"the user of id {user_id} was not found")
 
     # cancel and delete jobs of the user
-    job_store = get_jobs_store(url=jobs_store_url)
+    job_store = get_jobs_store()
     user_pending_jobs: List[Job] = job_store.find_by_index(
         {"user_id": user_id, "status": JobStatus.PENDING}
     )
@@ -553,18 +551,17 @@ def stop_recalibration(
         JobAlreadyCancelled: if the job is already cancelled
         IsOfflineError: the scheduler is offline
     """
-    jobs_store_url = context["jobs_store_url"]
     pending_job_ids = queues.recalibration.get_job_ids()
     pending_job_ids += queues.recalibration.scheduled_job_registry.get_job_ids()
+    redis_conn = get_redis_connection()
 
-    with get_redis_connection(jobs_store_url, is_async=False) as redis_conn:
-        for job_id in pending_job_ids:
-            try:
-                cancel_rq_job(redis_conn, job_id=job_id, ignore_errors=ignore_errors)
-            except rq_errors.NoSuchJobError:
-                raise ItemNotFoundError("recalibration job does not exist")
-            except (rq_errors.InvalidJobOperationError, rq_errors.InvalidJobOperation):
-                raise JobAlreadyCancelled("recalibration job is already cancelled")
+    for job_id in pending_job_ids:
+        try:
+            cancel_rq_job(redis_conn, job_id=job_id, ignore_errors=ignore_errors)
+        except rq_errors.NoSuchJobError:
+            raise ItemNotFoundError("recalibration job does not exist")
+        except (rq_errors.InvalidJobOperationError, rq_errors.InvalidJobOperation):
+            raise JobAlreadyCancelled("recalibration job is already cancelled")
 
 
 def get_recalibration_info(queues: QueuePool) -> RecalibrationInfo:
@@ -594,20 +591,18 @@ async def switch_off(
         ValueError – error sending switch off data: {error message}
         TimeoutError – error sending switch off data: response took longer than timeout
     """
-    jobs_store_url = context["jobs_store_url"]
-
-    with get_redis_connection(jobs_store_url, is_async=False) as redis_conn:
-        suspend(redis_conn)
+    redis_conn = get_redis_connection()
+    suspend(redis_conn)
 
     # update MSS
-    async with AsyncMssClientPipe() as mss_client_pipe:
-        await mss_client_pipe.send_event(
-            DeviceEvent(
-                name=DeviceEventName.SWITCHED_OFF,
-                data=DeviceSwitchData(date=get_utc_now()),
-            ),
-            error_prefix="error sending switch off data: ",
-        )
+    mss_client = get_mss_client()
+    mss_client.send_event(
+        DeviceEvent(
+            name=DeviceEventName.SWITCHED_OFF,
+            data=DeviceSwitchData(date=get_utc_now()),
+        ),
+        error_prefix="error sending switch off data: ",
+    )
 
 
 async def switch_on(
@@ -622,32 +617,24 @@ async def switch_on(
         ValueError – error sending switch on data: {error message}
         TimeoutError – error sending switch on data: response took longer than timeout
     """
-    jobs_store_url = context["jobs_store_url"]
-    with get_redis_connection(jobs_store_url, is_async=False) as redis_conn:
-        resume(redis_conn)
+    redis_conn = get_redis_connection()
+    resume(redis_conn)
 
     # update MSS
-    async with AsyncMssClientPipe() as mss_client_pipe:
-        await mss_client_pipe.send_event(
-            DeviceEvent(
-                name=DeviceEventName.SWITCHED_ON,
-                data=DeviceSwitchData(date=get_utc_now()),
-            ),
-            error_prefix="error sending switch on data: ",
-        )
+    mss_client = get_mss_client()
+    mss_client.send_event(
+        DeviceEvent(
+            name=DeviceEventName.SWITCHED_ON,
+            data=DeviceSwitchData(date=get_utc_now()),
+        ),
+        error_prefix="error sending switch on data: ",
+    )
 
 
-def is_offline(
-    context: QueueContext,
-):
-    """Checks if the scheduler is offline
-
-    Args:
-        context: the context of the queues
-    """
-    jobs_store_url = context["jobs_store_url"]
-    with get_redis_connection(jobs_store_url, is_async=False) as redis_conn:
-        return is_suspended(redis_conn)
+def is_offline():
+    """Checks if the scheduler is offline"""
+    redis_conn = get_redis_connection()
+    return is_suspended(redis_conn)
 
 
 def _cancel_job_in_queues(queues: QueuePool, job: Job, ignore_errors: bool = False):

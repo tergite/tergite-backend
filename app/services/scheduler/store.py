@@ -12,6 +12,8 @@
 #
 """Module containing the store for the scheduler service"""
 
+
+from pydantic import RedisDsn
 from redis import Redis
 
 import settings
@@ -20,11 +22,13 @@ from ...libs.queues.dtos import Job
 from ...utils.redis import get_redis_connection
 from ...utils.redis_store import Collection
 
+_JOB_STORES: dict[str, Collection[Job]] = {}
+
 
 def get_jobs_store(
-    url: str,
+    url: RedisDsn | str = settings.RQ_REDIS_URL,
     default_ttl: float = settings.JOBS_STORE_TTL,
-    cleanup_interval=settings.JOBS_STORE_CLEAN_INTERVAL,
+    cleanup_interval: float = settings.JOBS_STORE_CLEAN_INTERVAL,
 ) -> Collection[Job]:
     """Gets the store for the given url for the jobs
 
@@ -36,15 +40,27 @@ def get_jobs_store(
     Returns:
         the RedisCollection containing the jobs
     """
-    connection = get_redis_connection(url=url)
-    return init_jobs_store(
-        connection=connection,
-        default_ttl=default_ttl,
-        cleanup_interval=cleanup_interval,
-    )
+    global _JOB_STORES
+    url = f"{url}"
+    job_store = _JOB_STORES.get(url)
+    if job_store is None:
+        connection = get_redis_connection(url)
+        job_store = _init_jobs_store(
+            connection=connection,
+            default_ttl=default_ttl,
+            cleanup_interval=cleanup_interval,
+        )
+        _JOB_STORES[url] = job_store
+    return job_store
 
 
-def init_jobs_store(
+def clear_jobs_stores_registry() -> None:
+    """Clears the jobs stores registry"""
+    global _JOB_STORES
+    _JOB_STORES.clear()
+
+
+def _init_jobs_store(
     connection: Redis,
     default_ttl: float = settings.JOBS_STORE_TTL,
     cleanup_interval=settings.JOBS_STORE_CLEAN_INTERVAL,

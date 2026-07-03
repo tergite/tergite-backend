@@ -12,25 +12,52 @@
 #
 """Module containing the utils for redis"""
 import redis
-import redis.asyncio as async_redis
 from pydantic import RedisDsn
 
+import settings
+from app.utils.logging import err_logger
 
-def get_redis_connection(
-    url: RedisDsn | str, is_async: bool = False
-) -> redis.Redis | async_redis.Redis:
+_REDIS_CONNECTIONS: dict[str, redis.Redis] = {}
+
+
+def get_redis_connection(url: RedisDsn | str = settings.RQ_REDIS_URL) -> redis.Redis:
     """Gets the redis connection
 
     Args:
         url: the URL to the redis server
-        is_async: whether to use async redis connection
 
     Returns:
         the redis connection
     """
-    cls = async_redis.Redis if is_async else redis.Redis
+    global _REDIS_CONNECTIONS
+    url = f"{url}"
 
-    redis_url = f"{url}"
-    if redis_url.startswith("rediss:"):
-        return cls.from_url(redis_url, ssl=True)
-    return cls.from_url(redis_url)
+    connection = _REDIS_CONNECTIONS.get(url)
+
+    if connection is None:
+        kwargs = {}
+        if url.startswith("rediss:"):
+            kwargs["ssl"] = True
+
+        connection = redis.Redis.from_url(url, **kwargs)
+        _REDIS_CONNECTIONS[url] = connection
+    return connection
+
+
+def clear_redis_connections(ignore_errors: bool = False) -> None:
+    """Clears the redis connections
+
+    Args:
+        ignore_errors: If True, ignore any errors raised by redis connections
+    """
+    global _REDIS_CONNECTIONS
+    for connection in _REDIS_CONNECTIONS.values():
+        try:
+            connection.close()
+        except Exception as exp:
+            if ignore_errors:
+                err_logger.warning(f"Close redis connection error: {exp}")
+            else:
+                raise exp
+
+    _REDIS_CONNECTIONS.clear()

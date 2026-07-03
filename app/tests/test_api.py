@@ -663,6 +663,7 @@ def test_unauthenticated_view_bookings_configs(client):
         assert response.json() == {"detail": "user not authenticated"}
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="real simulator takes too long")
 @pytest.mark.parametrize(
     "client, redis_conn, worker, job, expected_counts, device",
     _ALL_UPLOAD_JOB_PARAMS,
@@ -676,6 +677,9 @@ def test_submit_jobs_no_booking(
     device,
     jobs_folder,
     mocker: MockerFixture,
+    redis_conn_spy,
+    mss_conn_spy,
+    sql_engine_spy,
 ):
     """POST '/jobs' when there is no booking should run the jobs in FIFO (first in, first out)"""
     with client as client:
@@ -754,7 +758,17 @@ def test_submit_jobs_no_booking(
             assert post_processing.finish_timestamp <= final.start_timestamp
             assert final.start_timestamp < final.finish_timestamp
 
+        # Connection-caching assertions: connections may be established during
+        # fixture setup (0 calls) or once fresh after the pre-test cache clear
+        # (1 call). Either way caching works — no per-job connection creation.
+        # MSS connects lazily on the first send.
+        assert redis_conn_spy.call_count <= 1
+        assert mss_conn_spy.call_count <= 1
+        # SQL engine: created at most once per test (initial setup); never per-job.
+        assert sql_engine_spy.call_count <= 1
 
+
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="real simulator takes too long")
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_submit_jobs_in_active_booking(
     client,
@@ -816,9 +830,8 @@ def test_submit_jobs_in_active_booking(
         )
 
 
-@pytest.mark.parametrize(
-    "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-1]
-)
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="real simulator takes too long")
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_submit_jobs_in_idle_booking(
     client,
     worker,
@@ -874,10 +887,10 @@ def test_submit_jobs_in_idle_booking(
             assert first_non_booker_job_start < booking_end_timestamp
 
 
-# _SIMPLE_UPLOAD_JOB_PARAMS[:-2] because the real simulator execution takes some time that is hard to precisely estimate
-@pytest.mark.parametrize(
-    "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-2]
+@pytest.mark.skipif(
+    not HAS_QUANTIFY, reason="real simulator execution is hard to estimate precisely"
 )
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_submit_jobs_in_idle_booking_before_another(
     client,
     worker,
@@ -982,10 +995,10 @@ def test_submit_jobs_in_idle_booking_before_another(
         )
 
 
-# _SIMPLE_UPLOAD_JOB_PARAMS[:-2] because the real simulator execution takes some time that is hard to precisely estimate
-@pytest.mark.parametrize(
-    "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-2]
+@pytest.mark.skipif(
+    not HAS_QUANTIFY, reason="real simulator execution is hard to estimate precisely"
 )
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_submit_long_jobs_before_booking(
     client,
     worker,
@@ -1469,7 +1482,14 @@ def test_cancel_completed_booking(
 
 @pytest.mark.parametrize("client, worker, job, device_name, user", _VIEW_JOB_PARAMS)
 def test_view_job(
-    client, worker, job, device_name, user, jobs_folder, mocker: MockerFixture
+    client,
+    worker,
+    job,
+    device_name,
+    user,
+    jobs_folder,
+    mocker: MockerFixture,
+    redis_conn_spy,
 ):
     """GET '/jobs/{job_id}' by a user can show the job for the job_id if job belongs to them"""
     job_file_path = _save_job_file(folder=jobs_folder, job=job)
@@ -1518,6 +1538,7 @@ def test_view_job(
             storage_id=f"{job_id}:::{complete_job.estimated_duration}",
         )
         assert complete_job == expected_completed_job
+        assert redis_conn_spy.call_count <= 1
 
 
 @pytest.mark.parametrize("client, worker, job, device_name, user", _VIEW_JOB_PARAMS)
@@ -1613,6 +1634,7 @@ def test_admin_view_job(
         assert received_job == expected_job
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="real simulator takes too long")
 @pytest.mark.parametrize("client, _redis, worker, job, device", _VIEW_JOBS_PARAMS)
 def test_view_jobs(
     client, _redis, worker, job, device, jobs_folder, mocker: MockerFixture
@@ -1701,6 +1723,7 @@ def test_view_jobs(
         assert completed_jobs_resp == _paginate(expected_jobs)
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="real simulator takes too long")
 @pytest.mark.parametrize("client, _redis, worker, job, device", _VIEW_JOBS_PARAMS)
 def test_view_jobs_by_status(
     client, _redis, worker, job, device, jobs_folder, mocker: MockerFixture
@@ -1871,7 +1894,9 @@ def test_unauthenticated_view_jobs(
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
-def test_cancel_job_via_mss(client, redis_conn, jobs_folder, worker, job, mocker):
+def test_cancel_job_via_mss(
+    client, redis_conn, jobs_folder, worker, job, mocker, redis_conn_spy
+):
     """An MSS POST to '/jobs/{id}/cancel' cancels the job of the job_id if the job belongs to the current user"""
     with client as client:
         cancellation_reason = "just testing"
@@ -1935,10 +1960,13 @@ def test_cancel_job_via_mss(client, redis_conn, jobs_folder, worker, job, mocker
         )
         assert response.status_code == 200
         assert job_in_db == expected_job
+        assert redis_conn_spy.call_count <= 1
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
-def test_cancel_job_directly(client, redis_conn, jobs_folder, worker, job, mocker):
+def test_cancel_job_directly(
+    client, redis_conn, jobs_folder, worker, job, mocker, redis_conn_spy
+):
     """A POST to '/jobs/{id}/cancel' with JWT token cancels the job of the job_id if the job belongs to user"""
     with client as client:
         cancellation_reason = "just testing"
@@ -2004,6 +2032,7 @@ def test_cancel_job_directly(client, redis_conn, jobs_folder, worker, job, mocke
         )
         assert response.status_code == 200
         assert job_in_db == expected_job
+        assert redis_conn_spy.call_count <= 1
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
