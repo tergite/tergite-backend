@@ -7,6 +7,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.09.0-rc.1] - 2026-07-03
+
 ### Changed
 
 - Replaced the async websocket MSS connection with a blocking synchronous one, removing
