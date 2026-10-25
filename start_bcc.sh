@@ -190,35 +190,33 @@ printf "Starting Tergite Backend ....\n";
 # Environment variables
 #
 start_auto_env_export;
-ENV_FILE="${ENV_FILE:-".env"}"
-load_env "$ENV_FILE";
-# the app reads its settings from the file BCC_ENV_FILE names
-export BCC_ENV_FILE="$ENV_FILE";
+BCC_ENV_FILE="${BCC_ENV_FILE:-".env"}"
+load_env "$BCC_ENV_FILE";
 
-DEFAULT_PREFIX="${DEFAULT_PREFIX:-default}";
-UVICORN_LOG_LEVEL="${UVICORN_LOG_LEVEL:-info}"
-EXECUTOR_TYPE="${EXECUTOR_TYPE:-quantify}"
+DEFAULT_PREFIX="${BCC_DEFAULT_PREFIX:-default}";
+UVICORN_LOG_LEVEL="${BCC_UVICORN_LOG_LEVEL:-info}"
+EXECUTOR_TYPE="${BCC_EXECUTOR_TYPE:-quantify}"
 PORT_NUMBER="${BCC_PORT:-8000}"
 should_be_int "$PORT_NUMBER" "Config Error. Use BCC_PORT=<int> in the .env file.";
 
-REDIS_HOST="${REDIS_HOST:-localhost}"
+REDIS_HOST="${BCC_REDIS_HOST:-localhost}"
 
-REDIS_PORT="${REDIS_PORT:-6379}"
-should_be_int "$REDIS_PORT" "Config Error. Use REDIS_PORT=<int> in the .env file.";
+REDIS_PORT="${BCC_REDIS_PORT:-6379}"
+should_be_int "$REDIS_PORT" "Config Error. Use BCC_REDIS_PORT=<int> in the .env file.";
 
-REDIS_USER="${REDIS_USER:-}"
+REDIS_USER="${BCC_REDIS_USER:-}"
 
-REDIS_PASSWORD="${REDIS_PASSWORD:-}"
+REDIS_PASSWORD="${BCC_REDIS_PASSWORD:-}"
 
-REDIS_DB="${REDIS_DB:-0}"
-should_be_int "$REDIS_DB" "Config Error. Use REDIS_DB=<int> in the .env file.";
+REDIS_DB="${BCC_REDIS_DB:-0}"
+should_be_int "$REDIS_DB" "Config Error. Use BCC_REDIS_DB=<int> in the .env file.";
 
 DEFAULT_REDIS_URL="redis://$REDIS_USER:$REDIS_PASSWORD@$REDIS_HOST:$REDIS_PORT/$REDIS_DB";
-REDIS_URL="${RQ_REDIS_URL:-$DEFAULT_REDIS_URL}";
+REDIS_URL="${BCC_RQ_REDIS_URL:-$DEFAULT_REDIS_URL}";
 
 BCC_MACHINE_ROOT_URL="${BCC_MACHINE_ROOT_URL:-http://localhost:8000}"
-MSS_MACHINE_ROOT_URL="${MSS_MACHINE_ROOT_URL:-http://localhost:8002}"
-STORAGE_ROOT="${STORAGE_ROOT:-"/tmp"}"
+MSS_MACHINE_ROOT_URL="${BCC_MSS_MACHINE_ROOT_URL:-http://localhost:8002}"
+STORAGE_ROOT="${BCC_STORAGE_ROOT:-"/tmp"}"
 
 stop_auto_env_export
 
@@ -237,7 +235,7 @@ echo
 set -e # exit if any step fails
 
 WORKER_CLASS="app.api.worker.PreloadedRqWorker";
-if [[ "${DEBUG:-}" = "true" ]]; then
+if [[ "${BCC_DEBUG:-}" = "true" ]]; then
   WORKER_CLASS="-w app.utils.logging.LoggingRqWorker";
 fi
 

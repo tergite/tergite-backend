@@ -21,10 +21,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 ### Changed
 
 - Renamed `dot-env-template.txt` to `.env.example`, which now also documents the env variables and serving several devices
-- Changed the env variables the backend reads to `BCC_` names: a bare `<NAME>`, such as `DEFAULT_PREFIX`, is no longer
-  read from the environment, only from the env file, and `BCC_ENV_FILE` replaces `ENV_FILE`
-- Renamed the settings `BCC_PORT` and `BCC_MACHINE_ROOT_URL` to `PORT` and `MACHINE_ROOT_URL`, so their variables stay
-  `BCC_PORT` and `BCC_MACHINE_ROOT_URL`; an env file may write any key as `BCC_<NAME>`, so files setting `BCC_PORT` still work
+- Changed every env variable and env file key the backend reads to its `BCC_` name, e.g. `BCC_DEFAULT_PREFIX`: a bare
+  one is no longer read, and in an env file is an error, and `BCC_ENV_FILE` replaces `ENV_FILE`
+- Renamed the settings `BCC_PORT` and `BCC_MACHINE_ROOT_URL` to `PORT` and `MACHINE_ROOT_URL`, so their variables and
+  env file keys stay `BCC_PORT` and `BCC_MACHINE_ROOT_URL`
 - Changed the API to start without building a quantum executor or importing quantify, in about 2 s and 80 MB
   instead of 10 s and 330 MB; a broken quantify config or metadata file now fails the heavy worker's start instead
 

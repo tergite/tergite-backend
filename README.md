@@ -79,9 +79,9 @@ openssl rsa -pubout -in private-bcc-key.pem -out public-bcc-key.pem
 cp .env.example .env
 ```
 
-_Note: If you don't want to use the simulator, set the variable `EXECUTOR_TYPE=quantify` in the `.env`_  
+_Note: If you don't want to use the simulator, set the variable `BCC_EXECUTOR_TYPE=quantify` in the `.env`_  
 
-- **If you have `EXECUTOR_TYPE=quantify`**, copy the quantify example config file `quantify-config.example.json` and `quantify-metadata.example.yml` into 
+- **If you have `BCC_EXECUTOR_TYPE=quantify`**, copy the quantify example config file `quantify-config.example.json` and `quantify-metadata.example.yml` into 
  the `quantify-config.json` and `quantify-metadata.yml` file and update the variables there in.    
  **Ignore this if you are using the qiskit pulse simulator**
 

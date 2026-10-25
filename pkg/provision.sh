@@ -87,29 +87,29 @@ main() {
 	cat >"$dir/backend.env.new" <<-EOF
 		# Written by @BINARY@-provision. Every other setting, and what it does, is in
 		# $share_dir/env.example.
-		DEFAULT_PREFIX=$name
-		EXECUTOR_TYPE=$executor
-		APP_SETTINGS=production
-		PORT=$port
-		MACHINE_ROOT_URL=http://$host:$port
-		MSS_MACHINE_ROOT_URL=$mss_url
-		RQ_REDIS_URL=$(add_password "$redis_url" "$REDIS_PASSWORD")
+		BCC_DEFAULT_PREFIX=$name
+		BCC_EXECUTOR_TYPE=$executor
+		BCC_APP_SETTINGS=production
+		BCC_PORT=$port
+		BCC_MACHINE_ROOT_URL=http://$host:$port
+		BCC_MSS_MACHINE_ROOT_URL=$mss_url
+		BCC_RQ_REDIS_URL=$(add_password "$redis_url" "$REDIS_PASSWORD")
 
-		STORAGE_ROOT=$data/storage
-		BOOKING_DB_URL=sqlite:///$data/booking.db
-		JWT_SECRET=$(get_secret)
+		BCC_STORAGE_ROOT=$data/storage
+		BCC_BOOKING_DB_URL=sqlite:///$data/booking.db
+		BCC_JWT_SECRET=$(get_secret)
 
-		PRIVATE_KEY_FILE=$dir/private-bcc-key.pem
-		PRIVATE_KEY_PASSWORD=$key_password
-		MSS_PUBLIC_KEY_PATH=$dir/public-mss-key.pem
+		BCC_PRIVATE_KEY_FILE=$dir/private-bcc-key.pem
+		BCC_PRIVATE_KEY_PASSWORD=$key_password
+		BCC_MSS_PUBLIC_KEY_PATH=$dir/public-mss-key.pem
 
-		BACKEND_SETTINGS=$dir/backend_config.toml
-		CALIBRATION_SEED=$dir/calibration.seed.toml
-		QUANTIFY_CONFIG_FILE=$dir/quantify-config.json
-		QUANTIFY_METADATA_FILE=$dir/quantify-metadata.yml
-		CALIBRATION_DEVICE_CONFIG_FILE=$dir/device_config.calib.toml
-		CALIBRATION_NODE_CONFIG_FILE=$dir/node_config.calib.toml
-		CALIBRATION_SPI_CONFIG_FILE=$dir/spi_config.calib.toml
+		BCC_BACKEND_SETTINGS=$dir/backend_config.toml
+		BCC_CALIBRATION_SEED=$dir/calibration.seed.toml
+		BCC_QUANTIFY_CONFIG_FILE=$dir/quantify-config.json
+		BCC_QUANTIFY_METADATA_FILE=$dir/quantify-metadata.yml
+		BCC_CALIBRATION_DEVICE_CONFIG_FILE=$dir/device_config.calib.toml
+		BCC_CALIBRATION_NODE_CONFIG_FILE=$dir/node_config.calib.toml
+		BCC_CALIBRATION_SPI_CONFIG_FILE=$dir/spi_config.calib.toml
 	EOF
 	chgrp -R "$group" "$dir"
 	mv "$dir/backend.env.new" "$dir/backend.env"
