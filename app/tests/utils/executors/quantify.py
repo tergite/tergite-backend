@@ -53,3 +53,9 @@ class MockQuantifyExecutor(QuantifyExecutor):
             time.sleep(sleep_duration)
 
         return result
+
+    def close(self) -> None:
+        """Stops the coordinator, but keeps it and the dummy clusters, which take a second
+        to build, in the instruments cache for the next test's executor; the session's
+        end closes them"""
+        self._coordinator.stop()

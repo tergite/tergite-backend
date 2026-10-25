@@ -453,6 +453,16 @@ def sql_engine_spy(mocker):
 
 
 @pytest.fixture(autouse=True, scope="session")
+def _close_cached_instruments():
+    """Closes the dummy clusters MockQuantifyExecutor keeps from test to test"""
+    yield
+    if HAS_QUANTIFY:
+        from app.libs.quantum_executor.quantify.executor import QuantifyExecutor
+
+        QuantifyExecutor._close_cached_instruments()
+
+
+@pytest.fixture(autouse=True, scope="session")
 def _configure_logging_for_tests():
     """Configure logging for tests"""
     is_debug = os.getenv("DEBUG", "").strip().lower() == "true"
