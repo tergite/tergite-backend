@@ -75,11 +75,12 @@ HEAVY_QUEUES = (
     "preprocessing",
 )
 LIGHT_QUEUES = ("postprocessing", "general")
+COMMANDS = ("start", "serve", "rq")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Manage the Backend Control Computer (BCC)."
+        description="Manage the Backend Control Computer (BCC); start is the default command."
     )
     commands = parser.add_subparsers(dest="command", required=True)
     start_parser = commands.add_parser(
@@ -134,7 +135,7 @@ def main() -> None:
         "--device", help="The device a heavy worker runs; default: the first."
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(_with_default_command(sys.argv[1:]))
     _load_devices(args.env_files)
     import settings
 
@@ -275,6 +276,13 @@ def _load_devices(env_files: list[str]) -> None:
     import settings
 
     settings.load_devices([Path(env_file) for env_file in env_files])
+
+
+def _with_default_command(arguments: list[str]) -> list[str]:
+    """Gets the arguments with start before them when they name no command"""
+    if {"-h", "--help", *COMMANDS}.intersection(arguments):
+        return arguments
+    return ["start", *arguments]
 
 
 if __name__ == "__main__":

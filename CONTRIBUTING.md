@@ -228,7 +228,7 @@ pkg/build.sh
 # and `--light-workers` (default 1) for postprocessing and general tasks, stopping them all if
 # any stops; it reads the .env file named by BCC_ENV_FILE, and takes `--port`, `--host` and
 # `--forwarded-allow-ips`
-BCC_ENV_FILE="$PWD/.env" ./bcc start
+BCC_ENV_FILE="$PWD/.env" ./bcc start  # or just ./bcc, as start is the default
 # or one at a time: `./bcc serve --reload`, `./bcc rq --kind heavy`, `./bcc rq --kind light`
 
 # serve several devices from one process: each device's env file once; its API is then at
