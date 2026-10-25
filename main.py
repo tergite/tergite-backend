@@ -96,7 +96,7 @@ def main() -> None:
             default=[],
             dest="env_files",
             help="The env file of a device to serve, given once for each device; "
-            "default: the file ENV_FILE names, or .env.",
+            "default: the file BCC_ENV_FILE names, or .env.",
         )
     for command_parser in (start_parser, serve_parser):
         command_parser.add_argument(
@@ -270,8 +270,8 @@ def _load_devices(env_files: list[str]) -> None:
     """Serves the devices of the env files, if any were given, in this process"""
     if not env_files:
         return
-    # importing settings loads ENV_FILE's device, so it must name an existing file
-    os.environ["ENV_FILE"] = str(Path(env_files[0]).resolve())
+    # importing settings loads BCC_ENV_FILE's device, so it must name an existing file
+    os.environ["BCC_ENV_FILE"] = str(Path(env_files[0]).resolve())
     import settings
 
     settings.load_devices([Path(env_file) for env_file in env_files])

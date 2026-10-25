@@ -13,7 +13,7 @@ Group=bcc
 # the SPI rack is a USB serial device
 SupplementaryGroups=dialout
 
-Environment=ENV_FILE=/etc/bcc/%i/backend.env
+Environment=BCC_ENV_FILE=/etc/bcc/%i/backend.env
 ExecStart=/usr/bin/%p start
 Restart=on-failure
 RestartSec=10s

@@ -15,4 +15,4 @@ fi
 
 "$binary-provision" smoke >/dev/null
 cp app/tests/fixtures/mss_public_key.pem "$etc_dir/smoke/public-mss-key.pem"
-ENV_FILE="$etc_dir/smoke/backend.env" "$binary" --help
+BCC_ENV_FILE="$etc_dir/smoke/backend.env" "$binary" --help

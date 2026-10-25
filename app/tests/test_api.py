@@ -2727,7 +2727,7 @@ def test_switch_off(client, redis_conn, jobs_folder, worker, job, mocker, fake_c
                 "/jobs", files={"upload_file": file}, headers=job_info["headers"]
             )
 
-        name = os.environ.get("DEFAULT_PREFIX")
+        name = os.environ.get("BCC_DEFAULT_PREFIX")
         assert response.status_code == 404
         assert response.json() == {"detail": f"{name} is offline"}
 

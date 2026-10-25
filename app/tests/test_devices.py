@@ -84,18 +84,19 @@ def test_worker_runs_each_job_as_its_queue_device(tmp_path, monkeypatch):
 
 
 def test_device_env_variables_override_the_shared_ones(tmp_path, monkeypatch):
-    """BCC_<PREFIX>_<NAME> sets one device's NAME, over BCC_<NAME>, over a bare NAME"""
+    """BCC_<PREFIX>_<NAME> sets one device's NAME, over BCC_<NAME>; a bare NAME is not read"""
     import settings
 
-    monkeypatch.setenv("MAX_IDLE_TIME", "5")
     monkeypatch.setenv("BCC_MAX_IDLE_TIME", "7")
     monkeypatch.setenv("BCC_SIM_2Q_MAX_IDLE_TIME", "42")
+    monkeypatch.delenv("BCC_MAX_SLOTS_PER_DAY", raising=False)
     monkeypatch.setenv("MAX_SLOTS_PER_DAY", "3")
     load_test_devices(tmp_path, monkeypatch, ["sim", "sim_2q"])
 
     assert settings.get_device_settings("sim").MAX_IDLE_TIME == 7
     assert settings.get_device_settings("sim_2q").MAX_IDLE_TIME == 42
-    assert settings.get_device_settings("sim_2q").MAX_SLOTS_PER_DAY == 3
+    # the default, as MAX_SLOTS_PER_DAY is not BCC_ prefixed
+    assert settings.get_device_settings("sim_2q").MAX_SLOTS_PER_DAY == 1
 
 
 def test_env_file_keys_may_take_the_bcc_prefix(tmp_path, monkeypatch):

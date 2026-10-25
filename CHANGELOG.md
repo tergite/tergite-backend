@@ -16,10 +16,12 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Added `--env-file`, given once per device, to `bcc start`, `serve` and `rq`, which serves several devices from one
   process, each device's API under `/<DEFAULT_PREFIX>/`, with a heavy worker per device and light workers shared by all
 - Added `BCC_<NAME>` env variables, e.g. `BCC_MAX_IDLE_TIME`, which set every device's `<NAME>`, and
-  `BCC_<PREFIX>_<NAME>`, e.g. `BCC_LOKE_MAX_IDLE_TIME`, one device's over them; a bare `<NAME>` still works, below both
+  `BCC_<PREFIX>_<NAME>`, e.g. `BCC_LOKE_MAX_IDLE_TIME`, one device's over them
 
 ### Changed
 
+- Changed the env variables the backend reads to `BCC_` names: a bare `<NAME>`, such as `DEFAULT_PREFIX`, is no longer
+  read from the environment, only from the env file, and `BCC_ENV_FILE` replaces `ENV_FILE`
 - Renamed the settings `BCC_PORT` and `BCC_MACHINE_ROOT_URL` to `PORT` and `MACHINE_ROOT_URL`, so their variables stay
   `BCC_PORT` and `BCC_MACHINE_ROOT_URL`; an env file may write any key as `BCC_<NAME>`, so files setting `BCC_PORT` still work
 - Changed the API to start without building a quantum executor or importing quantify, in about 2 s and 80 MB

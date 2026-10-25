@@ -48,10 +48,10 @@ class DeviceSettings:
     """The settings of one device, from its env file and the env variables
 
     BCC_<PREFIX>_<NAME>, <PREFIX> being DEFAULT_PREFIX in upper case with "_" for any
-    character but letters and digits, sets this device's <NAME>; BCC_<NAME> every
-    device's; and a bare <NAME>, as single-device deployments set it, every device's too.
-    Each takes precedence over the next, and all over the env file. DEFAULT_PREFIX
-    comes from BCC_DEFAULT_PREFIX, DEFAULT_PREFIX or the file.
+    character but letters and digits, sets this device's <NAME>, over BCC_<NAME>, which
+    sets every device's, over the env file, whose keys may be <NAME> or BCC_<NAME>.
+    A bare <NAME> in the environment is not read. DEFAULT_PREFIX comes from
+    BCC_DEFAULT_PREFIX or the file.
     """
 
     def __init__(self, env_file: Path):
@@ -374,10 +374,8 @@ def _read_config(env_file: Path, environ: dict[str, str]) -> Config:
 
 
 def _get_shared_environ() -> dict[str, str]:
-    """Gets the env variables, with BCC_<NAME> as <NAME> over a bare <NAME>"""
-    environ = dict(os.environ)
-    environ.update(_unprefixed(os.environ, "BCC_"))
-    return environ
+    """Gets the env variables BCC_<NAME> as <NAME>"""
+    return _unprefixed(os.environ, "BCC_")
 
 
 def _get_device_environ(prefix: str) -> dict[str, str]:
@@ -406,7 +404,7 @@ def _existing_calibration_file(config: Config, key: str, default_name: str) -> P
     return path
 
 
-_DEFAULT_DEVICE = DeviceSettings(_ROOT_PATH / os.environ.get("ENV_FILE", ".env"))
+_DEFAULT_DEVICE = DeviceSettings(_ROOT_PATH / os.environ.get("BCC_ENV_FILE", ".env"))
 _DEVICES: dict[str, DeviceSettings] = {_DEFAULT_DEVICE.DEFAULT_PREFIX: _DEFAULT_DEVICE}
 _CURRENT_DEVICE: ContextVar[Optional[str]] = ContextVar("current_device", default=None)
 

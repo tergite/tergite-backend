@@ -254,10 +254,10 @@ def quantify_rest_client(
 ) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
     _patch_async_client(mocker)
-    os.environ["EXECUTOR_TYPE"] = "quantify"
-    os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX
-    os.environ["BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
-    os.environ["CALIBRATION_SEED"] = quantify_seed_file
+    os.environ["BCC_EXECUTOR_TYPE"] = "quantify"
+    os.environ["BCC_DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX
+    os.environ["BCC_BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
+    os.environ["BCC_CALIBRATION_SEED"] = quantify_seed_file
 
     from .utils.executors.quantify import MockQuantifyExecutor
     from .utils.tuner import mock_run_node
@@ -317,10 +317,10 @@ def patched_mss_websockets(mocker) -> Generator[MockerFixture, Any, None]:
 @pytest.fixture
 def qiskit_1q_rest_client(request, mocker) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
-    os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_1q"
-    os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_1Q
-    os.environ["BACKEND_SETTINGS"] = TEST_SIMQ1_BACKEND_SETTINGS_FILE
-    os.environ["CALIBRATION_SEED"] = TEST_QISKIT_1Q_SEED_FILE
+    os.environ["BCC_EXECUTOR_TYPE"] = "qiskit_pulse_1q"
+    os.environ["BCC_DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_1Q
+    os.environ["BCC_BACKEND_SETTINGS"] = TEST_SIMQ1_BACKEND_SETTINGS_FILE
+    os.environ["BCC_CALIBRATION_SEED"] = TEST_QISKIT_1Q_SEED_FILE
 
     from .utils.executors.qiskit import (
         MockQiskitDynamicsExecutor,
@@ -366,10 +366,10 @@ def qiskit_1q_rest_client(request, mocker) -> Generator[TestClient, Any, None]:
 def qiskit_2q_rest_client(request, mocker) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
     _patch_async_client(mocker)
-    os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_2q"
-    os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_2Q
-    os.environ["BACKEND_SETTINGS"] = TEST_SIMQ2_BACKEND_SETTINGS_FILE
-    os.environ["CALIBRATION_SEED"] = TEST_QISKIT_2Q_SEED_FILE
+    os.environ["BCC_EXECUTOR_TYPE"] = "qiskit_pulse_2q"
+    os.environ["BCC_DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_2Q
+    os.environ["BCC_BACKEND_SETTINGS"] = TEST_SIMQ2_BACKEND_SETTINGS_FILE
+    os.environ["BCC_CALIBRATION_SEED"] = TEST_QISKIT_2Q_SEED_FILE
 
     from .utils.executors.qiskit import (
         MockQiskitDynamicsExecutor,

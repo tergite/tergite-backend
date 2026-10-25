@@ -33,8 +33,8 @@ def load_test_devices(
     monkeypatch.setattr(settings, "_DEFAULT_DEVICE", settings._DEFAULT_DEVICE)
     monkeypatch.setattr(settings, "_DEVICES", settings._DEVICES)
     # the shell's variables would take precedence over every device's file
-    monkeypatch.delenv("DEFAULT_PREFIX", raising=False)
-    monkeypatch.delenv("BOOKING_DB_URL", raising=False)
+    monkeypatch.delenv("BCC_DEFAULT_PREFIX", raising=False)
+    monkeypatch.delenv("BCC_BOOKING_DB_URL", raising=False)
     env_files = []
     for name in names:
         env_file = tmp_path / f"{name}.env"

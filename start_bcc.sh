@@ -192,6 +192,8 @@ printf "Starting Tergite Backend ....\n";
 start_auto_env_export;
 ENV_FILE="${ENV_FILE:-".env"}"
 load_env "$ENV_FILE";
+# the app reads its settings from the file BCC_ENV_FILE names
+export BCC_ENV_FILE="$ENV_FILE";
 
 DEFAULT_PREFIX="${DEFAULT_PREFIX:-default}";
 UVICORN_LOG_LEVEL="${UVICORN_LOG_LEVEL:-info}"

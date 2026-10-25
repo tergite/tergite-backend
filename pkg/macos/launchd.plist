@@ -12,7 +12,7 @@
 	</array>
 	<key>EnvironmentVariables</key>
 	<dict>
-		<key>ENV_FILE</key>
+		<key>BCC_ENV_FILE</key>
 		<string>/usr/local/etc/bcc/@NAME@/backend.env</string>
 		<!-- the RQ workers fork a process for every job -->
 		<key>OBJC_DISABLE_INITIALIZE_FORK_SAFETY</key>

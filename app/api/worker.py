@@ -12,7 +12,6 @@
 
 """A worker file that is preloaded with the heavy libraries etc"""
 import logging
-import os
 import sys
 
 from rq import Queue, Worker
@@ -52,8 +51,7 @@ class LoggingRqWorker(PreloadedRqWorker):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        level_name = os.getenv("LOG_LEVEL", "INFO").upper()
-        level = getattr(logging, level_name, logging.INFO)
+        level = getattr(logging, settings.LOG_LEVEL, logging.INFO)
 
         root = logging.getLogger()
         # avoid duplicate handlers if RQ restarts a child, etc.
