@@ -196,7 +196,6 @@ load_env "$ENV_FILE";
 DEFAULT_PREFIX="${DEFAULT_PREFIX:-default}";
 UVICORN_LOG_LEVEL="${UVICORN_LOG_LEVEL:-info}"
 EXECUTOR_TYPE="${EXECUTOR_TYPE:-quantify}"
-DEP_GROUP="${EXECUTOR_TYPE%%_*}";
 PORT_NUMBER="${BCC_PORT:-8000}"
 should_be_int "$PORT_NUMBER" "Config Error. Use BCC_PORT=<int> in the .env file.";
 
@@ -231,25 +230,6 @@ echo "Redis host: redis://******@$REDIS_HOST:$REDIS_PORT/$REDIS_DB";
 echo
 echo
 
-# activates the conda environment passed
-conda_activate(){
-  # shellcheck disable=SC1091
-  . "$CONDA_BIN_PATH/activate" "$1";
-}
-
-# If we are in systemd, activate conda environment or create it if not exists, activate it and install dependencies
-if [ "$IS_SYSTEMD" = "true" ]; then
-  if conda_activate ./env ; then
-    echo "env activated";
-  else
-    conda create -y --prefix=env python=3.12;
-    conda_activate ./env;
-    pip install -U pip;
-    pip install ."[$DEP_GROUP]";
-    echo "env created, activated, and dependencies installed";
-  fi
-fi
-
 # NOTE: careful, this causes the script to fail silently.
 # Keep below the env variable extraction procedures
 set -e # exit if any step fails
@@ -268,8 +248,5 @@ rq worker -u "$REDIS_URL" "$WORKER_FLAG" "${DEFAULT_PREFIX}_postprocessing" &
 rq worker -u "$REDIS_URL" "$WORKER_FLAG" "${DEFAULT_PREFIX}_recalibration" &
 
 # REST-API
-extra_params=$([[ "$IS_SYSTEMD" = "true" ]] && echo "--proxy-headers" || echo "--reload")
-
-# Then run uvicorn
-python -m uvicorn --host 0.0.0.0 --port "$PORT_NUMBER" --log-level "$UVICORN_LOG_LEVEL" app.api:app "$extra_params"
+python -m uvicorn --host 0.0.0.0 --port "$PORT_NUMBER" --log-level "$UVICORN_LOG_LEVEL" app.api:app --reload
 

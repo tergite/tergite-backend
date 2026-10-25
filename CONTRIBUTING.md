@@ -137,91 +137,39 @@ pre-commit install
 pytest -n auto --dist=loadscope app
 ```
 
-## How to Run With Systemd
+## How to Install as a Service
 
-- Clone the repo
+- Download the package for your machine from the release: `tergite-backend` runs real devices
+  through quantify (amd64 only), `tergite-backend-simulator` runs the qiskit simulators. They
+  install side by side.
+
+- Install it. A deb asks for a first backend instance: its name, which is its `DEFAULT_PREFIX`,
+  executor, port, MSS URL and Redis.
 
 ```shell
-git clone git@github.com:tergite/tergite-backend.git
+sudo apt install ./tergite-backend_<version>_amd64.deb
 ```
 
-- Copy the `dot-env-template.txt` into the `.env` file and update the variables there in. Contact your teammates for
- the variables you are not sure of.
+- Create any other instance, or the first on rpm and apk, which ask nothing.
+  `--executor`, `--port`, `--mss-url` and `--redis-url` override the defaults, and a Redis
+  password goes in `REDIS_PASSWORD`.
 
 ```shell
-cd tergite-backend
-cp dot-env-template.txt .env
+sudo bcc-provision lab1
+# or for a simulator
+# sudo bcc.simulator-provision sim1 --executor qiskit_pulse_2q --port 8002
 ```
 
-- Copy the `quantify-config.example.json` into `quantify-config.json` and update the variables there in.
+- Edit the instance's configs in `/etc/bcc/<name>/` for the device, copy MSS's
+  `public-mss-key.pem` there unless MSS runs on the same machine, and give MSS the
+  `[[backends]]` entry and `public-bcc-key.pem` that provisioning printed.
+
+- Start the instance, and on every boot. Its data is in `/var/lib/bcc/<name>/`.
 
 ```shell
-cp quantify-config.example.json quantify-config.json
-```
-
-- Copy the `quantify-metadata.example.yml` into `quantify-metadata.yml` and update the variables there in.
-
-```shell
-cp quantify-metadata.example.yml quantify-metadata.yml 
-```
-
-- If you need some seed data (mandatory if you are to use a simulator), copy the `calibration.seed.example.toml` into `calibration.seed.toml` and update the variables there in.
-
-```shell
-cp calibration.seed.example.toml calibration.seed.toml
-```
-
-- Copy `bcc.service` to the systemd services folder
-
-```shell
-sudo cp bcc.service /etc/systemd/system/bcc.service
-```
-
-- Get the path to your conda bin:
-
-```shell
-YOUR_CONDA_BIN_PATH="$(conda info --base)/bin"
-```
-
-
-- Extract also the path to this folder where `tergite-backend` is.
-
-```shell
-YOUR_PATH_TO_BCC=$(pwd)
-```
-
-- Get also the current user
-
-```shell
-YOUR_USER=$(whoami)
-```
-
-- Replace the variables `YOUR_CONDA_BIN_PATH` and `YOUR_PATH_TO_BCC` with the right values in `/etc/systemd/system/bcc.service`
-
-```shell
-sudo sed -i.bak "s:YOUR_USER:${YOUR_USER}:" /etc/systemd/system/bcc.service
-sudo sed -i.bak "s:YOUR_CONDA_BIN_PATH:${YOUR_CONDA_BIN_PATH}:" /etc/systemd/system/bcc.service
-sudo sed -i.bak "s:YOUR_PATH_TO_BCC:${YOUR_PATH_TO_BCC}:" /etc/systemd/system/bcc.service
-sudo rm /etc/systemd/system/bcc.service.bak
-```
-
-- Start BCC service
-
-```shell
-sudo systemctl start bcc.service
-```
-
-- Check the BCC service status
-
-```shell
-sudo systemctl status bcc.service
-```
-
-- Enable BCC to start on startup incase the server is ever restarted.
-
-
-```shell
-sudo systemctl enable bcc.service
+sudo systemctl enable --now bcc@lab1
+# or for a simulator: bcc.simulator@sim1
+journalctl -u bcc@lab1 -f
 ```
 
 ## How to Run with Docker

@@ -38,7 +38,6 @@ LABEL org.opencontainers.image.description="The Backend in the Tergite software 
 
 # Check the dot-env-template.txt for more information about the env variables
 ENV ENV_FILE=".env"
-ENV IS_SYSTEMD="false"
 ENV BACKEND_SETTINGS="backend_config.toml"
 ENV DEFAULT_PREFIX="default"
 ENV STORAGE_ROOT="/tmp"

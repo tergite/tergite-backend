@@ -7,6 +7,16 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Added
+
+- Added deb, rpm and apk packages, `tergite-backend` and `tergite-backend-simulator`, running each
+  backend instance, named for its `DEFAULT_PREFIX`, as a `bcc@<name>` service set up by `bcc-provision`
+- Added `bcc start` to the Nuitka binary, which runs the API and all six RQ workers as one process tree
+
+### Removed
+
+- Removed `bcc.service` and `start_bcc.sh`'s conda-based systemd mode, which the packages replace
+
 ## [2026.09.0-rc.1] - 2026-07-03
 
 ### Changed
