@@ -19,7 +19,7 @@
 # nuitka-project: --include-package=tabulate
 # nuitka-project: --include-package=cryptography
 # nuitka-project: --include-package=filelock
-# nuitka-project: --include-package=pyyaml
+# nuitka-project: --include-package=yaml
 # nuitka-project: --include-package=networkx
 # nuitka-project: --include-package=hiredis
 # nuitka-project: --include-package=redis
