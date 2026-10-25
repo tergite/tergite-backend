@@ -50,90 +50,128 @@
 #   nuitka-project: --include-package=h5py
 
 import argparse
-from enum import Enum
+import multiprocessing
+import signal
+import sys
+from multiprocessing.connection import wait
 
 import uvicorn
-from redis import Connection
-from rq import Worker
 
 import settings
 from app.api import app
-from app.services.scheduler.queues import QueuePool, get_queue_pool
+from app.api.worker import PreloadedRqWorker
+from app.services.scheduler.queues import get_queue_pool
+from app.utils.redis import get_redis_connection
+
+QUEUES = (
+    "general",
+    "preprocessing",
+    "normal_execution",
+    "booked_execution",
+    "postprocessing",
+    "recalibration",
+)
 
 
-class _QueueName(str, Enum):
-    """The names of queues"""
-    GENERAL = "general"
-    PREPROCESSING = "preprocessing"
-    NORMAL_EXECUTION = "normal_execution"
-    BOOKED_EXECUTION = "booked_execution"
-    POSTPROCESSING = "postprocessing"
-    RECALIBRATION = "recalibration"
-
-    def __str__(self):
-        return self.value
-
-    def with_prefix(self, prefix: str) -> str:
-        """Gets the full name of the queue with the prefix
-
-        Args:
-            prefix: prefix to add to the queue name
-
-        Returns:
-            the full name of the queue
-        """
-        return f"{prefix}_{self.name}"
-
-def _run_rq_worker(redis_url: str, name: str, queue_pool: QueuePool):
-    """Start a blocking run of an RQ worker waiting on the queue of given name.
-
-    Args:
-        redis_url: The redis URL where the worker will be started.
-        name: The name of the queue.
-    """
-    with Connection(redis_url) as connection:
-        worker = Worker(connection=connection, queues=[queue_pool.queues[name]])
-        worker.work()
-
-
-if __name__ == "__main__":
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Manage the Backend Control Computer (BCC)."
     )
-
     commands = parser.add_subparsers(dest="command", required=True)
-    server_parser = commands.add_parser("serve", help="Serve the API")
-    rq_parser = commands.add_parser("rq", help="Manage the RQ workers")
+    start_parser = commands.add_parser(
+        "start", help="Serve the API and run a worker for every queue"
+    )
+    serve_parser = commands.add_parser("serve", help="Serve the API")
+    rq_parser = commands.add_parser("rq", help="Run the worker of one queue")
 
-    server_parser.add_argument("--host", default="0.0.0.0", help="Bind socket to this host.")
-    server_parser.add_argument(
-        "--port", type=int, default=8002, help="Bind socket to this port."
-    )
-    server_parser.add_argument(
-        "--forwarded-allow-ips",
-        help="Allow forwarding of IPS only if done by the given IP.",
-    )
-    server_parser.add_argument(
+    for command_parser in (start_parser, serve_parser):
+        command_parser.add_argument(
+            "--host", default="0.0.0.0", help="Bind socket to this host."
+        )
+        command_parser.add_argument(
+            "--port",
+            type=int,
+            default=settings.BCC_PORT,
+            help="Bind socket to this port.",
+        )
+        command_parser.add_argument(
+            "--forwarded-allow-ips",
+            help="Allow forwarding of IPS only if done by the given IP.",
+        )
+    serve_parser.add_argument(
         "--reload",
         default=False,
         action="store_true",
         help="Enable reload (not recommended for production binaries).",
     )
-
-    rq_parser.add_argument("--name", type=_QueueName, required=True, choices=tuple(_QueueName), help="The name of the queue to run.")
+    rq_parser.add_argument(
+        "--name", required=True, choices=QUEUES, help="The name of the queue to run."
+    )
 
     args = parser.parse_args()
 
-    if args.command == "rq":
-        queue_name = args.name.with_prefix(settings.DEFAULT_PREFIX)
-        _run_rq_worker(settings.RQ_REDIS_URL, name=queue_name, queue_pool=get_queue_pool())
+    if args.command == "start":
+        _start(args.host, args.port, args.forwarded_allow_ips)
+    elif args.command == "serve":
+        _serve(args.host, args.port, args.forwarded_allow_ips, args.reload)
     else:
-        uvicorn.run(
-                app,
-                host=args.host,
-                reload=args.reload,
-                port=args.port,
-                workers=1,
-                proxy_headers=True,
-                forwarded_allow_ips=args.forwarded_allow_ips,
-            )
+        _run_rq_worker(args.name)
+
+
+def _start(host: str, port: int, forwarded_allow_ips: str | None) -> None:
+    """Runs the API and the workers as child processes, stopping them all when any stops,
+    so that the service manager restarts the backend whole. The children start the
+    platform's way: macOS cannot fork a process that has loaded its frameworks."""
+    processes = [
+        multiprocessing.Process(target=_run_rq_worker, args=(queue,), name=queue)
+        for queue in QUEUES
+    ]
+    processes.append(
+        multiprocessing.Process(
+            target=_serve, args=(host, port, forwarded_allow_ips), name="api"
+        )
+    )
+    for process in processes:
+        process.start()
+
+    # after the children start, which keep the handlers uvicorn and rq install
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    try:
+        wait([process.sentinel for process in processes])
+        stopped = next(process for process in processes if not process.is_alive())
+    finally:
+        for process in processes:
+            process.terminate()
+        for process in processes:
+            process.join()
+
+    sys.exit(
+        f"bcc: the {stopped.name} process stopped with exit code {stopped.exitcode}"
+    )
+
+
+def _serve(
+    host: str, port: int, forwarded_allow_ips: str | None, reload: bool = False
+) -> None:
+    uvicorn.run(
+        app,
+        host=host,
+        reload=reload,
+        port=port,
+        workers=1,
+        proxy_headers=True,
+        forwarded_allow_ips=forwarded_allow_ips,
+    )
+
+
+def _run_rq_worker(queue: str) -> None:
+    queue_pool = get_queue_pool()
+    worker = PreloadedRqWorker(
+        [queue_pool.queues[f"{settings.DEFAULT_PREFIX}_{queue}"]],
+        connection=get_redis_connection(),
+    )
+    worker.work()
+
+
+if __name__ == "__main__":
+    main()
