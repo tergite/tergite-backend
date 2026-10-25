@@ -185,3 +185,28 @@ def test_quantify_config_is_broken():
 
     with pytest.raises(ValidationError):
         get_executor_and_options()
+
+
+def test_load_devices_serves_each_device_settings(tmp_path, monkeypatch):
+    """settings.X is the current device's X: the one using_device names, or else the first"""
+    import settings
+
+    monkeypatch.setattr(settings, "_DEFAULT_DEVICE", settings._DEFAULT_DEVICE)
+    monkeypatch.setattr(settings, "_DEVICES", settings._DEVICES)
+    # the shell's variables would take precedence over every device's file
+    monkeypatch.delenv("DEFAULT_PREFIX", raising=False)
+    monkeypatch.delenv("BOOKING_DB_URL", raising=False)
+    env_files = []
+    for name in ("Alpha", "Beta"):
+        env_file = tmp_path / f"{name}.env"
+        env_file.write_text(
+            f"DEFAULT_PREFIX={name}\nBOOKING_DB_URL=sqlite:///{tmp_path}/{name}.db\n"
+        )
+        env_files.append(env_file)
+
+    assert settings.load_devices(env_files) == ["Alpha", "Beta"]
+    assert settings.DEFAULT_PREFIX == "Alpha"
+    with settings.using_device("Beta"):
+        assert settings.DEFAULT_PREFIX == "Beta"
+        assert settings.BOOKING_DB_URL == f"sqlite:///{tmp_path}/Beta.db"
+    assert settings.DEFAULT_PREFIX == "Alpha"
