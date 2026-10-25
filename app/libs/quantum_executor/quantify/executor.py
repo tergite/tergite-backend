@@ -135,31 +135,43 @@ class QuantifyExecutor(QuantumExecutor):
         }
         self._port_to_coupler = {port: u for u, port in self._coupler_to_port.items()}
         self.coordinator_name = f"{self.device_name}_executor"
-        no_gc_instruments_cache = self.__class__._non_gc_instruments.setdefault(
-            self.device_name, {}
+        # keyed by the metadata the clusters come from, so an executor of other hardware with
+        # the same device name never reuses them
+        self._instruments_key = str(Path(os.fsdecode(quantify_metadata_file)).resolve())
+        no_gc_instruments_cache = self.__class__._non_gc_instruments.get(
+            self._instruments_key, {}
         )
         try:
             self._coordinator = no_gc_instruments_cache[self.coordinator_name]
         except KeyError:
-            # make sure all previous connections are closed
+            # make sure all previous connections are closed, which leaves no cached instrument usable
             # FIXME: This global is unnatural but QCoDeS' delegation force us to make
             #   all instruments globals
             qblox_instruments.Cluster.close_all()
-            self._coordinator = InstrumentCoordinator(self.coordinator_name)
+            self.__class__._close_cached_instruments()
 
             # FIXME: Saving to the class variable just to escape the garbage collector
             #   since QCoDeS already keeps these instruments as globals
             #   and they raise errors if they already exist in QCoDeS
+            no_gc_instruments_cache = self.__class__._non_gc_instruments.setdefault(
+                self._instruments_key, {}
+            )
+            self._coordinator = InstrumentCoordinator(self.coordinator_name)
+            try:
+                clusters = self.quantify_metadata.get_clusters()
+                for cluster in clusters:
+                    if reset and are_clusters_resettable:
+                        cluster.reset()
+
+                    cluster_component = ClusterComponent(cluster)
+                    component_name = self._coordinator.add_component(cluster_component)
+                    no_gc_instruments_cache[component_name] = cluster_component
+            except Exception:
+                self._coordinator.close()
+                raise
+            # cached only once it has its clusters: cached before, a cluster that could not be
+            # reached left the next executor a coordinator without them, and every job failed
             no_gc_instruments_cache[self.coordinator_name] = self._coordinator
-
-            clusters = self.quantify_metadata.get_clusters()
-            for cluster in clusters:
-                if reset and are_clusters_resettable:
-                    cluster.reset()
-
-                cluster_component = ClusterComponent(cluster)
-                component_name = self._coordinator.add_component(cluster_component)
-                no_gc_instruments_cache[component_name] = cluster_component
 
         try:
             self._quantum_device = Instrument.find_instrument(
@@ -289,7 +301,14 @@ class QuantifyExecutor(QuantumExecutor):
         #   especially in automated tests
         qblox_instruments.Cluster.close_all()
         self._coordinator.close_all()
-        self.__class__._non_gc_instruments[self.device_name].clear()
+        self.__class__._non_gc_instruments.clear()
+
+    @classmethod
+    def _close_cached_instruments(cls) -> None:
+        for instruments in cls._non_gc_instruments.values():
+            for instrument in instruments.values():
+                instrument.close()
+        cls._non_gc_instruments.clear()
 
 
 def _extract_lo_frequencies(quantify_config: Any) -> Dict[str, float]:
