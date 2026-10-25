@@ -288,13 +288,20 @@ def quantify_rest_client(
 
 @pytest.fixture
 def fake_clock(mocker) -> Generator[time_machine.Traveller, Any, None]:
-    """A clock that jumps ahead instead of waiting: the mock quantify executor's jobs shift
-    it by their duration, and _wait_on_rq_worker moves it on to the next scheduled job
-    """
-    from .utils.executors.quantify import MockQuantifyExecutor
-
+    """A clock that jumps ahead instead of waiting: the mock executors' jobs shift it by
+    their duration, and _wait_on_rq_worker moves it on to the next scheduled job"""
     with time_machine.travel(datetime.now(timezone.utc), tick=True) as clock:
-        mocker.patch.object(MockQuantifyExecutor, "wait", side_effect=clock.shift)
+        # each mock only where its executor is installed, as CI installs one at a time
+        if HAS_QUANTIFY:
+            from .utils.executors.quantify import MockQuantifyExecutor
+
+            mocker.patch.object(MockQuantifyExecutor, "wait", side_effect=clock.shift)
+        if HAS_QISKIT_DYNAMICS:
+            from .utils.executors.qiskit import MockQiskitDynamicsExecutor
+
+            mocker.patch.object(
+                MockQiskitDynamicsExecutor, "wait", side_effect=clock.shift
+            )
         yield clock
 
 

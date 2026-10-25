@@ -16,7 +16,6 @@ import copy
 import json
 import math
 import os
-import time
 from contextlib import suppress
 from datetime import datetime, timedelta, timezone
 from itertools import zip_longest
@@ -1084,7 +1083,9 @@ def test_submit_jobs_without_token(client, redis_conn, worker, job, jobs_folder)
 @pytest.mark.parametrize(
     "client, redis_conn, worker, job", _ALL_INVALID_UPLOAD_JOB_PARAMS
 )
-def test_upload_invalid_job(client, redis_conn, worker, job, jobs_folder, mocker):
+def test_upload_invalid_job(
+    client, redis_conn, worker, job, jobs_folder, mocker, fake_clock
+):
     """POSTing an invalid structure of a job to '/jobs' fails"""
     # using context manager to ensure on_startup runs
     with client as client:
@@ -1112,7 +1113,9 @@ def test_upload_invalid_job(client, redis_conn, worker, job, jobs_folder, mocker
 
 @pytest.mark.timeout(60)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
-def test_duplicate_job_upload(client, redis_conn, jobs_folder, worker, job, mocker):
+def test_duplicate_job_upload(
+    client, redis_conn, jobs_folder, worker, job, mocker, fake_clock
+):
     """Uploading two jobs of the same job_id returns an error"""
     with client as client:
         users = _create_many_users(client, raw_users=USERS[:1])
@@ -1152,7 +1155,7 @@ def test_duplicate_job_upload(client, redis_conn, jobs_folder, worker, job, mock
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
-def test_remove_job(client, redis_conn, jobs_folder, worker, job, mocker):
+def test_remove_job(client, redis_conn, jobs_folder, worker, job, mocker, fake_clock):
     """DELETE to '/jobs/{job_id}' deletes the given job if job belongs to user"""
     # using context manager to ensure on_startup runs
     with client as client:
@@ -1185,7 +1188,9 @@ def test_remove_job(client, redis_conn, jobs_folder, worker, job, mocker):
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
-def test_remove_another_users_job(client, redis_conn, jobs_folder, worker, job, mocker):
+def test_remove_another_users_job(
+    client, redis_conn, jobs_folder, worker, job, mocker, fake_clock
+):
     """DELETE to '/jobs/{job_id}' fails if the user does not own the given job"""
     # using context manager to ensure on_startup runs
     with client as client:
@@ -1219,7 +1224,9 @@ def test_remove_another_users_job(client, redis_conn, jobs_folder, worker, job, 
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
-def test_admin_remove_job(client, redis_conn, jobs_folder, worker, job, mocker):
+def test_admin_remove_job(
+    client, redis_conn, jobs_folder, worker, job, mocker, fake_clock
+):
     """DELETE to '/jobs/{job_id}' deletes the given job if user is admin"""
     # using context manager to ensure on_startup runs
     with client as client:
@@ -1254,7 +1261,7 @@ def test_admin_remove_job(client, redis_conn, jobs_folder, worker, job, mocker):
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_unauthenticated_remove_job(
-    client, redis_conn, jobs_folder, worker, job, mocker
+    client, redis_conn, jobs_folder, worker, job, mocker, fake_clock
 ):
     """Delete to /jobs/{job_id} returns 401 error when accessed outside MSS or without proper MSS headers"""
     # using context manager to ensure on_startup runs
@@ -1403,7 +1410,7 @@ def test_admin_cancel_future_booking(client):
     "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-1]
 )
 def test_cancel_active_booking(
-    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture
+    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """POST '/bookings/{id}/cancel' for an active booking fails."""
     with client as client:
@@ -1438,7 +1445,7 @@ def test_cancel_active_booking(
         _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
 
@@ -1458,7 +1465,7 @@ def test_cancel_active_booking(
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_cancel_completed_booking(
-    client, worker, redis_conn, job, mocker: MockerFixture
+    client, worker, redis_conn, job, mocker: MockerFixture, fake_clock
 ):
     """POST '/bookings/{id}/cancel' for a completed booking fails."""
     with client as client:
@@ -1474,7 +1481,7 @@ def test_cancel_completed_booking(
         )
         booking = Booking.model_validate(response.json())
 
-        time.sleep(2)
+        fake_clock.shift(2)
 
         response = _cancel_booking(
             client, user_id=booker_user_id, booking_id=booking.id
@@ -1496,6 +1503,7 @@ def test_view_job(
     jobs_folder,
     mocker: MockerFixture,
     redis_conn_spy,
+    fake_clock,
 ):
     """GET '/jobs/{job_id}' by a user can show the job for the job_id if job belongs to them"""
     job_file_path = _save_job_file(folder=jobs_folder, job=job)
@@ -1643,7 +1651,7 @@ def test_admin_view_job(
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="real simulator takes too long")
 @pytest.mark.parametrize("client, _redis, worker, job, device", _VIEW_JOBS_PARAMS)
 def test_view_jobs(
-    client, _redis, worker, job, device, jobs_folder, mocker: MockerFixture
+    client, _redis, worker, job, device, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """GET '/jobs' by a user can show the paginated list of jobs that belong to them"""
     with client as client:
@@ -1732,7 +1740,7 @@ def test_view_jobs(
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="real simulator takes too long")
 @pytest.mark.parametrize("client, _redis, worker, job, device", _VIEW_JOBS_PARAMS)
 def test_view_jobs_by_status(
-    client, _redis, worker, job, device, jobs_folder, mocker: MockerFixture
+    client, _redis, worker, job, device, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """GET '/jobs' by a user can show the paginated list of jobs that belong to them"""
     with client as client:
@@ -1901,7 +1909,7 @@ def test_unauthenticated_view_jobs(
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_cancel_job_via_mss(
-    client, redis_conn, jobs_folder, worker, job, mocker, redis_conn_spy
+    client, redis_conn, jobs_folder, worker, job, mocker, redis_conn_spy, fake_clock
 ):
     """An MSS POST to '/jobs/{id}/cancel' cancels the job of the job_id if the job belongs to the current user"""
     with client as client:
@@ -1971,7 +1979,7 @@ def test_cancel_job_via_mss(
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_cancel_job_directly(
-    client, redis_conn, jobs_folder, worker, job, mocker, redis_conn_spy
+    client, redis_conn, jobs_folder, worker, job, mocker, redis_conn_spy, fake_clock
 ):
     """A POST to '/jobs/{id}/cancel' with JWT token cancels the job of the job_id if the job belongs to user"""
     with client as client:
@@ -2042,7 +2050,9 @@ def test_cancel_job_directly(
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
-def test_cancel_another_users_job(client, redis_conn, jobs_folder, worker, job, mocker):
+def test_cancel_another_users_job(
+    client, redis_conn, jobs_folder, worker, job, mocker, fake_clock
+):
     """A user POST to '/jobs/{id}/cancel' for a job does is not for the current user errors out"""
     with client as client:
         cancellation_reason = "just testing"
@@ -2093,7 +2103,9 @@ def test_cancel_another_users_job(client, redis_conn, jobs_folder, worker, job, 
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
-def test_admin_cancel_job(client, redis_conn, jobs_folder, worker, job, mocker):
+def test_admin_cancel_job(
+    client, redis_conn, jobs_folder, worker, job, mocker, fake_clock
+):
     """A user POST to '/jobs/{id}/cancel' cancels the job of the job_id if the user is admin"""
     with client as client:
         cancellation_reason = "just testing"
@@ -2165,7 +2177,7 @@ def test_admin_cancel_job(client, redis_conn, jobs_folder, worker, job, mocker):
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_unauthenticated_cancel_job(
-    client, redis_conn, worker, job, jobs_folder, mocker: MockerFixture
+    client, redis_conn, worker, job, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """POST to `/jobs/{job_id}/cancel` raises 401 if not accessed through MSS"""
     with client as client:
@@ -2685,7 +2697,7 @@ def test_cancel_restarted_recalibration(client, redis_conn: Redis, worker):
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
-def test_switch_off(client, redis_conn, jobs_folder, worker, job, mocker):
+def test_switch_off(client, redis_conn, jobs_folder, worker, job, mocker, fake_clock):
     """POST '/switch/off' switches off the scheduler and does not allow jobs"""
     with client as client:
         users = _create_many_users(client, raw_users=USERS[:2])
@@ -2721,7 +2733,7 @@ def test_switch_off(client, redis_conn, jobs_folder, worker, job, mocker):
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
-def test_switch_on(client, redis_conn, jobs_folder, worker, job, mocker):
+def test_switch_on(client, redis_conn, jobs_folder, worker, job, mocker, fake_clock):
     """POST '/switch/on' switches on the scheduler and allowing jobs"""
     with client as client:
         users = _create_many_users(client, raw_users=USERS[:2])
