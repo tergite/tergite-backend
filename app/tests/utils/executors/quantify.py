@@ -22,6 +22,9 @@ from app.tests.utils.env import TEST_RQ_REDIS_URL
 
 
 class MockQuantifyExecutor(QuantifyExecutor):
+    # how a job's estimated duration passes; the fake_clock fixture moves its clock instead
+    wait = staticmethod(time.sleep)
+
     def preprocess(
         self, qobj: PulseQobj, job_id: str, results_folder: Path = None
     ) -> Tuple[float, str]:
@@ -50,7 +53,7 @@ class MockQuantifyExecutor(QuantifyExecutor):
         actual_duration = (end_timestamp - start_timestamp).total_seconds()
         sleep_duration = estimated_duration - actual_duration
         if sleep_duration > 0:
-            time.sleep(sleep_duration)
+            self.wait(sleep_duration)
 
         return result
 

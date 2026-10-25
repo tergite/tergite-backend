@@ -33,6 +33,7 @@ import os
 import shutil
 import sys
 from contextlib import suppress
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import (
     Any,
@@ -50,6 +51,7 @@ from typing import (
 import numpy as np
 import pytest
 import redis
+import time_machine
 from fastapi.testclient import TestClient
 from pytest_lazy_fixtures import lf as lazy_fixture
 from pytest_mock import MockerFixture
@@ -282,6 +284,18 @@ def quantify_rest_client(
     yield TestClient(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
     clear_quantum_executor(ignore_errors=True)
+
+
+@pytest.fixture
+def fake_clock(mocker) -> Generator[time_machine.Traveller, Any, None]:
+    """A clock that jumps ahead instead of waiting: the mock quantify executor's jobs shift
+    it by their duration, and _wait_on_rq_worker moves it on to the next scheduled job
+    """
+    from .utils.executors.quantify import MockQuantifyExecutor
+
+    with time_machine.travel(datetime.now(timezone.utc), tick=True) as clock:
+        mocker.patch.object(MockQuantifyExecutor, "wait", side_effect=clock.shift)
+        yield clock
 
 
 @pytest.fixture

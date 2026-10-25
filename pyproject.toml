@@ -92,6 +92,7 @@ dev = [
     "isort~=6.0.0",
     "freezegun~=1.5.1",
     "pytest-freezegun>=0.4.2",
+    "time-machine~=3.5.1",
     "pytest-lazy-fixtures>=1.1.2",
     "pytest-asyncio~=1.1.0",
     "pre-commit~=4.2.0",

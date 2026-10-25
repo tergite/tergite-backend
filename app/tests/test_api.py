@@ -34,6 +34,7 @@ from typing import (
 from uuid import uuid4
 
 import pytest
+import time_machine
 import toml
 from black.nodes import Generic
 from pydantic import ValidationError
@@ -680,6 +681,7 @@ def test_submit_jobs_no_booking(
     redis_conn_spy,
     mss_conn_spy,
     sql_engine_spy,
+    fake_clock,
 ):
     """POST '/jobs' when there is no booking should run the jobs in FIFO (first in, first out)"""
     with client as client:
@@ -777,6 +779,7 @@ def test_submit_jobs_in_active_booking(
     job,
     jobs_folder,
     mocker: MockerFixture,
+    fake_clock,
 ):
     """POST '/jobs' when there is an active booking runs the booker jobs first then runs the other jobs after booking."""
 
@@ -804,7 +807,7 @@ def test_submit_jobs_in_active_booking(
         _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
         jobs_in_redis.sort(key=lambda v: v.timestamps.execution.start_timestamp)
@@ -839,6 +842,7 @@ def test_submit_jobs_in_idle_booking(
     job,
     jobs_folder,
     mocker,
+    fake_clock,
 ):
     """POST '/jobs' when there is an idle booking runs the non booker jobs even during the booking."""
     with client as client:
@@ -864,7 +868,7 @@ def test_submit_jobs_in_idle_booking(
         _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
 
@@ -898,6 +902,7 @@ def test_submit_jobs_in_idle_booking_before_another(
     job,
     jobs_folder,
     mocker,
+    fake_clock,
 ):
     """When there is an idle booking and another is next, only non booker jobs, short enough to fit in between, run."""
     with client as client:
@@ -933,7 +938,7 @@ def test_submit_jobs_in_idle_booking_before_another(
         _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
         jobs_in_db = _get_jobs_in_redis(redis_conn)
 
@@ -1006,6 +1011,7 @@ def test_submit_long_jobs_before_booking(
     job,
     jobs_folder,
     mocker,
+    fake_clock,
 ):
     """POST long jobs to '/jobs' before booking starts waitlists them but runs the shorter ones"""
     with client as client:
@@ -1032,7 +1038,7 @@ def test_submit_long_jobs_before_booking(
         _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
         jobs_in_db = _get_jobs_in_redis(redis_conn)
         jobs_in_db.sort(key=lambda v: v.start_utc)
@@ -3418,6 +3424,7 @@ def _wait_on_rq_worker(
     max_jobs: Optional[int] = None,
     with_scheduler: bool = False,
     queue: RqQueue = None,
+    clock: Optional[time_machine.Traveller] = None,
     **kwargs,
 ):
     """Waits for the worker to complete its worker
@@ -3427,6 +3434,8 @@ def _wait_on_rq_worker(
         max_idle_time: the number of seconds beyond which a timeout is raised
         with_scheduler: whether to run in a scheduler
         queue: the queue to wait on; defaults to the first queue i.e. the general queue
+        clock: the fake clock to move on to the next scheduled job when none is queued,
+            instead of waiting for it
         kwargs: extra kwargs to pass to the work() method of the worker.
             See the signature of that method
 
@@ -3462,6 +3471,14 @@ def _wait_on_rq_worker(
             max_jobs=max_jobs,
             **kwargs,
         )
+
+        if clock is not None and len(queue.jobs) == 0:
+            registry = queue.scheduled_job_registry
+            scheduled_times = [
+                registry.get_scheduled_time(job_id) for job_id in registry.get_job_ids()
+            ]
+            if scheduled_times and min(scheduled_times) > datetime.now(timezone.utc):
+                clock.move_to(min(scheduled_times))
 
         # refresh variables
         pending_jobs = queue.scheduled_job_registry.count + len(queue.jobs)
