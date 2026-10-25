@@ -10,7 +10,8 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 
-# nuitka-project: --onefile
+# a folder the packages install whole, as a onefile binary would unpack itself on every start
+# nuitka-project: --standalone
 
 # nuitka-project: --include-package=fastapi
 # nuitka-project: --include-package=uvicorn

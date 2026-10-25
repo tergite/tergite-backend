@@ -221,15 +221,16 @@ pkg/build.sh
 # EXECUTOR=qiskit pkg/build.sh
 ```
 
-- After the build, the app will be at `./bcc` (or `bcc.simulator` if EXECUTOR=qiskit). You can run it.
+- After the build, the app will be at `main.dist/bcc` (or `main.dist/bcc.simulator` if EXECUTOR=qiskit), in
+  the folder it needs beside it. You can run it.
 
 ```shell
 # serve the API, and run one heavy worker for preprocessing, executions and recalibrations
 # and `--light-workers` (default 1) for postprocessing and general tasks, stopping them all if
 # any stops; it reads the .env file named by BCC_ENV_FILE, and takes `--port`, `--host` and
 # `--forwarded-allow-ips`
-BCC_ENV_FILE="$PWD/.env" ./bcc start  # or just ./bcc, as start is the default
-# or one at a time: `./bcc serve --reload`, `./bcc rq --kind heavy`, `./bcc rq --kind light`
+BCC_ENV_FILE="$PWD/.env" main.dist/bcc start  # or just main.dist/bcc, as start is the default
+# or one at a time: `main.dist/bcc serve`, `main.dist/bcc rq --kind heavy`, `main.dist/bcc rq --kind light`
 
 # serve several devices from one process: each device's env file once; its API is then at
 # /<its DEFAULT_PREFIX>/..., say http://localhost:8000/loke/bookings, a path naming no device
@@ -237,7 +238,7 @@ BCC_ENV_FILE="$PWD/.env" ./bcc start  # or just ./bcc, as start is the default
 # queues, so the devices must share RQ_REDIS_URL; in the shell, BCC_<NAME>, e.g.
 # BCC_MAX_IDLE_TIME, sets every device's <NAME> over its env file, and BCC_<PREFIX>_<NAME>,
 # e.g. BCC_LOKE_MAX_IDLE_TIME, one device's over that; see .env.example
-./bcc start --env-file loke.env --env-file thor.env
+main.dist/bcc start --env-file loke.env --env-file thor.env
 ```
 
 ## References

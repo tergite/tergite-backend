@@ -20,6 +20,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- The debs and macOS packages install `bcc` as Nuitka's standalone folder in `/usr/lib/<package>`, linked from the
+  PATH, instead of a onefile binary that unpacked itself into a temporary folder on every start
 - Changed `start_bcc.sh` to run `main.py start`, after decrypting a SOPS env file, instead of the API and six RQ
   workers itself; it no longer installs sops, and `BCC_DEBUG` and `BCC_UVICORN_LOG_LEVEL` are gone with its uses of them
 - Renamed `dot-env-template.txt` to `.env.example`, which now also documents the env variables and serving several devices

@@ -25,10 +25,13 @@ depends:
   - openssl
 
 contents:
-  - src: @BINARY@
+  # Nuitka's standalone build, whose executable finds the folder through the link
+  - src: main.dist/
+    dst: /usr/lib/@PACKAGE@/
+    type: tree
+  - src: /usr/lib/@PACKAGE@/@BINARY@
     dst: /usr/bin/@BINARY@
-    file_info:
-      mode: 0755
+    type: symlink
 
   # one instance a DEFAULT_PREFIX, e.g. @BINARY@@lab1 reads /etc/bcc/lab1/backend.env
   - src: pkg/bcc@.service
