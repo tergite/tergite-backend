@@ -47,8 +47,8 @@ from ..external.mss.service import MssClient
 if TYPE_CHECKING:
     from ...libs.quantum_executor.base.executor import QuantumExecutor
 
-_EXECUTOR_OPTIONS: ExecutorOptions | None = None
-_QUANTUM_EXECUTOR_AND_OPTS: tuple["QuantumExecutor", ExecutorOptions] | None = None
+_EXECUTOR_OPTIONS: dict[str, ExecutorOptions] = {}
+_QUANTUM_EXECUTORS_AND_OPTS: dict[str, tuple["QuantumExecutor", ExecutorOptions]] = {}
 
 
 _STAGE_TIMESTAMPS_MAP: Dict[Stage, Tuple[Tuple[JobStage, JobEvent], ...]] = {
@@ -78,21 +78,23 @@ _STAGE_STATUS_MAP: Dict[Stage, JobStatus] = {
 
 
 def get_executor_options() -> ExecutorOptions:
-    """Gets the executor options from the settings, without building the executor"""
-    global _EXECUTOR_OPTIONS
-    if _EXECUTOR_OPTIONS is None:
-        _EXECUTOR_OPTIONS = ExecutorOptions.from_settings()
-    return _EXECUTOR_OPTIONS
+    """Gets the current device's executor options from the settings, without building
+    the executor"""
+    executor_options = _EXECUTOR_OPTIONS.get(settings.DEFAULT_PREFIX)
+    if executor_options is None:
+        executor_options = ExecutorOptions.from_settings()
+        _EXECUTOR_OPTIONS[settings.DEFAULT_PREFIX] = executor_options
+    return executor_options
 
 
 def get_executor_and_options() -> Tuple["QuantumExecutor", ExecutorOptions]:
     """Gets the executor and its options that will be passed around in the queue
 
     Returns:
-        the executor and executor options constructed from the above settings
+        the current device's executor and executor options
     """
-    global _QUANTUM_EXECUTOR_AND_OPTS
-    if _QUANTUM_EXECUTOR_AND_OPTS is None:
+    executor_and_options = _QUANTUM_EXECUTORS_AND_OPTS.get(settings.DEFAULT_PREFIX)
+    if executor_and_options is None:
         executor_options = get_executor_options()
         executor = _init_executor(executor_options, reset=True)
         err_logger.info(
@@ -103,8 +105,9 @@ def get_executor_and_options() -> Tuple["QuantumExecutor", ExecutorOptions]:
         executor_options = dataclasses.replace(
             executor_options, backend_config=executor.backend_config
         )
-        _QUANTUM_EXECUTOR_AND_OPTS = (executor, executor_options)
-    return _QUANTUM_EXECUTOR_AND_OPTS
+        executor_and_options = (executor, executor_options)
+        _QUANTUM_EXECUTORS_AND_OPTS[settings.DEFAULT_PREFIX] = executor_and_options
+    return executor_and_options
 
 
 def get_quantum_executor() -> "QuantumExecutor":
@@ -114,23 +117,22 @@ def get_quantum_executor() -> "QuantumExecutor":
 
 
 def clear_quantum_executor(ignore_errors: bool = False) -> None:
-    """Clears the global quantum executor and its options.
+    """Clears the quantum executors and their options of all devices.
 
     Args:
         ignore_errors: If True, ignores any errors raised by executor.
     """
-    global _EXECUTOR_OPTIONS, _QUANTUM_EXECUTOR_AND_OPTS
-    _EXECUTOR_OPTIONS = None
-    if isinstance(_QUANTUM_EXECUTOR_AND_OPTS, tuple):
+    _EXECUTOR_OPTIONS.clear()
+    for executor, _ in _QUANTUM_EXECUTORS_AND_OPTS.values():
         try:
-            _QUANTUM_EXECUTOR_AND_OPTS[0].close()
+            executor.close()
         except Exception as exp:
             if ignore_errors:
                 err_logger.warning(f"QuantumExecutor closed error: {exp}")
             else:
                 raise exp
 
-    _QUANTUM_EXECUTOR_AND_OPTS = None
+    _QUANTUM_EXECUTORS_AND_OPTS.clear()
 
 
 def log_job_msg(message: str, level: LogLevel = LogLevel.INFO) -> None:

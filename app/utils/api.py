@@ -48,7 +48,7 @@ from .redis_store import Collection, Schema
 ITEM = TypeVar("ITEM", bound=BaseModel)
 
 _MSS_PUBLIC_KEYS: dict[Path, RSAPublicKey] = {}
-_REQUEST_LOGS_STORE: Optional[Collection["RequestLog"]] = None
+_REQUEST_LOGS_STORES: dict[str, Collection["RequestLog"]] = {}
 
 
 class CancellationDetails(BaseModel):
@@ -200,22 +200,22 @@ def to_http_error(
 
 
 def get_request_logs_store() -> Collection[RequestLog]:
-    """Gets the store for the given url for the request logs
+    """Gets the current device's store for the request logs
 
     Returns:
-        the RedisCollection containing the jobs
+        the RedisCollection containing the request logs
     """
-    global _REQUEST_LOGS_STORE
-    if _REQUEST_LOGS_STORE is None:
-        connection = get_redis_connection(url=settings.RQ_REDIS_URL)
-        _REQUEST_LOGS_STORE = Collection(
-            connection=connection,
+    request_logs_store = _REQUEST_LOGS_STORES.get(settings.DEFAULT_PREFIX)
+    if request_logs_store is None:
+        request_logs_store = Collection(
+            connection=get_redis_connection(url=settings.RQ_REDIS_URL),
             schema=RequestLog,
             default_ttl=settings.REQUEST_LOG_TTL,
             cleanup_interval=settings.REQUEST_LOG_CLEAN_INTERVAL,
         )
+        _REQUEST_LOGS_STORES[settings.DEFAULT_PREFIX] = request_logs_store
 
-    return _REQUEST_LOGS_STORE
+    return request_logs_store
 
 
 def encrypt_mss_jwt_token(token: str, key_path: Optional[Path] = None) -> str:

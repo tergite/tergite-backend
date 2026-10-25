@@ -27,14 +27,14 @@ from app.utils.logging import err_logger
 from .auth import create_headers
 from .dtos import DeviceEvent, EventResponse
 
-_MSS_CLIENT: Optional["MssClient"] = None
+_MSS_CLIENTS: dict[str, "MssClient"] = {}
 
 
 def get_mss_client() -> "MssClient":
-    """Returns a new MssClient."""
-    global _MSS_CLIENT
-    if _MSS_CLIENT is None:
-        _MSS_CLIENT = MssClient(
+    """Returns the current device's MssClient."""
+    mss_client = _MSS_CLIENTS.get(settings.DEFAULT_PREFIX)
+    if mss_client is None:
+        mss_client = MssClient(
             uri=str(settings.MSS_DEVICE_EVENTS_ENDPOINT),
             device=settings.DEFAULT_PREFIX,
             private_key_file=settings.PRIVATE_KEY_FILE,
@@ -44,27 +44,27 @@ def get_mss_client() -> "MssClient":
             max_reconnection_delay=settings.MSS_MAX_RECONNECTION_DELAY,
             max_reconnections=settings.MSS_CONNECTION_MAX_ATTEMPTS,
         )
+        _MSS_CLIENTS[settings.DEFAULT_PREFIX] = mss_client
 
-    return _MSS_CLIENT
+    return mss_client
 
 
 def disconnect_mss_client(ignore_errors: bool = False):
-    """Disconnects the MSSClient, resetting its connections
+    """Disconnects the MSSClients of all devices, resetting their connections
 
     Args:
         ignore_errors: Whether to ignore errors when disconnecting. Defaults to False.
     """
-    global _MSS_CLIENT
-    if isinstance(_MSS_CLIENT, MssClient):
+    for mss_client in _MSS_CLIENTS.values():
         try:
-            _MSS_CLIENT.close()
+            mss_client.close()
         except Exception as exp:
             if ignore_errors:
                 err_logger.warning(f"error closing MSSClient: {exp}")
             else:
                 raise exp
 
-    _MSS_CLIENT = None
+    _MSS_CLIENTS.clear()
 
 
 class MssClient:
