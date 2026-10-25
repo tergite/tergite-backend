@@ -207,7 +207,9 @@ def _run_rq_worker(kind: str) -> None:
         ],
         connection=get_redis_connection(),
     )
-    worker.work()
+    # the scheduler moves due enqueue_at and enqueue_in jobs, e.g. a booking's start and end,
+    # onto the worker's queues; RQ's locks let one worker per queue do it
+    worker.work(with_scheduler=True)
 
 
 if __name__ == "__main__":

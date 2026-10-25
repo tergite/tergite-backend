@@ -14,6 +14,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Added `bcc start` to the Nuitka binary, which runs the API, one RQ worker for preprocessing, executions and
   recalibrations, and `--light-workers` (default 1) for postprocessing and general tasks as one process tree
 
+### Fixed
+
+- Fixed scheduled jobs never running: `bcc start` runs its workers with RQ's scheduler, so a booking's start and
+  end jobs and recalibration's start and repeats now run, which no release's workers did
+
 ### Removed
 
 - Removed `bcc.service` and `start_bcc.sh`'s conda-based systemd mode, which the packages replace
