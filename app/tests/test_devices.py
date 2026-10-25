@@ -2,6 +2,8 @@
 
 from uuid import uuid4
 
+import pytest
+
 from app.tests.conftest import USERS
 from app.tests.utils.api import create_mss_headers
 from app.tests.utils.devices import load_test_devices
@@ -99,11 +101,13 @@ def test_device_env_variables_override_the_shared_ones(tmp_path, monkeypatch):
     assert settings.get_device_settings("sim_2q").MAX_SLOTS_PER_DAY == 1
 
 
-def test_env_file_keys_may_take_the_bcc_prefix(tmp_path, monkeypatch):
-    """An env file's BCC_<NAME> is its <NAME>, as old files set BCC_PORT"""
+def test_env_file_keys_are_bcc_prefixed(tmp_path, monkeypatch):
+    """An env file's BCC_<NAME> sets <NAME>, and a bare key is refused, not ignored"""
     import settings
 
     monkeypatch.delenv("BCC_PORT", raising=False)
     load_test_devices(tmp_path, monkeypatch, ["sim"], {"BCC_PORT": "8123"})
-
     assert settings.get_device_settings("sim").PORT == 8123
+
+    with pytest.raises(ValueError, match="PORT must be written BCC_<NAME>"):
+        load_test_devices(tmp_path, monkeypatch, ["sim"], {"PORT": "8123"})

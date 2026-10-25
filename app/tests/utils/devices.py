@@ -39,8 +39,8 @@ def load_test_devices(
     for name in names:
         env_file = tmp_path / f"{name}.env"
         lines = [
-            f"DEFAULT_PREFIX={name}",
-            f"BOOKING_DB_URL=sqlite:///{tmp_path}/{name}.db",
+            f"BCC_DEFAULT_PREFIX={name}",
+            f"BCC_BOOKING_DB_URL=sqlite:///{tmp_path}/{name}.db",
         ]
         lines += [f"{key}={value}" for key, value in (env_file_values or {}).items()]
         env_file.write_text("\n".join(lines) + "\n")

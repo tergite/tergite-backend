@@ -28,7 +28,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator, List, Mapping, Optional
+from typing import Iterator, List, Optional
 
 from starlette.config import Config
 from starlette.datastructures import URL, CommaSeparatedStrings
@@ -71,7 +71,9 @@ class DeviceSettings:
         )
 
         logfile_download_pool_dirname = config(
-            "BCC_LOGFILE_DOWNLOAD_POOL_DIRNAME", cast=str, default="logfile_download_pool"
+            "BCC_LOGFILE_DOWNLOAD_POOL_DIRNAME",
+            cast=str,
+            default="logfile_download_pool",
         )
         job_upload_pool_dirname = config(
             "BCC_JOB_UPLOAD_POOL_DIRNAME", cast=str, default="job_upload_pool"
@@ -109,7 +111,9 @@ class DeviceSettings:
         )
 
         self.CALIBRATION_SEED = config(
-            "BCC_CALIBRATION_SEED", cast=str, default=_ROOT_PATH / "calibration.seed.toml"
+            "BCC_CALIBRATION_SEED",
+            cast=str,
+            default=_ROOT_PATH / "calibration.seed.toml",
         )
 
         self.CALIBRATION_NODE_CONFIG_FILE = _existing_calibration_file(
@@ -158,7 +162,9 @@ class DeviceSettings:
 
         # MSS public key for encrypting/verifying messages for/from MSS only
         self.MSS_PUBLIC_KEY_PATH = config(
-            "BCC_MSS_PUBLIC_KEY_PATH", cast=Path, default=_ROOT_PATH / "public-mss-key.pem"
+            "BCC_MSS_PUBLIC_KEY_PATH",
+            cast=Path,
+            default=_ROOT_PATH / "public-mss-key.pem",
         ).resolve()
         if not self.MSS_PUBLIC_KEY_PATH.exists():
             raise ValueError(f"{self.MSS_PUBLIC_KEY_PATH} does not exist")
@@ -187,7 +193,9 @@ class DeviceSettings:
         )
 
         self.PRIVATE_KEY_FILE = config(
-            "BCC_PRIVATE_KEY_FILE", cast=Path, default=_ROOT_PATH / "private-bcc-key.pem"
+            "BCC_PRIVATE_KEY_FILE",
+            cast=Path,
+            default=_ROOT_PATH / "private-bcc-key.pem",
         ).resolve()
         if not self.PRIVATE_KEY_FILE.exists():
             raise ValueError(
@@ -365,23 +373,26 @@ def using_device(name: str) -> Iterator[DeviceSettings]:
 
 
 def _read_config(env_file: Path) -> Config:
-    """Reads the env file, whose keys are BCC_<NAME>, under the variables
+    """Reads the env file, whose keys are BCC_<NAME>, under the env variables, with the
+    device's own BCC_<PREFIX>_<NAME> over BCC_<NAME>
 
     Raises:
         ValueError: if the file has a key without the BCC_ prefix, which would be ignored
     """
     config = Config(env_file, environ=os.environ)
-    default_prefix = config("BCC_DEFAULT_PREFIX", cast=str)
-    device_specific_env = _get_device_specific_environ(default_prefix)
-    config.file_values.update(device_specific_env)
-
     bare_keys = sorted(key for key in config.file_values if not key.startswith("BCC_"))
     if bare_keys:
         raise ValueError(
             f"{env_file}: {', '.join(bare_keys)} must be written BCC_<NAME>, "
             f"as only BCC_ prefixed keys are read"
         )
+
+    # in the environment, which Config reads before the file, so as to override BCC_<NAME>
+    environ = dict(os.environ)
+    environ.update(_get_device_specific_environ(config("BCC_DEFAULT_PREFIX", cast=str)))
+    config.environ = environ
     return config
+
 
 def _get_device_specific_environ(default_prefix: str) -> dict[str, str]:
     """Gets the environment settings specific to a given device.
@@ -394,7 +405,11 @@ def _get_device_specific_environ(default_prefix: str) -> dict[str, str]:
     """
     # replace all non alphanumeric characters in the prefix with _
     prefix = f"BCC_{re.sub('[^A-Z0-9]', '_', default_prefix.upper())}_"
-    return {f"BCC_{k.removeprefix(prefix)}": v for k, v in os.environ.items() if k.startswith(prefix)}
+    return {
+        f"BCC_{k.removeprefix(prefix)}": v
+        for k, v in os.environ.items()
+        if k.startswith(prefix)
+    }
 
 
 def _existing_calibration_file(config: Config, key: str, default_name: str) -> Path:
