@@ -2,12 +2,26 @@
 # Creates a backend instance: `sudo @BINARY@-provision <name> [--executor E] [--port P]
 # [--mss-url URL] [--redis-url URL]`, with a Redis password, if any, in REDIS_PASSWORD.
 # <name> is its DEFAULT_PREFIX, which names /etc/bcc/<name>, /var/lib/bcc/<name> and the
-# @BINARY@@<name> service. Writes backend.env, a key pair and the example configs, and leaves
-# an existing instance alone.
+# @BINARY@@<name> service, or on macOS /usr/local/etc/bcc/<name>, /usr/local/var/bcc/<name>
+# and a LaunchDaemon. Writes backend.env, a key pair and the example configs, and leaves an
+# existing instance alone.
 
 set -e
 
-examples=/usr/share/@PACKAGE@/examples
+if [ "$(uname -s)" = Darwin ]; then
+	etc_dir=/usr/local/etc/bcc
+	var_dir=/usr/local/var/bcc
+	share_dir=/usr/local/share/@PACKAGE@
+	mss_dir=/usr/local/etc/tergite-mss
+	group=_bcc
+else
+	etc_dir=/etc/bcc
+	var_dir=/var/lib/bcc
+	share_dir=/usr/share/@PACKAGE@
+	mss_dir=/etc/tergite-mss
+	group=bcc
+fi
+examples=$share_dir/examples
 
 main() {
 	name=$1
@@ -37,8 +51,8 @@ main() {
 		esac
 	done
 
-	dir=/etc/bcc/$name
-	data=/var/lib/bcc/$name
+	dir=$etc_dir/$name
+	data=$var_dir/$name
 	# minimal Fedora has no hostname command
 	host=$(hostname -f 2>/dev/null || uname -n)
 	[ -f "$dir/backend.env" ] && {
@@ -48,8 +62,8 @@ main() {
 
 	umask 027
 	mkdir -p "$dir" "$data/storage"
-	chown root:bcc "$dir"
-	chown -R bcc:bcc "$data"
+	chown "root:$group" "$dir"
+	chown -R "$group:$group" "$data"
 	copy_examples "$executor"
 	# MSS knows the backend by its DEFAULT_PREFIX; the first name is [general_config]'s
 	awk -v name="$name" '!is_named && /^name = / { print "name = \"" name "\""; is_named = 1; next } { print }' \
@@ -57,21 +71,22 @@ main() {
 	mv "$dir/backend_config.toml.new" "$dir/backend_config.toml"
 
 	key_password=$(get_secret)
-	openssl genpkey -quiet -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -aes-256-cbc \
-		-pass "pass:$key_password" -out "$dir/private-bcc-key.pem"
+	# its progress dots kept quiet, as macOS's LibreSSL has no -quiet
+	errors=$(openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 -aes-256-cbc \
+		-pass "pass:$key_password" -out "$dir/private-bcc-key.pem" 2>&1 >/dev/null) || fail "$errors"
 	openssl rsa -pubout -passin "pass:$key_password" \
 		-in "$dir/private-bcc-key.pem" -out "$dir/public-bcc-key.pem" 2>/dev/null
-	# genpkey writes 0600 whatever the umask, which bcc, in the group, could not read
+	# genpkey writes 0600 whatever the umask, which the service, in the group, could not read
 	chmod 0640 "$dir/private-bcc-key.pem"
 	# an MSS on this machine, as the tergite-mss package installs it
-	if [ -f /etc/tergite-mss/public-mss-key.pem ]; then
-		cp /etc/tergite-mss/public-mss-key.pem "$dir/public-mss-key.pem"
+	if [ -f "$mss_dir/public-mss-key.pem" ]; then
+		cp "$mss_dir/public-mss-key.pem" "$dir/public-mss-key.pem"
 	fi
 
 	# written last and whole: its existence is what says the instance is provisioned
 	cat >"$dir/backend.env.new" <<-EOF
 		# Written by @BINARY@-provision. Every other setting, and what it does, is in
-		# /usr/share/@PACKAGE@/dot-env-template.txt.
+		# $share_dir/dot-env-template.txt.
 		DEFAULT_PREFIX=$name
 		EXECUTOR_TYPE=$executor
 		APP_SETTINGS=production
@@ -96,8 +111,17 @@ main() {
 		CALIBRATION_NODE_CONFIG_FILE=$dir/node_config.calib.toml
 		CALIBRATION_SPI_CONFIG_FILE=$dir/spi_config.calib.toml
 	EOF
-	chgrp -R bcc "$dir"
+	chgrp -R "$group" "$dir"
 	mv "$dir/backend.env.new" "$dir/backend.env"
+
+	if [ "$(uname -s)" = Darwin ]; then
+		plist=/Library/LaunchDaemons/se.chalmersnextlabs.@BINARY@.$name.plist
+		sed "s/@NAME@/$name/g" "$share_dir/launchd.plist" >"$plist"
+		chmod 0644 "$plist"
+		start="launchctl bootstrap system $plist"
+	else
+		start="systemctl enable --now @BINARY@@$name"
+	fi
 
 	cat <<-EOF
 		@BINARY@: provisioned '$name' in $dir.
@@ -107,7 +131,7 @@ main() {
 		  url = "http://$host:$port"
 		  public_key_path = "<where you copied public-bcc-key.pem>"
 		- Copy MSS's public-mss-key.pem to $dir/public-mss-key.pem, unless it is there already.
-		- Edit the configs in $dir for the device, then start it: systemctl enable --now @BINARY@@$name
+		- Edit the configs in $dir for the device, then start it: $start
 	EOF
 }
 

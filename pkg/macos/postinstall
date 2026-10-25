@@ -1,0 +1,19 @@
+#!/bin/sh
+# Gives the _bcc account its directories, and restarts this binary's instances after an upgrade
+
+set -e
+
+# each instance's folder in /usr/local/etc/bcc holds its secrets: root's, readable by _bcc alone
+mkdir -p /usr/local/etc/bcc /usr/local/var/bcc /usr/local/var/log/bcc
+chown root:_bcc /usr/local/etc/bcc
+chmod 0750 /usr/local/etc/bcc
+chown _bcc:_bcc /usr/local/var/bcc /usr/local/var/log/bcc
+chmod 0750 /usr/local/var/bcc /usr/local/var/log/bcc
+
+for plist in /Library/LaunchDaemons/se.chalmersnextlabs.@BINARY@.*.plist; do
+	[ -e "$plist" ] || continue
+	label=$(basename "$plist" .plist)
+	launchctl kickstart -k "system/$label" 2>/dev/null || true
+done
+
+echo "@BINARY@: create an instance with: sudo @BINARY@-provision <name>"
