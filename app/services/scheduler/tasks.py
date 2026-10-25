@@ -43,6 +43,7 @@ from ...libs.quantum_executor.base.quantum_job import (
 )
 from ...libs.quantum_executor.utils.connections import get_executor_lock
 from ...libs.queues.dtos import (
+    ExecutorOptions,
     Job,
     JobFile,
     JobStatus,
@@ -64,7 +65,6 @@ from .store import get_jobs_store
 from .utils import (
     apply_linear_discriminator,
     decompress_qobj,
-    get_executor_and_options,
     get_quantum_executor,
     get_rq_job_id,
     log_job_failure,
@@ -307,8 +307,7 @@ def postprocess(
 
     job_id = job.job_id
     working_folder = Path(context["postprocessing_folder"])
-    _, executor_options = get_executor_and_options()
-    backend_name = executor_options.backend_name
+    backend_name = ExecutorOptions.from_settings().backend_name
 
     jobs_store = get_jobs_store()
     new_file = move_file(results_file_path, new_folder=working_folder, ext=".hdf5")
