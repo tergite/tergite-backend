@@ -1,0 +1,54 @@
+# Rendered for one binary by pkg/package.sh, which replaces @PACKAGE@, @BINARY@ and @SERVICE@
+name: @PACKAGE@
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: science
+maintainer: tergite <contact@quantum.chalmersnextlabs.se>
+vendor: Chalmers Next Labs
+homepage: https://github.com/tergite/tergite-backend
+license: Apache-2.0
+description: The Backend Control Computer (BCC) of Tergite, between MSS and a quantum computer or its simulator.
+
+scripts:
+  preinstall: build/pkg-@BINARY@/preinstall.sh
+  postinstall: build/pkg-@BINARY@/postinstall.sh
+  preremove: build/pkg-@BINARY@/preremove.sh
+  postremove: build/pkg-@BINARY@/postremove.sh
+
+apk:
+  scripts:
+    postupgrade: build/pkg-@BINARY@/postinstall.sh
+
+contents:
+  - src: @BINARY@
+    dst: /usr/bin/@BINARY@
+    file_info:
+      mode: 0755
+
+  # one instance a DEFAULT_PREFIX, e.g. @BINARY@@lab1 reads /etc/bcc/lab1/backend.env
+  - src: pkg/bcc@.service
+    dst: /lib/systemd/system/@BINARY@@.service
+    packager: deb
+  - src: pkg/bcc@.service
+    dst: /lib/systemd/system/@BINARY@@.service
+    packager: rpm
+  # OpenRC's instances are links to this, e.g. /etc/init.d/@SERVICE@.lab1
+  - src: build/pkg-@BINARY@/bcc.initd
+    dst: /etc/init.d/@SERVICE@
+    packager: apk
+    file_info:
+      mode: 0755
+
+  - src: dot-env-template.txt
+    dst: /usr/share/@PACKAGE@/dot-env-template.txt
+  - src: LICENSE.txt
+    dst: /usr/share/doc/@PACKAGE@/LICENSE.txt
+
+  # shared by both packages; each instance's folder in it holds the only copy of its secrets
+  - dst: /etc/bcc
+    type: dir
+    file_info:
+      mode: 0750
+      owner: root
+      group: bcc

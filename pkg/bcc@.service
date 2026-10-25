@@ -1,0 +1,54 @@
+# Installed as bcc@.service and bcc.simulator@.service: %p, the part before the @, is the
+# binary, and %i is the instance's DEFAULT_PREFIX, e.g. `systemctl enable --now bcc@lab1`
+[Unit]
+Description=Tergite Backend Control Computer (BCC) %i
+After=network-online.target redis-server.service redis.service
+Wants=network-online.target
+ConditionPathExists=/etc/bcc/%i/backend.env
+
+[Service]
+Type=exec
+User=bcc
+Group=bcc
+# the SPI rack is a USB serial device
+SupplementaryGroups=dialout
+
+Environment=ENV_FILE=/etc/bcc/%i/backend.env
+ExecStart=/usr/bin/%p start
+Restart=on-failure
+RestartSec=10s
+# the workers finish their running job on SIGTERM
+TimeoutStopSec=5min
+
+StateDirectory=bcc/%i
+StateDirectoryMode=0750
+WorkingDirectory=/var/lib/bcc/%i
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=%p@%i
+
+# no PrivateDevices, for the SPI rack, and no MemoryDenyWriteExecute, for jax's compiler
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

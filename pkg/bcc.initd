@@ -1,0 +1,30 @@
+#!/sbin/openrc-run
+# Alpine's bcc@.service. An instance is a link named for its DEFAULT_PREFIX:
+# `ln -s @SERVICE@ /etc/init.d/@SERVICE@.lab1 && rc-update add @SERVICE@.lab1`
+
+prefix=${RC_SVCNAME#*.}
+description="Tergite Backend Control Computer (BCC) $prefix"
+supervisor="supervise-daemon"
+command="/usr/bin/@BINARY@"
+command_args="start"
+command_user="bcc:bcc"
+directory="/var/lib/bcc/$prefix"
+respawn_delay=10
+export ENV_FILE="/etc/bcc/$prefix/backend.env"
+
+depend() {
+	need net
+	after redis firewall
+}
+
+start_pre() {
+	if [ "$RC_SVCNAME" = @SERVICE@ ]; then
+		eerror "link an instance, e.g. /etc/init.d/@SERVICE@.lab1, and start that"
+		return 1
+	fi
+	[ -f "$ENV_FILE" ] || {
+		eerror "$ENV_FILE does not exist yet"
+		return 1
+	}
+	checkpath -d -o bcc:bcc -m 0750 "$directory"
+}
