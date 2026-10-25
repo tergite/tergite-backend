@@ -20,6 +20,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- Changed `start_bcc.sh` to run `main.py start`, after decrypting a SOPS env file, instead of the API and six RQ
+  workers itself; it no longer installs sops, and `BCC_DEBUG` and `BCC_UVICORN_LOG_LEVEL` are gone with its uses of them
 - Renamed `dot-env-template.txt` to `.env.example`, which now also documents the env variables and serving several devices
 - Changed every env variable and env file key the backend reads to its `BCC_` name, e.g. `BCC_DEFAULT_PREFIX`: a bare
   one is no longer read, and in an env file is an error, and `BCC_ENV_FILE` replaces `ENV_FILE`
