@@ -46,7 +46,7 @@ from rq.job import Job as RqJob
 from rq.suspension import is_suspended
 
 from app.api.worker import preload_worker_globals
-from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps
+from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps, get_queue_context
 from app.services.booking.models import Booking
 from app.tests.conftest import (
     CLIENT_AND_RQ_WORKER_TUPLES,
@@ -2351,7 +2351,7 @@ def test_init_recalibration_with_interval(
         users = _create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
-        queue_prefix = client.app.state.QUEUE_CONTEXT["queue_prefix"]
+        queue_prefix = get_queue_context()["queue_prefix"]
         queue_name = f"{queue_prefix}_recalibration"
         queue = _get_queue_by_name(worker, queue_name)
         initial_interval = TEST_DEFAULT_RECALIBRATION_INTERVAL
@@ -2417,7 +2417,7 @@ def test_init_recalibration_without_interval(
         users = _create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
-        queue_prefix = client.app.state.QUEUE_CONTEXT["queue_prefix"]
+        queue_prefix = get_queue_context()["queue_prefix"]
         queue_name = f"{queue_prefix}_recalibration"
         queue = _get_queue_by_name(worker, queue_name)
         initial_interval = TEST_DEFAULT_RECALIBRATION_INTERVAL
@@ -2473,7 +2473,7 @@ def test_init_recalibration_with_start_time(
         users = _create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
-        queue_prefix = client.app.state.QUEUE_CONTEXT["queue_prefix"]
+        queue_prefix = get_queue_context()["queue_prefix"]
         queue_name = f"{queue_prefix}_recalibration"
         queue = _get_queue_by_name(worker, queue_name)
         initial_interval = TEST_DEFAULT_RECALIBRATION_INTERVAL
@@ -2523,7 +2523,7 @@ def test_get_recalibration_info(
         users = _create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
-        queue_prefix = client.app.state.QUEUE_CONTEXT["queue_prefix"]
+        queue_prefix = get_queue_context()["queue_prefix"]
         queue_name = f"{queue_prefix}_recalibration"
         queue = _get_queue_by_name(worker, queue_name)
         initial_interval = TEST_DEFAULT_RECALIBRATION_INTERVAL
@@ -2639,7 +2639,7 @@ def test_cancel_default_recalibration(client, redis_conn: Redis, worker):
         users = _create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
-        queue_prefix = client.app.state.QUEUE_CONTEXT["queue_prefix"]
+        queue_prefix = get_queue_context()["queue_prefix"]
         queue_name = f"{queue_prefix}_recalibration"
         queue = _get_queue_by_name(worker, queue_name)
 
@@ -2662,7 +2662,7 @@ def test_cancel_restarted_recalibration(client, redis_conn: Redis, worker):
         users = _create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
-        queue_prefix = client.app.state.QUEUE_CONTEXT["queue_prefix"]
+        queue_prefix = get_queue_context()["queue_prefix"]
         queue_name = f"{queue_prefix}_recalibration"
         queue = _get_queue_by_name(worker, queue_name)
 

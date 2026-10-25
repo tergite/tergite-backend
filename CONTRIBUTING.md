@@ -278,6 +278,12 @@ pkg/build.sh
 # `--forwarded-allow-ips`
 ENV_FILE="$PWD/.env" ./bcc start
 # or one at a time: `./bcc serve --reload`, `./bcc rq --kind heavy`, `./bcc rq --kind light`
+
+# serve several devices from one process: each device's env file once; its API is then at
+# /<its DEFAULT_PREFIX>/..., say http://localhost:8000/loke/bookings, a path naming no device
+# reaching the first; each device gets a heavy worker, and the light workers run every device's
+# queues, so the devices must share RQ_REDIS_URL; variables set in the shell override every file
+./bcc start --env-file loke.env --env-file thor.env
 ```
 
 ## References

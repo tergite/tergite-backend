@@ -64,27 +64,19 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Handles functions to run before and after the application"""
-    get_bookings_sql_engine()
-    executor_options = get_executor_options()
-
-    queue_context = get_queue_context()
-    queue_pool = get_queue_pool()
-    app.state.QUEUE_CONTEXT = queue_context
-    mss_client = get_mss_client()
-    redis_conn = get_redis_connection()
-
-    save_all_device_params(
-        redis=redis_conn,
-        backend_config=executor_options.backend_config,
-        mss_client=mss_client,
-    )
-    init_recalibration(queue_context, queues=queue_pool)
+    """Starts each device this process serves before the application, and stops them after"""
+    for device in settings.get_device_names():
+        with settings.using_device(device):
+            _start_device()
 
     logging.info(f"starting app at {get_utc_now()}")
     yield
 
-    stop_recalibration(queue_context, queues=queue_pool, ignore_errors=True)
+    for device in settings.get_device_names():
+        with settings.using_device(device):
+            stop_recalibration(
+                get_queue_context(), queues=get_queue_pool(), ignore_errors=True
+            )
     clear_queue_pool(ignore_errors=True)
     clear_quantum_executor(ignore_errors=True)
     clear_queue_context()
@@ -410,3 +402,17 @@ def get_verified_mss_details(request: Request) -> MSSAuthDetails:
         if token_job_id != job_id:
             raise UnauthorizedError("forbidden")
         return MSSAuthDetails(user_id=user_id, job_id=job_id)
+
+
+def _start_device():
+    """Publishes the current device's parameters and starts its recalibration"""
+    get_bookings_sql_engine()
+    executor_options = get_executor_options()
+    queue_context = get_queue_context()
+    queue_pool = get_queue_pool()
+    save_all_device_params(
+        redis=get_redis_connection(),
+        backend_config=executor_options.backend_config,
+        mss_client=get_mss_client(),
+    )
+    init_recalibration(queue_context, queues=queue_pool)

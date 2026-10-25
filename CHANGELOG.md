@@ -13,6 +13,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   backend instance, named for its `DEFAULT_PREFIX`, as a `bcc@<name>` service set up by `bcc-provision`
 - Added `bcc start` to the Nuitka binary, which runs the API, one RQ worker for preprocessing, executions and
   recalibrations, and `--light-workers` (default 1) for postprocessing and general tasks as one process tree
+- Added `--env-file`, given once per device, to `bcc start`, `serve` and `rq`, which serves several devices from one
+  process, each device's API under `/<DEFAULT_PREFIX>/`, with a heavy worker per device and light workers shared by all
 
 ### Changed
 

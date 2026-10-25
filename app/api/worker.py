@@ -15,17 +15,29 @@ import logging
 import os
 import sys
 
-from rq import Worker
+from rq import Queue, Worker
+from rq.job import Job
+
+import settings
 
 
 class PreloadedRqWorker(Worker):
-    """RQ Worker that has important libraries, connections etc. preloaded."""
+    """RQ Worker that has important libraries, connections etc. preloaded, for each
+    device whose queues it runs, and runs each job as the device of its queue."""
 
     should_preload_executor = True
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        preload_worker_globals(should_load_executor=self.should_preload_executor)
+        for device in {_get_device_of_queue(queue.name) for queue in self.queues}:
+            with settings.using_device(device):
+                preload_worker_globals(
+                    should_load_executor=self.should_preload_executor
+                )
+
+    def perform_job(self, job: Job, queue: Queue) -> bool:
+        with settings.using_device(_get_device_of_queue(queue.name)):
+            return super().perform_job(job, queue)
 
 
 class LightRqWorker(PreloadedRqWorker):
@@ -83,3 +95,14 @@ def preload_worker_globals(should_load_executor: bool) -> None:
     get_queue_pool()
     get_jobs_store()
     get_bookings_sql_engine()
+
+
+def _get_device_of_queue(queue_name: str) -> str:
+    """Gets the device whose queue this is, its name prefixing the queue's"""
+    devices = [
+        device
+        for device in settings.get_device_names()
+        if queue_name.startswith(f"{device}_")
+    ]
+    # the longest, as one device's name may prefix another's, e.g. sim and sim_2q
+    return max(devices, key=len, default=settings.get_device_names()[0])

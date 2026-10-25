@@ -58,17 +58,13 @@
 
 import argparse
 import multiprocessing
+import os
 import signal
 import sys
 from multiprocessing.connection import wait
+from pathlib import Path
 
 import uvicorn
-
-import settings
-from app.api import app
-from app.api.worker import LightRqWorker, PreloadedRqWorker
-from app.services.scheduler.queues import get_queue_pool
-from app.utils.redis import get_redis_connection
 
 # in the order a worker takes their jobs; the heavy queues' tasks all run the quantum
 # executor, which a lock lets do one thing at a time, so one worker loses them nothing
@@ -87,11 +83,21 @@ def main() -> None:
     )
     commands = parser.add_subparsers(dest="command", required=True)
     start_parser = commands.add_parser(
-        "start", help="Serve the API and run the heavy and light workers"
+        "start",
+        help="Serve the API, and run a heavy worker for each device and the light workers",
     )
     serve_parser = commands.add_parser("serve", help="Serve the API")
     rq_parser = commands.add_parser("rq", help="Run one worker")
 
+    for command_parser in (start_parser, serve_parser, rq_parser):
+        command_parser.add_argument(
+            "--env-file",
+            action="append",
+            default=[],
+            dest="env_files",
+            help="The env file of a device to serve, given once for each device; "
+            "default: the file ENV_FILE names, or .env.",
+        )
     for command_parser in (start_parser, serve_parser):
         command_parser.add_argument(
             "--host", default="0.0.0.0", help="Bind socket to this host."
@@ -99,8 +105,7 @@ def main() -> None:
         command_parser.add_argument(
             "--port",
             type=int,
-            default=settings.BCC_PORT,
-            help="Bind socket to this port.",
+            help="Bind socket to this port; default: the first device's BCC_PORT.",
         )
         command_parser.add_argument(
             "--forwarded-allow-ips",
@@ -110,7 +115,7 @@ def main() -> None:
         "--light-workers",
         type=int,
         default=1,
-        help="The number of workers for postprocessing and general tasks.",
+        help="The number of workers for every device's postprocessing and general tasks.",
     )
     serve_parser.add_argument(
         "--reload",
@@ -122,42 +127,70 @@ def main() -> None:
         "--kind",
         required=True,
         choices=("heavy", "light"),
-        help=f"heavy runs the {', '.join(HEAVY_QUEUES)} queues; "
-        f"light runs the {', '.join(LIGHT_QUEUES)} queues.",
+        help=f"heavy runs a device's {', '.join(HEAVY_QUEUES)} queues; "
+        f"light runs every device's {', '.join(LIGHT_QUEUES)} queues.",
+    )
+    rq_parser.add_argument(
+        "--device", help="The device a heavy worker runs; default: the first."
     )
 
     args = parser.parse_args()
+    _load_devices(args.env_files)
+    import settings
 
     if args.command == "start":
         if args.light_workers < 1:
             parser.error("--light-workers must be at least 1")
-        _start(args.host, args.port, args.forwarded_allow_ips, args.light_workers)
+        _start(
+            args.host,
+            args.port or settings.BCC_PORT,
+            args.forwarded_allow_ips,
+            args.light_workers,
+            args.env_files,
+        )
     elif args.command == "serve":
-        _serve(args.host, args.port, args.forwarded_allow_ips, args.reload)
+        _serve(
+            args.host,
+            args.port or settings.BCC_PORT,
+            args.forwarded_allow_ips,
+            args.env_files,
+            args.reload,
+        )
     else:
-        _run_rq_worker(args.kind)
+        _run_rq_worker(args.kind, args.env_files, args.device)
 
 
 def _start(
-    host: str, port: int, forwarded_allow_ips: str | None, light_workers: int
+    host: str,
+    port: int,
+    forwarded_allow_ips: str | None,
+    light_workers: int,
+    env_files: list[str],
 ) -> None:
     """Runs the API and the workers as child processes, stopping them all when any stops,
     so that the service manager restarts the backend whole. The children start the
     platform's way: macOS cannot fork a process that has loaded its frameworks."""
+    import settings
+
     processes = [
         multiprocessing.Process(
-            target=_run_rq_worker, args=("heavy",), name="heavy worker"
+            target=_run_rq_worker,
+            args=("heavy", env_files, device),
+            name=f"heavy worker of {device}",
         )
+        for device in settings.get_device_names()
     ]
     processes.extend(
         multiprocessing.Process(
-            target=_run_rq_worker, args=("light",), name=f"light worker {number}"
+            target=_run_rq_worker,
+            args=("light", env_files),
+            name=f"light worker {number}",
         )
         for number in range(1, light_workers + 1)
     )
     processes.append(
         multiprocessing.Process(
-            target=_serve, args=(host, port, forwarded_allow_ips), name="api"
+            target=_serve, args=(host, port, forwarded_allow_ips, env_files), name="api"
         )
     )
     for process in processes:
@@ -180,8 +213,15 @@ def _start(
 
 
 def _serve(
-    host: str, port: int, forwarded_allow_ips: str | None, reload: bool = False
+    host: str,
+    port: int,
+    forwarded_allow_ips: str | None,
+    env_files: list[str],
+    reload: bool = False,
 ) -> None:
+    _load_devices(env_files)
+    from app.api import app
+
     uvicorn.run(
         app,
         host=host,
@@ -193,23 +233,48 @@ def _serve(
     )
 
 
-def _run_rq_worker(kind: str) -> None:
+def _run_rq_worker(kind: str, env_files: list[str], device: str | None = None) -> None:
+    _load_devices(env_files)
+    import settings
+    from app.api.worker import LightRqWorker, PreloadedRqWorker
+    from app.services.scheduler.queues import get_queue_pool
+    from app.utils.redis import get_redis_connection
+
     if kind == "heavy":
         worker_class, queue_names = PreloadedRqWorker, HEAVY_QUEUES
+        devices = [device or settings.get_device_names()[0]]
     else:
         worker_class, queue_names = LightRqWorker, LIGHT_QUEUES
+        devices = settings.get_device_names()
 
-    queue_pool = get_queue_pool()
-    worker = worker_class(
-        [
-            queue_pool.queues[f"{settings.DEFAULT_PREFIX}_{name}"]
-            for name in queue_names
-        ],
-        connection=get_redis_connection(),
-    )
+    redis_urls = {settings.get_device_settings(name).RQ_REDIS_URL for name in devices}
+    if len(redis_urls) > 1:
+        sys.exit(
+            "bcc: a light worker runs every device's queues over one connection, "
+            "so the devices must share their RQ_REDIS_URL"
+        )
+
+    queues = []
+    for name in devices:
+        with settings.using_device(name):
+            queue_pool = get_queue_pool()
+            queues.extend(queue_pool.queues[f"{name}_{queue}"] for queue in queue_names)
+
+    worker = worker_class(queues, connection=get_redis_connection(redis_urls.pop()))
     # the scheduler moves due enqueue_at and enqueue_in jobs, e.g. a booking's start and end,
     # onto the worker's queues; RQ's locks let one worker per queue do it
     worker.work(with_scheduler=True)
+
+
+def _load_devices(env_files: list[str]) -> None:
+    """Serves the devices of the env files, if any were given, in this process"""
+    if not env_files:
+        return
+    # importing settings loads ENV_FILE's device, so it must name an existing file
+    os.environ["ENV_FILE"] = str(Path(env_files[0]).resolve())
+    import settings
+
+    settings.load_devices([Path(env_file) for env_file in env_files])
 
 
 if __name__ == "__main__":
