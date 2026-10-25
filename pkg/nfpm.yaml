@@ -43,8 +43,8 @@ contents:
     file_info:
       mode: 0755
 
-  - src: dot-env-template.txt
-    dst: /usr/share/@PACKAGE@/dot-env-template.txt
+  - src: .env.example
+    dst: /usr/share/@PACKAGE@/env.example
   # what provisioning copies into an instance, for its executor
   - src: backend_config.example.toml
     dst: /usr/share/@PACKAGE@/examples/backend_config.example.toml

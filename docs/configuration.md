@@ -6,10 +6,10 @@ Documentation about configuring BCC
 
 To configure the entire application, we use `.env` files.   
 
-Just copy the [`dot-env-template.txt`](../dot-env-template.txt) to `env` and update the variables there in.
+Just copy the [`.env.example`](../.env.example) to `env` and update the variables there in.
 
 ```shell
-cp dot-env-template.txt .env
+cp .env.example .env
 ```
 
 ## QBLOX Instruments Configuration

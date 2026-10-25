@@ -86,7 +86,7 @@ main() {
 	# written last and whole: its existence is what says the instance is provisioned
 	cat >"$dir/backend.env.new" <<-EOF
 		# Written by @BINARY@-provision. Every other setting, and what it does, is in
-		# $share_dir/dot-env-template.txt.
+		# $share_dir/env.example.
 		DEFAULT_PREFIX=$name
 		EXECUTOR_TYPE=$executor
 		APP_SETTINGS=production

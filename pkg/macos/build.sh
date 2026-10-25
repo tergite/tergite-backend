@@ -23,7 +23,8 @@ install -d "$root/usr/local/bin" "$root/usr/local/sbin" "$share/examples"
 install -m 0755 "$binary" "$root/usr/local/bin/"
 install -m 0755 "$rendered/provision.sh" "$root/usr/local/sbin/$binary-provision"
 install -m 0755 "$rendered/macos/uninstall.sh" "$share/"
-install -m 0644 "$rendered/macos/launchd.plist" dot-env-template.txt "$share/"
+install -m 0644 "$rendered/macos/launchd.plist" "$share/"
+install -m 0644 .env.example "$share/env.example"
 install -m 0644 backend_config.example.toml calibration.seed.example.toml \
 	quantify-config.example.json quantify-metadata.example.yml calib_device_config.example.toml \
 	node_config.example.toml spi_config.example.toml \

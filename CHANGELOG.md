@@ -20,6 +20,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- Renamed `dot-env-template.txt` to `.env.example`, which now also documents the env variables and serving several devices
 - Changed the env variables the backend reads to `BCC_` names: a bare `<NAME>`, such as `DEFAULT_PREFIX`, is no longer
   read from the environment, only from the env file, and `BCC_ENV_FILE` replaces `ENV_FILE`
 - Renamed the settings `BCC_PORT` and `BCC_MACHINE_ROOT_URL` to `PORT` and `MACHINE_ROOT_URL`, so their variables stay

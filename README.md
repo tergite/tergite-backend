@@ -73,10 +73,10 @@ openssl rsa -pubout -in private-bcc-key.pem -out public-bcc-key.pem
 # then update the public_key_path for the backend in mss-config.toml of MSS
 ```
 
-- Copy the `dot-env-template.txt` file to `.env` and update the environment variables there appropriately.
+- Copy the `.env.example` file to `.env` and update the environment variables there appropriately.
 
 ```shell
-cp dot-env-template.txt .env
+cp .env.example .env
 ```
 
 _Note: If you don't want to use the simulator, set the variable `EXECUTOR_TYPE=quantify` in the `.env`_  

@@ -207,7 +207,7 @@ class DeviceSettings:
         # -----------------------
         # The executor type specifies which implementations of the QuantumExecutor to use.
         # For more information on the values check:
-        # - dot-env-template.txt
+        # - .env.example
         self.EXECUTOR_TYPE = config("EXECUTOR_TYPE", default="quantify")
 
         # This will load the hardware configuration from a yaml file, which contains the properties for the
