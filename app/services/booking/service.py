@@ -325,10 +325,10 @@ def get_many_user_profiles(
 def create_mss_jwt_token(
     user: "User",
     job_id: str,
-    secret_key: str = settings.JWT_SECRET,
-    ttl: float = settings.JWT_TTL,
+    secret_key: Optional[str] = None,
+    ttl: Optional[float] = None,
     algorithm: str = "HS256",
-    current_timestamp: Optional[datetime] = settings.CURRENT_DATE,
+    current_timestamp: Optional[datetime] = None,
 ) -> str:
     """Creates a JWT token that works for jobs submitted via MSS
 
@@ -338,32 +338,32 @@ def create_mss_jwt_token(
     Args:
         user: the user for whom the token is to be created
         job_id: the unique identifier fo the job from MSS
-        secret_key: the key to use to sign the token
-        ttl: the time to live for the token in seconds
+        secret_key: the key to use to sign the token; default = settings.JWT_SECRET
+        ttl: the time to live for the token in seconds; default = settings.JWT_TTL
         algorithm: the algorithm to use to sign the JWT
-        current_timestamp: the current timestamp; defaults to the value in settings
+        current_timestamp: the current timestamp; default = settings.CURRENT_DATE, or now
 
     Returns:
         the JWT token
     """
-    if not current_timestamp:
-        current_timestamp = get_utc_now()
+    current_timestamp = current_timestamp or settings.CURRENT_DATE or get_utc_now()
+    ttl = settings.JWT_TTL if ttl is None else ttl
 
     exp = current_timestamp + timedelta(seconds=ttl)
     payload = dict(job=job_id, exp=exp, sub=user.id)
-    return jwt.encode(payload, secret_key, algorithm=algorithm)
+    return jwt.encode(payload, secret_key or settings.JWT_SECRET, algorithm=algorithm)
 
 
 def get_user_job_id_pair_from_token(
     token: str,
-    secret_key: str = settings.JWT_SECRET,
+    secret_key: Optional[str] = None,
     algorithm: str = "HS256",
 ) -> tuple[str, str]:
     """Gets the user_id and the job_id from the given JWT token
 
     Args:
         token: the JWT token of the user
-        secret_key: the secret key for the JWT encoding/decoding
+        secret_key: the secret key for the JWT encoding/decoding; default = settings.JWT_SECRET
         algorithm: the algorithm used to encode the JWT
 
     Returns:
@@ -373,7 +373,9 @@ def get_user_job_id_pair_from_token(
         NotAuthenticatedError: not authenticated
     """
     try:
-        payload = jwt.decode(token, secret_key, algorithms=[algorithm])
+        payload = jwt.decode(
+            token, secret_key or settings.JWT_SECRET, algorithms=[algorithm]
+        )
         user_id, job_id = payload["sub"], payload["job"]
         if user_id is None:
             raise ValueError("user_id is None")

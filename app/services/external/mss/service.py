@@ -72,24 +72,24 @@ class MssClient:
 
     def __init__(
         self,
-        uri: str = str(settings.MSS_DEVICE_EVENTS_ENDPOINT),
-        device: str = settings.DEFAULT_PREFIX,
-        private_key_file=settings.PRIVATE_KEY_FILE,
-        key_password: Optional[bytes] = settings.PRIVATE_KEY_PASSWORD,
-        open_timeout: float = settings.MSS_CONNECTION_TIMEOUT,
-        response_timeout: float = settings.MSS_RESPONSE_TIMEOUT,
+        uri: str,
+        device: str,
+        private_key_file: Path,
+        key_password: Optional[bytes] = None,
+        open_timeout: float = 5,
+        response_timeout: float = 120,
         max_reconnection_delay: float = 60,
         max_reconnections: int | None = None,
         **kwargs: Any,
     ):
         """
         Args:
-            uri: the URI to connect to; default = settings.MSS_DEVICE_EVENTS_ENDPOINT
-            device: the name of the device; default = settings.DEFAULT_PREFIX
-            private_key_file: the path to the private key file; default = settings.PRIVATE_KEY_FILE
-            key_password: the password for the private key file; defaults = settings.PRIVATE_KEY_PASSWORD
-            open_timeout: the timeout for opening the websocket in seconds; default = settings.MSS_CONNECTION_TIMEOUT
-            response_timeout: The timeout for receiving a response from MSS; default = settings.MSS_RESPONSE_TIMEOUT
+            uri: the URI to connect to
+            device: the name of the device
+            private_key_file: the path to the private key file
+            key_password: the password for the private key file; default = None
+            open_timeout: the timeout for opening the websocket in seconds; default = 5
+            response_timeout: The timeout for receiving a response from MSS; default = 120
             max_reconnection_delay: the maximum number of seconds between reconnections; default = 60
             max_reconnections: the maximum number of times to reconnect; default = None, meaning no limit
             kwargs: additional options to pass to websockets.connect

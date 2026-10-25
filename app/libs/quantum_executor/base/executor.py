@@ -21,6 +21,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
+import settings
 from app.libs.device_parameters import BackendConfig, DeviceCalibration
 from app.libs.qiskit.qobj import PulseQobj
 from app.libs.quantum_executor.base.experiment import NativeExperiment
@@ -32,7 +33,6 @@ from app.libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig, Qu
 from app.libs.quantum_executor.base.quantum_job.typing import QExperimentResult
 from app.libs.quantum_executor.utils.logger import ExperimentLogger
 from app.utils.compat import TUID, create_exp_folder, gen_tuid
-from settings import PREPROCESSED_JOB_POOL
 
 
 class QuantumExecutor(abc.ABC):
@@ -106,7 +106,7 @@ class QuantumExecutor(abc.ABC):
         pass
 
     def preprocess(
-        self, qobj: PulseQobj, job_id: str, results_folder: Path = PREPROCESSED_JOB_POOL
+        self, qobj: PulseQobj, job_id: str, results_folder: Optional[Path] = None
     ) -> Tuple[float, str]:
         """Prepares a given qobj for execution but does not execute it yet
 
@@ -162,7 +162,7 @@ class QuantumExecutor(abc.ABC):
     def recalibrate(self, **kwargs) -> DeviceCalibration | None:
         """Recalibrates the executor"""
 
-    def run(self, job_id: str, inputs_folder: Path = PREPROCESSED_JOB_POOL) -> str:
+    def run(self, job_id: str, inputs_folder: Optional[Path] = None) -> str:
         """Runs the experiments and returns the results file path
 
         Args:
@@ -282,16 +282,15 @@ class NativeExptMetadata:
         return cls(**kwargs)
 
 
-def _get_preprocessed_expt_file(
-    job_id: str, folder: Path = PREPROCESSED_JOB_POOL
-) -> Path:
+def _get_preprocessed_expt_file(job_id: str, folder: Optional[Path] = None) -> Path:
     """Gets the path to the file containing the preprocessed experiments
 
     Args:
         job_id: the unique identifier of the job
-        folder: the folder containing the preprocessed experiment files
+        folder: the folder containing the preprocessed experiment files;
+            default = settings.PREPROCESSED_JOB_POOL
 
     Returns:
         the path to the file
     """
-    return folder / f"{job_id}-expt-metadata.json"
+    return (folder or settings.PREPROCESSED_JOB_POOL) / f"{job_id}-expt-metadata.json"

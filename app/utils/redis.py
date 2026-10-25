@@ -20,17 +20,17 @@ from app.utils.logging import err_logger
 _REDIS_CONNECTIONS: dict[str, redis.Redis] = {}
 
 
-def get_redis_connection(url: RedisDsn | str = settings.RQ_REDIS_URL) -> redis.Redis:
+def get_redis_connection(url: RedisDsn | str | None = None) -> redis.Redis:
     """Gets the redis connection
 
     Args:
-        url: the URL to the redis server
+        url: the URL to the redis server; default = settings.RQ_REDIS_URL
 
     Returns:
         the redis connection
     """
     global _REDIS_CONNECTIONS
-    url = f"{url}"
+    url = f"{url or settings.RQ_REDIS_URL}"
 
     connection = _REDIS_CONNECTIONS.get(url)
 
