@@ -44,6 +44,13 @@
 #   nuitka-project: --output-filename=bcc
 #   nuitka-project: --include-package=quantify_core
 #   nuitka-project: --include-package=quantify_scheduler
+#   data these read at import or run time, which Nuitka includes only when told; it leaves
+#   .py files out of package data, so quantify's version files are named
+#   nuitka-project: --include-package-data=qcodes
+#   nuitka-project: --include-package-data=quantify_core
+#   nuitka-project: --include-package-data=quantify_scheduler
+#   nuitka-project: --include-data-files={MAIN_DIRECTORY}/.venv/lib/python*/site-packages/quantify_core/_static_version.py=quantify_core/_static_version.py
+#   nuitka-project: --include-data-files={MAIN_DIRECTORY}/.venv/lib/python*/site-packages/quantify_scheduler/_static_version.py=quantify_scheduler/_static_version.py
 #   nuitka-project: --include-package=qblox_instruments
 #   nuitka-project: --include-package=tergite_tuner
 #   nuitka-project: --include-package=numpy
