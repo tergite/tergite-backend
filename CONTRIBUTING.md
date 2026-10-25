@@ -264,9 +264,9 @@ redis-server --port 6378
 - Build the main.py file
 
 ```shell
-python -m nuitka main.py
+pkg/build.sh
 # or if you want the simulators, executor is qiskit
-# EXECUTOR=qiskit python -m nuitka main.py
+# EXECUTOR=qiskit pkg/build.sh
 ```
 
 - After the build, the app will be at `./bcc` (or `bcc.simulator` if EXECUTOR=qiskit). You can run it.

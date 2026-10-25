@@ -55,10 +55,7 @@ jobs:
           path: ~/.cache/Nuitka
           key: nuitka-linux-${{ matrix.executor }}-${{ github.sha }}
           restore-keys: nuitka-linux-${{ matrix.executor }}-
-      - name: Build the binary
-        run: |
-          uv sync --dev --extra ${{ matrix.executor }}
-          uv run nuitka --assume-yes-for-downloads main.py
+      - run: pkg/build.sh
       # also after a failed or timed-out build, so that the next one picks up where it stopped
       - if: always()
         uses: actions/cache/save@v4
@@ -98,10 +95,7 @@ jobs:
           path: ~/Library/Caches/Nuitka
           key: nuitka-macos-${{ matrix.executor }}-${{ github.sha }}
           restore-keys: nuitka-macos-${{ matrix.executor }}-
-      - name: Build the binary
-        run: |
-          uv sync --dev --extra ${{ matrix.executor }}
-          uv run nuitka --assume-yes-for-downloads main.py
+      - run: pkg/build.sh
       - if: always()
         uses: actions/cache/save@v4
         with:
