@@ -101,6 +101,7 @@ dev = [
     "pytest-timeout~=2.3.1",
     "pytest-xdist~=3.8.0",
     "psutil~=7.0.0",
+    "nuitka>=4.3.1",
     # deps of deps
     # -----------
     # Adding these here to constrain their versions to

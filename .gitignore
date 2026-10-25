@@ -186,3 +186,10 @@ backend_config.**.toml
 node_config.toml
 calib_device_config.toml
 spi_config.toml
+
+# nuitka builds
+main.dist/
+main.build/
+main.onefile-build/
+bcc
+bcc.simulator

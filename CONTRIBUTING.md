@@ -272,6 +272,68 @@ cp backend_config.example.toml data/backend_config.toml
 docker run --name tg-backend -v ./data:/data -e ENV_FILE="/data/.env" -e BACKEND_SETTINGS="/data/backend_config.toml" tergite/tergite-backend:latest 
 ```
 
+## Build Executable with [Nuitka](https://nuitka.net/)
+
+- Ensure you have a [redis server](https://redis.io/docs/install/install-redis/) installed on your local machine.
+- Ensure you have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed. 
+ (_You could simply have python +3.12 installed instead._)
+
+```shell
+wget -qO- https://astral.sh/uv/install.sh | sh
+# or use curl
+# curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+- Clone the repo
+
+```shell
+git clone git@github.com:tergite/tergite-backend.git
+cd tergite-backend
+```
+
+- Install dependencies. Note that we can either use the simulators (`qiskit`) or connect to Qblox clusters (`quantify`).
+  To install for simulators, use `--extra qiskit` and to install for Qblox, use `--extra quantify`.  
+  **Take note that you can use both at the same time because they conflict with each other**.
+
+```shell
+uv sync --dev --extra quantify
+# or for simulators only
+# uv sync --dev --extra qiskit
+```
+
+- Activate your environment
+
+```shell
+source .venv/bin/activate
+```
+
+- Start the redis server in another terminal on port 6378
+
+```shell
+redis-server --port 6378
+```
+
+- Build the main.py file
+
+```shell
+python -m nuitka main.py
+# or if you want the simulators, executor is qiskit
+# EXECUTOR=qiskit python -m nuitka main.py
+```
+
+- After the build, the app will be at `./bcc` (or `bcc.simulator` if EXECUTOR=qiskit). You can run it.
+
+```shell
+./bcc rq --name general &
+./bcc rq --name postprocessing &
+./bcc rq --name normal_execution &
+./bcc rq --name booked_execution &
+./bcc rq --name preprocessing &
+./bcc rq --name recalibration &
+# run the app, providing any command line args you wish `--port`, `--host`, `--forwarded-allow-ips`, `--reload`
+./bcc --port 8002
+```
+
 ## References
 
 This document was adapted from [a gist by Brian A. Danielak](https://gist.github.com/briandk/3d2e8b3ec8daf5a27a62) which
