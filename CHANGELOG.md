@@ -31,6 +31,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 ### Removed
 
 - Removed `bcc.service` and `start_bcc.sh`'s conda-based systemd mode, which the packages replace
+- Removed the Docker image and its release jobs; the debs and macOS packages, or `bcc` from a checkout, run the backend
 
 ## [2026.09.0-rc.1] - 2026-07-03
 

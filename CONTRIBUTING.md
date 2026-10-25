@@ -172,54 +172,6 @@ sudo systemctl enable --now bcc@lab1
 journalctl -u bcc@lab1 -f
 ```
 
-## How to Run with Docker
-
-- Ensure you have [Docker](https://docs.docker.com/engine/install/) installed.
-- Create a `data` folder
-
-```shell
-mkdir data
-```
-
-- Create a proper `.env` file based on the `dot-env-template.txt` and put it in the `data` folder.
-
-```shell
-cp dot-env-template.txt data/.env
-```
-
-- Create a proper `quantify-config.yml` file if it is needed (i.e. if you don't want to run any of the simulators). 
-  Put it in the `data` folder.
-
-```shell
-cp quantify-config.example.yml data/quantify-config.yml
-```
-
-- Create a proper `quantify-metadata.yml` if it is needed (i.e. if you don't want to run any of the simulators).
-  Put it in the `data` folder.
-
-```shell
-cp quantify-metadata.example.yml quantify-metadata.yml 
-```
-
-- If you need some seed data (mandatory if you are to use a simulator), create the `calibration.seed.toml` file.
-  Put it in the `data` folder.
-
-```shell
-cp calibration.seed.example.toml calibration.seed.toml
-```
-
-- Create a proper `backend_config.toml` file. Put it in the `data` folder.
-
-```shell
-cp backend_config.example.toml data/backend_config.toml
-```
-
-- Run the docker container with the `data` folder mounted as a volume.
-
-```shell
-docker run --name tg-backend -v ./data:/data -e ENV_FILE="/data/.env" -e BACKEND_SETTINGS="/data/backend_config.toml" tergite/tergite-backend:latest 
-```
-
 ## Build Executable with [Nuitka](https://nuitka.net/)
 
 - Ensure you have a [redis server](https://redis.io/docs/install/install-redis/) installed on your local machine.
