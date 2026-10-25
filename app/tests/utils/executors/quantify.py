@@ -48,7 +48,7 @@ class MockQuantifyExecutor(QuantifyExecutor):
         if job.estimated_duration:
             estimated_duration = job.estimated_duration
 
-        result = super(self.__class__, self).run(job_id, inputs_folder=inputs_folder)
+        result = super().run(job_id, inputs_folder=inputs_folder)
         end_timestamp = datetime.now()
         actual_duration = (end_timestamp - start_timestamp).total_seconds()
         sleep_duration = estimated_duration - actual_duration

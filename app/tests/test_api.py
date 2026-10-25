@@ -664,6 +664,7 @@ def test_unauthenticated_view_bookings_configs(client):
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="real simulator takes too long")
+@pytest.mark.simulated
 @pytest.mark.parametrize(
     "client, redis_conn, worker, job, expected_counts, device",
     _ALL_UPLOAD_JOB_PARAMS,

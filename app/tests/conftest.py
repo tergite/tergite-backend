@@ -315,21 +315,31 @@ def patched_mss_websockets(mocker) -> Generator[MockerFixture, Any, None]:
 
 
 @pytest.fixture
-def qiskit_1q_rest_client(mocker) -> Generator[TestClient, Any, None]:
+def qiskit_1q_rest_client(request, mocker) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
     os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_1q"
     os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_1Q
     os.environ["BACKEND_SETTINGS"] = TEST_SIMQ1_BACKEND_SETTINGS_FILE
     os.environ["CALIBRATION_SEED"] = TEST_QISKIT_1Q_SEED_FILE
 
-    from .utils.executors.qiskit import MockQiskitDynamicsExecutor
+    from .utils.executors.qiskit import (
+        MockQiskitDynamicsExecutor,
+        StubQiskitDynamicsExecutor,
+    )
+
+    # only a test that checks the measured counts pays for simulating
+    executor_class = (
+        MockQiskitDynamicsExecutor
+        if request.node.get_closest_marker("simulated")
+        else StubQiskitDynamicsExecutor
+    )
 
     mocker.patch(
         "app.services.external.mss.service.connect", side_effect=mock_sync_connect
     )
     mocker.patch(
         "app.libs.quantum_executor.qiskit.executor.QiskitDynamicsExecutor",
-        new=MockQiskitDynamicsExecutor,
+        new=executor_class,
     )
     mocker.patch(
         "app.libs.quantum_executor.qiskit.backends.one_qubit.LinearDiscriminantAnalysis",
@@ -353,7 +363,7 @@ def qiskit_1q_rest_client(mocker) -> Generator[TestClient, Any, None]:
 
 
 @pytest.fixture
-def qiskit_2q_rest_client(mocker) -> Generator[TestClient, Any, None]:
+def qiskit_2q_rest_client(request, mocker) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
     _patch_async_client(mocker)
     os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_2q"
@@ -361,11 +371,21 @@ def qiskit_2q_rest_client(mocker) -> Generator[TestClient, Any, None]:
     os.environ["BACKEND_SETTINGS"] = TEST_SIMQ2_BACKEND_SETTINGS_FILE
     os.environ["CALIBRATION_SEED"] = TEST_QISKIT_2Q_SEED_FILE
 
-    from .utils.executors.qiskit import MockQiskitDynamicsExecutor
+    from .utils.executors.qiskit import (
+        MockQiskitDynamicsExecutor,
+        StubQiskitDynamicsExecutor,
+    )
+
+    # only a test that checks the measured counts pays for simulating
+    executor_class = (
+        MockQiskitDynamicsExecutor
+        if request.node.get_closest_marker("simulated")
+        else StubQiskitDynamicsExecutor
+    )
 
     mocker.patch(
         "app.libs.quantum_executor.qiskit.executor.QiskitDynamicsExecutor",
-        new=MockQiskitDynamicsExecutor,
+        new=executor_class,
     )
     mocker.patch(
         "app.libs.quantum_executor.qiskit.backends.two_qubit.LinearDiscriminantAnalysis",
