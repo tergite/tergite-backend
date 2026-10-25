@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds bcc, or bcc.simulator with EXECUTOR=qiskit, in a container, as Nuitka cannot
 # cross-compile: from the repo root,
-# `docker run --rm -e EXECUTOR -v "$PWD":/src -w /src debian:bookworm pkg/build-linux.sh`.
+# `docker run --rm -e EXECUTOR -e UV_PYTHON=3.12 -v "$PWD":/src -w /src debian:bookworm pkg/build-linux.sh`.
 # Bookworm's glibc 2.36 is the oldest it runs on. There is no musl build: neither PyQt5,
 # which quantify needs, nor jaxlib, which the simulator needs, has musl wheels or sources.
 
