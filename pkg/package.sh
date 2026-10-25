@@ -1,13 +1,13 @@
 #!/bin/sh
 # Packages a built binary with nfpm: from the repo root, with VERSION and ARCH set,
-# `pkg/package.sh bcc deb` or `pkg/package.sh bcc.simulator apk`.
+# `pkg/package.sh bcc deb` or `pkg/package.sh bcc.simulator rpm`.
 
 set -e
 
 binary=$1
 format=$2
 [ -n "$format" ] || {
-	echo "usage: $0 bcc|bcc.simulator deb|rpm|apk" >&2
+	echo "usage: $0 bcc|bcc.simulator deb|rpm" >&2
 	exit 1
 }
 

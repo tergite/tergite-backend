@@ -1,4 +1,4 @@
-# Rendered for one binary by pkg/package.sh, which replaces @PACKAGE@, @BINARY@ and @SERVICE@
+# Rendered for one binary by pkg/render.sh, which replaces @PACKAGE@ and @BINARY@
 name: @PACKAGE@
 arch: ${ARCH}
 platform: linux
@@ -21,10 +21,6 @@ deb:
     templates: build/pkg-@BINARY@/debian/templates
     config: build/pkg-@BINARY@/debian/config
 
-apk:
-  scripts:
-    postupgrade: build/pkg-@BINARY@/postinstall.sh
-
 depends:
   - openssl
 
@@ -41,12 +37,6 @@ contents:
   - src: pkg/bcc@.service
     dst: /lib/systemd/system/@BINARY@@.service
     packager: rpm
-  # OpenRC's instances are links to this, e.g. /etc/init.d/@SERVICE@.lab1
-  - src: build/pkg-@BINARY@/bcc.initd
-    dst: /etc/init.d/@SERVICE@
-    packager: apk
-    file_info:
-      mode: 0755
 
   - src: build/pkg-@BINARY@/provision.sh
     dst: /usr/sbin/@BINARY@-provision

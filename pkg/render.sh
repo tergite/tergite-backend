@@ -7,11 +7,11 @@ set -e
 binary=$1
 case $binary in
 	bcc)
-		package=tergite-backend service=bcc name=default port=8000
+		package=tergite-backend name=default port=8000
 		executors=quantify default_executor=quantify
 		;;
 	bcc.simulator)
-		package=tergite-backend-simulator service=bcc-simulator name=simulator port=8001
+		package=tergite-backend-simulator name=simulator port=8001
 		executors="qiskit_pulse_1q, qiskit_pulse_2q" default_executor=qiskit_pulse_1q
 		;;
 	*)
@@ -25,7 +25,7 @@ rm -rf "$rendered"
 mkdir -p "$rendered/debian" "$rendered/macos"
 for file in pkg/* pkg/debian/* pkg/macos/*; do
 	[ -f "$file" ] || continue
-	sed -e "s/@PACKAGE@/$package/g" -e "s/@BINARY@/$binary/g" -e "s/@SERVICE@/$service/g" \
+	sed -e "s/@PACKAGE@/$package/g" -e "s/@BINARY@/$binary/g" \
 		-e "s/@DEFAULT_NAME@/$name/g" -e "s/@DEFAULT_PORT@/$port/g" \
 		-e "s/@EXECUTORS@/$executors/g" -e "s/@DEFAULT_EXECUTOR@/$default_executor/g" \
 		"$file" >"$rendered/${file#pkg/}"

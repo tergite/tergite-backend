@@ -15,11 +15,4 @@ if [ -d /run/systemd/system ]; then
 		systemctl disable "${link##*/}" || true
 	done
 	systemctl stop '@BINARY@@*.service' || true
-elif command -v rc-service >/dev/null 2>&1; then
-	for service in /etc/init.d/@SERVICE@.*; do
-		[ -e "$service" ] || continue
-		rc-service "${service##*/}" stop || true
-		rc-update del "${service##*/}" default || true
-		rm -f "$service"
-	done
 fi

@@ -9,7 +9,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
-- Added deb, rpm and apk packages, `tergite-backend` and `tergite-backend-simulator`, running each
+- Added deb, rpm and macOS packages, `tergite-backend` and `tergite-backend-simulator`, running each
   backend instance, named for its `DEFAULT_PREFIX`, as a `bcc@<name>` service set up by `bcc-provision`
 - Added `bcc start` to the Nuitka binary, which runs the API and all six RQ workers as one process tree
 

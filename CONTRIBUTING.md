@@ -150,7 +150,7 @@ pytest -n auto --dist=loadscope app
 sudo apt install ./tergite-backend_<version>_amd64.deb
 ```
 
-- Create any other instance, or the first on rpm and apk, which ask nothing.
+- Create any other instance, or the first on rpm, which asks nothing.
   `--executor`, `--port`, `--mss-url` and `--redis-url` override the defaults, and a Redis
   password goes in `REDIS_PASSWORD`.
 

@@ -5,10 +5,9 @@
 
 set -e
 
-# deb's `configure` with no old version, rpm's 1, or apk's post-install (its upgrades
-# run post-upgrade with the old version too)
+# deb's `configure` with no old version, or rpm's 1
 case "$1:$2" in
-	configure: | 1: | [0-9]*.*:) is_fresh=yes ;;
+	configure: | 1:) is_fresh=yes ;;
 	*) is_fresh=no ;;
 esac
 
@@ -52,9 +51,4 @@ if [ -d /run/systemd/system ]; then
 	if [ "$is_fresh" = no ]; then
 		systemctl try-restart --no-block '@BINARY@@*.service'
 	fi
-elif command -v rc-service >/dev/null 2>&1 && [ "$is_fresh" = no ]; then
-	for service in /etc/init.d/@SERVICE@.*; do
-		[ -e "$service" ] || continue
-		rc-service "${service##*/}" --ifstarted restart || true
-	done
 fi
