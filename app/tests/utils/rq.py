@@ -16,6 +16,7 @@ from typing import List, Union
 from rq import Queue, SimpleWorker, Worker
 from rq.timeouts import TimerDeathPenalty
 
+from app.api.worker import preload_worker_globals
 from app.services.scheduler.queues import QueuePool
 
 
@@ -33,24 +34,7 @@ class PreloadedSimpleWorker(SimpleWorker):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
-        # initialize connections and other globals up front
-        # so the in-process job execution finds them already cached
-        from app.libs.queues.dtos import get_queue_context
-        from app.services.booking.store import get_bookings_sql_engine
-        from app.services.external.mss.service import get_mss_client
-        from app.services.scheduler.queues import get_queue_pool
-        from app.services.scheduler.store import get_jobs_store
-        from app.services.scheduler.utils import get_quantum_executor
-        from app.utils.redis import get_redis_connection
-
-        _executor = get_quantum_executor()
-        _redis_connection = get_redis_connection()
-        _mss_client = get_mss_client()
-        _queue_context = get_queue_context()
-        _queue_pool = get_queue_pool()
-        _jobs_store = get_jobs_store()
-        _db_engine = get_bookings_sql_engine()
+        preload_worker_globals(should_load_executor=True)
 
 
 def get_rq_pool_worker(queue_pool: QueuePool) -> Union[Worker, SimpleWorker]:

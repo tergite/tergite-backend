@@ -47,6 +47,7 @@ from ..external.mss.service import MssClient
 if TYPE_CHECKING:
     from ...libs.quantum_executor.base.executor import QuantumExecutor
 
+_EXECUTOR_OPTIONS: ExecutorOptions | None = None
 _QUANTUM_EXECUTOR_AND_OPTS: tuple["QuantumExecutor", ExecutorOptions] | None = None
 
 
@@ -76,6 +77,14 @@ _STAGE_STATUS_MAP: Dict[Stage, JobStatus] = {
 }
 
 
+def get_executor_options() -> ExecutorOptions:
+    """Gets the executor options from the settings, without building the executor"""
+    global _EXECUTOR_OPTIONS
+    if _EXECUTOR_OPTIONS is None:
+        _EXECUTOR_OPTIONS = ExecutorOptions.from_settings()
+    return _EXECUTOR_OPTIONS
+
+
 def get_executor_and_options() -> Tuple["QuantumExecutor", ExecutorOptions]:
     """Gets the executor and its options that will be passed around in the queue
 
@@ -84,7 +93,7 @@ def get_executor_and_options() -> Tuple["QuantumExecutor", ExecutorOptions]:
     """
     global _QUANTUM_EXECUTOR_AND_OPTS
     if _QUANTUM_EXECUTOR_AND_OPTS is None:
-        executor_options = ExecutorOptions.from_settings()
+        executor_options = get_executor_options()
         executor = _init_executor(executor_options, reset=True)
         err_logger.info(
             f"QuantumExecutor initialised for backend '{executor_options.backend_name}'.'"
@@ -105,12 +114,13 @@ def get_quantum_executor() -> "QuantumExecutor":
 
 
 def clear_quantum_executor(ignore_errors: bool = False) -> None:
-    """Clears the global quantum executor.
+    """Clears the global quantum executor and its options.
 
     Args:
         ignore_errors: If True, ignores any errors raised by executor.
     """
-    global _QUANTUM_EXECUTOR_AND_OPTS
+    global _EXECUTOR_OPTIONS, _QUANTUM_EXECUTOR_AND_OPTS
+    _EXECUTOR_OPTIONS = None
     if isinstance(_QUANTUM_EXECUTOR_AND_OPTS, tuple):
         try:
             _QUANTUM_EXECUTOR_AND_OPTS[0].close()

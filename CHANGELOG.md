@@ -14,6 +14,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Added `bcc start` to the Nuitka binary, which runs the API, one RQ worker for preprocessing, executions and
   recalibrations, and `--light-workers` (default 1) for postprocessing and general tasks as one process tree
 
+### Changed
+
+- Changed the API to start without building a quantum executor or importing quantify, in about 2 s and 80 MB
+  instead of 10 s and 330 MB; a broken quantify config or metadata file now fails the heavy worker's start instead
+
 ### Fixed
 
 - Fixed scheduled jobs never running: `bcc start` runs its workers with RQ's scheduler, so a booking's start and

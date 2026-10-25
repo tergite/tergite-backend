@@ -25,26 +25,7 @@ class PreloadedRqWorker(Worker):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
-        # initialize connections and other globals,
-        # so that they are available to forked child processes
-        from app.libs.queues.dtos import get_queue_context
-        from app.services.booking.store import get_bookings_sql_engine
-        from app.services.external.mss.service import get_mss_client
-        from app.services.scheduler import tasks  # noqa: F401, so jobs don't import it
-        from app.services.scheduler.queues import get_queue_pool
-        from app.services.scheduler.store import get_jobs_store
-        from app.services.scheduler.utils import get_quantum_executor
-        from app.utils.redis import get_redis_connection
-
-        if self.should_preload_executor:
-            _executor = get_quantum_executor()
-        _redis_connection = get_redis_connection()
-        _mss_client = get_mss_client()
-        _queue_context = get_queue_context()
-        _queue_pool = get_queue_pool()
-        _jobs_store = get_jobs_store()
-        _db_engine = get_bookings_sql_engine()
+        preload_worker_globals(should_load_executor=self.should_preload_executor)
 
 
 class LightRqWorker(PreloadedRqWorker):
@@ -72,3 +53,33 @@ class LoggingRqWorker(PreloadedRqWorker):
             h.setFormatter(fmt)
             root.addHandler(h)
         root.setLevel(level)
+
+
+def preload_worker_globals(should_load_executor: bool) -> None:
+    """Initializes connections and other globals, so that the jobs, forked or run in
+    process, find them cached"""
+    from app.libs.device_parameters import save_all_device_params
+    from app.libs.queues.dtos import get_queue_context
+    from app.services.booking.store import get_bookings_sql_engine
+    from app.services.external.mss.service import get_mss_client
+    from app.services.scheduler import tasks  # noqa: F401, so jobs don't import it
+    from app.services.scheduler.queues import get_queue_pool
+    from app.services.scheduler.store import get_jobs_store
+    from app.services.scheduler.utils import get_executor_and_options
+    from app.utils.redis import get_redis_connection
+
+    redis_connection = get_redis_connection()
+    mss_client = get_mss_client()
+    if should_load_executor:
+        _, executor_options = get_executor_and_options()
+        # the executor may refine the backend config, e.g. the simulators train their
+        # discriminators, which the API, building no executor, cannot publish
+        save_all_device_params(
+            redis=redis_connection,
+            backend_config=executor_options.backend_config,
+            mss_client=mss_client,
+        )
+    get_queue_context()
+    get_queue_pool()
+    get_jobs_store()
+    get_bookings_sql_engine()

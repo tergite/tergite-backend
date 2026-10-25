@@ -146,9 +146,8 @@ async def test_calibration_seed_broken_for_simulator(patched_mss_websockets):
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
-@pytest.mark.asyncio
-async def test_quantify_metadata_is_broken(patched_mss_websockets):
-    """Raises validation errors if quantify metadata conf file is broken"""
+def test_quantify_metadata_is_broken():
+    """The heavy worker's executor build raises if the quantify metadata file is broken"""
     remove_modules(["os", "app", "settings"])
 
     os.environ["EXECUTOR_TYPE"] = "quantify"
@@ -161,18 +160,15 @@ async def test_quantify_metadata_is_broken(patched_mss_websockets):
 
     SQLModel.metadata.clear()
 
-    with pytest.raises(ValidationError):
-        from app.api import app
+    from app.services.scheduler.utils import get_executor_and_options
 
-        # just to run the startup events
-        async with app.router.lifespan_context(app):
-            pass
+    with pytest.raises(ValidationError):
+        get_executor_and_options()
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
-@pytest.mark.asyncio
-async def test_quantify_config_is_broken(patched_mss_websockets):
-    """Raises validation errors if quantify config file is broken"""
+def test_quantify_config_is_broken():
+    """The heavy worker's executor build raises if the quantify config file is broken"""
     remove_modules(["os", "app", "settings"])
 
     os.environ["EXECUTOR_TYPE"] = "quantify"
@@ -185,9 +181,7 @@ async def test_quantify_config_is_broken(patched_mss_websockets):
 
     SQLModel.metadata.clear()
 
-    with pytest.raises(ValidationError):
-        from app.api import app
+    from app.services.scheduler.utils import get_executor_and_options
 
-        # just to run the startup events
-        async with app.router.lifespan_context(app):
-            pass
+    with pytest.raises(ValidationError):
+        get_executor_and_options()

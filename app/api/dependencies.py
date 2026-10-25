@@ -44,10 +44,7 @@ from ..services.scheduler import (
 )
 from ..services.scheduler.queues import clear_queue_pool, get_queue_pool
 from ..services.scheduler.store import clear_jobs_stores_registry
-from ..services.scheduler.utils import (
-    clear_quantum_executor,
-    get_executor_and_options,
-)
+from ..services.scheduler.utils import clear_quantum_executor, get_executor_options
 from ..utils.api import get_request_logs_store, verify_mss_signature
 from ..utils.datetime import get_utc_now
 from ..utils.exc import (
@@ -69,7 +66,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 async def lifespan(app: FastAPI):
     """Handles functions to run before and after the application"""
     get_bookings_sql_engine()
-    executor, executor_options = get_executor_and_options()
+    executor_options = get_executor_options()
 
     queue_context = get_queue_context()
     queue_pool = get_queue_pool()
@@ -104,8 +101,7 @@ def get_booking_db() -> Engine:
 
 def get_backend_name() -> str:
     """Dependency injector to get the backend name"""
-    _, executor_options = get_executor_and_options()
-    return executor_options.backend_name
+    return get_executor_options().backend_name
 
 
 def get_queue_context_if_online(

@@ -45,6 +45,7 @@ from rq import SimpleWorker
 from rq.job import Job as RqJob
 from rq.suspension import is_suspended
 
+from app.api.worker import preload_worker_globals
 from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps
 from app.services.booking.models import Booking
 from app.tests.conftest import (
@@ -2317,6 +2318,9 @@ def test_get_dynamic_properties(client, expected):
     """Get to '/dynamic-properties' retrieves the calibrated device parameters"""
     # using context manager to ensure on_startup runs
     with client as client:
+        # the heavy worker publishes its executor's calibration, e.g. the simulators'
+        # trained discriminators, once the API has started
+        preload_worker_globals(should_load_executor=True)
         user_id, _ = _create_user(client, USERS[0])
         headers = create_mss_headers(user_id)
 
