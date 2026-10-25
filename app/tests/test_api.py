@@ -290,7 +290,7 @@ def test_admin_view_users(client, pagination: "PaginationInfo"):
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_delete_profile(
-    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture
+    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """DELETE '/me' should delete their own user profile"""
     with client as client:
@@ -327,7 +327,7 @@ def test_delete_profile(
         assert response.json() == {"detail": "user not found"}
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
 
@@ -344,7 +344,7 @@ def test_delete_profile(
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_admin_remove_user(
-    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture
+    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """DELETE '/users/{user_id}' by admin removes the user, and their bookings and jobs"""
     with client as client:
@@ -384,7 +384,7 @@ def test_admin_remove_user(
         assert response.json() == {"detail": "user not found"}
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
 
@@ -403,7 +403,7 @@ def test_admin_remove_user(
     "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-1]
 )
 def test_non_admin_remove_user(
-    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture
+    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """Non admin cannot remove the profile of any user"""
     with client as client:
@@ -433,7 +433,7 @@ def test_non_admin_remove_user(
         assert response.status_code == 200
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
         assert all([v.status == JobStatus.SUCCESSFUL for v in jobs_in_redis])
@@ -1295,7 +1295,7 @@ def test_unauthenticated_remove_job(
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_cancel_future_booking(
-    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture
+    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """POST '/booking/{id}/cancel' for a future booking, deletes the booking and allows jobs to run without it."""
     with client as client:
@@ -1321,7 +1321,7 @@ def test_cancel_future_booking(
         assert response.status_code == 200
         assert got == expected
 
-        time.sleep(booking_info["starts_in"])
+        fake_clock.shift(booking_info["starts_in"])
         # Booking does not exist or work
         # submit many jobs from many users when booking starts
         raw_jobs = _get_raw_jobs(job, durations=[0.23, 1, 0.4, 0.5])
@@ -2327,7 +2327,7 @@ def test_unauthenticated_get_dynamic_props(client, _expected):
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
 def test_init_recalibration_with_interval(
-    client, redis_conn: Redis, worker, quantify_seed_file
+    client, redis_conn: Redis, worker, quantify_seed_file, fake_clock
 ):
     """Init recalibration restarts the calibration sequence, changing the interval from the default"""
     with client as client:
@@ -2370,6 +2370,7 @@ def test_init_recalibration_with_interval(
             max_idle_time=initial_interval + max_queue_time,
             with_scheduler=True,
             queue=queue,
+            clock=fake_clock,
         )
 
         final_rq_job_id = queue.finished_job_registry.get_job_ids(start=-1, end=-1)[0]
@@ -2392,7 +2393,7 @@ def test_init_recalibration_with_interval(
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
 def test_init_recalibration_without_interval(
-    client, redis_conn: Redis, worker, quantify_seed_file
+    client, redis_conn: Redis, worker, quantify_seed_file, fake_clock
 ):
     """Init recalibration restarts the calibration sequence without interval continues with the default interval"""
     with client as client:
@@ -2425,6 +2426,7 @@ def test_init_recalibration_without_interval(
             max_idle_time=initial_interval + max_queue_time,
             with_scheduler=True,
             queue=queue,
+            clock=fake_clock,
         )
 
         final_rq_job_id = queue.finished_job_registry.get_job_ids(start=-1, end=-1)[0]
@@ -2447,7 +2449,7 @@ def test_init_recalibration_without_interval(
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
 def test_init_recalibration_with_start_time(
-    client, redis_conn: Redis, worker, quantify_seed_file
+    client, redis_conn: Redis, worker, quantify_seed_file, fake_clock
 ):
     """POST /recalibration/cancel restarts the recalibration sequence at a given start time in future"""
     with client as client:
@@ -2479,6 +2481,7 @@ def test_init_recalibration_with_start_time(
             max_idle_time=initial_interval + max_queue_time,
             with_scheduler=True,
             queue=queue,
+            clock=fake_clock,
         )
 
         first_rq_job_id = queue.finished_job_registry.get_job_ids(start=0, end=1)[0]
@@ -2495,7 +2498,9 @@ def test_init_recalibration_with_start_time(
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
-def test_get_recalibration_info(client, redis_conn: Redis, worker, quantify_seed_file):
+def test_get_recalibration_info(
+    client, redis_conn: Redis, worker, quantify_seed_file, fake_clock
+):
     """Get /recalibration/info gets recalibration info retrieves the basic recalibration info"""
     with client as client:
         users = _create_many_users(client, raw_users=USERS)
@@ -2537,6 +2542,7 @@ def test_get_recalibration_info(client, redis_conn: Redis, worker, quantify_seed
             max_idle_time=initial_interval + max_queue_time,
             with_scheduler=True,
             queue=queue,
+            clock=fake_clock,
         )
 
         # get info after running the worker
