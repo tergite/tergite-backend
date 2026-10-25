@@ -7,3 +7,8 @@ set -e
 if [ -d /run/systemd/system ]; then
 	systemctl daemon-reload || true
 fi
+
+if [ "$1" = purge ] && [ -e /usr/share/debconf/confmodule ]; then
+	. /usr/share/debconf/confmodule
+	db_purge
+fi

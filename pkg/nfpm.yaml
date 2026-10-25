@@ -16,9 +16,17 @@ scripts:
   preremove: build/pkg-@BINARY@/preremove.sh
   postremove: build/pkg-@BINARY@/postremove.sh
 
+deb:
+  scripts:
+    templates: build/pkg-@BINARY@/debian/templates
+    config: build/pkg-@BINARY@/debian/config
+
 apk:
   scripts:
     postupgrade: build/pkg-@BINARY@/postinstall.sh
+
+depends:
+  - openssl
 
 contents:
   - src: @BINARY@
@@ -40,8 +48,36 @@ contents:
     file_info:
       mode: 0755
 
+  - src: build/pkg-@BINARY@/provision.sh
+    dst: /usr/sbin/@BINARY@-provision
+    file_info:
+      mode: 0755
+
   - src: dot-env-template.txt
     dst: /usr/share/@PACKAGE@/dot-env-template.txt
+  # what provisioning copies into an instance, for its executor
+  - src: backend_config.example.toml
+    dst: /usr/share/@PACKAGE@/examples/backend_config.example.toml
+  - src: calibration.seed.example.toml
+    dst: /usr/share/@PACKAGE@/examples/calibration.seed.example.toml
+  - src: quantify-config.example.json
+    dst: /usr/share/@PACKAGE@/examples/quantify-config.example.json
+  - src: quantify-metadata.example.yml
+    dst: /usr/share/@PACKAGE@/examples/quantify-metadata.example.yml
+  - src: calib_device_config.example.toml
+    dst: /usr/share/@PACKAGE@/examples/calib_device_config.example.toml
+  - src: node_config.example.toml
+    dst: /usr/share/@PACKAGE@/examples/node_config.example.toml
+  - src: spi_config.example.toml
+    dst: /usr/share/@PACKAGE@/examples/spi_config.example.toml
+  - src: app/tests/fixtures/backend_config.simq1.toml
+    dst: /usr/share/@PACKAGE@/examples/backend_config.simq1.toml
+  - src: app/tests/fixtures/backend_config.simq2.toml
+    dst: /usr/share/@PACKAGE@/examples/backend_config.simq2.toml
+  - src: app/tests/fixtures/qiskit_pulse_1q.seed.toml
+    dst: /usr/share/@PACKAGE@/examples/qiskit_pulse_1q.seed.toml
+  - src: app/tests/fixtures/qiskit_pulse_2q.seed.toml
+    dst: /usr/share/@PACKAGE@/examples/qiskit_pulse_2q.seed.toml
   - src: LICENSE.txt
     dst: /usr/share/doc/@PACKAGE@/LICENSE.txt
 
