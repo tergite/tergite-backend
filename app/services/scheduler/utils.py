@@ -268,7 +268,7 @@ def update_job_results(
         {
             "status": JobStatus.SUCCESSFUL,
             "result": JobResult(memory=data),
-            "download_url": f"{settings.BCC_MACHINE_ROOT_URL}/logfiles/{job_id}",
+            "download_url": f"{settings.MACHINE_ROOT_URL}/logfiles/{job_id}",
             "updated_at": utc_now_str(),
         },
     )

@@ -28,7 +28,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator, List, Optional
+from typing import Iterator, List, Mapping, Optional
 
 from starlette.config import Config
 from starlette.datastructures import URL, CommaSeparatedStrings
@@ -55,10 +55,10 @@ class DeviceSettings:
     """
 
     def __init__(self, env_file: Path):
-        self.DEFAULT_PREFIX = Config(env_file, environ=_get_shared_environ())(
+        self.DEFAULT_PREFIX = _read_config(env_file, _get_shared_environ())(
             "DEFAULT_PREFIX", cast=str
         )
-        config = Config(env_file, environ=_get_device_environ(self.DEFAULT_PREFIX))
+        config = _read_config(env_file, _get_device_environ(self.DEFAULT_PREFIX))
 
         # Misc settings
         self.APP_SETTINGS = config("APP_SETTINGS", cast=str, default="production")
@@ -150,10 +150,10 @@ class DeviceSettings:
             "MSS_MAX_RECONNECTION_DELAY", cast=float, default=60
         )
 
-        self.BCC_MACHINE_ROOT_URL = config(
-            "BCC_MACHINE_ROOT_URL", cast=URL, default="http://localhost:8000"
+        self.MACHINE_ROOT_URL = config(
+            "MACHINE_ROOT_URL", cast=URL, default="http://localhost:8000"
         )
-        self.BCC_PORT = config("BCC_PORT", cast=int, default=8000)
+        self.PORT = config("PORT", cast=int, default=8000)
 
         # Authentication
 
@@ -364,24 +364,39 @@ def using_device(name: str) -> Iterator[DeviceSettings]:
         _CURRENT_DEVICE.reset(token)
 
 
+def _read_config(env_file: Path, environ: dict[str, str]) -> Config:
+    """Reads the env file, whose keys may be <NAME> or BCC_<NAME>, under the variables"""
+    config = Config(env_file, environ=environ)
+    file_values = dict(config.file_values)
+    file_values.update(_unprefixed(config.file_values, "BCC_"))
+    config.file_values = file_values
+    return config
+
+
 def _get_shared_environ() -> dict[str, str]:
     """Gets the env variables, with BCC_<NAME> as <NAME> over a bare <NAME>"""
     environ = dict(os.environ)
-    for name, value in os.environ.items():
-        if name.startswith("BCC_"):
-            environ[name.removeprefix("BCC_")] = value
+    environ.update(_unprefixed(os.environ, "BCC_"))
     return environ
 
 
 def _get_device_environ(prefix: str) -> dict[str, str]:
     """Gets the shared env variables, with the device's own, BCC_<PREFIX>_<NAME>, as
     <NAME> over them"""
-    namespace = f"BCC_{re.sub('[^A-Z0-9]', '_', prefix.upper())}_"
     environ = _get_shared_environ()
-    for name, value in os.environ.items():
-        if name.startswith(namespace):
-            environ[name.removeprefix(namespace)] = value
+    environ.update(
+        _unprefixed(os.environ, f"BCC_{re.sub('[^A-Z0-9]', '_', prefix.upper())}_")
+    )
     return environ
+
+
+def _unprefixed(values: Mapping[str, str], prefix: str) -> dict[str, str]:
+    """Gets the values whose names start with the prefix, by the rest of their names"""
+    return {
+        name.removeprefix(prefix): value
+        for name, value in values.items()
+        if name.startswith(prefix)
+    }
 
 
 def _existing_calibration_file(config: Config, key: str, default_name: str) -> Path:

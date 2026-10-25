@@ -90,8 +90,8 @@ main() {
 		DEFAULT_PREFIX=$name
 		EXECUTOR_TYPE=$executor
 		APP_SETTINGS=production
-		BCC_PORT=$port
-		BCC_MACHINE_ROOT_URL=http://$host:$port
+		PORT=$port
+		MACHINE_ROOT_URL=http://$host:$port
 		MSS_MACHINE_ROOT_URL=$mss_url
 		RQ_REDIS_URL=$(add_password "$redis_url" "$REDIS_PASSWORD")
 

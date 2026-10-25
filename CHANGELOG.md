@@ -20,6 +20,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- Renamed the settings `BCC_PORT` and `BCC_MACHINE_ROOT_URL` to `PORT` and `MACHINE_ROOT_URL`, so their variables stay
+  `BCC_PORT` and `BCC_MACHINE_ROOT_URL`; an env file may write any key as `BCC_<NAME>`, so files setting `BCC_PORT` still work
 - Changed the API to start without building a quantum executor or importing quantify, in about 2 s and 80 MB
   instead of 10 s and 330 MB; a broken quantify config or metadata file now fails the heavy worker's start instead
 

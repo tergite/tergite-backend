@@ -105,7 +105,7 @@ def main() -> None:
         command_parser.add_argument(
             "--port",
             type=int,
-            help="Bind socket to this port; default: the first device's BCC_PORT.",
+            help="Bind socket to this port; default: the first device's PORT.",
         )
         command_parser.add_argument(
             "--forwarded-allow-ips",
@@ -143,7 +143,7 @@ def main() -> None:
             parser.error("--light-workers must be at least 1")
         _start(
             args.host,
-            args.port or settings.BCC_PORT,
+            args.port or settings.PORT,
             args.forwarded_allow_ips,
             args.light_workers,
             args.env_files,
@@ -151,7 +151,7 @@ def main() -> None:
     elif args.command == "serve":
         _serve(
             args.host,
-            args.port or settings.BCC_PORT,
+            args.port or settings.PORT,
             args.forwarded_allow_ips,
             args.env_files,
             args.reload,

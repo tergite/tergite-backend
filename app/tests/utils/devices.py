@@ -11,15 +11,19 @@
 # that they have been altered from the originals.
 """Utilities for serving several devices in a test"""
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Optional
 
 import pytest
 
 
 def load_test_devices(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, names: List[str]
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    names: List[str],
+    env_file_values: Optional[Dict[str, str]] = None,
 ) -> List[str]:
-    """Serves a device of each name, each with its own booking database, until the test ends
+    """Serves a device of each name, each with its own booking database and the given
+    values in its env file, until the test ends
 
     Returns:
         the names of the devices loaded
@@ -34,9 +38,12 @@ def load_test_devices(
     env_files = []
     for name in names:
         env_file = tmp_path / f"{name}.env"
-        env_file.write_text(
-            f"DEFAULT_PREFIX={name}\nBOOKING_DB_URL=sqlite:///{tmp_path}/{name}.db\n"
-        )
+        lines = [
+            f"DEFAULT_PREFIX={name}",
+            f"BOOKING_DB_URL=sqlite:///{tmp_path}/{name}.db",
+        ]
+        lines += [f"{key}={value}" for key, value in (env_file_values or {}).items()]
+        env_file.write_text("\n".join(lines) + "\n")
         env_files.append(env_file)
 
     return settings.load_devices(env_files)
