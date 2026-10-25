@@ -23,13 +23,9 @@ import settings
 from ...libs.queues.types import RunnerQueue, StaticQueue
 from ...utils.logging import err_logger
 from ...utils.redis import get_redis_connection
-from .tasks import (
-    execute,
-    postprocess,
-    postprocessing_failure_callback,
-    postprocessing_success_callback,
-    preprocess,
-)
+
+# the tasks go by import path, as importing them loads the executor's heavy libraries
+_TASKS_MODULE = f"{__package__}.tasks"
 
 _QUEUE_POOL: Optional["QueuePool"] = None
 
@@ -227,7 +223,7 @@ def get_preprocessing_queue(
     Returns:
         a RunnerQueue instance to be used in preprocessing
     """
-    kwargs["job_executor_func"] = preprocess
+    kwargs["job_executor_func"] = f"{_TASKS_MODULE}.preprocess"
     return RunnerQueue(
         f"{prefix}_preprocessing",
         connection,
@@ -264,7 +260,7 @@ def get_normal_execution_queue(
     Returns:
         a RunnerQueue instance to be used in normal execution
     """
-    kwargs["job_executor_func"] = execute
+    kwargs["job_executor_func"] = f"{_TASKS_MODULE}.execute"
     return RunnerQueue(
         f"{prefix}_normal_execution",
         connection,
@@ -302,7 +298,7 @@ def get_booked_execution_queue(
     Returns:
         a RunnerQueue instance to be used in booked execution
     """
-    kwargs["job_executor_func"] = execute
+    kwargs["job_executor_func"] = f"{_TASKS_MODULE}.execute"
     return RunnerQueue(
         f"{prefix}_booked_execution",
         connection,
@@ -370,9 +366,9 @@ def get_postprocessing_queue(
     Returns:
         a RunnerQueue instance to be used in preprocessing
     """
-    kwargs["job_executor_func"] = postprocess
-    kwargs["success_callback"] = postprocessing_success_callback
-    kwargs["failure_callback"] = postprocessing_failure_callback
+    kwargs["job_executor_func"] = f"{_TASKS_MODULE}.postprocess"
+    kwargs["success_callback"] = f"{_TASKS_MODULE}.postprocessing_success_callback"
+    kwargs["failure_callback"] = f"{_TASKS_MODULE}.postprocessing_failure_callback"
     return RunnerQueue(
         f"{prefix}_postprocessing",
         connection,

@@ -58,8 +58,10 @@ from ..external.mss.service import get_mss_client
 from .dtos import RecalibrationInfo
 from .queues import QueuePool
 from .store import get_jobs_store
-from .tasks import post_booking_cleanup, recalibrate, reset_idleness_timer
 from .utils import get_rq_job_id
+
+# the tasks go by import path, as importing them loads the executor's heavy libraries
+_TASKS_MODULE = f"{__package__}.tasks"
 
 
 def submit_booking(
@@ -104,7 +106,7 @@ def submit_booking(
     # at the start_utc, reset the idle time tracker
     queues.general.enqueue_at(
         booking.start_utc,
-        reset_idleness_timer,
+        f"{_TASKS_MODULE}.reset_idleness_timer",
         booking_id=booking.id,
         end_utc=booking.end_utc,
         context=context,
@@ -115,7 +117,7 @@ def submit_booking(
     # waitlist and booked execution queues
     queues.general.enqueue_at(
         booking.end_utc,
-        post_booking_cleanup,
+        f"{_TASKS_MODULE}.post_booking_cleanup",
         booking_id=booking.id,
         context=context,
         job_id=booking.end_event_id,
@@ -518,13 +520,13 @@ def init_recalibration(
     if isinstance(start_timestamp, datetime):
         job = queues.recalibration.enqueue_at(
             datetime=start_timestamp,
-            f=recalibrate,
+            f=f"{_TASKS_MODULE}.recalibrate",
             context=context,
             interval=interval,
         )
     else:
         job = queues.recalibration.enqueue(
-            f=recalibrate,
+            f=f"{_TASKS_MODULE}.recalibrate",
             context=context,
             interval=interval,
         )

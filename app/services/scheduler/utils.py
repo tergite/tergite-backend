@@ -15,19 +15,17 @@
 """Utility functions for the scheduler service"""
 import dataclasses
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
 import numpy as np
 from numpy import typing as npt
 from redis import Redis
-from sklearn.utils.extmath import safe_sparse_dot
 
 import settings
 
 from ...libs.device_parameters import (
     DeviceCalibration,
 )
-from ...libs.quantum_executor.base.executor import QuantumExecutor
 from ...libs.quantum_executor.utils.serialization import iqx_rld
 from ...libs.queues.dtos import (
     ExecutorOptions,
@@ -46,7 +44,10 @@ from ...utils.redis_store import Collection
 from ..external.mss.dtos import DeviceEvent, DeviceEventName, EventResponse
 from ..external.mss.service import MssClient
 
-_QUANTUM_EXECUTOR_AND_OPTS: tuple[QuantumExecutor, ExecutorOptions] | None = None
+if TYPE_CHECKING:
+    from ...libs.quantum_executor.base.executor import QuantumExecutor
+
+_QUANTUM_EXECUTOR_AND_OPTS: tuple["QuantumExecutor", ExecutorOptions] | None = None
 
 
 _STAGE_TIMESTAMPS_MAP: Dict[Stage, Tuple[Tuple[JobStage, JobEvent], ...]] = {
@@ -75,7 +76,7 @@ _STAGE_STATUS_MAP: Dict[Stage, JobStatus] = {
 }
 
 
-def get_executor_and_options() -> Tuple[QuantumExecutor, ExecutorOptions]:
+def get_executor_and_options() -> Tuple["QuantumExecutor", ExecutorOptions]:
     """Gets the executor and its options that will be passed around in the queue
 
     Returns:
@@ -97,7 +98,7 @@ def get_executor_and_options() -> Tuple[QuantumExecutor, ExecutorOptions]:
     return _QUANTUM_EXECUTOR_AND_OPTS
 
 
-def get_quantum_executor() -> QuantumExecutor:
+def get_quantum_executor() -> "QuantumExecutor":
     """Returns the process-level QuantumExecutor."""
     executor, options = get_executor_and_options()
     return executor
@@ -320,7 +321,7 @@ def apply_linear_discriminator(
     data[:, 0] = iq_points.real
     data[:, 1] = iq_points.imag
 
-    scores = safe_sparse_dot(data, coefficients.T, dense_output=True) + intercept
+    scores = data @ coefficients.T + intercept
 
     return (scores.ravel() > 0).astype(np.int_)
 
@@ -347,7 +348,7 @@ def decompress_qobj(qobj_dict: Dict[str, Any]) -> Dict[str, Any]:
     return qobj_dict
 
 
-def _init_executor(options: ExecutorOptions, reset: bool = False) -> QuantumExecutor:
+def _init_executor(options: ExecutorOptions, reset: bool = False) -> "QuantumExecutor":
     """Initializes the executor
 
     Args:

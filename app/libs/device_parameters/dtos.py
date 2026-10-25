@@ -19,6 +19,7 @@ from contextlib import suppress
 from functools import cached_property
 from os import PathLike
 from typing import (
+    TYPE_CHECKING,
     Any,
     Dict,
     Generic,
@@ -42,11 +43,13 @@ from pydantic import (
     model_validator,
 )
 
-from app.utils.compat import CalibrationResults, _CouplerInRedis
 from app.utils.datetime import utc_now_str
 from app.utils.redis_store import Schema
 
 from .utils import attach_units_many
+
+if TYPE_CHECKING:
+    from app.utils.compat import CalibrationResults, _CouplerInRedis
 
 _CalibValueType = TypeVar("_CalibValueType", int, float, str)
 _DOWNCONVERT_FREQUENCY = 4.4e9
@@ -171,7 +174,7 @@ class CalibrationValueSet(CalibrationModel, ABC):
     @classmethod
     @abstractmethod
     def from_calib_results(
-        cls, data: CalibrationResults, name_id_map: Dict[str, Any], **kwargs: Any
+        cls, data: "CalibrationResults", name_id_map: Dict[str, Any], **kwargs: Any
     ) -> List[Self]:
         """Generates new instances of this calibration value set from the calibration results
 
@@ -321,7 +324,7 @@ class QubitCalibration(CalibrationValueSet):
 
     @classmethod
     def from_calib_results(
-        cls, data: CalibrationResults, **kwargs
+        cls, data: "CalibrationResults", **kwargs
     ) -> List["QubitCalibration"]:
         """Generates new instances of QubitCalibration from the calibration results
 
@@ -414,7 +417,7 @@ class ResonatorCalibration(CalibrationValueSet):
 
     @classmethod
     def from_calib_results(
-        cls, data: CalibrationResults, **kwargs
+        cls, data: "CalibrationResults", **kwargs
     ) -> List["ResonatorCalibration"]:
         """Generates new instances of ResonatorCalibration from the calibration results
 
@@ -537,7 +540,7 @@ class CouplerCalibration(CalibrationValueSet):
     @classmethod
     def from_calib_results(
         cls,
-        data: CalibrationResults,
+        data: "CalibrationResults",
         name_id_map: Dict[str, int],
         reverse_phase_qubits: Tuple[str, ...] = (),
         **kwargs,
@@ -599,7 +602,10 @@ class CouplerCalibration(CalibrationValueSet):
 
     @classmethod
     def _get_local_phases(
-        cls, coupler: str, data: _CouplerInRedis, reverse_phase_qubits: Tuple[str, ...]
+        cls,
+        coupler: str,
+        data: "_CouplerInRedis",
+        reverse_phase_qubits: Tuple[str, ...],
     ) -> Tuple[float, float]:
         """Gets the local phases in radians for given the data from redis
 
@@ -717,7 +723,7 @@ class DeviceCalibration(Schema, CalibrationValueSet):
     @classmethod
     def from_calib_results(
         cls,
-        data: CalibrationResults,
+        data: "CalibrationResults",
         name_id_map: Dict[str, int],
         reverse_phase_qubits: Tuple[str, ...] = (),
         **kwargs: Any,
