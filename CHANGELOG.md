@@ -11,7 +11,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 - Added amd64 debs and macOS arm64 packages, `tergite-backend` and `tergite-backend-simulator`, running each
   backend instance, named for its `DEFAULT_PREFIX`, as a `bcc@<name>` service set up by `bcc-provision`
-- Added `bcc start` to the Nuitka binary, which runs the API and all six RQ workers as one process tree
+- Added `bcc start` to the Nuitka binary, which runs the API, one RQ worker for preprocessing, executions and
+  recalibrations, and `--light-workers` (default 1) for postprocessing and general tasks as one process tree
 
 ### Removed
 

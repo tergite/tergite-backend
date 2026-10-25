@@ -59,18 +59,19 @@ import uvicorn
 
 import settings
 from app.api import app
-from app.api.worker import PreloadedRqWorker
+from app.api.worker import LightRqWorker, PreloadedRqWorker
 from app.services.scheduler.queues import get_queue_pool
 from app.utils.redis import get_redis_connection
 
-QUEUES = (
-    "general",
-    "preprocessing",
-    "normal_execution",
+# in the order a worker takes their jobs; the heavy queues' tasks all run the quantum
+# executor, which a lock lets do one thing at a time, so one worker loses them nothing
+HEAVY_QUEUES = (
     "booked_execution",
-    "postprocessing",
+    "normal_execution",
     "recalibration",
+    "preprocessing",
 )
+LIGHT_QUEUES = ("postprocessing", "general")
 
 
 def main() -> None:
@@ -79,10 +80,10 @@ def main() -> None:
     )
     commands = parser.add_subparsers(dest="command", required=True)
     start_parser = commands.add_parser(
-        "start", help="Serve the API and run a worker for every queue"
+        "start", help="Serve the API and run the heavy and light workers"
     )
     serve_parser = commands.add_parser("serve", help="Serve the API")
-    rq_parser = commands.add_parser("rq", help="Run the worker of one queue")
+    rq_parser = commands.add_parser("rq", help="Run one worker")
 
     for command_parser in (start_parser, serve_parser):
         command_parser.add_argument(
@@ -98,6 +99,12 @@ def main() -> None:
             "--forwarded-allow-ips",
             help="Allow forwarding of IPS only if done by the given IP.",
         )
+    start_parser.add_argument(
+        "--light-workers",
+        type=int,
+        default=1,
+        help="The number of workers for postprocessing and general tasks.",
+    )
     serve_parser.add_argument(
         "--reload",
         default=False,
@@ -105,27 +112,42 @@ def main() -> None:
         help="Enable reload (not recommended for production binaries).",
     )
     rq_parser.add_argument(
-        "--name", required=True, choices=QUEUES, help="The name of the queue to run."
+        "--kind",
+        required=True,
+        choices=("heavy", "light"),
+        help=f"heavy runs the {', '.join(HEAVY_QUEUES)} queues; "
+        f"light runs the {', '.join(LIGHT_QUEUES)} queues.",
     )
 
     args = parser.parse_args()
 
     if args.command == "start":
-        _start(args.host, args.port, args.forwarded_allow_ips)
+        if args.light_workers < 1:
+            parser.error("--light-workers must be at least 1")
+        _start(args.host, args.port, args.forwarded_allow_ips, args.light_workers)
     elif args.command == "serve":
         _serve(args.host, args.port, args.forwarded_allow_ips, args.reload)
     else:
-        _run_rq_worker(args.name)
+        _run_rq_worker(args.kind)
 
 
-def _start(host: str, port: int, forwarded_allow_ips: str | None) -> None:
+def _start(
+    host: str, port: int, forwarded_allow_ips: str | None, light_workers: int
+) -> None:
     """Runs the API and the workers as child processes, stopping them all when any stops,
     so that the service manager restarts the backend whole. The children start the
     platform's way: macOS cannot fork a process that has loaded its frameworks."""
     processes = [
-        multiprocessing.Process(target=_run_rq_worker, args=(queue,), name=queue)
-        for queue in QUEUES
+        multiprocessing.Process(
+            target=_run_rq_worker, args=("heavy",), name="heavy worker"
+        )
     ]
+    processes.extend(
+        multiprocessing.Process(
+            target=_run_rq_worker, args=("light",), name=f"light worker {number}"
+        )
+        for number in range(1, light_workers + 1)
+    )
     processes.append(
         multiprocessing.Process(
             target=_serve, args=(host, port, forwarded_allow_ips), name="api"
@@ -164,10 +186,18 @@ def _serve(
     )
 
 
-def _run_rq_worker(queue: str) -> None:
+def _run_rq_worker(kind: str) -> None:
+    if kind == "heavy":
+        worker_class, queue_names = PreloadedRqWorker, HEAVY_QUEUES
+    else:
+        worker_class, queue_names = LightRqWorker, LIGHT_QUEUES
+
     queue_pool = get_queue_pool()
-    worker = PreloadedRqWorker(
-        [queue_pool.queues[f"{settings.DEFAULT_PREFIX}_{queue}"]],
+    worker = worker_class(
+        [
+            queue_pool.queues[f"{settings.DEFAULT_PREFIX}_{name}"]
+            for name in queue_names
+        ],
         connection=get_redis_connection(),
     )
     worker.work()

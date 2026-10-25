@@ -21,6 +21,8 @@ from rq import Worker
 class PreloadedRqWorker(Worker):
     """RQ Worker that has important libraries, connections etc. preloaded."""
 
+    should_preload_executor = True
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -34,13 +36,20 @@ class PreloadedRqWorker(Worker):
         from app.services.scheduler.utils import get_quantum_executor
         from app.utils.redis import get_redis_connection
 
-        _executor = get_quantum_executor()
+        if self.should_preload_executor:
+            _executor = get_quantum_executor()
         _redis_connection = get_redis_connection()
         _mss_client = get_mss_client()
         _queue_context = get_queue_context()
         _queue_pool = get_queue_pool()
         _jobs_store = get_jobs_store()
         _db_engine = get_bookings_sql_engine()
+
+
+class LightRqWorker(PreloadedRqWorker):
+    """Preloads all but the quantum executor, for queues whose tasks never run it"""
+
+    should_preload_executor = False
 
 
 class LoggingRqWorker(PreloadedRqWorker):

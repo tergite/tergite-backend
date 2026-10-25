@@ -272,10 +272,12 @@ python -m nuitka main.py
 - After the build, the app will be at `./bcc` (or `bcc.simulator` if EXECUTOR=qiskit). You can run it.
 
 ```shell
-# serve the API and run a worker for every queue, stopping them all if any stops;
-# it reads the .env file named by ENV_FILE, and takes `--port`, `--host` and `--forwarded-allow-ips`
+# serve the API, and run one heavy worker for preprocessing, executions and recalibrations
+# and `--light-workers` (default 1) for postprocessing and general tasks, stopping them all if
+# any stops; it reads the .env file named by ENV_FILE, and takes `--port`, `--host` and
+# `--forwarded-allow-ips`
 ENV_FILE="$PWD/.env" ./bcc start
-# or one at a time: `./bcc serve --reload`, `./bcc rq --name general`
+# or one at a time: `./bcc serve --reload`, `./bcc rq --kind heavy`, `./bcc rq --kind light`
 ```
 
 ## References
