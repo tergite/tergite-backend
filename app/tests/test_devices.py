@@ -81,3 +81,18 @@ def test_worker_runs_each_job_as_its_queue_device(tmp_path, monkeypatch):
     assert _get_device_of_queue("sim_general") == "sim"
     assert _get_device_of_queue("sim_2q_general") == "sim_2q"
     assert _get_device_of_queue("sim_2q_normal_execution") == "sim_2q"
+
+
+def test_device_env_variables_override_the_shared_ones(tmp_path, monkeypatch):
+    """BCC_<PREFIX>_<NAME> sets one device's NAME, over BCC_<NAME>, over a bare NAME"""
+    import settings
+
+    monkeypatch.setenv("MAX_IDLE_TIME", "5")
+    monkeypatch.setenv("BCC_MAX_IDLE_TIME", "7")
+    monkeypatch.setenv("BCC_SIM_2Q_MAX_IDLE_TIME", "42")
+    monkeypatch.setenv("MAX_SLOTS_PER_DAY", "3")
+    load_test_devices(tmp_path, monkeypatch, ["sim", "sim_2q"])
+
+    assert settings.get_device_settings("sim").MAX_IDLE_TIME == 7
+    assert settings.get_device_settings("sim_2q").MAX_IDLE_TIME == 42
+    assert settings.get_device_settings("sim_2q").MAX_SLOTS_PER_DAY == 3

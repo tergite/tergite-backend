@@ -22,6 +22,7 @@ devices when load_devices is given several env files.
 import importlib.util
 import logging
 import os
+import re
 import sys
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -44,17 +45,25 @@ FIXTURES_DIR = _ROOT_PATH / "app" / "tests" / "fixtures"
 
 
 class DeviceSettings:
-    """The settings of one device, read from its env file; shell env variables take
-    precedence over the file, for every device"""
+    """The settings of one device, from its env file and the env variables
+
+    BCC_<PREFIX>_<NAME>, <PREFIX> being DEFAULT_PREFIX in upper case with "_" for any
+    character but letters and digits, sets this device's <NAME>; BCC_<NAME> every
+    device's; and a bare <NAME>, as single-device deployments set it, every device's too.
+    Each takes precedence over the next, and all over the env file. DEFAULT_PREFIX
+    comes from BCC_DEFAULT_PREFIX, DEFAULT_PREFIX or the file.
+    """
 
     def __init__(self, env_file: Path):
-        config = Config(env_file, environ=os.environ)
+        self.DEFAULT_PREFIX = Config(env_file, environ=_get_shared_environ())(
+            "DEFAULT_PREFIX", cast=str
+        )
+        config = Config(env_file, environ=_get_device_environ(self.DEFAULT_PREFIX))
 
         # Misc settings
         self.APP_SETTINGS = config("APP_SETTINGS", cast=str, default="production")
 
         # Storage settings
-        self.DEFAULT_PREFIX = config("DEFAULT_PREFIX", cast=str)
         self.STORAGE_ROOT: Path = config(
             "STORAGE_ROOT", cast=Path, default=Path("/tmp")
         )
@@ -353,6 +362,26 @@ def using_device(name: str) -> Iterator[DeviceSettings]:
         yield _DEVICES[name]
     finally:
         _CURRENT_DEVICE.reset(token)
+
+
+def _get_shared_environ() -> dict[str, str]:
+    """Gets the env variables, with BCC_<NAME> as <NAME> over a bare <NAME>"""
+    environ = dict(os.environ)
+    for name, value in os.environ.items():
+        if name.startswith("BCC_"):
+            environ[name.removeprefix("BCC_")] = value
+    return environ
+
+
+def _get_device_environ(prefix: str) -> dict[str, str]:
+    """Gets the shared env variables, with the device's own, BCC_<PREFIX>_<NAME>, as
+    <NAME> over them"""
+    namespace = f"BCC_{re.sub('[^A-Z0-9]', '_', prefix.upper())}_"
+    environ = _get_shared_environ()
+    for name, value in os.environ.items():
+        if name.startswith(namespace):
+            environ[name.removeprefix(namespace)] = value
+    return environ
 
 
 def _existing_calibration_file(config: Config, key: str, default_name: str) -> Path:

@@ -282,7 +282,9 @@ ENV_FILE="$PWD/.env" ./bcc start
 # serve several devices from one process: each device's env file once; its API is then at
 # /<its DEFAULT_PREFIX>/..., say http://localhost:8000/loke/bookings, a path naming no device
 # reaching the first; each device gets a heavy worker, and the light workers run every device's
-# queues, so the devices must share RQ_REDIS_URL; variables set in the shell override every file
+# queues, so the devices must share RQ_REDIS_URL; in the shell, BCC_<NAME>, e.g.
+# BCC_MAX_IDLE_TIME, sets every device's <NAME> over its env file, and BCC_<PREFIX>_<NAME>,
+# e.g. BCC_LOKE_MAX_IDLE_TIME, one device's over that; a bare <NAME> still works, below both
 ./bcc start --env-file loke.env --env-file thor.env
 ```
 

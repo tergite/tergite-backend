@@ -15,6 +15,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   recalibrations, and `--light-workers` (default 1) for postprocessing and general tasks as one process tree
 - Added `--env-file`, given once per device, to `bcc start`, `serve` and `rq`, which serves several devices from one
   process, each device's API under `/<DEFAULT_PREFIX>/`, with a heavy worker per device and light workers shared by all
+- Added `BCC_<NAME>` env variables, e.g. `BCC_MAX_IDLE_TIME`, which set every device's `<NAME>`, and
+  `BCC_<PREFIX>_<NAME>`, e.g. `BCC_LOKE_MAX_IDLE_TIME`, one device's over them; a bare `<NAME>` still works, below both
 
 ### Changed
 
