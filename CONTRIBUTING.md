@@ -139,9 +139,9 @@ pytest -n auto --dist=loadscope app
 
 ## How to Install as a Service
 
-- Download the package for your machine from the release: `tergite-backend` runs real devices
-  through quantify (amd64 only), `tergite-backend-simulator` runs the qiskit simulators. They
-  install side by side.
+- Download the package for your machine from the release, a deb for amd64 or a pkg for macOS
+  arm64: `tergite-backend` runs real devices through quantify, `tergite-backend-simulator` runs
+  the qiskit simulators. They install side by side.
 
 - Install it. A deb asks for a first backend instance: its name, which is its `DEFAULT_PREFIX`,
   executor, port, MSS URL and Redis.
@@ -150,7 +150,7 @@ pytest -n auto --dist=loadscope app
 sudo apt install ./tergite-backend_<version>_amd64.deb
 ```
 
-- Create any other instance, or the first on rpm, which asks nothing.
+- Create any other instance, or the first on macOS, which asks nothing.
   `--executor`, `--port`, `--mss-url` and `--redis-url` override the defaults, and a Redis
   password goes in `REDIS_PASSWORD`.
 

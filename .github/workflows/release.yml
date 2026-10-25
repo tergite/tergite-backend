@@ -1,7 +1,8 @@
 name: Release
-# Builds the installers of bcc (quantify) and bcc.simulator (qiskit), each on the platform it
-# is for since Nuitka cannot cross-compile, smoke-tests them, and attaches them to the GitHub
-# release of a v* tag. Run by hand, it leaves them as the run's artifacts instead.
+# Builds the debs for amd64 and pkgs for macOS arm64 of bcc (quantify) and bcc.simulator
+# (qiskit), each on that platform since Nuitka cannot cross-compile, smoke-tests them, and
+# attaches them to the GitHub release of a v* tag. Run by hand, it leaves them as the run's
+# artifacts instead. The rpm packaging in pkg/ is kept but not built.
 
 on:
   push:
@@ -31,42 +32,31 @@ jobs:
 
   linux:
     needs: version
-    runs-on: ${{ matrix.runner }}
+    runs-on: ubuntu-24.04
     # qiskit, jax and scipy make a build of an hour or more
     timeout-minutes: 180
     strategy:
       matrix:
         include:
-          # PyQt5, which quantify needs, has no Linux aarch64 wheel
-          - { runner: ubuntu-24.04, arch: amd64, binary: bcc, executor: quantify }
-          - { runner: ubuntu-24.04, arch: amd64, binary: bcc.simulator, executor: qiskit }
-          - { runner: ubuntu-24.04-arm, arch: arm64, binary: bcc.simulator, executor: qiskit }
+          - { binary: bcc, executor: quantify }
+          - { binary: bcc.simulator, executor: qiskit }
     env:
       VERSION: ${{ needs.version.outputs.version }}
-      ARCH: ${{ matrix.arch }}
+      ARCH: amd64
     steps:
       - uses: actions/checkout@v6
       - name: Build the binary
         run: |
           docker run --rm -e EXECUTOR=${{ matrix.executor }} -e UV_PYTHON -v "$PWD":/src -w /src \
             debian:bookworm pkg/build-linux.sh
-      - name: Package it
+      - run: pkg/package.sh ${{ matrix.binary }} deb
+      - name: Install the package and load an instance with it
         run: |
-          pkg/package.sh ${{ matrix.binary }} deb
-          pkg/package.sh ${{ matrix.binary }} rpm
-      - name: Install each package and load an instance with it
-        run: |
-          for package in dist/*; do
-            case $package in
-              *.deb) image=debian:bookworm install="apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ./$package" ;;
-              *.rpm) image=fedora:41 install="dnf install -y -q --setopt=install_weak_deps=False ./$package" ;;
-            esac
-            docker run --rm -v "$PWD":/src -w /src "$image" \
-              sh -c "$install && pkg/smoke-test.sh ${{ matrix.binary }}"
-          done
+          docker run --rm -v "$PWD":/src -w /src debian:bookworm sh -c \
+            "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ./dist/*.deb && pkg/smoke-test.sh ${{ matrix.binary }}"
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.binary }}-linux-${{ matrix.arch }}
+          name: ${{ matrix.binary }}-linux-amd64
           path: dist/*
 
   macos:
