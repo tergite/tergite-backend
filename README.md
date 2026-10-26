@@ -14,13 +14,13 @@ If you are reading this on GitHub, then you are looking at a mirror.
 
 ## Dependencies
 
-- [Python 3.12](https://www.python.org/)
+- [Python 3.13](https://www.python.org/)
 - [Redis](https://redis.io/)
 
 ## Quick Start
 
 - Ensure you have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed. 
- (_You could simply have python +3.12 installed instead._)
+ (_You could simply have python +3.13 installed instead._)
 
 ```shell
 wget -qO- https://astral.sh/uv/install.sh | sh

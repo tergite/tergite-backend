@@ -24,6 +24,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- bcc needs Python 3.13 or later, and its debs and macOS packages are built with it: on 3.12 a Nuitka build
+  raised TypeError where anyio sorts exception groups, as CPython 3.12 refuses compiled functions there
 - The debs and macOS packages install `bcc` as Nuitka's standalone folder in `/usr/lib/<package>`, linked from the
   PATH, instead of a onefile binary that unpacked itself into a temporary folder on every start
 - Changed `start_bcc.sh` to run `main.py start`, after decrypting a SOPS env file, instead of the API and six RQ

@@ -7,7 +7,7 @@ variables:
   # pinned with its checksum, so that what packages a release is checked against this file
   NFPM_VERSION: "2.48.0"
   NFPM_SHA256: 6d7f9a28b2f397934403950fcbba83f598b08d02edbe79a0815b3b4897341750
-  PYTHON_VERSION: "3.12"
+  PYTHON_VERSION: "3.13"
   REDIS_PORT: 6378
   TEST_RQ_MAX_QUEUE_WAIT_TIME: 45
   FF_NETWORK_PER_BUILD: 1
@@ -67,7 +67,9 @@ tests:
         EXECUTOR: qiskit
   variables:
     # the Python the binaries are built with; uv would otherwise take the newest it can download
-    UV_PYTHON: "3.12"
+    UV_PYTHON: "3.13"
+    # uv's own build of it, as Nuitka refuses e.g. Homebrew's on a Mac
+    UV_MANAGED_PYTHON: "1"
     NUITKA_CACHE_DIR: "$CI_PROJECT_DIR/.cache/Nuitka"
   cache:
     key: nuitka-$CI_JOB_NAME_SLUG

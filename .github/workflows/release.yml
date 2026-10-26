@@ -17,7 +17,9 @@ on:
 env:
   # the Python the binaries are built and tested with; uv would otherwise take the newest it
   # can download, whose wheels may not exist yet
-  UV_PYTHON: "3.12"
+  UV_PYTHON: "3.13"
+  # uv's own build of it, as Nuitka refuses e.g. Homebrew's on the macOS runners
+  UV_MANAGED_PYTHON: "1"
 
 jobs:
   version:
