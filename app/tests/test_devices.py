@@ -1,5 +1,9 @@
 """Tests for serving several devices from one process"""
 
+import os
+import subprocess
+import sys
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -23,6 +27,26 @@ def test_load_devices_serves_each_device_settings(tmp_path, monkeypatch):
         assert settings.DEFAULT_PREFIX == "Beta"
         assert settings.BOOKING_DB_URL == f"sqlite:///{tmp_path}/Beta.db"
     assert settings.DEFAULT_PREFIX == "Alpha"
+
+
+def test_bcc_env_file_names_each_device_an_api_worker_serves(tmp_path):
+    env_files = []
+    for name in ("Alpha", "Beta"):
+        env_file = tmp_path / f"{name}.env"
+        env_file.write_text(f"BCC_DEFAULT_PREFIX={name}\n")
+        env_files.append(str(env_file))
+    environ = {k: v for k, v in os.environ.items() if k != "BCC_DEFAULT_PREFIX"}
+
+    result = subprocess.run(
+        [sys.executable, "-c", "import settings; print(settings.get_device_names())"],
+        cwd=Path(__file__).parents[2],
+        env={**environ, "BCC_ENV_FILE": os.pathsep.join(env_files)},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout.strip().splitlines()[-1] == "['Alpha', 'Beta']"
 
 
 def test_each_device_has_its_own_queues(tmp_path, monkeypatch):

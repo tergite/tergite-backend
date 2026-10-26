@@ -227,8 +227,8 @@ pkg/build.sh
 ```shell
 # serve the API, and run one heavy worker for preprocessing, executions and recalibrations
 # and `--light-workers` (default 1) for postprocessing and general tasks, stopping them all if
-# any stops; it reads the .env file named by BCC_ENV_FILE, and takes `--port`, `--host` and
-# `--forwarded-allow-ips`
+# any stops; it reads the .env file named by BCC_ENV_FILE, and takes `--port`, `--host`,
+# `--forwarded-allow-ips` and `--workers`, the number of API processes ($WEB_CONCURRENCY or 1)
 BCC_ENV_FILE="$PWD/.env" main.dist/bcc start  # or just main.dist/bcc, as start is the default
 # or one at a time: `main.dist/bcc serve`, `main.dist/bcc rq --kind heavy`, `main.dist/bcc rq --kind light`
 
@@ -239,6 +239,8 @@ BCC_ENV_FILE="$PWD/.env" main.dist/bcc start  # or just main.dist/bcc, as start 
 # BCC_MAX_IDLE_TIME, sets every device's <NAME> over its env file, and BCC_<PREFIX>_<NAME>,
 # e.g. BCC_LOKE_MAX_IDLE_TIME, one device's over that; see .env.example
 main.dist/bcc start --env-file loke.env --env-file thor.env
+# or, as BCC_ENV_FILE may name several separated as in PATH
+BCC_ENV_FILE="$PWD/loke.env:$PWD/thor.env" main.dist/bcc start
 ```
 
 ## References

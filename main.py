@@ -29,6 +29,8 @@
 # nuitka-project: --include-package=jwt
 # nuitka-project: --include-package=pydantic
 # nuitka-project: --include-package=bcrypt
+# uvicorn imports the app by name, which Nuitka cannot follow
+# nuitka-project: --include-module=app.api
 
 # nuitka-project-if: os.getenv("EXECUTOR") == "qiskit":
 #   nuitka-project: --output-filename=bcc.simulator
@@ -98,7 +100,7 @@ def main() -> None:
             default=[],
             dest="env_files",
             help="The env file of a device to serve, given once for each device; "
-            "default: the file BCC_ENV_FILE names, or .env.",
+            "default: the files BCC_ENV_FILE names, separated as in PATH, or .env.",
         )
     for command_parser in (start_parser, serve_parser):
         command_parser.add_argument(
@@ -112,6 +114,11 @@ def main() -> None:
         command_parser.add_argument(
             "--forwarded-allow-ips",
             help="Allow forwarding of IPS only if done by the given IP.",
+        )
+        command_parser.add_argument(
+            "--workers",
+            type=int,
+            help="Number of API worker processes; default: $WEB_CONCURRENCY, or 1.",
         )
     start_parser.add_argument(
         "--light-workers",
@@ -149,6 +156,7 @@ def main() -> None:
             args.forwarded_allow_ips,
             args.light_workers,
             args.env_files,
+            args.workers,
         )
     elif args.command == "serve":
         _serve(
@@ -157,6 +165,7 @@ def main() -> None:
             args.forwarded_allow_ips,
             args.env_files,
             args.reload,
+            args.workers,
         )
     else:
         _run_rq_worker(args.kind, args.env_files, args.device)
@@ -168,6 +177,7 @@ def _start(
     forwarded_allow_ips: str | None,
     light_workers: int,
     env_files: list[str],
+    workers: int | None,
 ) -> None:
     """Runs the API and the workers as child processes, stopping them all when any stops,
     so that the service manager restarts the backend whole. The children start the
@@ -192,7 +202,9 @@ def _start(
     )
     processes.append(
         multiprocessing.Process(
-            target=_serve, args=(host, port, forwarded_allow_ips, env_files), name="api"
+            target=_serve,
+            args=(host, port, forwarded_allow_ips, env_files, False, workers),
+            name="api",
         )
     )
     for process in processes:
@@ -219,17 +231,17 @@ def _serve(
     port: int,
     forwarded_allow_ips: str | None,
     env_files: list[str],
-    reload: bool = False,
+    reload: bool,
+    workers: int | None,
 ) -> None:
     _load_devices(env_files)
-    from app.api import app
-
+    # by import string, as uvicorn reloads and runs workers only so
     uvicorn.run(
-        app,
+        "app.api:app",
         host=host,
         reload=reload,
         port=port,
-        workers=1,
+        workers=workers,
         proxy_headers=True,
         forwarded_allow_ips=forwarded_allow_ips,
     )
@@ -269,11 +281,14 @@ def _run_rq_worker(kind: str, env_files: list[str], device: str | None = None) -
 
 
 def _load_devices(env_files: list[str]) -> None:
-    """Serves the devices of the env files, if any were given, in this process"""
+    """Serves the devices of the env files, if any were given, in this process and the
+    API workers it starts"""
     if not env_files:
         return
-    # importing settings loads BCC_ENV_FILE's device, so it must name an existing file
-    os.environ["BCC_ENV_FILE"] = str(Path(env_files[0]).resolve())
+    # importing settings loads BCC_ENV_FILE's devices, as each API worker does
+    os.environ["BCC_ENV_FILE"] = os.pathsep.join(
+        str(Path(env_file).resolve()) for env_file in env_files
+    )
     import settings
 
     settings.load_devices([Path(env_file) for env_file in env_files])

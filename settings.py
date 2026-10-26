@@ -345,9 +345,7 @@ def load_devices(env_files: List[Path]) -> List[str]:
         the names of the devices, i.e. their DEFAULT_PREFIX
     """
     global _DEFAULT_DEVICE, _DEVICES
-    devices = [DeviceSettings(Path(env_file).resolve()) for env_file in env_files]
-    _DEFAULT_DEVICE = devices[0]
-    _DEVICES = {device.DEFAULT_PREFIX: device for device in devices}
+    _DEFAULT_DEVICE, _DEVICES = _read_devices(env_files)
     return list(_DEVICES)
 
 
@@ -412,6 +410,14 @@ def _get_device_specific_environ(default_prefix: str) -> dict[str, str]:
     }
 
 
+def _read_devices(
+    env_files: List[Path],
+) -> tuple[DeviceSettings, dict[str, DeviceSettings]]:
+    """Reads the devices of the env files: the first, the default one, and all by name"""
+    devices = [DeviceSettings(Path(env_file).resolve()) for env_file in env_files]
+    return devices[0], {device.DEFAULT_PREFIX: device for device in devices}
+
+
 def _existing_calibration_file(config: Config, key: str, default_name: str) -> Path:
     path = config(key, cast=Path, default=_ROOT_PATH / default_name)
     if HAS_QUANTIFY and not path.exists():
@@ -419,8 +425,10 @@ def _existing_calibration_file(config: Config, key: str, default_name: str) -> P
     return path
 
 
-_DEFAULT_DEVICE = DeviceSettings(_ROOT_PATH / os.environ.get("BCC_ENV_FILE", ".env"))
-_DEVICES: dict[str, DeviceSettings] = {_DEFAULT_DEVICE.DEFAULT_PREFIX: _DEFAULT_DEVICE}
+# BCC_ENV_FILE may name several, separated as in PATH, one per device
+_DEFAULT_DEVICE, _DEVICES = _read_devices(
+    [_ROOT_PATH / v for v in os.environ.get("BCC_ENV_FILE", ".env").split(os.pathsep)]
+)
 _CURRENT_DEVICE: ContextVar[Optional[str]] = ContextVar("current_device", default=None)
 
 # setup logger for the app
