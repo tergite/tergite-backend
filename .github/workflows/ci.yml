@@ -45,6 +45,7 @@ jobs:
           uv sync --dev --extra ${{ matrix.deps-group }}
           uv run black --check app
           uv run isort --check-only app
+          uv run pyflakes app main.py settings.py
           uv run pytest app;
         env:
           REDIS_HOST: localhost

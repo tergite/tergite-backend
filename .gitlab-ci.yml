@@ -42,6 +42,7 @@ tests:
     # Check formatting
     - black --check app
     - isort --check-only app
+    - pyflakes app main.py settings.py
     # Run unit tests
     - pytest app
   cache:

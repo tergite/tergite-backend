@@ -2592,6 +2592,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pyflakes"
+version = "4.0.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/2c/1b/3ba8bd62723cfe1b651c4e4b89b33767fce7a08bb800491cf1d3dd3a7716/pyflakes-4.0.3.tar.gz", hash = "sha256:94762a3a5a343a79b28754f96c554bce057a592a4896907d73f0369fe824e053", size = 67126, upload-time = "2026-10-07T18:57:25.327Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/44/b0/554d720d71083ccd24ba2f376c048544c073570e7bb18b34d769cef77f66/pyflakes-4.0.3-py2.py3-none-any.whl", hash = "sha256:330ba92b8c1db2eb0b8f4068f6c58674e2649a99e334769aa50e3e9c5b11c23a", size = 66250, upload-time = "2026-10-07T18:57:24.403Z" },
+]
+
+[[package]]
 name = "pygments"
 version = "2.20.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3886,6 +3895,7 @@ dev = [
     { name = "nuitka" },
     { name = "pre-commit" },
     { name = "psutil" },
+    { name = "pyflakes" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-freezegun" },
@@ -3944,6 +3954,7 @@ dev = [
     { name = "nuitka", specifier = ">=4.3.1" },
     { name = "pre-commit", specifier = "~=4.2.0" },
     { name = "psutil", specifier = "~=7.0.0" },
+    { name = "pyflakes", specifier = "~=4.0" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-asyncio", specifier = "~=1.1.0" },
     { name = "pytest-freezegun", specifier = ">=0.4.2" },
