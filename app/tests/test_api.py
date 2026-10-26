@@ -12,10 +12,13 @@
 # that they have been altered from the originals.
 #
 """Tests for the scheduler that handles queueing of user's jobs"""
+import asyncio
 import copy
 import json
 import math
 import os
+import threading
+import time
 from contextlib import suppress
 from datetime import datetime, timedelta, timezone
 from itertools import zip_longest
@@ -2461,6 +2464,34 @@ def test_init_recalibration_without_interval(
         assert initial_rq_job.is_canceled
         assert math.isclose(final_actual_interval, initial_interval, abs_tol=1)
         assert seed_file_content == _EXPECTED_RECALIBRATION_SEED_CONTENT
+
+
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
+def test_api_workers_start_a_device_one_at_a_time(quantify_rest_client, mocker):
+    from app.api import app, dependencies
+
+    starting, overlaps = [], []
+
+    def start_device():
+        starting.append(None)
+        overlaps.append(len(starting))
+        time.sleep(0.2)
+        starting.pop()
+
+    async def start_and_stop():
+        async with dependencies.lifespan(app):
+            pass
+
+    mocker.patch.object(dependencies, "_start_device", side_effect=start_device)
+    workers = [
+        threading.Thread(target=asyncio.run, args=(start_and_stop(),)) for _ in range(3)
+    ]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
+
+    assert overlaps == [1, 1, 1]
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")

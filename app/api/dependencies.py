@@ -60,13 +60,24 @@ from ..utils.sql_db import clear_sql_engine_cache
 from ..utils.strings import validate_uuid4_str
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+# how long a device's start-up lock outlasts an API worker that stopped holding it
+_START_UP_LOCK_SECONDS = 300
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Starts each device this process serves before the application, and stops them after"""
     for device in settings.get_device_names():
-        with settings.using_device(device):
+        # one API worker at a time, as starting a device restarts its recalibration
+        with (
+            settings.using_device(device),
+            # a start-up longer than the lock, as when MSS is down, outlives it unharmed
+            get_redis_connection().lock(
+                f"{device}:start-up",
+                timeout=_START_UP_LOCK_SECONDS,
+                raise_on_release_error=False,
+            ),
+        ):
             _start_device()
 
     logging.info(f"starting app at {get_utc_now()}")
