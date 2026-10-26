@@ -407,7 +407,7 @@ def get_verified_mss_details(request: Request) -> MSSAuthDetails:
         user_id = get_verified_mss_user_id(request)
         is_mss_admin = get_unverified_mss_is_admin(request)
         return MSSAuthDetails(user_id=user_id, job_id=job_id, is_mss_admin=is_mss_admin)
-    except NotAuthenticatedError as exp:
+    except NotAuthenticatedError:
         token = get_bearer_token(request)
         user_id, token_job_id = get_user_job_id_pair_from_token(token)
         if token_job_id != job_id:

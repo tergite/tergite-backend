@@ -24,14 +24,9 @@ from app.libs.quantum_executor.base.experiment import NativeExperiment
 from app.libs.quantum_executor.qiskit.experiment import QiskitDynamicsExperiment
 
 from ...device_parameters import BackendConfig
-from ..base.quantum_job import (
-    MeasRet,
-    QDataset,
-    RepetitionsByAcquisitionsMatrix,
-    get_experiment_name,
-)
+from ..base.quantum_job import MeasRet, QDataset, get_experiment_name
 from ..base.quantum_job.dtos import NativeQobjConfig
-from ..base.quantum_job.typing import QExperimentResult
+from ..base.quantum_job.typing import QExperimentResult, RepetitionsByAcquisitionsMatrix
 from ..utils.logger import ExperimentLogger
 from .backends.base import QiskitPulseBackend
 from .backends.one_qubit import QiskitPulse1Q

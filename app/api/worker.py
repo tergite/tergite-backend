@@ -13,6 +13,7 @@
 """A worker file that is preloaded with the heavy libraries etc"""
 import logging
 import sys
+from importlib import import_module
 
 from rq import Queue, Worker
 from rq.job import Job
@@ -72,11 +73,13 @@ def preload_worker_globals(should_load_executor: bool) -> None:
     from app.libs.queues.dtos import get_queue_context
     from app.services.booking.store import get_bookings_sql_engine
     from app.services.external.mss.service import get_mss_client
-    from app.services.scheduler import tasks  # noqa: F401, so jobs don't import it
     from app.services.scheduler.queues import get_queue_pool
     from app.services.scheduler.store import get_jobs_store
     from app.services.scheduler.utils import get_executor_and_options
     from app.utils.redis import get_redis_connection
+
+    # so that the jobs need not import it
+    import_module("app.services.scheduler.tasks")
 
     redis_connection = get_redis_connection()
     mss_client = get_mss_client()

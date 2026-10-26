@@ -708,7 +708,7 @@ class DeviceCalibration(Schema, CalibrationValueSet):
         """
         calib_config = conf.calibration_config
         if calib_config is None:
-            raise ValueError(f"calibration_config is None on backend config")
+            raise ValueError("calibration_config is None on backend config")
 
         return cls(
             name=conf.general_config.name,

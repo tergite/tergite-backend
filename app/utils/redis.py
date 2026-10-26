@@ -29,7 +29,6 @@ def get_redis_connection(url: RedisDsn | str | None = None) -> redis.Redis:
     Returns:
         the redis connection
     """
-    global _REDIS_CONNECTIONS
     url = f"{url or settings.RQ_REDIS_URL}"
 
     connection = _REDIS_CONNECTIONS.get(url)
@@ -50,7 +49,6 @@ def clear_redis_connections(ignore_errors: bool = False) -> None:
     Args:
         ignore_errors: If True, ignore any errors raised by redis connections
     """
-    global _REDIS_CONNECTIONS
     for connection in _REDIS_CONNECTIONS.values():
         try:
             connection.close()

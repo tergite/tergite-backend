@@ -54,13 +54,7 @@ from .dtos import (
     QuantumJob,
     SweepParamMetadata,
 )
-from .typing import (
-    QChannel,
-    QDataset,
-    QExperimentName,
-    QJobResult,
-    RepetitionsByAcquisitionsMatrix,
-)
+from .typing import QDataset, QJobResult
 
 T = TypeVar("T")
 

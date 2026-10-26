@@ -36,7 +36,6 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from fastapi import HTTPException, Request, Response, UploadFile
 from fastapi.exception_handlers import http_exception_handler
 from pydantic import BaseModel, ConfigDict, Field
-from redis import Redis
 
 import settings
 

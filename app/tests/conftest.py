@@ -28,11 +28,11 @@ setup_test_env()
 
 
 import importlib
+import importlib.util
 import logging
 import os
 import shutil
 import sys
-from contextlib import suppress
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import (
@@ -67,18 +67,8 @@ from .utils.fixtures import load_fixture
 from .utils.mss import mock_sync_connect
 from .utils.rq import get_rq_pool_worker
 
-HAS_QISKIT_DYNAMICS = False
-HAS_QUANTIFY = False
-
-with suppress(ImportError):
-    import qiskit_dynamics
-
-    HAS_QISKIT_DYNAMICS = True
-
-with suppress(ImportError):
-    import quantify_scheduler
-
-    HAS_QUANTIFY = True
+HAS_QISKIT_DYNAMICS = importlib.util.find_spec("qiskit_dynamics") is not None
+HAS_QUANTIFY = importlib.util.find_spec("quantify_scheduler") is not None
 
 _redis_connection = redis.Redis.from_url(TEST_RQ_REDIS_URL)
 

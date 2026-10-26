@@ -420,7 +420,7 @@ def recalibrate(
         results = executor.recalibrate()
 
         if isinstance(results, DeviceCalibration):
-            logging.info(f"Updating MSS...")
+            logging.info("Updating MSS...")
             mss_client = get_mss_client()
             response = mss_client.send_event(
                 DeviceEvent(

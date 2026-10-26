@@ -34,7 +34,6 @@ from app.libs.quantum_executor.base.experiment import (
     NativeExperiment,
     copy_expt_header_with,
 )
-from app.libs.quantum_executor.quantify.channel import QuantifyChannel
 
 from ..base.quantum_job.dtos import NativeQobjConfig
 from .channel import QuantifyChannelRegistry

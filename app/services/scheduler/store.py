@@ -41,7 +41,6 @@ def get_jobs_store(
     Returns:
         the RedisCollection containing the jobs
     """
-    global _JOB_STORES
     url = f"{url or settings.RQ_REDIS_URL}"
     job_store = _JOB_STORES.get(url)
     if job_store is None:
@@ -61,7 +60,6 @@ def get_jobs_store(
 
 def clear_jobs_stores_registry() -> None:
     """Clears the jobs stores registry"""
-    global _JOB_STORES
     _JOB_STORES.clear()
 
 

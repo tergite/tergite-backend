@@ -123,7 +123,6 @@ def test_xarray_to_list_unexpected_ndim():
     # more than 2 dimensions, so should raise ValueError
     bad_arr = np.zeros((1, 1, 1), dtype=np.complex128)
     raw_results = {"exp~0": _make_iq_dataset({0: bad_arr})}
-    qobj = _dummy_qobj(qubits=[0], slots=[0])
 
     with pytest.raises(ValueError, match="unexpected ndarray shape"):
         xarray_to_list(_stub_job(raw_results))

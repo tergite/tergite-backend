@@ -380,7 +380,7 @@ def test_admin_remove_user(
             client, current_user_id=other_user_id, user_id=curr_user_id, is_admin=True
         )
         assert response.status_code == 200
-        assert response.json() == {"status": "success", "detail": f"User deleted"}
+        assert response.json() == {"status": "success", "detail": "User deleted"}
 
         response = _view_own_profile(client, user_id=curr_user_id)
         assert response.status_code == 404
@@ -1907,7 +1907,7 @@ def test_unauthenticated_view_jobs(
             client, mocker, data={"user_id": user_id, "job_id": job_ids[0]}
         )
         headers = _get_headers(token)
-        response = client.get(f"/jobs", headers=headers)
+        response = client.get("/jobs", headers=headers)
         assert response.status_code == 401
         assert response.json() == {"detail": "user not authenticated"}
 
@@ -1997,7 +1997,6 @@ def test_cancel_job_directly(
         )
         job_info = job_metadata_list[0]
         job_id = job_info["job_id"]
-        user_id = job_info["user_id"]
 
         # submit many jobs from many users
         with open(job_info["file_path"], "rb") as file:

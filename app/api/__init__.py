@@ -77,7 +77,6 @@ from ..utils.strings import uuid_str
 from .dependencies import (
     MSSAuthDetails,
     get_backend_name,
-    get_bearer_token,
     get_booking_db,
     get_mss_token_claims_dep,
     get_queue_context_if_online,
