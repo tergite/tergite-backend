@@ -2482,6 +2482,8 @@ def test_api_workers_start_a_device_one_at_a_time(quantify_rest_client, mocker):
             pass
 
     mocker.patch.object(dependencies, "_start_device", side_effect=start_device)
+    # threads share the Redis connections that separate worker processes would not
+    mocker.patch.object(dependencies, "clear_redis_connections")
     workers = [
         threading.Thread(target=asyncio.run, args=(start_and_stop(),)) for _ in range(3)
     ]
