@@ -88,6 +88,8 @@ tests:
 package linux:
   <<: *package
   image: ubuntu:24.04
+  tags:
+    - deploy
   script:
     - export VERSION=${CI_COMMIT_TAG#v}
     - pkg/build-linux.sh
