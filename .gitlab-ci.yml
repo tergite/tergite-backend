@@ -87,9 +87,8 @@ tests:
 # its glibc 2.39 is the oldest the binaries then run on: Debian 13 and Ubuntu 24.04 onwards
 package linux:
   <<: *package
-  image: ubuntu:24.04
-  tags:
-    - deploy
+  image: tergite/tergite-nuitka:v2026.10.0
+  tags: [nuitka]
   script:
     - export VERSION=${CI_COMMIT_TAG#v}
     - pkg/build-linux.sh
