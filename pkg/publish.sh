@@ -16,7 +16,8 @@ registry="$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/tergite-backen
 mkdir -p published
 for file in "$@"; do
 	echo "-> $(basename "$file")"
-	curl --fail --silent --show-error --header "JOB-TOKEN: $CI_JOB_TOKEN" \
-		--output /dev/null --upload-file "$file" "$registry/$(basename "$file")"
+	# the body says which limit refused it: an nginx page or GitLab's own message
+	curl --fail-with-body --silent --show-error --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+		--write-out '\n' --upload-file "$file" "$registry/$(basename "$file")"
 	basename "$file" >>"published/$CI_JOB_ID"
 done
