@@ -99,6 +99,8 @@ package linux:
     - pkg/render.sh "$BINARY" >/dev/null
     - mkdir -p dist
     - ARCH=amd64 nfpm package -f "build/pkg-$BINARY/nfpm.yaml" -p deb -t dist/
+    # build-linux.sh skips apt where the image has its tools, so the deb's dependencies need fresh lists
+    - apt-get update -qq
     - DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ./dist/*.deb
     - pkg/smoke-test.sh "$BINARY"
     - pkg/publish.sh dist/*.deb

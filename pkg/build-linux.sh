@@ -7,9 +7,21 @@
 
 set -e
 
-apt-get update -qq
-apt-get install -y -qq gcc g++ patchelf ccache curl ca-certificates >/dev/null
-curl -LsSf https://astral.sh/uv/install.sh | sh
+is_missing() {
+	for tool in "$@"; do
+		command -v "$tool" >/dev/null 2>&1 || return 0
+	done
+	return 1
+}
+
+# apt's packages and uv only where missing, as tergite/tergite-nuitka has them
+if is_missing gcc g++ patchelf ccache curl; then
+	apt-get update -qq
+	apt-get install -y -qq gcc g++ patchelf ccache curl ca-certificates >/dev/null
+fi
+if is_missing uv; then
+	curl -LsSf https://astral.sh/uv/install.sh | sh
+fi
 export PATH="$HOME/.local/bin:$PATH"
 
 pkg/build.sh
