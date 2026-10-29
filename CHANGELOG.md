@@ -42,6 +42,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 - Fixed scheduled jobs never running: `bcc start` runs its workers with RQ's scheduler, so a booking's start and
   end jobs and recalibration's start and repeats now run, which no release's workers did
+- Fixed replayed MSS requests being accepted while the first was still running, or after it crashed: the nonce is
+  now claimed before the route runs, instead of recorded after it
 
 ### Removed
 

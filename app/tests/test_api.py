@@ -225,6 +225,22 @@ def test_root_invalid_headers(client, headers):
 
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_replayed_mss_headers_of_a_failed_request(client, mocker):
+    """MSS headers are refused a second time even when the first request never finished"""
+    mocker.patch(
+        "app.services.booking.get_user_profile", side_effect=Exception("crashed")
+    )
+    with client as client:
+        headers = create_mss_headers(user_id=f"{uuid4()}")
+        with pytest.raises(Exception, match="crashed"):
+            client.get("/me", headers=headers)
+
+        response = client.get("/me", headers=headers)
+        assert response.status_code == 401
+        assert response.json() == {"detail": "user not authenticated"}
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
 def test_create_user(client):
     """POST to '/users' should create the user via MSS"""
     with client as client:

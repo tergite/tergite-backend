@@ -13,7 +13,7 @@
 import json
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from cryptography.exceptions import InvalidSignature
@@ -45,7 +45,7 @@ from ..services.scheduler import (
 from ..services.scheduler.queues import clear_queue_pool, get_queue_pool
 from ..services.scheduler.store import clear_jobs_stores_registry
 from ..services.scheduler.utils import clear_quantum_executor, get_executor_options
-from ..utils.api import get_request_logs_store, verify_mss_signature
+from ..utils.api import verify_mss_signature
 from ..utils.datetime import get_utc_now
 from ..utils.exc import (
     ConflictError,
@@ -261,8 +261,14 @@ def get_verified_mss_user_id(request: Request) -> str:
         elif time_difference < 0:
             raise ValueError(f"timestamp {timestamp} is in the future")
 
-        requests_store = get_request_logs_store()
-        if requests_store.exists(nonce):
+        # claimed before the route runs, so it cannot be replayed while in flight or after a crash
+        is_nonce_new = get_redis_connection().set(
+            f"{settings.DEFAULT_PREFIX}:mss-nonce:{nonce}",
+            timestamp,
+            nx=True,
+            px=timedelta(seconds=settings.MSS_NONCE_TTL),
+        )
+        if not is_nonce_new:
             raise ValueError(f"duplicate request nonce: '{nonce}'")
 
         return user_id
