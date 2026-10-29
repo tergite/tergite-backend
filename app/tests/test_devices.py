@@ -8,9 +8,9 @@ from uuid import uuid4
 
 import pytest
 
-from app.tests.conftest import USERS
 from app.tests.utils.api import create_mss_headers, get_test_client
 from app.tests.utils.devices import load_test_devices
+from app.tests.utils.params import USERS
 
 
 def test_load_devices_serves_each_device_settings(tmp_path, monkeypatch):

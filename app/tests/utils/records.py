@@ -12,10 +12,22 @@
 # that they have been altered from the originals.
 #
 """Utility functions for records"""
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Sequence
+from datetime import datetime, timezone
+from typing import (
+    Any,
+    Dict,
+    List,
+    Optional,
+    Sequence,
+    TypedDict,
+    TypeVar,
+)
+
+from black.nodes import Generic
 
 from app.tests.utils.datetime import get_timestamp_str
+
+T = TypeVar("T")
 
 
 def order_by(
@@ -32,37 +44,6 @@ def order_by(
         the ordered list of records
     """
     return sorted(data, key=lambda x: x[field], reverse=is_descending)
-
-
-def with_incremental_timestamps(
-    data: List[dict],
-    fields: Sequence[str] = (
-        "created_at",
-        "updated_at",
-    ),
-) -> List[dict]:
-    """Gets data that has timestamps, each record with an earlier timestamp than the next
-
-    We update the fields passed with the corresponding timestamps
-
-    Args:
-        data: the list of dicts to attach timestamps to
-        fields: the fields that should have the timestamps
-
-    Returns:
-        the data with timestamps
-    """
-    now = datetime.now(timezone.utc)
-    return [
-        {
-            **item,
-            **{
-                field: get_timestamp_str(now + timedelta(minutes=idx))
-                for field in fields
-            },
-        }
-        for idx, item in enumerate(data)
-    ]
 
 
 def with_current_timestamps(
@@ -88,3 +69,81 @@ def with_current_timestamps(
         }
         for idx, item in enumerate(data)
     ]
+
+
+def paginate(
+    data: List[T], skip: int = 0, limit: Optional[int] = None
+) -> "PaginatedList[T]":
+    """Paginates the data basing on the skip and the limit params
+
+    Args:
+        skip: the number of records to skip
+        limit: the maximum number of records to return
+
+    Returns:
+        list of the data sliced according to the pagination info
+    """
+    slice_limit = limit
+    if isinstance(slice_limit, int):
+        slice_limit += skip
+    return {"skip": skip, "limit": limit, "data": data[skip:slice_limit]}
+
+
+def drop_microseconds(timestamp: datetime) -> datetime:
+    """Drops the microseconds on the timestamp
+
+    Args:
+        timestamp: the datetime which may or may not have microseconds
+
+    Returns:
+        the datetime but without microseconds
+    """
+    return timestamp.replace(microsecond=0)
+
+
+def remove_dates(dynamic_properties: Dict[str, Any]) -> Dict[str, Any]:
+    """A utility to do away with the dates in the dynamic properties
+
+    Args:
+        dynamic_properties: the properties to change
+
+    Returns:
+        the dynamic properties with "date" and "last_calibrated" replaced with "NOW-PLACEHOLDER"
+    """
+    now_placeholder = "NOW-PLACEHOLDER"
+    qubits = dynamic_properties.get("qubits", [])
+    couplers = dynamic_properties.get("couplers", [])
+    resonators = dynamic_properties.get("resonators", [])
+    return {
+        **dynamic_properties,
+        "last_calibrated": now_placeholder,
+        "qubits": [
+            {
+                k: v if not isinstance(v, dict) else {**v, "date": now_placeholder}
+                for k, v in qubit_conf.items()
+            }
+            for qubit_conf in qubits
+        ],
+        "couplers": [
+            {
+                k: v if not isinstance(v, dict) else {**v, "date": now_placeholder}
+                for k, v in coupler_conf.items()
+            }
+            for coupler_conf in couplers
+        ],
+        "resonators": [
+            {
+                k: v if not isinstance(v, dict) else {**v, "date": now_placeholder}
+                for k, v in resonator_conf.items()
+            }
+            for resonator_conf in resonators
+        ],
+    }
+
+
+class PaginatedList(TypedDict, Generic[T]):
+    """The type for paginated responses"""
+
+    skip: int
+    limit: Optional[int]
+    data: List[T]

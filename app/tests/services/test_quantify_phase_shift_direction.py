@@ -20,12 +20,12 @@ import pytest
 
 from app.libs.device_parameters.dtos import BackendConfig
 from app.libs.qiskit.qobj import PulseQobj
-from app.tests.conftest import HAS_QUANTIFY
 from app.tests.utils.env import (
     TEST_BACKEND_SETTINGS_FILE,
     TEST_QUANTIFY_CONFIG_FILE,
     TEST_QUANTIFY_SEED_FILE,
 )
+from app.tests.utils.params import HAS_QUANTIFY
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")

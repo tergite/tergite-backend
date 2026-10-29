@@ -136,6 +136,7 @@ skip_gitignore = true
 profile = "black"
 
 [tool.pytest.ini_options]
+testpaths = ["app/tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 log_level = "ERROR"

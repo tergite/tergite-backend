@@ -18,8 +18,8 @@ import pandas as pd
 import pytest
 
 from app.libs.qiskit.qobj import PulseQobj
-from app.tests.conftest import HAS_QUANTIFY
 from app.tests.utils.fixtures import get_fixture_path, load_fixture
+from app.tests.utils.params import HAS_QUANTIFY
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")

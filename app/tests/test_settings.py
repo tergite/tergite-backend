@@ -6,7 +6,6 @@ import pytest
 from pydantic import ValidationError
 from pytest_lazy_fixtures import lf as lazy_fixture
 
-from app.tests.conftest import HAS_QISKIT_DYNAMICS, HAS_QUANTIFY
 from app.tests.utils.env import (
     TEST_BACKEND_SETTINGS_FILE,
     TEST_BROKEN_QUANTIFY_CONFIG_FILE,
@@ -20,6 +19,7 @@ from app.tests.utils.env import (
 )
 from app.tests.utils.fixtures import get_fixture_path
 from app.tests.utils.modules import remove_modules
+from app.tests.utils.params import HAS_QISKIT_DYNAMICS, HAS_QUANTIFY
 
 _QUANTIFY_CONFIG_FILE = get_fixture_path("generic-quantify-config.json")
 _QUANTIFY_METADATA_FILE = get_fixture_path("generic-quantify-config.yml")

@@ -15,16 +15,25 @@
 import base64
 import json
 import logging
-import re
 import threading
 from collections.abc import Iterable
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import (
+    Any,
+    Dict,
+    Generator,
+    List,
+    Optional,
+    Set,
+    Union,
+)
 
+import pytest
 import websockets
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
+from pytest_mock import MockerFixture
 from websockets import ClientProtocol, HeadersLike
 from websockets.frames import CloseCode
 from websockets.http11 import USER_AGENT
@@ -42,7 +51,6 @@ _MESSAGE_TYPES = (
     "switched_off",
 )
 
-_WS_PATH_PATTERN = re.compile(r"/devices/ws/(?P<name>[a-zA-Z0-9_-]+)")
 type Data = Union[bytes, str]
 
 _default_protocol = ClientProtocol(uri=parse_uri("ws://localhost:8000"))
@@ -192,39 +200,18 @@ class MockWebsocket(ClientConnection):
         self._connected = False
 
 
-async def mock_mss_websocket_handler(websocket: websockets.ServerConnection):
-    """A mock handler for the websockets at MSS
+@pytest.fixture
+def mock_mss(mocker) -> MockMss:
+    """The MSS that the BCC's websocket reaches"""
+    mss = MockMss()
+    mocker.patch("app.services.external.mss.service.connect", side_effect=mss.connect)
+    return mss
 
-    Args:
-        websocket: The websocket ServerConnection object
-    """
-    if not _WS_PATH_PATTERN.match(websocket.request.path):
-        await websocket.close(code=1000, reason="Invalid Path")
-        return
 
-    headers = websocket.request.headers
-    try:
-        _verify_headers(headers)
-    except websockets.WebSocketException as exp:
-        await websocket.close(code=1008, reason=f"{exp}")
-        return
-
-    try:
-        payload = await websocket.recv()
-    except websockets.ConnectionClosed:
-        return
-
-    try:
-        payload_json = json.loads(payload)
-        if payload_json["name"] not in _MESSAGE_TYPES:
-            raise ValueError(f"'{payload_json['name']}' event is not permitted")
-
-        response_json = {"status": "success", "data": payload_json["data"]}
-    except (json.JSONDecodeError, ValueError) as exp:
-        logging.error(exp)
-        response_json = {"status": "error", "detail": "unexpected server error"}
-
-    await websocket.send(json.dumps(response_json))
+@pytest.fixture
+def patched_mss_websockets(mocker, mock_mss) -> Generator[MockerFixture, Any, None]:
+    """Patch the websocket used to connect to MSS"""
+    yield mocker
 
 
 def _verify_headers(headers):

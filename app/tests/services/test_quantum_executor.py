@@ -16,8 +16,8 @@ import socket
 import pytest
 
 from ...libs.device_parameters.dtos import BackendConfig
-from ..conftest import HAS_QUANTIFY
 from ..utils.fixtures import get_fixture_path
+from ..utils.params import HAS_QUANTIFY
 
 _REAL_HARDWARE_QUANTIFY_CONFIG_FILE = get_fixture_path("generic-quantify-config.json")
 _REAL_HARDWARE_QUANTIFY_METADATA_FILE = get_fixture_path("real-quantify-config.yml")

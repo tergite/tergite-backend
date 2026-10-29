@@ -13,7 +13,14 @@
 """Utilities for the api"""
 import base64
 import time
-from typing import Dict, List, Optional
+from typing import (
+    Any,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    TypedDict,
+)
 from uuid import uuid4
 
 import httpx
@@ -22,6 +29,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from httpx import Response
 
 from app.tests.utils.env import TEST_MSS_PRIVATE_KEY_PATH
 
@@ -175,6 +183,53 @@ def create_mss_signature(message: str) -> str:
         hashes.SHA256(),
     )
     return base64.b64encode(signature).decode()
+
+
+def get_bearer_headers(token: str) -> Dict[str, Any]:
+    """Gets the headers corresponding to the given token
+
+    Args:
+        token: the token of the user
+
+    Returns:
+        the dict of headers
+    """
+    return {"Authorization": f"Bearer {token}"}
+
+
+def get_token(client: "TestClient", data: "LoginDetails") -> Tuple[str, "Response"]:
+    """Mimics logging in via MSS and returns the user's JWT token and the httpx.Response
+
+    Args:
+        client: the fastapi TestClient for testing the app
+        data: the info for signing in
+
+    Returns:
+        the tuple of the JWT of the user and the httpx.Response
+    """
+    headers = create_mss_headers(user_id=data["user_id"])
+    response = client.post("/token", json=data, headers=headers)
+    token = decrypt_access_token(response.json()["access_token"])
+    return token, response
+
+
+class LoginDetails(TypedDict):
+    """Details used to log in"""
+
+    user_id: str
+    job_id: str
+
+
+def get_status_codes_as_mss_admin(
+    client: "TestClient", routes: List[Tuple[str, str]]
+) -> Dict[str, int]:
+    """Gets the status code of each route, as "<method> <path>", requested as an MSS admin"""
+    return {
+        f"{method} {path}": client.request(
+            method, path, headers=create_mss_headers(is_admin=True)
+        ).status_code
+        for method, path in routes
+    }
 
 
 def _get_mss_private_key() -> RSAPrivateKey:

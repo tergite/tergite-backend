@@ -10,55 +10,20 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 
-"""Utility functions for redis when testing"""
-import json
-from typing import TYPE_CHECKING, Any, Dict, List, Tuple
+"""Fixtures of the Redis the tests run on"""
+from typing import Any, Generator
 
-from app.tests.utils.datetime import get_current_timestamp_str
+import pytest
+import redis
+from redis.client import Redis
 
-if TYPE_CHECKING:
-    import redis
+from app.tests.utils.env import TEST_RQ_REDIS_URL
 
-
-def insert_in_hash(
-    client: "redis.Redis",
-    hash_name: str,
-    data: List[Dict[str, Any]],
-    id_fields: Tuple[str],
-):
-    """Inserts the records into the redis hash map
-
-    Args:
-        client: the redis client
-        hash_name: the name of the hash map to insert them into
-        data: the list of records to insert
-        id_fields: the name of the fields that together are used to uniquely identify a record
-    """
-    mapping = {
-        "@@@".join([item[k] for k in id_fields]): json.dumps(item) for item in data
-    }
-    client.hset(name=hash_name, mapping=mapping)
+_redis_connection = redis.Redis.from_url(TEST_RQ_REDIS_URL)
 
 
-def register_app_token_job_id(
-    client: "redis.Redis", hash_name: str, app_token: str, job_id: str
-):
-    """Registers the given app token and job id
-
-    Args:
-        client: the redis client
-        hash_name: the name of the hash map to insert them into
-        app_token: the app token to register
-        job_id: the job_id to register
-    """
-    redis_key = f"{job_id}@@@{app_token}"
-    timestamp = get_current_timestamp_str()
-    auth_log = {
-        "job_id": job_id,
-        "app_token": app_token,
-        "status": "pending",
-        "created_at": timestamp,
-        "updated_at": timestamp,
-    }
-
-    client.hset(hash_name, redis_key, json.dumps(auth_log))
+@pytest.fixture
+def redis_client() -> Generator[Redis, Any, None]:
+    """The test Redis database, emptied after the test"""
+    yield _redis_connection
+    _redis_connection.flushdb()

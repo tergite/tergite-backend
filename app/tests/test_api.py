@@ -13,26 +13,13 @@
 #
 """Tests for the scheduler that handles queueing of user's jobs"""
 import asyncio
-import copy
 import json
 import math
 import os
 import threading
 import time
-from contextlib import suppress
 from datetime import datetime, timedelta, timezone
 from itertools import zip_longest
-from pathlib import Path
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    TypedDict,
-    TypeVar,
-)
 from unittest.mock import Mock
 from uuid import uuid4
 
@@ -40,13 +27,10 @@ import jwt
 import pytest
 import time_machine
 import toml
-from black.nodes import Generic
 from pydantic import ValidationError
 from pytest_lazy_fixtures import lf as lazy_fixture
 from pytest_mock import MockerFixture
 from redis import Redis
-from rq import Queue as RqQueue
-from rq import SimpleWorker
 from rq.job import Job as RqJob
 from rq.timeouts import JobTimeoutException
 from starlette.requests import Request
@@ -57,26 +41,22 @@ from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps, get_queue_co
 from app.services.booking.models import Booking
 from app.services.external.mss.service import MssClient
 from app.services.scheduler.utils import get_rq_job_id
-from app.tests.conftest import (
-    CLIENT_AND_RQ_WORKER_TUPLES,
-    FASTAPI_CLIENTS,
-    HAS_QISKIT_DYNAMICS,
-    HAS_QUANTIFY,
-    INVALID_CREATE_BOOKINGS_PARAMS,
-    JOBS,
-    PAGINATION,
-    USERS,
-    VALID_BOOKINGS,
-    VALID_CREATE_BOOKINGS_PARAMS,
-    BasicBookingInfo,
-    PaginationInfo,
-)
 from app.tests.utils.api import (
     create_invalid_mss_headers,
     create_mss_headers,
     create_mss_signature,
     decrypt_access_token,
+    get_bearer_headers,
+    get_status_codes_as_mss_admin,
     get_test_client,
+    get_token,
+)
+from app.tests.utils.bookings import (
+    cancel_booking,
+    create_booking,
+    post_booking,
+    to_booking_payload,
+    view_booking_list,
 )
 from app.tests.utils.datetime import get_timestamp_str
 from app.tests.utils.env import (
@@ -89,10 +69,42 @@ from app.tests.utils.env import (
     TEST_MAX_TIME_SLOT_LENGTH,
     TEST_MIN_TIME_SLOT_LENGTH,
     TEST_MSS_NONCE_TTL,
-    TEST_RQ_MAX_QUEUE_WAIT_TIME,
 )
 from app.tests.utils.fixtures import load_fixture
-from app.tests.utils.records import order_by
+from app.tests.utils.jobs import (
+    cancel_job_via_mss,
+    get_job_submission_metadata,
+    get_jobs_in_redis,
+    get_jobs_sent_to_mss,
+    get_raw_jobs,
+    is_job_result_matching,
+    save_job_file,
+    submit_jobs,
+    view_job,
+)
+from app.tests.utils.params import (
+    CLIENT_AND_RQ_WORKER_TUPLES,
+    FASTAPI_CLIENTS,
+    HAS_QISKIT_DYNAMICS,
+    HAS_QUANTIFY,
+    INVALID_CREATE_BOOKINGS_PARAMS,
+    PAGINATION,
+    USERS,
+    VALID_BOOKINGS,
+    VALID_CREATE_BOOKINGS_PARAMS,
+    BasicBookingInfo,
+    PaginationInfo,
+)
+from app.tests.utils.records import drop_microseconds, order_by, paginate, remove_dates
+from app.tests.utils.rq import get_queue_by_name, wait_on_rq_worker
+from app.tests.utils.users import (
+    create_many_users,
+    create_user,
+    delete_own_profile,
+    remove_user,
+    view_own_profile,
+    view_user_list,
+)
 from app.utils.api import get_request_logs_store
 from app.utils.exc import (
     BookingAlreadyActiveError,
@@ -112,12 +124,6 @@ from app.utils.exc import (
     UnauthorizedError,
 )
 from app.utils.strings import validate_uuid4_str
-
-if TYPE_CHECKING:
-    from httpx import Response
-    from starlette.testclient import TestClient
-
-T = TypeVar("T")
 
 _SIM_1Q_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload_simulator_1q.json")
 _SIM_2Q_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload_simulator_2q.json")
@@ -430,7 +436,7 @@ def test_mss_timestamp_out_of_range_is_refused(client, timestamp):
 def test_token_for_another_user_is_refused(client):
     """POST '/token' with a body user_id other than MSS's x-mss-user-id answers 403"""
     with client as client:
-        user_id, _ = _create_user(client, user=USERS[0])
+        user_id, _ = create_user(client, user=USERS[0])
         response = client.post(
             "/token",
             json={"user_id": f"{uuid4()}", "job_id": f"{uuid4()}"},
@@ -444,9 +450,9 @@ def test_token_for_another_user_is_refused(client):
 def test_token_creates_an_unknown_user(client):
     with client as client:
         user_id = f"{uuid4()}"
-        _get_token(client, data={"user_id": user_id, "job_id": f"{uuid4()}"})
+        get_token(client, data={"user_id": user_id, "job_id": f"{uuid4()}"})
 
-        response = _view_own_profile(client, user_id=user_id)
+        response = view_own_profile(client, user_id=user_id)
 
         assert response.status_code == 200
 
@@ -471,11 +477,11 @@ def test_token_is_the_job_jwt_encrypted_for_mss(client):
 def test_job_token_expires_after_jwt_ttl(client):
     with client as client:
         job_id = f"{uuid4()}"
-        token, _ = _get_token(client, data={"user_id": f"{uuid4()}", "job_id": job_id})
+        token, _ = get_token(client, data={"user_id": f"{uuid4()}", "job_id": job_id})
 
         with time_machine.travel(timedelta(seconds=TEST_JWT_TTL + 1)):
             response = client.post(
-                f"/jobs/{job_id}/cancel", json={}, headers=_get_headers(token)
+                f"/jobs/{job_id}/cancel", json={}, headers=get_bearer_headers(token)
             )
 
         assert response.status_code == 401
@@ -484,12 +490,12 @@ def test_job_token_expires_after_jwt_ttl(client):
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
 def test_job_token_for_another_job_is_refused(client):
     with client as client:
-        token, _ = _get_token(
+        token, _ = get_token(
             client, data={"user_id": f"{uuid4()}", "job_id": f"{uuid4()}"}
         )
 
         response = client.post(
-            f"/jobs/{uuid4()}/cancel", json={}, headers=_get_headers(token)
+            f"/jobs/{uuid4()}/cancel", json={}, headers=get_bearer_headers(token)
         )
 
         assert response.status_code == 403
@@ -501,10 +507,8 @@ def test_offline_device_refuses_the_routes_that_change_or_list_its_work(client):
     with client as client:
         client.post("/switch/off", headers=create_mss_headers(is_admin=True))
 
-        refused_codes = _get_status_codes_as_mss_admin(client, _OFFLINE_REFUSED_ROUTES)
-        answered_codes = _get_status_codes_as_mss_admin(
-            client, _OFFLINE_ANSWERED_ROUTES
-        )
+        refused_codes = get_status_codes_as_mss_admin(client, _OFFLINE_REFUSED_ROUTES)
+        answered_codes = get_status_codes_as_mss_admin(client, _OFFLINE_ANSWERED_ROUTES)
 
         assert refused_codes == {route: 503 for route in refused_codes}
         assert [route for route, code in answered_codes.items() if code == 503] == []
@@ -588,7 +592,7 @@ def test_create_user(client):
     """POST to '/users' should create the user via MSS"""
     with client as client:
         user = USERS[1]
-        user_id, response = _create_user(client, user=user)
+        user_id, response = create_user(client, user=user)
         expected = {
             "id": user_id,
             "name": user["name"],
@@ -604,7 +608,7 @@ def test_create_user(client):
 def test_create_existing_user(client):
     """POST to '/users' with the id of a user that exists answers 409"""
     with client as client:
-        user_id, _ = _create_user(client, user=USERS[1])
+        user_id, _ = create_user(client, user=USERS[1])
         response = client.post(
             "/users",
             json={**USERS[1], "id": user_id},
@@ -619,9 +623,9 @@ def test_view_profile(client):
     """GET '/me' should show the user profile in the REST API"""
     with client as client:
         user = USERS[0]
-        user_id, _ = _create_user(client, user=user)
+        user_id, _ = create_user(client, user=user)
 
-        response = _view_own_profile(client, user_id=user_id)
+        response = view_own_profile(client, user_id=user_id)
         profile = response.json()
         expected = {
             "id": user_id,
@@ -638,7 +642,7 @@ def test_view_profile(client):
 def test_admin_view_users(client, pagination: "PaginationInfo"):
     """GET '/users' should show to an admin the paginated list of user profiles via MSS"""
     with client as client:
-        users = _create_many_users(client, raw_users=USERS)
+        users = create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
 
@@ -646,19 +650,19 @@ def test_admin_view_users(client, pagination: "PaginationInfo"):
         limit = pagination["limit"]
 
         # non admins are not allowed
-        response = _view_user_list(
+        response = view_user_list(
             client, user_id=user_id, skip=skip, limit=limit, is_admin=False
         )
         assert response.status_code == 403
         assert response.json() == {"detail": "Forbidden"}
 
         # admins are allowed
-        response = _view_user_list(
+        response = view_user_list(
             client, user_id=user_id, skip=skip, limit=limit, is_admin=True
         )
         actual_output = response.json()
 
-        expected = _paginate(users, skip=skip, limit=limit)
+        expected = paginate(users, skip=skip, limit=limit)
 
         assert response.status_code == 200
         assert actual_output == expected
@@ -670,7 +674,7 @@ def test_delete_profile(
 ):
     """DELETE '/me' should delete their own user profile"""
     with client as client:
-        users = _create_many_users(client, USERS[:2])
+        users = create_many_users(client, USERS[:2])
         curr_user = users[0]
         other_user = users[1]
 
@@ -679,33 +683,33 @@ def test_delete_profile(
 
         # create many bookings for this user
         for booking in VALID_BOOKINGS[:TEST_MAX_SLOTS_PER_DAY]:
-            _create_booking(client, user_id=curr_user_id, booking=booking)
+            create_booking(client, user_id=curr_user_id, booking=booking)
 
         # create a booking for other user
-        _create_booking(
+        create_booking(
             client, user_id=other_user_id, booking={"starts_in": 8, "duration": 2}
         )
 
         # wait for the first booking to start
-        raw_jobs = _get_raw_jobs(job, durations=[0.23, 0.1, 0.23])
-        job_metadata_list = _get_job_submission_metadata(
+        raw_jobs = get_raw_jobs(job, durations=[0.23, 0.1, 0.23])
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
-        _submit_multiple_jobs_v2(client, data=job_metadata_list)
+        submit_jobs(client, data=job_metadata_list)
 
         # This should also cancel any bookings and any jobs belonging to user
-        response = _delete_own_profile(client, user_id=curr_user_id)
+        response = delete_own_profile(client, user_id=curr_user_id)
         assert response.status_code == 200
         assert response.json() == {"status": "success", "detail": "Profile deleted"}
 
-        response = _view_own_profile(client, user_id=curr_user_id)
+        response = view_own_profile(client, user_id=curr_user_id)
         assert response.status_code == 404
         assert response.json() == {"detail": "user not found"}
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
+        wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
-        jobs_in_redis = _get_jobs_in_redis(redis_conn)
+        jobs_in_redis = get_jobs_in_redis(redis_conn)
 
         deleted_user_jobs = [
             job for job in jobs_in_redis if job.user_id == curr_user_id
@@ -725,19 +729,19 @@ def test_delete_profile_cancels_executing_jobs(
     client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     with client as client:
-        users = _create_many_users(client, USERS[:1])
-        raw_jobs = _get_raw_jobs(job, durations=[0.2])
-        job_info = _get_job_submission_metadata(
+        users = create_many_users(client, USERS[:1])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_info = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )[0]
-        _submit_multiple_jobs_v2(client, data=[job_info])
+        submit_jobs(client, data=[job_info])
         # preprocessed and executed, waiting for postprocessing
         worker.work(burst=True, max_jobs=2)
-        assert _get_jobs_in_redis(redis_conn)[0].status == JobStatus.EXECUTING
+        assert get_jobs_in_redis(redis_conn)[0].status == JobStatus.EXECUTING
 
-        _delete_own_profile(client, user_id=job_info["user_id"])
+        delete_own_profile(client, user_id=job_info["user_id"])
 
-        assert _get_jobs_in_redis(redis_conn)[0].status == JobStatus.CANCELLED
+        assert get_jobs_in_redis(redis_conn)[0].status == JobStatus.CANCELLED
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
@@ -746,25 +750,25 @@ def test_delete_profile_during_booking_releases_the_waitlist(
 ):
     """Other users' jobs waiting on a booking run once its owner is deleted"""
     with client as client:
-        [booker, other_user] = _create_many_users(client, USERS[:2])
-        _create_booking(
+        [booker, other_user] = create_many_users(client, USERS[:2])
+        create_booking(
             client, user_id=booker["id"], booking={"duration": 60, "starts_in": 0}
         )
-        raw_jobs = _get_raw_jobs(job, durations=[0.2])
-        job_info = _get_job_submission_metadata(
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_info = get_job_submission_metadata(
             client,
             jobs=raw_jobs,
             users=[other_user],
             mocker=mocker,
             jobs_folder=jobs_folder,
         )[0]
-        _submit_multiple_jobs_v2(client, data=[job_info])
+        submit_jobs(client, data=[job_info])
         worker.work(burst=True)
 
-        _delete_own_profile(client, user_id=booker["id"])
+        delete_own_profile(client, user_id=booker["id"])
         worker.work(burst=True)
 
-        assert _get_jobs_in_redis(redis_conn)[0].status == JobStatus.SUCCESSFUL
+        assert get_jobs_in_redis(redis_conn)[0].status == JobStatus.SUCCESSFUL
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
@@ -773,45 +777,45 @@ def test_admin_remove_user(
 ):
     """DELETE '/users/{user_id}' by admin removes the user, and their bookings and jobs"""
     with client as client:
-        users = [curr_user, other_user] = _create_many_users(client, USERS[:2])
+        users = [curr_user, other_user] = create_many_users(client, USERS[:2])
         curr_user_id = curr_user["id"]
         other_user_id = other_user["id"]
 
         # create many bookings for this user
         for booking in VALID_BOOKINGS[:TEST_MAX_SLOTS_PER_DAY]:
-            _, result = _create_booking(client, user_id=curr_user_id, booking=booking)
+            _, result = create_booking(client, user_id=curr_user_id, booking=booking)
 
         # create a booking for other user
-        _create_booking(
+        create_booking(
             client, user_id=other_user_id, booking={"starts_in": 8, "duration": 2}
         )
 
         # wait for the first booking to start
-        raw_jobs = _get_raw_jobs(job, durations=[0.23, 0.1, 0.23])
-        job_metadata_list = _get_job_submission_metadata(
+        raw_jobs = get_raw_jobs(job, durations=[0.23, 0.1, 0.23])
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
-        _submit_multiple_jobs_v2(
+        submit_jobs(
             client,
             data=job_metadata_list,
         )
 
         # This also removes the user's pending bookings,
         # and cancels their pending jobs
-        response = _remove_user(
+        response = remove_user(
             client, current_user_id=other_user_id, user_id=curr_user_id, is_admin=True
         )
         assert response.status_code == 200
         assert response.json() == {"status": "success", "detail": "User deleted"}
 
-        response = _view_own_profile(client, user_id=curr_user_id)
+        response = view_own_profile(client, user_id=curr_user_id)
         assert response.status_code == 404
         assert response.json() == {"detail": "user not found"}
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
+        wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
-        jobs_in_redis = _get_jobs_in_redis(redis_conn)
+        jobs_in_redis = get_jobs_in_redis(redis_conn)
 
         deleted_user_jobs = [
             job for job in jobs_in_redis if job.user_id == curr_user_id
@@ -834,35 +838,35 @@ def test_non_admin_remove_user(
 ):
     """Non admin cannot remove the profile of any user"""
     with client as client:
-        users = [curr_user, other_user] = _create_many_users(client, USERS[:2])
+        users = [curr_user, other_user] = create_many_users(client, USERS[:2])
         curr_user_id = curr_user["id"]
         other_user_id = other_user["id"]
 
         # create many bookings for this user
         for booking in VALID_BOOKINGS[:TEST_MAX_SLOTS_PER_DAY]:
-            _, result = _create_booking(client, user_id=curr_user_id, booking=booking)
+            _, result = create_booking(client, user_id=curr_user_id, booking=booking)
 
-        raw_jobs = _get_raw_jobs(job, durations=[0.23, 0.4, 0.3])
-        job_metadata_list = _get_job_submission_metadata(
+        raw_jobs = get_raw_jobs(job, durations=[0.23, 0.4, 0.3])
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
-        _submit_multiple_jobs_v2(client, data=job_metadata_list)
+        submit_jobs(client, data=job_metadata_list)
 
         # Non-admins fail
         for user_id in (curr_user_id, other_user_id):
-            response = _remove_user(
+            response = remove_user(
                 client, current_user_id=user_id, user_id=curr_user_id
             )
             assert response.status_code == 403
             assert response.json() == {"detail": "Forbidden"}
 
-        response = _view_own_profile(client, user_id=curr_user_id)
+        response = view_own_profile(client, user_id=curr_user_id)
         assert response.status_code == 200
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
+        wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
-        jobs_in_redis = _get_jobs_in_redis(redis_conn)
+        jobs_in_redis = get_jobs_in_redis(redis_conn)
         assert all([v.status == JobStatus.SUCCESSFUL for v in jobs_in_redis])
 
 
@@ -870,10 +874,10 @@ def test_non_admin_remove_user(
 def test_create_booking(client, user, booking: "BasicBookingInfo"):
     """POST '/bookings' should return the new booking created by the user"""
     with client as client:
-        user_id, _ = _create_user(client, user=user)
+        user_id, _ = create_user(client, user=user)
 
         # create booking
-        actual_booking_info, response = _create_booking(
+        actual_booking_info, response = create_booking(
             client, user_id=user_id, booking=booking
         )
         actual_booking = response.json()
@@ -893,8 +897,8 @@ def test_create_invalid_booking(client, user, booking: "BasicBookingInfo"):
     e.g. start_utc in the past
     """
     with client as client:
-        user_id, _ = _create_user(client, user=user)
-        data = _to_booking_payload(booking)
+        user_id, _ = create_user(client, user=user)
+        data = to_booking_payload(booking)
 
         # create booking
         headers = create_mss_headers(user_id)
@@ -911,16 +915,16 @@ def test_create_conflicting_booking(
 ):
     """Should return an error message when creating a booking overlapping with another"""
     with client as client:
-        user_id, _ = _create_user(client, user=user)
+        user_id, _ = create_user(client, user=user)
 
         # create booking
-        _, response = _create_booking(client, user_id=user_id, booking=booking)
+        _, response = create_booking(client, user_id=user_id, booking=booking)
         initial_slot = response.json()
 
         # create another
         overlapping_slot = {**booking, "duration": booking["duration"] + 10}
         headers = create_mss_headers(user_id)
-        data = _to_booking_payload(overlapping_slot)
+        data = to_booking_payload(overlapping_slot)
         response = client.post("/bookings", headers=headers, json=data)
 
         start_utc = datetime.fromisoformat(initial_slot["start_utc"]).replace(
@@ -939,7 +943,7 @@ def test_create_too_many_booking(client):
     """Returns error message when creating a booking when number of bookings in a period for user are maxed out."""
     with client as client:
         user = USERS[1]
-        user_id, _ = _create_user(client, user=user)
+        user_id, _ = create_user(client, user=user)
 
         max_safe_idx = TEST_MAX_SLOTS_PER_DAY - 1
 
@@ -951,7 +955,7 @@ def test_create_too_many_booking(client):
         # create many bookings
         for idx, raw_item in enumerate(VALID_BOOKINGS):
             headers = create_mss_headers(user_id)
-            data = _to_booking_payload(raw_item)
+            data = to_booking_payload(raw_item)
             response = client.post("/bookings", headers=headers, json=data)
             json_response = response.json()
 
@@ -965,8 +969,8 @@ def test_create_too_many_booking(client):
 def test_unauthenticated_create_booking(client, worker, redis_conn):
     """Creating booking outside MSS errors out"""
     with client as client:
-        headers = _get_headers("token")
-        data = _to_booking_payload(VALID_BOOKINGS[0])
+        headers = get_bearer_headers("token")
+        data = to_booking_payload(VALID_BOOKINGS[0])
 
         response = client.post("/bookings", headers=headers, json=data)
 
@@ -983,7 +987,7 @@ def test_unauthenticated_create_booking(client, worker, redis_conn):
 def test_view_bookings(client, pagination: "PaginationInfo"):
     """GET "/bookings" shows paginated list of all available bookings, filtered accordingly"""
     with client as client:
-        users = _create_many_users(client)
+        users = create_many_users(client)
         usr1 = users[0]
         usr2 = users[1]
         usr_id1 = usr1["id"]
@@ -996,7 +1000,7 @@ def test_view_bookings(client, pagination: "PaginationInfo"):
         for idx, booking_info in enumerate(booking_data_list):
             ids_idx = idx % 2
             user_id = user_ids[ids_idx]
-            _, response = _create_booking(client, user_id=user_id, booking=booking_info)
+            _, response = create_booking(client, user_id=user_id, booking=booking_info)
             all_items.append(response.json())
 
         limit = pagination["limit"]
@@ -1030,7 +1034,7 @@ def test_view_bookings(client, pagination: "PaginationInfo"):
         # view bookings
         for user_id in user_ids:
             for filters, sort, expected_all_records in filters_sort_and_results:
-                response = _view_booking_list(
+                response = view_booking_list(
                     client,
                     requester_id=user_id,
                     skip=skip,
@@ -1039,7 +1043,7 @@ def test_view_bookings(client, pagination: "PaginationInfo"):
                     **filters,
                 )
                 actual_output = response.json()
-                expected = _paginate(expected_all_records, skip=skip, limit=limit)
+                expected = paginate(expected_all_records, skip=skip, limit=limit)
 
                 assert response.status_code == 200
                 assert actual_output == expected
@@ -1049,7 +1053,7 @@ def test_view_bookings(client, pagination: "PaginationInfo"):
 def test_unauthenticated_view_bookings(client, worker, redis_conn):
     """Viewing bookings with non-existing user or outside MSS errors out"""
     with client as client:
-        response = client.get("/bookings", headers=_get_headers("token"))
+        response = client.get("/bookings", headers=get_bearer_headers("token"))
 
         assert response.status_code == 401
         assert response.json() == {"detail": "user not authenticated"}
@@ -1064,7 +1068,7 @@ def test_unauthenticated_view_bookings(client, worker, redis_conn):
 def test_view_bookings_config(client):
     """GET "/bookings/config" shows the configuration of the bookings service"""
     with client as client:
-        user_id, _ = _create_user(client, user=USERS[0])
+        user_id, _ = create_user(client, user=USERS[0])
         headers = create_mss_headers(user_id)
 
         got = client.get("/bookings/config", headers=headers).json()
@@ -1080,7 +1084,7 @@ def test_view_bookings_config(client):
 def test_unauthenticated_view_bookings_configs(client):
     """Viewing bookings configs with non-existing user or outside MSS errors out"""
     with client as client:
-        response = client.get("/bookings/config", headers=_get_headers("token"))
+        response = client.get("/bookings/config", headers=get_bearer_headers("token"))
 
         assert response.status_code == 401
         assert response.json() == {"detail": "user not authenticated"}
@@ -1114,22 +1118,22 @@ def test_submit_jobs_no_booking(
     """POST '/jobs' when there is no booking should run the jobs in FIFO (first in, first out)"""
     with client as client:
         # create many users and their tokens
-        users = _create_many_users(client)
+        users = create_many_users(client)
 
         durations = [0.4, 3, 4, 1.1, 2.9, 0.3, 0.1]
-        raw_jobs = _get_raw_jobs(job, durations)
+        raw_jobs = get_raw_jobs(job, durations)
         # Creating this job metadata list first because it takes up a lot of time
-        job_metadata_list = _get_job_submission_metadata(
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
 
         # submit many jobs from many users
-        job_ids_in_fifo = _submit_multiple_jobs_v2(client, data=job_metadata_list)
+        job_ids_in_fifo = submit_jobs(client, data=job_metadata_list)
 
         # Run the queue
         worker.work(burst=True)
 
-        jobs_in_redis = _get_jobs_in_redis(redis_conn)
+        jobs_in_redis = get_jobs_in_redis(redis_conn)
         jobs_in_redis.sort(key=lambda v: v.timestamps.execution.start_timestamp)
 
         expected_jobs_in_redis = [
@@ -1169,7 +1173,7 @@ def test_submit_jobs_no_booking(
 
             # Check that the results are appropriate
             # This can be seen as testing gate fidelity ~70%
-            assert _job_results_match(
+            assert is_job_result_matching(
                 results=job_in_db.result.memory[0], expected_min_counts=expected_counts
             )
 
@@ -1213,12 +1217,12 @@ def test_submit_jobs_in_active_booking(
 
     with client as client:
         # create many users and their tokens
-        users = _create_many_users(client)
+        users = create_many_users(client)
 
         durations = [0.23, 2.0, 2.1, 10]
-        raw_jobs = _get_raw_jobs(job, durations)
+        raw_jobs = get_raw_jobs(job, durations)
         # Creating this job metadata list first because it takes up a lot of time
-        job_metadata_list = _get_job_submission_metadata(
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
 
@@ -1228,16 +1232,16 @@ def test_submit_jobs_in_active_booking(
         booker_id = booker["id"]
         # duration: 3; max idle time = 1
         booking_info = {"duration": 3, "starts_in": 0}
-        _, response = _create_booking(client, user_id=booker_id, booking=booking_info)
+        _, response = create_booking(client, user_id=booker_id, booking=booking_info)
         booking = Booking.model_validate(response.json())
 
         # submit many jobs from many users
-        _submit_multiple_jobs_v2(client, data=job_metadata_list)
+        submit_jobs(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
+        wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
-        jobs_in_redis = _get_jobs_in_redis(redis_conn)
+        jobs_in_redis = get_jobs_in_redis(redis_conn)
         jobs_in_redis.sort(key=lambda v: v.timestamps.execution.start_timestamp)
 
         booker_jobs = [job for job in jobs_in_redis if job.user_id == booker_id]
@@ -1256,7 +1260,7 @@ def test_submit_jobs_in_active_booking(
 
         assert all([v.status == JobStatus.SUCCESSFUL for v in jobs_in_redis])
         assert last_booker_job_start < booking.end_utc
-        assert _drop_microsec(first_non_booker_job_start) >= _drop_microsec(
+        assert drop_microseconds(first_non_booker_job_start) >= drop_microseconds(
             booking_end_timestamp
         )
 
@@ -1275,12 +1279,12 @@ def test_submit_jobs_in_idle_booking(
     """POST '/jobs' when there is an idle booking runs the non booker jobs even during the booking."""
     with client as client:
         # create many users and their tokens
-        users = _create_many_users(client)
+        users = create_many_users(client)
 
         durations = [0.23, 2.0, 2.1, 10]
-        raw_jobs = _get_raw_jobs(job, durations)
+        raw_jobs = get_raw_jobs(job, durations)
         # Creating this job metadata list first because it takes up a lot of time
-        job_metadata_list = _get_job_submission_metadata(
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
 
@@ -1289,16 +1293,16 @@ def test_submit_jobs_in_idle_booking(
         booker = users[0]
         booker_id = booker["id"]
         booking_info = {"duration": 5, "starts_in": 0}
-        _, response = _create_booking(client, user_id=booker_id, booking=booking_info)
+        _, response = create_booking(client, user_id=booker_id, booking=booking_info)
         booking = Booking.model_validate(response.json())
 
         # submit many jobs from many users
-        _submit_multiple_jobs_v2(client, data=job_metadata_list)
+        submit_jobs(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
+        wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
-        jobs_in_redis = _get_jobs_in_redis(redis_conn)
+        jobs_in_redis = get_jobs_in_redis(redis_conn)
 
         jobs_in_redis.sort(key=lambda v: v.timestamps.execution.start_timestamp)
         booker_jobs = [job for job in jobs_in_redis if job.user_id == booker_id]
@@ -1335,12 +1339,12 @@ def test_submit_jobs_in_idle_booking_before_another(
     """When there is an idle booking and another is next, only non booker jobs, short enough to fit in between, run."""
     with client as client:
         # create many users and their tokens
-        users = _create_many_users(client)
+        users = create_many_users(client)
 
         durations = [0.2, 3, 4, 1, 2.9, 0.3, 0.15]
-        raw_jobs = _get_raw_jobs(job, durations)
+        raw_jobs = get_raw_jobs(job, durations)
         # Creating this job metadata list first because it takes up a lot of time
-        job_metadata_list = _get_job_submission_metadata(
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
 
@@ -1351,25 +1355,25 @@ def test_submit_jobs_in_idle_booking_before_another(
 
         # create first booking
         first_booking_info = {"duration": 2, "starts_in": 0}
-        _, result = _create_booking(
+        _, result = create_booking(
             client, user_id=booker_id, booking=first_booking_info
         )
 
         # create second booking
         second_booking_info = {"duration": 3, "starts_in": 3}
-        _, response = _create_booking(
+        _, response = create_booking(
             client, user_id=booker_id, booking=second_booking_info
         )
         next_slot = Booking.model_validate(response.json())
 
         # submit many jobs from many users
-        _submit_multiple_jobs_v2(client, data=job_metadata_list)
+        submit_jobs(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
         mss_update_spy = mocker.spy(scheduler_tasks, "update_job_in_mss")
-        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
+        wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
-        jobs_in_db = _get_jobs_in_redis(redis_conn)
+        jobs_in_db = get_jobs_in_redis(redis_conn)
 
         booker_jobs = [v for v in jobs_in_db if v.user_id == booker_id]
         non_booker_jobs = [v for v in jobs_in_db if v.user_id != booker_id]
@@ -1418,7 +1422,7 @@ def test_submit_jobs_in_idle_booking_before_another(
             "job too long for the time left in the booking"
             in booker_jobs[1].failure_reason
         )
-        jobs_sent_to_mss = _get_jobs_sent_to_mss(mss_update_spy)
+        jobs_sent_to_mss = get_jobs_sent_to_mss(mss_update_spy)
         assert (booker_jobs[1].job_id, JobStatus.FAILED) in [
             (sent_job.job_id, sent_job.status) for sent_job in jobs_sent_to_mss
         ]
@@ -1439,23 +1443,23 @@ def test_booker_job_longer_than_the_time_left_fails(
 ):
     """A booker's job fits the time left in the booking, not the booking's whole length"""
     with client as client:
-        [booker] = _create_many_users(client, USERS[:1])
-        _create_booking(
+        [booker] = create_many_users(client, USERS[:1])
+        create_booking(
             client, user_id=booker["id"], booking={"duration": 3, "starts_in": 0}
         )
-        job_info = _get_job_submission_metadata(
+        job_info = get_job_submission_metadata(
             client,
-            jobs=_get_raw_jobs(job, durations=[1]),
+            jobs=get_raw_jobs(job, durations=[1]),
             users=[booker],
             mocker=mocker,
             jobs_folder=jobs_folder,
         )[0]
-        _submit_multiple_jobs_v2(client, data=[job_info])
+        submit_jobs(client, data=[job_info])
 
         fake_clock.shift(2.5)
         worker.work(burst=True, max_jobs=1)
 
-        job_in_db = _get_jobs_in_redis(redis_conn)[0]
+        job_in_db = get_jobs_in_redis(redis_conn)[0]
         assert job_in_db.status == JobStatus.FAILED
         assert (
             job_in_db.failure_reason == "job too long for the time left in the booking"
@@ -1469,24 +1473,24 @@ def test_job_whose_booking_ended_in_preprocessing_runs(
     """A job submitted during a booking that ends before it is preprocessed is not
     left on a waitlist that nothing will release"""
     with client as client:
-        [booker, other_user] = _create_many_users(client, USERS[:2])
-        _create_booking(
+        [booker, other_user] = create_many_users(client, USERS[:2])
+        create_booking(
             client, user_id=booker["id"], booking={"duration": 2, "starts_in": 0}
         )
-        job_info = _get_job_submission_metadata(
+        job_info = get_job_submission_metadata(
             client,
-            jobs=_get_raw_jobs(job, durations=[0.2]),
+            jobs=get_raw_jobs(job, durations=[0.2]),
             users=[other_user],
             mocker=mocker,
             jobs_folder=jobs_folder,
         )[0]
-        _submit_multiple_jobs_v2(client, data=[job_info])
+        submit_jobs(client, data=[job_info])
 
         fake_clock.shift(3)
         # the booking's end runs before the preprocessing, as the general queue is first
         worker.work(burst=True, with_scheduler=True)
 
-        assert _get_jobs_in_redis(redis_conn)[0].status == JobStatus.SUCCESSFUL
+        assert get_jobs_in_redis(redis_conn)[0].status == JobStatus.SUCCESSFUL
 
 
 @pytest.mark.skipif(
@@ -1505,12 +1509,12 @@ def test_submit_long_jobs_before_booking(
     """POST long jobs to '/jobs' before booking starts waitlists them but runs the shorter ones"""
     with client as client:
         # create many users and their tokens
-        users = _create_many_users(client)
+        users = create_many_users(client)
 
         durations = [0.3, 3, 4, 0.9, 2.9, 0.2, 0.1]
-        raw_jobs = _get_raw_jobs(job, durations)
+        raw_jobs = get_raw_jobs(job, durations)
         # Creating this job metadata list first because it takes up a lot of time
-        job_metadata_list = _get_job_submission_metadata(
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
 
@@ -1521,15 +1525,15 @@ def test_submit_long_jobs_before_booking(
 
         # create booking
         booking_info = {"duration": 3, "starts_in": 2.2}
-        _create_booking(client, user_id=booker_id, booking=booking_info)
+        create_booking(client, user_id=booker_id, booking=booking_info)
 
         # submit many jobs from many users
-        _submit_multiple_jobs_v2(client, data=job_metadata_list)
+        submit_jobs(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
+        wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
-        jobs_in_db = _get_jobs_in_redis(redis_conn)
+        jobs_in_db = get_jobs_in_redis(redis_conn)
         jobs_in_db.sort(key=lambda v: v.start_utc)
         job_estimated_durations = [v.estimated_duration for v in jobs_in_db]
 
@@ -1543,8 +1547,8 @@ def test_submit_long_jobs_before_booking(
 def test_submit_jobs_invalid_token(client, redis_conn, worker, job, jobs_folder):
     """POST '/jobs' with invalid tokens results in an error"""
     with client as client:
-        headers = _get_headers("token")
-        job_file_path = _save_job_file(folder=jobs_folder, job=job)
+        headers = get_bearer_headers("token")
+        job_file_path = save_job_file(folder=jobs_folder, job=job)
         with open(job_file_path, "rb") as file:
             response = client.post(
                 "/jobs", files={"upload_file": file}, headers=headers
@@ -1560,7 +1564,7 @@ def test_submit_jobs_invalid_token(client, redis_conn, worker, job, jobs_folder)
 def test_submit_jobs_without_token(client, redis_conn, worker, job, jobs_folder):
     """POST to '/jobs' jobs without a token results in an error"""
     with client as client:
-        job_file_path = _save_job_file(folder=jobs_folder, job=job)
+        job_file_path = save_job_file(folder=jobs_folder, job=job)
         with open(job_file_path, "rb") as file:
             response = client.post("/jobs", files={"upload_file": file})
 
@@ -1579,9 +1583,9 @@ def test_upload_invalid_job(
     """POSTing an invalid structure of a job to '/jobs' fails"""
     # using context manager to ensure on_startup runs
     with client as client:
-        users = _create_many_users(client, raw_users=USERS[:1])
-        raw_jobs = _get_raw_jobs(job, durations=[0.2])
-        job_metadata = _get_job_submission_metadata(
+        users = create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_metadata = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
         job_info = job_metadata[0]
@@ -1597,7 +1601,7 @@ def test_upload_invalid_job(
         assert got["detail"].startswith("Invalid file: ")
 
         worker.work(burst=True)
-        jobs_in_db = _get_jobs_in_redis(redis_conn)
+        jobs_in_db = get_jobs_in_redis(redis_conn)
         assert jobs_in_db == []
 
 
@@ -1608,9 +1612,9 @@ def test_duplicate_job_upload(
 ):
     """Uploading two jobs of the same job_id returns an error"""
     with client as client:
-        users = _create_many_users(client, raw_users=USERS[:1])
-        raw_jobs = _get_raw_jobs(job, durations=[0.2])
-        job_metadata = _get_job_submission_metadata(
+        users = create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_metadata = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
         job_info = job_metadata[0]
@@ -1630,8 +1634,8 @@ def test_duplicate_job_upload(
                 "user_id": job_info["user_id"],
                 "job_id": job_info["job_id"],
             }
-            token, _ = _get_token(client, data=login_details)
-            fresh_headers = _get_headers(token)
+            token, _ = get_token(client, data=login_details)
+            fresh_headers = get_bearer_headers(token)
             third_response = client.post(
                 "/jobs", files={"upload_file": file}, headers=fresh_headers
             )
@@ -1649,14 +1653,14 @@ def test_remove_job(client, redis_conn, jobs_folder, worker, job, mocker, fake_c
     """DELETE to '/jobs/{job_id}' deletes the given job if job belongs to user"""
     # using context manager to ensure on_startup runs
     with client as client:
-        users = _create_many_users(client, raw_users=USERS[:2])
-        raw_jobs = _get_raw_jobs(job, durations=[0.2, 1, 0.3])
-        job_metadata_list = _get_job_submission_metadata(
+        users = create_many_users(client, raw_users=USERS[:2])
+        raw_jobs = get_raw_jobs(job, durations=[0.2, 1, 0.3])
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
 
         # submit many jobs from many users
-        _submit_multiple_jobs_v2(client, data=job_metadata_list)
+        submit_jobs(client, data=job_metadata_list)
 
         # start the worker
         worker.work(burst=True)
@@ -1670,7 +1674,7 @@ def test_remove_job(client, redis_conn, jobs_folder, worker, job, mocker, fake_c
         # run the rest of the tasks
         worker.work(burst=True)
 
-        jobs_in_db = _get_jobs_in_redis(redis_conn)
+        jobs_in_db = get_jobs_in_redis(redis_conn)
         job_ids_in_db = sorted([v.job_id for v in jobs_in_db])
         expected_ids = sorted([v["job_id"] for v in job_metadata_list[1:]])
         assert deletion_response.status_code == 200
@@ -1684,14 +1688,14 @@ def test_remove_another_users_job(
     """DELETE to '/jobs/{job_id}' fails if the user does not own the given job"""
     # using context manager to ensure on_startup runs
     with client as client:
-        users = _create_many_users(client, raw_users=USERS[:2])
-        raw_jobs = _get_raw_jobs(job, durations=[0.2, 1, 0.3])
-        job_metadata_list = _get_job_submission_metadata(
+        users = create_many_users(client, raw_users=USERS[:2])
+        raw_jobs = get_raw_jobs(job, durations=[0.2, 1, 0.3])
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
 
         # submit many jobs from many users
-        _submit_multiple_jobs_v2(client, data=job_metadata_list)
+        submit_jobs(client, data=job_metadata_list)
 
         # start the worker
         worker.work(burst=True)
@@ -1705,7 +1709,7 @@ def test_remove_another_users_job(
         # run the rest of the tasks
         worker.work(burst=True)
 
-        jobs_in_db = _get_jobs_in_redis(redis_conn)
+        jobs_in_db = get_jobs_in_redis(redis_conn)
         job_ids_in_db = sorted([v.job_id for v in jobs_in_db])
         expected_ids = sorted([v["job_id"] for v in job_metadata_list])
         assert deletion_response.status_code == 404
@@ -1720,14 +1724,14 @@ def test_admin_remove_job(
     """DELETE to '/jobs/{job_id}' deletes the given job if user is admin"""
     # using context manager to ensure on_startup runs
     with client as client:
-        users = _create_many_users(client, raw_users=USERS[:2])
-        raw_jobs = _get_raw_jobs(job, durations=[0.2, 1, 0.3])
-        job_metadata_list = _get_job_submission_metadata(
+        users = create_many_users(client, raw_users=USERS[:2])
+        raw_jobs = get_raw_jobs(job, durations=[0.2, 1, 0.3])
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
 
         # submit many jobs from many users
-        _submit_multiple_jobs_v2(client, data=job_metadata_list)
+        submit_jobs(client, data=job_metadata_list)
 
         # start the job registration but stop there
         worker.work(burst=True)
@@ -1742,7 +1746,7 @@ def test_admin_remove_job(
         # run the rest of the tasks
         worker.work(burst=True)
 
-        jobs_in_db = _get_jobs_in_redis(redis_conn)
+        jobs_in_db = get_jobs_in_redis(redis_conn)
         job_ids_in_db = sorted([v.job_id for v in jobs_in_db])
         expected_ids = sorted([v["job_id"] for v in job_metadata_list[1:]])
         assert deletion_response.status_code == 200
@@ -1756,14 +1760,14 @@ def test_unauthenticated_remove_job(
     """Delete to /jobs/{job_id} returns 401 error when accessed outside MSS or without proper MSS headers"""
     # using context manager to ensure on_startup runs
     with client as client:
-        users = _create_many_users(client, raw_users=USERS[:2])
-        raw_jobs = _get_raw_jobs(job, durations=[0.2, 1, 0.3])
-        job_metadata_list = _get_job_submission_metadata(
+        users = create_many_users(client, raw_users=USERS[:2])
+        raw_jobs = get_raw_jobs(job, durations=[0.2, 1, 0.3])
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
 
         # submit many jobs from many users
-        _submit_multiple_jobs_v2(client, data=job_metadata_list)
+        submit_jobs(client, data=job_metadata_list)
 
         # start the job registration but stop there
         worker.work(burst=True)
@@ -1784,7 +1788,7 @@ def test_unauthenticated_remove_job(
         # run the rest of the tasks
         worker.work(burst=True)
 
-        jobs_in_db = _get_jobs_in_redis(redis_conn)
+        jobs_in_db = get_jobs_in_redis(redis_conn)
         job_ids_in_db = sorted([v.job_id for v in jobs_in_db])
         expected_ids = sorted([v["job_id"] for v in job_metadata_list])
         assert job_ids_in_db == expected_ids
@@ -1796,7 +1800,7 @@ def test_cancel_future_booking(
 ):
     """POST '/booking/{id}/cancel' for a future booking, deletes the booking and allows jobs to run without it."""
     with client as client:
-        users = _create_many_users(client)
+        users = create_many_users(client)
 
         # create booking
         # third user; thus third job (duration: 2.1) belongs to them
@@ -1804,11 +1808,11 @@ def test_cancel_future_booking(
         booker_id = booker["id"]
 
         booking_info = {"duration": 3, "starts_in": 2}
-        _, response = _create_booking(client, user_id=booker_id, booking=booking_info)
+        _, response = create_booking(client, user_id=booker_id, booking=booking_info)
         booking = Booking.model_validate(response.json())
         assert response.status_code == 200
 
-        response = _cancel_booking(client, user_id=booker_id, booking_id=booking.id)
+        response = cancel_booking(client, user_id=booker_id, booking_id=booking.id)
         expected = {
             "status": "success",
             "detail": f"Booking of id {booking.id} cancelled",
@@ -1821,16 +1825,16 @@ def test_cancel_future_booking(
         fake_clock.shift(booking_info["starts_in"])
         # Booking does not exist or work
         # submit many jobs from many users when booking starts
-        raw_jobs = _get_raw_jobs(job, durations=[0.23, 1, 0.4, 0.5])
-        job_metadata_list = _get_job_submission_metadata(
+        raw_jobs = get_raw_jobs(job, durations=[0.23, 1, 0.4, 0.5])
+        job_metadata_list = get_job_submission_metadata(
             client, users=users, jobs=raw_jobs, jobs_folder=jobs_folder, mocker=mocker
         )
-        expected_job_ids = _submit_multiple_jobs_v2(client, data=job_metadata_list)
+        expected_job_ids = submit_jobs(client, data=job_metadata_list)
 
         # Run the queue
         worker.work(burst=True)
 
-        jobs_in_redis = _get_jobs_in_redis(redis_conn)
+        jobs_in_redis = get_jobs_in_redis(redis_conn)
 
         jobs_in_redis.sort(key=lambda v: v.start_utc)
         job_ids = [job.job_id for job in jobs_in_redis]
@@ -1848,11 +1852,11 @@ def test_cancel_future_booking_new_mss_user(
         booker_id = f"{uuid4()}"
 
         booking_info = {"duration": 3, "starts_in": 2}
-        _, response = _create_booking(client, user_id=booker_id, booking=booking_info)
+        _, response = create_booking(client, user_id=booker_id, booking=booking_info)
         booking = Booking.model_validate(response.json())
         assert response.status_code == 200
 
-        response = _cancel_booking(client, user_id=booker_id, booking_id=booking.id)
+        response = cancel_booking(client, user_id=booker_id, booking_id=booking.id)
         expected = {
             "status": "success",
             "detail": f"Booking of id {booking.id} cancelled",
@@ -1867,23 +1871,23 @@ def test_cancel_future_booking_new_mss_user(
 def test_admin_cancel_future_booking(client):
     """Admin POST '/bookings/{id}/cancel' cancels any user's future booking"""
     with client as client:
-        [user_1, user_2] = _create_many_users(client, raw_users=USERS[:2])
+        [user_1, user_2] = create_many_users(client, raw_users=USERS[:2])
 
         user_1_id = user_1["id"]
         user_2_id = user_2["id"]
 
         # create booking
         booking_info = {"duration": 3, "starts_in": 2}
-        _, response = _create_booking(client, user_id=user_1_id, booking=booking_info)
+        _, response = create_booking(client, user_id=user_1_id, booking=booking_info)
         booking = Booking.model_validate(response.json())
 
         # Non-admins fail
-        response = _cancel_booking(client, user_id=user_2_id, booking_id=booking.id)
+        response = cancel_booking(client, user_id=user_2_id, booking_id=booking.id)
         json_response = response.json()
         assert response.status_code == 404
         assert "not found" in json_response["detail"]
 
-        response = _cancel_booking(
+        response = cancel_booking(
             client, user_id=user_2_id, booking_id=booking.id, is_admin=True
         )
         expected = {
@@ -1899,12 +1903,12 @@ def test_admin_cancel_future_booking(client):
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
 def test_booking_may_start_as_another_ends(client):
     with client as client:
-        user_id, _ = _create_user(client, user=USERS[0])
+        user_id, _ = create_user(client, user=USERS[0])
         start_utc = datetime.now(timezone.utc) + timedelta(days=1)
         end_utc = start_utc + timedelta(minutes=10)
 
-        first = _post_booking(client, user_id, start_utc=start_utc, end_utc=end_utc)
-        second = _post_booking(
+        first = post_booking(client, user_id, start_utc=start_utc, end_utc=end_utc)
+        second = post_booking(
             client, user_id, start_utc=end_utc, end_utc=end_utc + timedelta(minutes=10)
         )
 
@@ -1915,23 +1919,23 @@ def test_booking_may_start_as_another_ends(client):
 def test_booking_across_midnight_counts_toward_both_days(client):
     """MAX_SLOTS_PER_DAY counts the user's bookings that overlap the day a booking starts"""
     with client as client:
-        user_id, _ = _create_user(client, user=USERS[0])
+        user_id, _ = create_user(client, user=USERS[0])
         midnight = (datetime.now(timezone.utc) + timedelta(days=2)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
-        crossing = _post_booking(
+        crossing = post_booking(
             client,
             user_id,
             start_utc=midnight - timedelta(minutes=5),
             end_utc=midnight + timedelta(minutes=5),
         )
-        second = _post_booking(
+        second = post_booking(
             client,
             user_id,
             start_utc=midnight + timedelta(hours=1),
             end_utc=midnight + timedelta(hours=1, minutes=10),
         )
-        third = _post_booking(
+        third = post_booking(
             client,
             user_id,
             start_utc=midnight + timedelta(hours=2),
@@ -1947,12 +1951,12 @@ def test_booking_across_midnight_counts_toward_both_days(client):
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
 def test_max_slots_per_day_is_per_user(client):
     with client as client:
-        [first_user, second_user] = _create_many_users(client, raw_users=USERS[:2])
+        [first_user, second_user] = create_many_users(client, raw_users=USERS[:2])
         day = datetime.now(timezone.utc).replace(
             hour=0, minute=0, second=0, microsecond=0
         ) + timedelta(days=3)
         first_user_codes = [
-            _post_booking(
+            post_booking(
                 client,
                 first_user["id"],
                 start_utc=day + timedelta(hours=hour),
@@ -1961,7 +1965,7 @@ def test_max_slots_per_day_is_per_user(client):
             for hour in range(TEST_MAX_SLOTS_PER_DAY)
         ]
 
-        second_user_response = _post_booking(
+        second_user_response = post_booking(
             client,
             second_user["id"],
             start_utc=day + timedelta(hours=20),
@@ -1981,15 +1985,15 @@ def test_bookings_are_validated_against_bcc_current_date(client, monkeypatch):
     with client as client:
         device_settings = settings.get_device_settings(os.environ["BCC_DEFAULT_PREFIX"])
         monkeypatch.setattr(device_settings, "CURRENT_DATE", current_date)
-        user_id, _ = _create_user(client, user=USERS[0])
+        user_id, _ = create_user(client, user=USERS[0])
 
-        after = _post_booking(
+        after = post_booking(
             client,
             user_id,
             start_utc=current_date + timedelta(hours=1),
             end_utc=current_date + timedelta(hours=1, minutes=10),
         )
-        before = _post_booking(
+        before = post_booking(
             client,
             user_id,
             start_utc=current_date - timedelta(hours=1),
@@ -2003,12 +2007,12 @@ def test_bookings_are_validated_against_bcc_current_date(client, monkeypatch):
 def test_mss_admin_new_to_the_device_cancels_booking(client):
     """An MSS admin cancels a booking before the device has heard of them"""
     with client as client:
-        [user] = _create_many_users(client, raw_users=USERS[:1])
+        [user] = create_many_users(client, raw_users=USERS[:1])
         booking_info = {"duration": 3, "starts_in": 2}
-        _, response = _create_booking(client, user_id=user["id"], booking=booking_info)
+        _, response = create_booking(client, user_id=user["id"], booking=booking_info)
         booking = Booking.model_validate(response.json())
 
-        response = _cancel_booking(
+        response = cancel_booking(
             client, user_id=f"{uuid4()}", booking_id=booking.id, is_admin=True
         )
 
@@ -2023,7 +2027,7 @@ def test_cancel_active_booking(
 ):
     """POST '/bookings/{id}/cancel' for an active booking fails."""
     with client as client:
-        users = _create_many_users(client)
+        users = create_many_users(client)
 
         # create booking
         # third user; thus third job (duration: 2.1) belongs to them
@@ -2031,14 +2035,12 @@ def test_cancel_active_booking(
         booker_user_id = booker["id"]
         # duration: 3; max idle time = 1
         booking_info = {"duration": 3, "starts_in": 0}
-        _, response = _create_booking(
+        _, response = create_booking(
             client, user_id=booker_user_id, booking=booking_info
         )
         booking = Booking.model_validate(response.json())
 
-        response = _cancel_booking(
-            client, user_id=booker_user_id, booking_id=booking.id
-        )
+        response = cancel_booking(client, user_id=booker_user_id, booking_id=booking.id)
         expected = {"detail": f"the booking of id {booking.id} is already active"}
         got = response.json()
 
@@ -2047,16 +2049,16 @@ def test_cancel_active_booking(
 
         # It still works
         # submit many jobs from many users when booking starts
-        raw_jobs = _get_raw_jobs(job, durations=[0.23, 0.3, 0.1])
-        job_metadata_list = _get_job_submission_metadata(
+        raw_jobs = get_raw_jobs(job, durations=[0.23, 0.3, 0.1])
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, jobs_folder=jobs_folder, mocker=mocker
         )
-        _submit_multiple_jobs_v2(client, data=job_metadata_list)
+        submit_jobs(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
+        wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
-        jobs_in_redis = _get_jobs_in_redis(redis_conn)
+        jobs_in_redis = get_jobs_in_redis(redis_conn)
 
         jobs_in_redis.sort(key=lambda v: v.timestamps.execution.start_timestamp)
         booker_jobs = [job for job in jobs_in_redis if job.user_id == booker_user_id]
@@ -2078,23 +2080,21 @@ def test_cancel_completed_booking(
 ):
     """POST '/bookings/{id}/cancel' for a completed booking fails."""
     with client as client:
-        users = _create_many_users(client)
+        users = create_many_users(client)
 
         # create booking
         booker = users[0]
         booker_user_id = booker["id"]
         # duration: 2; max idle time = 1
         booking_info = {"duration": 2, "starts_in": 0}
-        _, response = _create_booking(
+        _, response = create_booking(
             client, user_id=booker_user_id, booking=booking_info
         )
         booking = Booking.model_validate(response.json())
 
         fake_clock.shift(2)
 
-        response = _cancel_booking(
-            client, user_id=booker_user_id, booking_id=booking.id
-        )
+        response = cancel_booking(client, user_id=booker_user_id, booking_id=booking.id)
         expected = {"detail": f"the booking of id {booking.id} is already complete"}
         got = response.json()
 
@@ -2115,18 +2115,18 @@ def test_view_job(
     fake_clock,
 ):
     """GET '/jobs/{job_id}' by a user can show the job for the job_id if job belongs to them"""
-    job_file_path = _save_job_file(folder=jobs_folder, job=job)
+    job_file_path = save_job_file(folder=jobs_folder, job=job)
 
     with client as client:
-        user_id, _ = _create_user(client, user=user)
-        other_user_id, _ = _create_user(
+        user_id, _ = create_user(client, user=user)
+        other_user_id, _ = create_user(
             client, user={**user, "email": f"extra-{user["email"]}"}
         )
         job_id = job["job_id"]
-        token, _ = _get_token(client, data={"user_id": user_id, "job_id": job_id})
+        token, _ = get_token(client, data={"user_id": user_id, "job_id": job_id})
 
         # submit job
-        headers = _get_headers(token)
+        headers = get_bearer_headers(token)
 
         with open(job_file_path, "rb") as file:
             response = client.post(
@@ -2135,13 +2135,13 @@ def test_view_job(
 
         expected_job = Job.model_validate(response.json())
 
-        pending_job, _ = _view_job(client, user_id=user_id, job_id=job_id)
+        pending_job, _ = view_job(client, user_id=user_id, job_id=job_id)
         assert pending_job == expected_job
 
         # Run the queue to run the job and see that it is updated
         worker.work(burst=True)
 
-        complete_job, _ = _view_job(client, user_id=user_id, job_id=job_id)
+        complete_job, _ = view_job(client, user_id=user_id, job_id=job_id)
         expected_completed_job = Job(
             job_id=job_id,
             device=device_name,
@@ -2167,15 +2167,15 @@ def test_unauthenticated_view_job(
     client, worker, job, device_name, user, jobs_folder, mocker: MockerFixture
 ):
     """Get to /jobs/{job_id} raise 401 if not accessed through MSS"""
-    job_file_path = _save_job_file(folder=jobs_folder, job=job)
+    job_file_path = save_job_file(folder=jobs_folder, job=job)
 
     with client as client:
-        user_id, _ = _create_user(client, user=user)
+        user_id, _ = create_user(client, user=user)
         job_id = job["job_id"]
-        token, _ = _get_token(client, data={"user_id": user_id, "job_id": job_id})
+        token, _ = get_token(client, data={"user_id": user_id, "job_id": job_id})
 
         # submit job
-        headers = _get_headers(token)
+        headers = get_bearer_headers(token)
 
         with open(job_file_path, "rb") as file:
             client.post("/jobs", files={"upload_file": file}, headers=headers)
@@ -2195,23 +2195,23 @@ def test_unauthorized_view_job(
     client, worker, job, device_name, user, jobs_folder, mocker: MockerFixture
 ):
     """Get to /jobs/{job_id} raise 404 if user is not owner"""
-    job_file_path = _save_job_file(folder=jobs_folder, job=job)
+    job_file_path = save_job_file(folder=jobs_folder, job=job)
 
     with client as client:
-        user_id, _ = _create_user(client, user=user)
-        other_user_id, _ = _create_user(
+        user_id, _ = create_user(client, user=user)
+        other_user_id, _ = create_user(
             client, user={**user, "email": f"extra-{user["email"]}"}
         )
         job_id = job["job_id"]
-        token, _ = _get_token(client, data={"user_id": user_id, "job_id": job_id})
+        token, _ = get_token(client, data={"user_id": user_id, "job_id": job_id})
 
         # submit job
-        headers = _get_headers(token)
+        headers = get_bearer_headers(token)
 
         with open(job_file_path, "rb") as file:
             client.post("/jobs", files={"upload_file": file}, headers=headers)
 
-        received_job, response = _view_job(client, user_id=other_user_id, job_id=job_id)
+        received_job, response = view_job(client, user_id=other_user_id, job_id=job_id)
         assert received_job is None
 
         assert response.status_code == 404
@@ -2223,25 +2223,25 @@ def test_admin_view_job(
     client, worker, job, device_name, user, jobs_folder, mocker: MockerFixture
 ):
     """Get to /jobs/{job_id} returns the job if user is admin"""
-    job_file_path = _save_job_file(folder=jobs_folder, job=job)
+    job_file_path = save_job_file(folder=jobs_folder, job=job)
 
     with client as client:
-        user_id, _ = _create_user(client, user=user)
-        other_user_id, _ = _create_user(
+        user_id, _ = create_user(client, user=user)
+        other_user_id, _ = create_user(
             client, user={**user, "email": f"extra-{user["email"]}"}
         )
         job_id = job["job_id"]
-        token, _ = _get_token(client, data={"user_id": user_id, "job_id": job_id})
+        token, _ = get_token(client, data={"user_id": user_id, "job_id": job_id})
 
         # submit job
-        headers = _get_headers(token)
+        headers = get_bearer_headers(token)
 
         with open(job_file_path, "rb") as file:
             resp = client.post("/jobs", files={"upload_file": file}, headers=headers)
 
         expected_job = Job.model_validate(resp.json())
 
-        received_job, response = _view_job(
+        received_job, response = view_job(
             client, user_id=other_user_id, job_id=job_id, is_admin=True
         )
 
@@ -2257,7 +2257,7 @@ def test_view_jobs(
     """GET '/jobs' by a user can show the paginated list of jobs that belong to them"""
     with client as client:
         # create many users and their tokens
-        users = _create_many_users(client)
+        users = create_many_users(client)
         user_count = len(users)
 
         # current user
@@ -2272,12 +2272,12 @@ def test_view_jobs(
             raw_jobs.append(new_job)
 
         # Creating this job metadata list first because it takes up a lot of time
-        job_metadata_list = _get_job_submission_metadata(
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
 
         # submit many jobs from many users
-        job_ids = _submit_multiple_jobs_v2(client, data=job_metadata_list)
+        job_ids = submit_jobs(client, data=job_metadata_list)
 
         # get jobs
         headers = create_mss_headers(user_id)
@@ -2304,7 +2304,7 @@ def test_view_jobs(
         pending_jobs_resp["data"] = order_by(pending_jobs_resp["data"], field="job_id")
         expected_jobs = order_by(expected_jobs, field="job_id")
 
-        assert pending_jobs_resp == _paginate(expected_jobs)
+        assert pending_jobs_resp == paginate(expected_jobs)
 
         # Run the queue to run the job and see that it is updated
         worker.work(burst=True)
@@ -2335,7 +2335,7 @@ def test_view_jobs(
         completed_jobs_resp["data"] = order_by(
             completed_jobs_resp["data"], field="job_id"
         )
-        assert completed_jobs_resp == _paginate(expected_jobs)
+        assert completed_jobs_resp == paginate(expected_jobs)
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="real simulator takes too long")
@@ -2346,7 +2346,7 @@ def test_view_jobs_by_status(
     """GET '/jobs' by a user can show the paginated list of jobs that belong to them"""
     with client as client:
         # create many users and their tokens
-        users = _create_many_users(client)
+        users = create_many_users(client)
         user_count = len(users)
 
         # current user
@@ -2361,19 +2361,19 @@ def test_view_jobs_by_status(
             raw_jobs.append(new_job)
 
         # Creating this job metadata list first because it takes up a lot of time
-        job_metadata_list = _get_job_submission_metadata(
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
 
         # submit many jobs from many users
-        completed_job_ids = _submit_multiple_jobs_v2(client, data=job_metadata_list)
+        completed_job_ids = submit_jobs(client, data=job_metadata_list)
 
         # Run the queue to run the job and see that it is updated
         worker.work(burst=True)
 
         new_raw_jobs = [{**v, "job_id": f"{uuid4()}"} for v in raw_jobs]
         # Creating this job metadata list first because it takes up a lot of time
-        job_metadata_list = _get_job_submission_metadata(
+        job_metadata_list = get_job_submission_metadata(
             client,
             jobs=new_raw_jobs,
             users=users,
@@ -2382,7 +2382,7 @@ def test_view_jobs_by_status(
         )
 
         # submit many jobs from many users when booking starts
-        pending_job_ids = _submit_multiple_jobs_v2(client, data=job_metadata_list)
+        pending_job_ids = submit_jobs(client, data=job_metadata_list)
 
         # get pending jobs
         headers = create_mss_headers(user_id)
@@ -2411,7 +2411,7 @@ def test_view_jobs_by_status(
         pending_jobs_resp["data"] = order_by(pending_jobs_resp["data"], field="job_id")
         expected_pending_jobs = order_by(expected_pending_jobs, field="job_id")
 
-        assert pending_jobs_resp == _paginate(expected_pending_jobs)
+        assert pending_jobs_resp == paginate(expected_pending_jobs)
 
         ## Get completed jobs
 
@@ -2449,7 +2449,7 @@ def test_view_jobs_by_status(
             completed_jobs_resp["data"], field="job_id"
         )
         expected_completed_jobs = order_by(expected_completed_jobs, field="job_id")
-        assert completed_jobs_resp == _paginate(expected_completed_jobs)
+        assert completed_jobs_resp == paginate(expected_completed_jobs)
 
         ## Get all jobs
 
@@ -2463,7 +2463,7 @@ def test_view_jobs_by_status(
 
         # ensure ordering is the same
         all_jobs_resp["data"] = order_by(all_jobs_resp["data"], field="job_id")
-        assert all_jobs_resp == _paginate(expected_all_jobs)
+        assert all_jobs_resp == paginate(expected_all_jobs)
 
 
 @pytest.mark.parametrize("client, _redis, worker, job, device", _VIEW_JOBS_PARAMS)
@@ -2473,7 +2473,7 @@ def test_unauthenticated_view_jobs(
     """Get to /jobs/ raise 401 if not accessed through MSS"""
     with client as client:
         # create many users and their tokens
-        users = _create_many_users(client)
+        users = create_many_users(client)
 
         # current user
         curr_user = users[0]
@@ -2487,20 +2487,20 @@ def test_unauthenticated_view_jobs(
             raw_jobs.append(new_job)
 
         # Creating this job metadata list first because it takes up a lot of time
-        job_metadata_list = _get_job_submission_metadata(
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
 
         # submit many jobs from many users
-        job_ids = _submit_multiple_jobs_v2(client, data=job_metadata_list)
+        job_ids = submit_jobs(client, data=job_metadata_list)
 
         response = client.get("/jobs")
         assert response.status_code == 401
         assert response.json() == {"detail": "user not authenticated"}
 
         # use a token used only for submitting jobs directly to the backend
-        token, _ = _get_token(client, data={"user_id": user_id, "job_id": job_ids[0]})
-        headers = _get_headers(token)
+        token, _ = get_token(client, data={"user_id": user_id, "job_id": job_ids[0]})
+        headers = get_bearer_headers(token)
         response = client.get("/jobs", headers=headers)
         assert response.status_code == 401
         assert response.json() == {"detail": "user not authenticated"}
@@ -2514,9 +2514,9 @@ def test_cancel_job_via_mss(
     with client as client:
         cancellation_reason = "just testing"
 
-        users = _create_many_users(client, raw_users=USERS[:1])
-        raw_jobs = _get_raw_jobs(job, durations=[0.2])
-        job_metadata_list = _get_job_submission_metadata(
+        users = create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
         job_info = job_metadata_list[0]
@@ -2534,7 +2534,7 @@ def test_cancel_job_via_mss(
         # Run the queue to run the job and see that it is updated
         worker.work(burst=True, max_jobs=1)
 
-        response = _cancel_job_via_mss(
+        response = cancel_job_via_mss(
             client, user_id=user_id, job_id=job_id, reason=cancellation_reason
         )
         expected = {
@@ -2546,7 +2546,7 @@ def test_cancel_job_via_mss(
         assert response.status_code == 200
         assert got == expected
 
-        job_in_db = _get_jobs_in_redis(redis_conn)[0]
+        job_in_db = get_jobs_in_redis(redis_conn)[0]
         preprocess_start = job_in_db.timestamps.pre_processing.started
         preprocess_end = job_in_db.timestamps.pre_processing.finished
 
@@ -2584,9 +2584,9 @@ def test_cancel_job_directly(
     with client as client:
         cancellation_reason = "just testing"
 
-        users = _create_many_users(client, raw_users=USERS[:1])
-        raw_jobs = _get_raw_jobs(job, durations=[0.2])
-        job_metadata_list = _get_job_submission_metadata(
+        users = create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
         job_info = job_metadata_list[0]
@@ -2617,7 +2617,7 @@ def test_cancel_job_directly(
         assert response.status_code == 200
         assert got == expected
 
-        job_in_db = _get_jobs_in_redis(redis_conn)[0]
+        job_in_db = get_jobs_in_redis(redis_conn)[0]
         preprocess_start = job_in_db.timestamps.pre_processing.started
         preprocess_end = job_in_db.timestamps.pre_processing.finished
 
@@ -2662,9 +2662,9 @@ def test_failed_job_is_marked_failed_and_sent_to_mss(
 ):
     """A job failing at any stage ends FAILED, and MSS is told"""
     with client as client:
-        users = _create_many_users(client, raw_users=USERS[:1])
-        raw_jobs = _get_raw_jobs(job, durations=[0.2])
-        job_info = _get_job_submission_metadata(
+        users = create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_info = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )[0]
         mocker.patch(patch_target, **patch_kwargs)
@@ -2676,9 +2676,9 @@ def test_failed_job_is_marked_failed_and_sent_to_mss(
 
         worker.work(burst=True)
 
-        job_in_db = _get_jobs_in_redis(redis_conn)[0]
+        job_in_db = get_jobs_in_redis(redis_conn)[0]
         assert job_in_db.status == JobStatus.FAILED
-        assert _get_jobs_sent_to_mss(mss_update_spy)[-1].status == JobStatus.FAILED
+        assert get_jobs_sent_to_mss(mss_update_spy)[-1].status == JobStatus.FAILED
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
@@ -2686,12 +2686,12 @@ def test_finished_job_is_sent_to_mss_with_its_results(
     client, redis_conn, jobs_folder, worker, job, mocker, mock_mss, fake_clock
 ):
     with client as client:
-        users = _create_many_users(client, raw_users=USERS[:1])
-        raw_jobs = _get_raw_jobs(job, durations=[0.2])
-        job_info = _get_job_submission_metadata(
+        users = create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_info = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )[0]
-        _submit_multiple_jobs_v2(client, data=[job_info])
+        submit_jobs(client, data=[job_info])
 
         worker.work(burst=True)
 
@@ -2726,9 +2726,9 @@ def test_cancel_job_cancels_its_rq_job(
 ):
     """Cancelling a queued job cancels the rq job that would run it"""
     with client as client:
-        users = _create_many_users(client, raw_users=USERS[:1])
-        raw_jobs = _get_raw_jobs(job, durations=[0.2])
-        job_info = _get_job_submission_metadata(
+        users = create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_info = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )[0]
         job_id = job_info["job_id"]
@@ -2738,7 +2738,7 @@ def test_cancel_job_cancels_its_rq_job(
             )
         worker.work(burst=True, max_jobs=1)
 
-        _cancel_job_via_mss(client, user_id=job_info["user_id"], job_id=job_id)
+        cancel_job_via_mss(client, user_id=job_info["user_id"], job_id=job_id)
 
         rq_job = RqJob.fetch(get_rq_job_id(job_id, Stage.EXEC_Q), connection=redis_conn)
         assert rq_job.get_status() == "canceled"
@@ -2750,18 +2750,18 @@ def test_mss_admin_new_to_the_device_views_and_cancels_job(
 ):
     """An MSS admin views and cancels a job before the device has heard of them"""
     with client as client:
-        users = _create_many_users(client, raw_users=USERS[:1])
-        raw_jobs = _get_raw_jobs(job, durations=[0.2])
-        job_info = _get_job_submission_metadata(
+        users = create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_info = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )[0]
-        _submit_multiple_jobs_v2(client, data=[job_info])
+        submit_jobs(client, data=[job_info])
         admin_id = f"{uuid4()}"
 
-        _, view_response = _view_job(
+        _, view_response = view_job(
             client, user_id=admin_id, job_id=job_info["job_id"], is_admin=True
         )
-        cancel_response = _cancel_job_via_mss(
+        cancel_response = cancel_job_via_mss(
             client, user_id=admin_id, job_id=job_info["job_id"], is_admin=True
         )
 
@@ -2775,20 +2775,20 @@ def test_cancel_finished_job(
 ):
     """POST '/jobs/{id}/cancel' leaves a job that has finished as it is"""
     with client as client:
-        users = _create_many_users(client, raw_users=USERS[:1])
-        raw_jobs = _get_raw_jobs(job, durations=[0.2])
-        job_info = _get_job_submission_metadata(
+        users = create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_info = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )[0]
-        _submit_multiple_jobs_v2(client, data=[job_info])
+        submit_jobs(client, data=[job_info])
         worker.work(burst=True)
 
-        response = _cancel_job_via_mss(
+        response = cancel_job_via_mss(
             client, user_id=job_info["user_id"], job_id=job_info["job_id"]
         )
 
         assert response.status_code == 406
-        assert _get_jobs_in_redis(redis_conn)[0].status == JobStatus.SUCCESSFUL
+        assert get_jobs_in_redis(redis_conn)[0].status == JobStatus.SUCCESSFUL
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
@@ -2797,20 +2797,20 @@ def test_remove_cancelled_job(
 ):
     """DELETE '/jobs/{id}' deletes a job that was cancelled"""
     with client as client:
-        users = _create_many_users(client, raw_users=USERS[:1])
-        raw_jobs = _get_raw_jobs(job, durations=[0.2])
-        job_info = _get_job_submission_metadata(
+        users = create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_info = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )[0]
         user_id, job_id = job_info["user_id"], job_info["job_id"]
-        _submit_multiple_jobs_v2(client, data=[job_info])
+        submit_jobs(client, data=[job_info])
         worker.work(burst=True, max_jobs=1)
-        _cancel_job_via_mss(client, user_id=user_id, job_id=job_id)
+        cancel_job_via_mss(client, user_id=user_id, job_id=job_id)
 
         response = client.delete(f"/jobs/{job_id}", headers=create_mss_headers(user_id))
 
         assert response.status_code == 200
-        assert _get_jobs_in_redis(redis_conn) == []
+        assert get_jobs_in_redis(redis_conn) == []
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
@@ -2821,9 +2821,9 @@ def test_cancel_another_users_job(
     with client as client:
         cancellation_reason = "just testing"
 
-        users = _create_many_users(client, raw_users=USERS[:2])
-        raw_jobs = _get_raw_jobs(job, durations=[0.2])
-        job_metadata_list = _get_job_submission_metadata(
+        users = create_many_users(client, raw_users=USERS[:2])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
         job_info = job_metadata_list[0]
@@ -2840,7 +2840,7 @@ def test_cancel_another_users_job(
         worker.work(burst=True, max_jobs=1)
 
         other_user_id = users[1]["id"]
-        response = _cancel_job_via_mss(
+        response = cancel_job_via_mss(
             client, user_id=other_user_id, job_id=job_id, reason=cancellation_reason
         )
         expected = {
@@ -2851,7 +2851,7 @@ def test_cancel_another_users_job(
         assert response.status_code == 404
         assert got == expected
 
-        job_in_db = _get_jobs_in_redis(redis_conn)[0]
+        job_in_db = get_jobs_in_redis(redis_conn)[0]
 
         expected_job = original_job.model_copy(
             update={
@@ -2874,9 +2874,9 @@ def test_admin_cancel_job(
     with client as client:
         cancellation_reason = "just testing"
 
-        users = _create_many_users(client, raw_users=USERS[:2])
-        raw_jobs = _get_raw_jobs(job, durations=[0.2])
-        job_metadata_list = _get_job_submission_metadata(
+        users = create_many_users(client, raw_users=USERS[:2])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
         job_info = job_metadata_list[0]
@@ -2894,7 +2894,7 @@ def test_admin_cancel_job(
         original_job = response.json()
 
         other_user_id = users[1]["id"]
-        response = _cancel_job_via_mss(
+        response = cancel_job_via_mss(
             client,
             user_id=other_user_id,
             job_id=job_id,
@@ -2910,7 +2910,7 @@ def test_admin_cancel_job(
         assert response.status_code == 200
         assert got == expected
 
-        job_in_db = _get_jobs_in_redis(redis_conn)[0]
+        job_in_db = get_jobs_in_redis(redis_conn)[0]
         preprocess_start = job_in_db.timestamps.pre_processing.started
         preprocess_end = job_in_db.timestamps.pre_processing.finished
 
@@ -2947,9 +2947,9 @@ def test_unauthenticated_cancel_job(
     with client as client:
         cancellation_reason = "just testing"
 
-        users = _create_many_users(client, raw_users=USERS[:2])
-        raw_jobs = _get_raw_jobs(job, durations=[0.2])
-        job_metadata_list = _get_job_submission_metadata(
+        users = create_many_users(client, raw_users=USERS[:2])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
         job_info = job_metadata_list[0]
@@ -2979,18 +2979,18 @@ def test_download_logfile(
     """GET to '/logfiles/{logfile_id}' downloads the given logfile"""
     # using context manager to ensure on_startup runs
     with client as client:
-        _save_job_file(folder=logfile_download_folder, job=job, ext=".hdf5")
+        save_job_file(folder=logfile_download_folder, job=job, ext=".hdf5")
 
-        users = _create_many_users(client, raw_users=USERS[:1])
+        users = create_many_users(client, raw_users=USERS[:1])
 
         # Creating this job metadata list first because it takes up a lot of time
-        job_metadata_list = _get_job_submission_metadata(
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=[job], users=users, mocker=mocker, jobs_folder=jobs_folder
         )
         job_info = job_metadata_list[0]
 
         # submit many jobs from many users
-        _submit_multiple_jobs_v2(client, data=job_metadata_list)
+        submit_jobs(client, data=job_metadata_list)
 
         response = client.get(f"/logfiles/{job["job_id"]}", headers=job_info["headers"])
         file_content = json.loads(response.content)
@@ -3006,13 +3006,13 @@ def test_logfile_for_non_existing_job(
     # using context manager to ensure on_startup runs
     with client as client:
         job_id = job["job_id"]
-        _save_job_file(folder=logfile_download_folder, job=job, ext=".hdf5")
+        save_job_file(folder=logfile_download_folder, job=job, ext=".hdf5")
 
-        user_id, _ = _create_user(client, USERS[0])
+        user_id, _ = create_user(client, USERS[0])
         login_data = {"user_id": user_id, "job_id": job_id}
-        token, _ = _get_token(client, data=login_data)
+        token, _ = get_token(client, data=login_data)
 
-        headers = _get_headers(token)
+        headers = get_bearer_headers(token)
 
         response = client.get(f"/logfiles/{job_id}", headers=headers)
         assert response.status_code == 404
@@ -3026,17 +3026,17 @@ def test_unauthenticated_download_logfile(
     """Unauthenticated GET to '/logfiles/{logfile_id}' errors out"""
     # using context manager to ensure on_startup runs
     with client as client:
-        _save_job_file(folder=logfile_download_folder, job=job, ext=".hdf5")
+        save_job_file(folder=logfile_download_folder, job=job, ext=".hdf5")
 
-        users = _create_many_users(client, raw_users=USERS[:1])
+        users = create_many_users(client, raw_users=USERS[:1])
 
         # Creating this job metadata list first because it takes up a lot of time
-        job_metadata_list = _get_job_submission_metadata(
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=[job], users=users, mocker=mocker, jobs_folder=jobs_folder
         )
 
         # submit many jobs from many users
-        _submit_multiple_jobs_v2(client, data=job_metadata_list)
+        submit_jobs(client, data=job_metadata_list)
 
         # no authentication
         response = client.get(f"/logfiles/{job["job_id"]}")
@@ -3044,7 +3044,7 @@ def test_unauthenticated_download_logfile(
         assert response.json() == {"detail": "user not authenticated"}
 
         # wrong authentication
-        headers = _get_headers("foo")
+        headers = get_bearer_headers("foo")
         response = client.get(f"/logfiles/{job["job_id"]}", headers=headers)
         assert response.status_code == 401
         assert response.json() == {"detail": "not authenticated"}
@@ -3055,7 +3055,7 @@ def test_get_static_properties(client, expected):
     """Get to '/static-properties' retrieves the current static properties of the backend"""
     # using context manager to ensure on_startup runs
     with client as client:
-        user_id, _ = _create_user(client, USERS[0])
+        user_id, _ = create_user(client, USERS[0])
         headers = create_mss_headers(user_id)
 
         response = client.get("/static-properties", headers=headers)
@@ -3083,13 +3083,13 @@ def test_get_dynamic_properties(client, expected):
         # the heavy worker publishes its executor's calibration, e.g. the simulators'
         # trained discriminators, once the API has started
         preload_worker_globals(should_load_executor=True)
-        user_id, _ = _create_user(client, USERS[0])
+        user_id, _ = create_user(client, USERS[0])
         headers = create_mss_headers(user_id)
 
         response = client.get("/dynamic-properties", headers=headers)
         got = response.json()
         assert response.status_code == 200
-        assert _remove_dates(got) == expected
+        assert remove_dates(got) == expected
 
 
 @pytest.mark.parametrize("client, _expected", _STATIC_PROPERTIES_PARAMS)
@@ -3110,12 +3110,12 @@ def test_init_recalibration_with_interval(
 ):
     """Init recalibration restarts the calibration sequence, changing the interval from the default"""
     with client as client:
-        users = _create_many_users(client, raw_users=USERS)
+        users = create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
         queue_prefix = get_queue_context()["queue_prefix"]
         queue_name = f"{queue_prefix}_recalibration"
-        queue = _get_queue_by_name(worker, queue_name)
+        queue = get_queue_by_name(worker, queue_name)
         initial_interval = TEST_DEFAULT_RECALIBRATION_INTERVAL
         max_queue_time = TEST_MAX_RECALIBRATION_QUEUE_TIME
         new_interval = 4
@@ -3143,7 +3143,7 @@ def test_init_recalibration_with_interval(
         assert response.status_code == 200
         assert actual_output == {"status": "success"}
 
-        _wait_on_rq_worker(
+        wait_on_rq_worker(
             worker,
             max_jobs=2,
             max_idle_time=initial_interval + max_queue_time,
@@ -3176,12 +3176,12 @@ def test_init_recalibration_without_interval(
 ):
     """Init recalibration restarts the calibration sequence without interval continues with the default interval"""
     with client as client:
-        users = _create_many_users(client, raw_users=USERS)
+        users = create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
         queue_prefix = get_queue_context()["queue_prefix"]
         queue_name = f"{queue_prefix}_recalibration"
-        queue = _get_queue_by_name(worker, queue_name)
+        queue = get_queue_by_name(worker, queue_name)
         initial_interval = TEST_DEFAULT_RECALIBRATION_INTERVAL
         max_queue_time = TEST_MAX_RECALIBRATION_QUEUE_TIME
         admin_headers = create_mss_headers(user_id, is_admin=True)
@@ -3199,7 +3199,7 @@ def test_init_recalibration_without_interval(
         assert response.status_code == 200
         assert actual_output == {"status": "success"}
 
-        _wait_on_rq_worker(
+        wait_on_rq_worker(
             worker,
             max_jobs=2,
             max_idle_time=initial_interval + max_queue_time,
@@ -3262,12 +3262,12 @@ def test_init_recalibration_with_start_time(
 ):
     """POST /recalibration/cancel restarts the recalibration sequence at a given start time in future"""
     with client as client:
-        users = _create_many_users(client, raw_users=USERS)
+        users = create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
         queue_prefix = get_queue_context()["queue_prefix"]
         queue_name = f"{queue_prefix}_recalibration"
-        queue = _get_queue_by_name(worker, queue_name)
+        queue = get_queue_by_name(worker, queue_name)
         initial_interval = TEST_DEFAULT_RECALIBRATION_INTERVAL
         max_queue_time = TEST_MAX_RECALIBRATION_QUEUE_TIME
         headers = create_mss_headers(user_id, is_admin=True)
@@ -3284,7 +3284,7 @@ def test_init_recalibration_with_start_time(
         assert response.status_code == 200
         assert actual_output == {"status": "success"}
 
-        _wait_on_rq_worker(
+        wait_on_rq_worker(
             worker,
             max_jobs=1,
             max_idle_time=initial_interval + max_queue_time,
@@ -3312,12 +3312,12 @@ def test_get_recalibration_info(
 ):
     """Get /recalibration/info gets recalibration info retrieves the basic recalibration info"""
     with client as client:
-        users = _create_many_users(client, raw_users=USERS)
+        users = create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
         queue_prefix = get_queue_context()["queue_prefix"]
         queue_name = f"{queue_prefix}_recalibration"
-        queue = _get_queue_by_name(worker, queue_name)
+        queue = get_queue_by_name(worker, queue_name)
         initial_interval = TEST_DEFAULT_RECALIBRATION_INTERVAL
         max_queue_time = TEST_MAX_RECALIBRATION_QUEUE_TIME
         new_interval = 4.0
@@ -3345,7 +3345,7 @@ def test_get_recalibration_info(
         assert response.status_code == 200
         pre_run_info = response.json()
 
-        _wait_on_rq_worker(
+        wait_on_rq_worker(
             worker,
             max_jobs=2,
             max_idle_time=initial_interval + max_queue_time,
@@ -3428,12 +3428,12 @@ def test_get_recalibration_info(
 def test_cancel_default_recalibration(client, redis_conn: Redis, worker):
     """POST /recalibration/cancel cancels the default recalibration started on startup"""
     with client as client:
-        users = _create_many_users(client, raw_users=USERS)
+        users = create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
         queue_prefix = get_queue_context()["queue_prefix"]
         queue_name = f"{queue_prefix}_recalibration"
-        queue = _get_queue_by_name(worker, queue_name)
+        queue = get_queue_by_name(worker, queue_name)
 
         headers = create_mss_headers(user_id, is_admin=True)
         response = client.post("/recalibration/cancel", headers=headers)
@@ -3458,7 +3458,7 @@ def test_init_recalibration_reads_a_naive_start_time_as_utc(
     try:
         with client as client:
             queue_name = f"{get_queue_context()['queue_prefix']}_recalibration"
-            registry = _get_queue_by_name(worker, queue_name).scheduled_job_registry
+            registry = get_queue_by_name(worker, queue_name).scheduled_job_registry
             start_utc = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(
                 hours=1
             )
@@ -3480,7 +3480,7 @@ def test_init_recalibration_reads_a_naive_start_time_as_utc(
 def test_failed_recalibration_schedules_the_next(client, redis_conn, worker, mocker):
     with client as client:
         queue_name = f"{get_queue_context()['queue_prefix']}_recalibration"
-        queue = _get_queue_by_name(worker, queue_name)
+        queue = get_queue_by_name(worker, queue_name)
         failing_executor = Mock(recalibrate=Mock(side_effect=RuntimeError("no device")))
         mocker.patch(
             "app.services.scheduler.tasks.get_quantum_executor",
@@ -3497,9 +3497,9 @@ def test_failed_recalibration_schedules_the_next(client, redis_conn, worker, moc
 def test_cancel_recalibration_while_one_runs(client, redis_conn, worker, mocker):
     """POST /recalibration/cancel during a recalibration leaves none to follow it"""
     with client as client:
-        user_id = _create_many_users(client, raw_users=USERS[:1])[0]["id"]
+        user_id = create_many_users(client, raw_users=USERS[:1])[0]["id"]
         queue_name = f"{get_queue_context()['queue_prefix']}_recalibration"
-        queue = _get_queue_by_name(worker, queue_name)
+        queue = get_queue_by_name(worker, queue_name)
 
         def cancel_recalibration():
             headers = create_mss_headers(user_id, is_admin=True)
@@ -3521,12 +3521,12 @@ def test_cancel_recalibration_while_one_runs(client, redis_conn, worker, mocker)
 def test_cancel_restarted_recalibration(client, redis_conn: Redis, worker):
     """POST /recalibration/cancel cancels any recalibration restarted even after cancellation"""
     with client as client:
-        users = _create_many_users(client, raw_users=USERS)
+        users = create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
         queue_prefix = get_queue_context()["queue_prefix"]
         queue_name = f"{queue_prefix}_recalibration"
-        queue = _get_queue_by_name(worker, queue_name)
+        queue = get_queue_by_name(worker, queue_name)
 
         # first cancel the recalibration
         headers = create_mss_headers(user_id, is_admin=True)
@@ -3567,9 +3567,9 @@ def test_cancel_restarted_recalibration(client, redis_conn: Redis, worker):
 def test_switch_off(client, redis_conn, jobs_folder, worker, job, mocker, fake_clock):
     """POST '/switch/off' switches off the scheduler and does not allow jobs"""
     with client as client:
-        users = _create_many_users(client, raw_users=USERS[:2])
-        raw_jobs = _get_raw_jobs(job, durations=[0.2])
-        job_metadata_list = _get_job_submission_metadata(
+        users = create_many_users(client, raw_users=USERS[:2])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
         job_info = job_metadata_list[0]
@@ -3596,7 +3596,7 @@ def test_switch_off(client, redis_conn, jobs_folder, worker, job, mocker, fake_c
 
         worker.work(burst=True)
 
-        jobs_in_redis = _get_jobs_in_redis(redis_conn)
+        jobs_in_redis = get_jobs_in_redis(redis_conn)
         assert jobs_in_redis == []
 
 
@@ -3604,9 +3604,9 @@ def test_switch_off(client, redis_conn, jobs_folder, worker, job, mocker, fake_c
 def test_switch_on(client, redis_conn, jobs_folder, worker, job, mocker, fake_clock):
     """POST '/switch/on' switches on the scheduler and allowing jobs"""
     with client as client:
-        users = _create_many_users(client, raw_users=USERS[:2])
-        raw_jobs = _get_raw_jobs(job, durations=[0.2])
-        job_metadata_list = _get_job_submission_metadata(
+        users = create_many_users(client, raw_users=USERS[:2])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_metadata_list = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )
         job_info = job_metadata_list[0]
@@ -3637,7 +3637,7 @@ def test_switch_on(client, redis_conn, jobs_folder, worker, job, mocker, fake_cl
 
         worker.work(burst=True)
 
-        jobs_in_redis = _get_jobs_in_redis(redis_conn)
+        jobs_in_redis = get_jobs_in_redis(redis_conn)
         assert len(jobs_in_redis) == 1
 
 
@@ -3698,7 +3698,7 @@ def test_switch_answers_other_requests_while_it_tells_mss(client, mocker):
 def test_switch_status(client, redis_conn, jobs_folder, worker, job, mocker):
     """GET '/switch/status' shows the status of the device if ON or OFF"""
     with client as client:
-        users = _create_many_users(client, raw_users=USERS[:2])
+        users = create_many_users(client, raw_users=USERS[:2])
         user = users[0]
         user_id = user["id"]
 
@@ -3729,724 +3729,3 @@ def test_switch_status(client, redis_conn, jobs_folder, worker, job, mocker):
         response = client.get("/switch/status", headers=headers)
         assert response.status_code == 200
         assert response.json() == {"status": "ON"}
-
-
-def _cancel_job_via_mss(
-    client: "TestClient",
-    user_id: str,
-    job_id: str,
-    reason: Optional[str] = None,
-    is_admin: Optional[bool] = None,
-) -> "Response":
-    """Cancels the job on the REST API via MSS, passing signed MSS headers
-
-    Args:
-        client: the TestClient for running tests in
-        user_id: the user ID for authentication
-        job_id: the unique identifier of the job
-        reason: the reason for cancelling the job
-        is_admin: whether the user is an MSS admin
-
-    Returns:
-        the httpx.Response form the cancellation endpoint
-    """
-    headers = create_mss_headers(user_id, is_admin=is_admin)
-    payload = {}
-
-    if reason is not None:
-        payload["reason"] = reason
-
-    return client.post(f"/jobs/{job_id}/cancel", json=payload, headers=headers)
-
-
-def _cancel_booking(
-    client: "TestClient", user_id: str, booking_id: str, is_admin: Optional[bool] = None
-) -> "Response":
-    """Cancels the booking on the API
-
-    Args:
-        client: the fastapi TestClient for running tests
-        user_id: the user ID for authentication
-        booking_id: the unique identifier of the booking
-        is_admin: whether to visit the cancellation endpoint as an MSS admin or not
-
-    Returns:
-        the httpx.Response from the cancellation endpoint
-    """
-    headers = create_mss_headers(user_id, is_admin=is_admin)
-    return client.post(f"/bookings/{booking_id}/cancel", headers=headers)
-
-
-def _view_job(
-    client: "TestClient", user_id: str, job_id: str, is_admin: Optional[bool] = None
-) -> Tuple[Optional[Job], "Response"]:
-    """Gets the job as viewed on the REST API
-
-    Args:
-        client: the TestClient for the running tests in
-        user_id: the unique identifier of the user associated with this job
-        job_id: the unique identifier of the job
-        is_admin: whether the MSS user is admin
-
-    Returns:
-        the tuple of the job or None if no job and the httpx.Response from endpoint
-    """
-    headers = create_mss_headers(user_id, is_admin=is_admin)
-    response = client.get(f"/jobs/{job_id}", headers=headers)
-    try:
-        job = Job.model_validate(response.json())
-        assert response.status_code == 200
-        return job, response
-    except ValidationError:
-        return None, response
-
-
-def _view_booking_list(
-    client: "TestClient",
-    requester_id: str,
-    skip: int = 0,
-    limit: Optional[int] = None,
-    sort: Tuple[str, ...] = (),
-    is_admin: Optional[bool] = None,
-    **filters,
-) -> "Response":
-    """Views the paginated list of bookings
-
-    Args:
-        client: the test client in which the tests run
-        requester_id: the user ID for authentication
-        skip: the number of records to skip
-        limit: the maximum number of records to return
-        sort: the columns to sort by, prepending "-" to mean descending order
-        is_admin: whether to access the bookings endpoint as admin
-        filters: additional filters to apply to the bookings
-
-    Returns:
-        the httpx.Response for the request
-    """
-    headers = create_mss_headers(requester_id, is_admin=is_admin)
-    params = {"skip": skip, "sort": sort}
-    if isinstance(limit, int):
-        params["limit"] = limit
-    params.update(filters)
-
-    return client.get("/bookings", headers=headers, params=params)
-
-
-def _view_user_list(
-    client: "TestClient",
-    user_id: str,
-    skip: int = 0,
-    limit: Optional[int] = None,
-    is_admin: Optional[bool] = None,
-) -> "Response":
-    """Views the pagination list of users on the REST API
-
-    Args:
-        client: the fastapi TestClient for testing the API
-        user_id: the user ID for authentication
-        skip: the number of records to skip
-        limit: the maximum number of records to return
-        is_admin: whether to visit the user list endpoint as an admin
-
-    Returns:
-        the httpx.Response
-    """
-    params = {"skip": skip}
-    if isinstance(limit, int):
-        params["limit"] = limit
-
-    headers = create_mss_headers(user_id, is_admin=is_admin)
-    return client.get("/users", headers=headers, params=params)
-
-
-def _view_own_profile(client: "TestClient", user_id: str) -> "Response":
-    """Views profile of the current user on the REST API
-
-    Args:
-        client: the fastapi TestClient for testing the app
-        user_id: the user ID for authentication
-
-    Returns:
-        the REST httpx.Response
-    """
-    return client.get("/me", headers=create_mss_headers(user_id))
-
-
-def _delete_own_profile(client: "TestClient", user_id: str) -> "Response":
-    """Deletes profile of the current user
-
-    Args:
-        client: the fastapi TextClient in which the tests run
-        user_id: the user ID for authentication
-
-    Returns:
-        the httpx.Response
-    """
-    return client.delete("/me", headers=create_mss_headers(user_id))
-
-
-def _get_headers(token: str) -> Dict[str, Any]:
-    """Gets the headers corresponding to the given token
-
-    Args:
-        token: the token of the user
-
-    Returns:
-        the dict of headers
-    """
-    return {"Authorization": f"Bearer {token}"}
-
-
-def _to_booking_payload(booking_info: "BasicBookingInfo") -> "_BookingPayload":
-    """Converts the booking info to payload for creation of a new booking
-
-    Args:
-        booking_info: the basic booking info containing starts_in, duration
-
-    Returns:
-        the payload for creating a booking
-    """
-    starts_in = timedelta(seconds=booking_info["starts_in"])
-    duration = timedelta(seconds=booking_info["duration"])
-
-    current_timestamp = datetime.now(timezone.utc)
-    start_utc = current_timestamp + starts_in
-    end_utc = start_utc + duration
-    return {
-        "start_utc": start_utc.isoformat(),
-        "end_utc": end_utc.isoformat(),
-    }
-
-
-def _get_raw_jobs(job_template: dict, durations: List[float]) -> List[dict]:
-    """Generates a list of jobs given a job template and durations
-
-    Args:
-        job_template: the template all jobs adhere to
-        durations: the durations corresponding to each job
-
-    Returns:
-        List of jobs, one job per entry in the list of durations
-    """
-    raw_jobs = []
-    for duration in durations:
-        new_job = copy.deepcopy(job_template)
-        new_job["job_id"] = f"{uuid4()}"
-
-        with suppress(TypeError, KeyError):
-            new_job["params"]["qobj"]["header"]["test_duration"] = duration
-
-        raw_jobs.append(new_job)
-    return raw_jobs
-
-
-def _remove_user(
-    client: "TestClient",
-    current_user_id: str,
-    user_id: str,
-    is_admin: Optional[bool] = None,
-) -> "Response":
-    """Delete the user of the given user ID
-
-    Args:
-        client: the fastapi TestClient for running tests
-        current_user_id: the current user sending this request
-        user_id: the unique identifier of the given user
-        is_admin: whether to access the user-deletion endpoint as an admin
-
-    Returns:
-        the httpx.Response
-    """
-    headers = create_mss_headers(current_user_id, is_admin=is_admin)
-    return client.delete(f"/users/{user_id}", headers=headers)
-
-
-def _paginate(
-    data: List[T], skip: int = 0, limit: Optional[int] = None
-) -> "_PaginatedList[T]":
-    """Paginates the data basing on the skip and the limit params
-
-    Args:
-        skip: the number of records to skip
-        limit: the maximum number of records to return
-
-    Returns:
-        list of the data sliced according to the pagination info
-    """
-    slice_limit = limit
-    if isinstance(slice_limit, int):
-        slice_limit += skip
-    return {"skip": skip, "limit": limit, "data": data[skip:slice_limit]}
-
-
-def _drop_microsec(timestamp: datetime) -> datetime:
-    """Drops the microseconds on the timestamp
-
-    Args:
-        timestamp: the datetime which may or may not have microseconds
-
-    Returns:
-        the datetime but without microseconds
-    """
-    return timestamp.replace(microsecond=0)
-
-
-def _get_status_codes_as_mss_admin(
-    client: "TestClient", routes: List[Tuple[str, str]]
-) -> Dict[str, int]:
-    """Gets the status code of each route, as "<method> <path>", requested as an MSS admin"""
-    return {
-        f"{method} {path}": client.request(
-            method, path, headers=create_mss_headers(is_admin=True)
-        ).status_code
-        for method, path in routes
-    }
-
-
-def _get_jobs_sent_to_mss(mss_update_spy: Mock) -> List[Job]:
-    """Gets the jobs, in order, that a spy on update_job_in_mss saw sent to MSS"""
-    return [call.kwargs["payload"] for call in mss_update_spy.call_args_list]
-
-
-def _get_jobs_in_redis(redis_client: Redis) -> List[Job]:
-    """Gets the jobs that are in redis
-
-    Args:
-        redis_client: the client for accessing redis
-
-    Returns:
-        the list of jobs in redis
-    """
-    jobs_hash_name = f"{os.environ['BCC_DEFAULT_PREFIX']}:jobs"
-    raw_jobs_in_redis = redis_client.hgetall(jobs_hash_name)
-    return [Job.model_validate_json(item) for item in raw_jobs_in_redis.values()]
-
-
-def _submit_multiple_jobs_v2(
-    client: "TestClient", data: List["_JobSubmissionMetadata"] = None
-) -> List[str]:
-    """Submits multiple jobs given the job metadata list.
-
-    Args:
-        client: the fastapi TestClient for testing
-        data: list of the job metadata to use for submission
-
-    Returns:
-        the list of job_ids of the created jobs
-    """
-    job_ids_in_fifo = []
-
-    for job_info in data:
-        with open(job_info["file_path"], "rb") as file:
-            response = client.post(
-                "/jobs", files={"upload_file": file}, headers=job_info["headers"]
-            )
-
-        actual_job = response.json()
-        job_ids_in_fifo.append(actual_job["job_id"])
-
-        assert actual_job["user_id"] == job_info["user_id"]
-        assert actual_job["job_id"] == job_info["job_id"]
-
-    return job_ids_in_fifo
-
-
-def _get_job_submission_metadata(
-    client: "TestClient",
-    jobs: List[dict],
-    users: List[dict],
-    mocker: MockerFixture,
-    jobs_folder: Path,
-) -> List["_JobSubmissionMetadata"]:
-    """Generates a list of job submission metadata to use when submitting jobs
-
-    Metadata includes the token to use, the user_id, the file path
-    This operation is quite expensive
-
-    Args:
-        client: the test client to run the tests on
-        jobs: list of jobs for which the map is constructed
-        users: the list of users to use to submit the jobs in a round-robin style
-        mocker: the mocker for intercepting the generation of the user token
-        jobs_folder: the folder in which the job files are to be saved temporarily before submission
-
-    Returns:
-        a list of job submission metadata
-    """
-    num_of_users = len(users)
-    results = []
-    for idx, job_info in enumerate(jobs):
-        curr_user = users[idx % num_of_users]
-        job_file_path = _save_job_file(folder=jobs_folder, job=job_info)
-        user_id = curr_user["id"]
-        job_id = job_info["job_id"]
-
-        token, _ = _get_token(client, data={"user_id": user_id, "job_id": job_id})
-
-        results.append(
-            {
-                "job_id": job_id,
-                "user_id": user_id,
-                "file_path": job_file_path,
-                "token": token,
-                "headers": _get_headers(token),
-            }
-        )
-
-    return results
-
-
-def _submit_multiple_jobs(
-    client: "TestClient",
-    user_id_token_map: Dict[str, str],
-    is_job_id_specified: bool = True,
-    raw_jobs: List[Dict[str, Any]] = tuple(JOBS),
-) -> List[str]:
-    """Submits multiple jobs one or more per user in the user_id_token_map.
-
-    It attempts to spread the jobs evenly across the users, while
-    maintaining the order i.e. the first user is matched with the first job,
-    the second with the second etc. until all the users are used up then the cycle
-    is restarted from the first user.
-
-    Args:
-        client: the fastapi TestClient for testing
-        user_id_token_map: the dict of <user_id>:<token> for use when submitting jobs
-        is_job_id_specified: whether the job id is specified when submitting the jobs
-        raw_jobs: the list of raw job data; default = JOBS
-
-    Returns:
-        the list of job_ids of the created jobs
-    """
-    job_ids_in_fifo = []
-    user_id_token_pairs = list(user_id_token_map.items())
-    num_of_pairs = len(user_id_token_pairs)
-
-    for idx, job_info in enumerate(raw_jobs):
-        (user_id, token) = user_id_token_pairs[idx % num_of_pairs]
-        headers = _get_headers(token)
-        data = {
-            "type": job_info["type"],
-            "test_duration": job_info["test_duration"],
-        }
-        if is_job_id_specified:
-            data["job_id"] = job_info["job_id"]
-
-        response = client.post("/jobs", headers=headers, json=data)
-        actual_job = response.json()
-        job_ids_in_fifo.append(actual_job["job_id"])
-
-        assert actual_job["job_id"]
-        assert actual_job["user_id"] == user_id
-        assert actual_job["type"] == job_info["type"]
-        assert actual_job["test_duration"] == job_info["test_duration"]
-
-        if is_job_id_specified:
-            assert actual_job["job_id"] == job_info["job_id"]
-
-    return job_ids_in_fifo
-
-
-def _create_many_users(
-    client: "TestClient",
-    raw_users: List[Dict[str, Any]] = tuple(USERS),
-) -> List[Dict[str, Any]]:
-    """Creates a list of users, returning them as dicts
-
-    Args:
-        client: the fastapi test client
-        raw_users: the list of raw user data
-
-    Returns:
-        dictionary of user_id: token
-    """
-    result: List[Dict[str, Any]] = []
-    for user in raw_users:
-        user_id, resp = _create_user(client, user=user)
-        result.append(resp.json())
-    return result
-
-
-def _post_booking(
-    client: "TestClient", user_id: str, start_utc: datetime, end_utc: datetime
-) -> "Response":
-    """Books the slot from start_utc to end_utc for the user"""
-    return client.post(
-        "/bookings",
-        headers=create_mss_headers(user_id),
-        json={"start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat()},
-    )
-
-
-def _create_booking(
-    client: "TestClient", user_id: str, booking: "BasicBookingInfo"
-) -> Tuple["BasicBookingInfo", "Response"]:
-    """Creates the booking and returns the actual booking details
-
-    It assumes the user is a valid user in MSS
-
-    Actual booking details include actual duration and actual delay
-
-    Args:
-        client: the fastapi TestClient used for testing
-        user_id: the id of the user
-        booking: the basic booking info
-
-    Returns:
-        the tuple of the actual basic info of the created booking and the httpx.Response
-    """
-    headers = create_mss_headers(user_id)
-    current_timestamp = datetime.now(timezone.utc)
-    data = _to_booking_payload(booking)
-    response = client.post("/bookings", headers=headers, json=data)
-    json_response = response.json()
-
-    start_utc = json_response["start_utc"]
-    start_utc_datetime = datetime.fromisoformat(start_utc)
-    end_utc = json_response["end_utc"]
-    end_utc_datetime = datetime.fromisoformat(end_utc)
-
-    actual_duration = (end_utc_datetime - start_utc_datetime).total_seconds()
-    actual_delay = (start_utc_datetime - current_timestamp).total_seconds()
-    # round off delay just to shave off the milliseconds lost during execution
-    actual_delay = int(actual_delay)
-
-    actual_basic_info: BasicBookingInfo = {
-        "duration": actual_duration,
-        "starts_in": actual_delay,
-    }
-    return actual_basic_info, response
-
-
-def _create_user(client: "TestClient", user: dict) -> Tuple[str, "Response"]:
-    """Creates a user and returns their ID and the httpx.Response
-
-    Args:
-        client: the fastapi TestClient used for testing
-        user: the user info for creating the user
-
-    Returns:
-        the tuple of id of the user and the result
-    """
-    headers = create_mss_headers(is_admin=True)
-    user_id = f"{uuid4()}"
-    payload = {**user, "id": user_id}
-
-    response = client.post("/users", json=payload, headers=headers)
-    json_response = response.json()
-
-    assert json_response["id"] == user_id
-    return user_id, response
-
-
-def _get_token(client: "TestClient", data: "_LoginDetails") -> Tuple[str, "Response"]:
-    """Mimics logging in via MSS and returns the user's JWT token and the httpx.Response
-
-    Args:
-        client: the fastapi TestClient for testing the app
-        data: the info for signing in
-
-    Returns:
-        the tuple of the JWT of the user and the httpx.Response
-    """
-    headers = create_mss_headers(user_id=data["user_id"])
-    response = client.post("/token", json=data, headers=headers)
-    token = decrypt_access_token(response.json()["access_token"])
-    return token, response
-
-
-def _save_job_file(folder: Path, job: Dict[str, Any], ext: str = ".json") -> Path:
-    """Saves the given job to a file and returns the Path
-
-    It uses 'dummy' as a default job id
-
-    Args:
-        folder: the folder to save the job in
-        job: the job to save
-
-    Returns:
-        the path where the job was saved
-    """
-    job_id = job.get("job_id", "dummy")
-    file_path = folder / f"{job_id}{ext}"
-
-    with open(file_path, "w") as file:
-        json.dump(job, file)
-
-    return file_path
-
-
-def _job_results_match(results: List[str], expected_min_counts: Dict[str, int]):
-    """Matches job results, keeping in mind that the results are probabilistic
-
-    The states are written in hex '0x0', '0x1', '0x2', '0x3' i.e. 00, 01, 10, 11
-
-    Args:
-        results: the results obtained
-        expected_min_counts: the expected counts minimum counts for each state
-
-    Returns:
-        True if they match, False if they don't
-    """
-    return all([results.count(k) >= v for k, v in expected_min_counts.items()])
-
-
-def _remove_dates(dynamic_properties: Dict[str, Any]) -> Dict[str, Any]:
-    """A utility to do away with the dates in the dynamic properties
-
-    Args:
-        dynamic_properties: the properties to change
-
-    Returns:
-        the dynamic properties with "date" and "last_calibrated" replaced with "NOW-PLACEHOLDER"
-    """
-    now_placeholder = "NOW-PLACEHOLDER"
-    qubits = dynamic_properties.get("qubits", [])
-    couplers = dynamic_properties.get("couplers", [])
-    resonators = dynamic_properties.get("resonators", [])
-    return {
-        **dynamic_properties,
-        "last_calibrated": now_placeholder,
-        "qubits": [
-            {
-                k: v if not isinstance(v, dict) else {**v, "date": now_placeholder}
-                for k, v in qubit_conf.items()
-            }
-            for qubit_conf in qubits
-        ],
-        "couplers": [
-            {
-                k: v if not isinstance(v, dict) else {**v, "date": now_placeholder}
-                for k, v in coupler_conf.items()
-            }
-            for coupler_conf in couplers
-        ],
-        "resonators": [
-            {
-                k: v if not isinstance(v, dict) else {**v, "date": now_placeholder}
-                for k, v in resonator_conf.items()
-            }
-            for resonator_conf in resonators
-        ],
-    }
-
-
-def _get_queue_by_name(worker: SimpleWorker, name: str) -> RqQueue:
-    """Gets the rq queue by name
-
-    Args:
-        worker: the worker running the queues
-        name: the name of the queue
-
-    Returns:
-        the rq queue object
-
-    Raises:
-        KeyError: if the queue doesn't exist
-    """
-    try:
-        return [v for v in worker.queues if v.name == name][0]
-    except IndexError:
-        raise KeyError(f"queue '{name}' not found")
-
-
-def _wait_on_rq_worker(
-    worker: SimpleWorker,
-    max_idle_time: int = TEST_RQ_MAX_QUEUE_WAIT_TIME,
-    burst: bool = True,
-    max_jobs: Optional[int] = None,
-    with_scheduler: bool = False,
-    queue: RqQueue = None,
-    clock: Optional[time_machine.Traveller] = None,
-    **kwargs,
-):
-    """Waits for the worker to complete its worker
-
-    Args:
-        worker: the rq worker to wait on
-        max_idle_time: the number of seconds beyond which a timeout is raised
-        with_scheduler: whether to run in a scheduler
-        queue: the queue to wait on; defaults to the first queue i.e. the general queue
-        clock: the fake clock to move on to the next scheduled job when none is queued,
-            instead of waiting for it
-        kwargs: extra kwargs to pass to the work() method of the worker.
-            See the signature of that method
-
-    Raises:
-        TimeoutError: Worker took longer than {max_idle_time} seconds
-        KeyError: if the queue of given name doesn't exist
-    """
-    if queue is None:
-        queue = worker.queues[0]
-
-    # in order to avoid this from hanging,
-    # whenever with_scheduler is True, burst must be True so that it quits
-    # immediately after starting the scheduler.
-    # With burst=True, the locks are released immediately after running the jobs
-    if with_scheduler:
-        burst = True
-
-    deadline = datetime.now() + timedelta(seconds=max_idle_time)
-    initial_completed_jobs = (
-        queue.finished_job_registry.count + queue.failed_job_registry.count
-    )
-    pending_jobs = queue.scheduled_job_registry.count + len(queue.jobs)
-    total_run_jobs = 0
-
-    while pending_jobs > 0 and (max_jobs is None or total_run_jobs < max_jobs):
-        now = datetime.now()
-        if now > deadline:
-            raise TimeoutError(f"Worker took longer than {max_idle_time} seconds")
-
-        worker.work(
-            burst=burst,
-            with_scheduler=with_scheduler,
-            max_jobs=max_jobs,
-            **kwargs,
-        )
-
-        if clock is not None and len(queue.jobs) == 0:
-            registry = queue.scheduled_job_registry
-            scheduled_times = [
-                registry.get_scheduled_time(job_id) for job_id in registry.get_job_ids()
-            ]
-            if scheduled_times and min(scheduled_times) > datetime.now(timezone.utc):
-                clock.move_to(min(scheduled_times))
-
-        # refresh variables
-        pending_jobs = queue.scheduled_job_registry.count + len(queue.jobs)
-        current_completed_jobs = (
-            queue.finished_job_registry.count + queue.failed_job_registry.count
-        )
-        total_run_jobs = current_completed_jobs - initial_completed_jobs
-
-
-class _PaginatedList(TypedDict, Generic[T]):
-    """The type for paginated responses"""
-
-    skip: int
-    limit: Optional[int]
-    data: List[T]
-
-
-class _BookingPayload(TypedDict):
-    """The payload for creation of a booking"""
-
-    start_utc: str
-    end_utc: str
-
-
-class _LoginDetails(TypedDict):
-    """Details used to log in"""
-
-    user_id: str
-    job_id: str
-
-
-class _JobSubmissionMetadata(TypedDict):
-    job_id: str
-    token: str
-    user_id: str
-    file_path: Path
-    headers: dict
