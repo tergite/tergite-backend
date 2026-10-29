@@ -92,7 +92,6 @@ def save_all_device_params(
 
     save_device_info(redis, data=device_info)
     save_calibration_info(redis, data=calib_info)
-    save_backend_config(redis, data=backend_config)
 
     # update MSS of this backend's configuration
     send_device_params_to_mss(
@@ -120,17 +119,6 @@ def save_calibration_info(redis: Redis, data: DeviceCalibration):
     """
     calib_db = Collection[DeviceCalibration](redis, schema=DeviceCalibration)
     calib_db.insert(data)
-
-
-def save_backend_config(connection: Redis, data: BackendConfig):
-    """Saves the current system's backend configuration into the database
-
-    Args:
-        connection: connection to the redis server
-        data: the configuration of the backend
-    """
-    configs_store = Collection(connection, schema=BackendConfig)
-    configs_store.insert(data)
 
 
 def send_device_params_to_mss(

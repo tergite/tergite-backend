@@ -129,7 +129,6 @@ type-hints: app/api/routers/logfiles.py::download_logfile
 type-hints: app/api/routers/switch.py::get_switch_status
 type-hints: app/api/worker.py::PreloadedRqWorker.__init__
 type-hints: app/libs/device_parameters/__init__.py::save_all_device_params
-type-hints: app/libs/device_parameters/__init__.py::save_backend_config
 type-hints: app/libs/device_parameters/__init__.py::save_calibration_info
 type-hints: app/libs/device_parameters/__init__.py::save_device_info
 type-hints: app/libs/device_parameters/__init__.py::send_device_params_to_mss
