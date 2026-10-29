@@ -14,8 +14,10 @@ import threading
 import time
 from datetime import timedelta
 
+from sqlmodel import Session, select
+
 from app.services.booking import service as booking_service
-from app.services.booking.models import Booking, NewBookingInfo, User
+from app.services.booking.models import Booking, NewBookingInfo, NewUserInfo, User
 from app.utils.datetime import get_utc_now
 from app.utils.exc import ConflictError
 from app.utils.sql_db import get_sql_engine
@@ -53,3 +55,15 @@ def test_concurrent_overlapping_bookings_book_the_slot_once(tmp_path, mocker):
 
     assert len(booking_service.get_many_bookings(db_engine)) == 1
     assert len(errors) == 1
+
+
+def test_user_from_mss_keeps_no_password(tmp_path):
+    db_engine = get_sql_engine(f"sqlite:///{tmp_path}/bookings.db", [Booking, User])
+    data = NewUserInfo.model_validate(
+        {"id": "a", "name": "A", "email": "a@example.com", "password": "secret"}
+    )
+
+    booking_service.create_user(db_engine, data=data)
+
+    with Session(db_engine) as session:
+        assert session.exec(select(User.password)).one() == ""

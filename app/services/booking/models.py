@@ -65,13 +65,14 @@ class NewUserInfo(SQLModel, table=False):
     id: str = Field(primary_key=True, index=True)
     name: str = Field()
     email: str = Field(unique=True, index=True)
-    password: str = Field()
     is_admin: bool = Field(default=False)
 
 
 class User(NewUserInfo, table=True):
     """Schema for users"""
 
+    # read by nothing; kept, empty, as existing databases have it NOT NULL until a migration drops it
+    password: str = Field(default="")
     bookings: List["Booking"] = Relationship(
         back_populates="user", passive_deletes="all"
     )

@@ -272,7 +272,7 @@ async def get_mss_token(
     as these will be used to ensure a JWT is not used for another job.
 
     Take note also that if the given user does not exist, the user is created with
-    a random email and password.
+    a random email.
 
     Args:
         db_engine: the SQL database to query

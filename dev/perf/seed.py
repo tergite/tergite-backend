@@ -54,9 +54,7 @@ def store_bookings(user_id: str) -> None:
     """Stores hourly bookings from tomorrow on, so that none is under way during the run"""
     first_start = get_utc_now() + timedelta(days=1)
     with Session(get_bookings_sql_engine()) as session:
-        session.add(
-            User(id=user_id, name="Perf", email="perf@example.com", password="unused")
-        )
+        session.add(User(id=user_id, name="Perf", email="perf@example.com"))
         for index in range(BOOKING_COUNT):
             start_utc = first_start + timedelta(hours=index)
             session.add(

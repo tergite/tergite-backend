@@ -269,7 +269,9 @@ Each item greps for its names once more before deleting.
      (`app/libs/qiskit_providers/utils/json_decoder.py:52, 67, 86, 101`), which leaves `converters.py` dead too
    - `settings.py`: `APP_ROOT_DIR`; and `setup.py`, a bare `setuptools.setup()` that `pyproject.toml` makes redundant
 2. **Passwords.** Nothing verifies a password (`verify_password`, `app/services/booking/utils.py:32`, has no caller).
-   **Decide:** delete `hash_password`, `User.password` and `bcrypt`, with a migration dropping the column.
+   **Decided:** delete `hash_password`, `verify_password` and `bcrypt` now; `NewUserInfo` takes no password, and MSS's
+   is ignored. `User.password` stays, always empty, as existing databases have the column `NOT NULL`, until step 5.4's
+   first migration drops it.
 3. **Dependencies.** Remove `requests`, `requests-mock`, `qiskit-ibm-provider`, `pytest-asyncio` (the three async tests
    in `test_settings.py` await nothing), the second and third `numpy`, and `httpx` from `dev`, which
    `fastapi[standard]` brings. `networkx` moves to the quantify extra, whose resolution it pins. Declare what is

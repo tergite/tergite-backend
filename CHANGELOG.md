@@ -24,6 +24,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- Changed the BCC to keep no password for a user: it hashed the one MSS sends and checked it nowhere, so
+  `bcrypt` is no longer needed
 - Moved `start_bcc.sh` to `dev/start_bcc.sh`, with the other development tooling; it runs from any folder as before
 - bcc needs Python 3.13 or later, and its debs and macOS packages are built with it: on 3.12 a Nuitka build
   raised TypeError where anyio sorts exception groups, as CPython 3.12 refuses compiled functions there

@@ -35,7 +35,7 @@ from ...utils.exc import (
     NotAuthenticatedError,
 )
 from ...utils.sql_db import open_immediate_session
-from ...utils.strings import get_random_name, uuid_str
+from ...utils.strings import get_random_name
 from .models import (
     Booking,
     NewBookingInfo,
@@ -43,7 +43,6 @@ from .models import (
     User,
     UserProfile,
 )
-from .utils import hash_password
 
 _Filter = _ColumnExpressionArgument[bool] | bool
 
@@ -207,13 +206,10 @@ def get_or_create_user(db_engine: Engine, user_id: str) -> User:
     with open_immediate_session(db_engine) as session:
         user = session.exec(select(User).where(User.id == user_id)).first()
         if user is None:
-            user = _get_new_user(
-                NewUserInfo(
-                    id=user_id,
-                    name=f"User-{user_id}",
-                    email=f"{user_id}@{get_random_name()}.com",
-                    password=uuid_str(),
-                )
+            user = User(
+                id=user_id,
+                name=f"User-{user_id}",
+                email=f"{user_id}@{get_random_name()}.com",
             )
             session.add(user)
             session.commit()
@@ -236,7 +232,7 @@ def create_user(db_engine: Engine, data: NewUserInfo) -> User:
         ConflictError: a user with the id {id} or the email {email} already exists
     """
     with Session(db_engine) as session:
-        user = _get_new_user(data)
+        user = User(**data.model_dump())
         session.add(user)
         try:
             session.commit()
@@ -474,10 +470,3 @@ def _validate_max_slots(session: Session, user_id: str, booking_info: NewBooking
         raise MaxBookingsError(
             f"you have exceeded the maximum {settings.MAX_SLOTS_PER_DAY} bookings per day for {day_start}-{day_end}"
         )
-
-
-def _get_new_user(data: NewUserInfo) -> User:
-    """Gets the user to save for the given info, its password hashed"""
-    user = User(**data.model_dump())
-    user.password = hash_password(user.password)
-    return user

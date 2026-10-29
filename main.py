@@ -28,7 +28,6 @@
 # nuitka-project: --include-package=rq
 # nuitka-project: --include-package=jwt
 # nuitka-project: --include-package=pydantic
-# nuitka-project: --include-package=bcrypt
 # uvicorn imports the app by name, which Nuitka cannot follow
 # nuitka-project: --include-module=app.api
 
