@@ -47,7 +47,7 @@ tests:
     # Run unit tests
     - pytest app
   cache:
-    key: "uv-cache-$EXTRA_NAME-$CI_COMMIT_REF_SLUG"
+    key: "uv-cache-$DEPS_GROUP-$CI_COMMIT_REF_SLUG"
     paths:
       - .cache/uv
       - .venv

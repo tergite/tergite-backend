@@ -219,6 +219,10 @@ Tests and tooling only. After this step, a refactor commit that changes behaviou
 8. **CI.** The GitLab cache key names `$EXTRA_NAME`, which is never set (`.gitlab-ci.yml:50`): `$DEPS_GROUP`. The
    qiskit job skips 12 booking, queue and recalibration tests on `skipif(not HAS_QUANTIFY)`; those that need quantify
    only for a mock executor run on the simulator's instead, so both jobs cover the scheduler.
+   **Done** for nine: six job tests, the recalibration info and the start-up lock, as the simulators' tests use a
+   stub executor now, and the qiskit job runs 441 tests, not 425. Four stay quantify-only: three check the seed
+   quantify's recalibration writes, and one counts real seconds against a booking start that the simulators'
+   slower compilation eats into. The booking tests count real seconds, so they can fail under a heavy `-n auto`.
 9. **Style rules as tests.** Port tergite-frontend's `tests/test_styleguide.py` to `app/tests/test_styleguide.py`
    for rules 3, 8, 10 and 14 (verbs, booleans, constants and private helpers in place, banners, licence headers,
    `__all__` strings, the import direction, `HTTPException` only in `app/api`, full type hints), with

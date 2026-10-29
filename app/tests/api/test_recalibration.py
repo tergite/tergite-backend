@@ -62,7 +62,10 @@ def test_recalibration_sends_the_calibration_to_mss(
         assert recalibrated["data"]["qubits"]
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
+@pytest.mark.skipif(
+    not HAS_QUANTIFY,
+    reason="the seed this checks is written by quantify's recalibration",
+)
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
 def test_init_recalibration_with_interval(
     client, redis_conn: Redis, worker, quantify_seed_file, fake_clock
@@ -128,7 +131,10 @@ def test_init_recalibration_with_interval(
         assert seed_file_content == _EXPECTED_RECALIBRATION_SEED_CONTENT
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
+@pytest.mark.skipif(
+    not HAS_QUANTIFY,
+    reason="the seed this checks is written by quantify's recalibration",
+)
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
 def test_init_recalibration_without_interval(
     client, redis_conn: Redis, worker, quantify_seed_file, fake_clock
@@ -184,7 +190,10 @@ def test_init_recalibration_without_interval(
         assert seed_file_content == _EXPECTED_RECALIBRATION_SEED_CONTENT
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
+@pytest.mark.skipif(
+    not HAS_QUANTIFY,
+    reason="the seed this checks is written by quantify's recalibration",
+)
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
 def test_init_recalibration_with_start_time(
     client, redis_conn: Redis, worker, quantify_seed_file, fake_clock
@@ -234,11 +243,8 @@ def test_init_recalibration_with_start_time(
         assert seed_file_content == _EXPECTED_RECALIBRATION_SEED_CONTENT
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
-def test_get_recalibration_info(
-    client, redis_conn: Redis, worker, quantify_seed_file, fake_clock
-):
+def test_get_recalibration_info(client, redis_conn: Redis, worker, fake_clock):
     """Get /recalibration/info gets recalibration info retrieves the basic recalibration info"""
     with client as client:
         users = create_many_users(client, raw_users=USERS)

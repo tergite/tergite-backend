@@ -134,7 +134,6 @@ def test_job_token_for_another_job_is_refused(client):
         assert response.status_code == 403
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="real simulator takes too long")
 @pytest.mark.simulated
 @pytest.mark.parametrize(
     "client, redis_conn, worker, job, expected_counts, device",
@@ -241,7 +240,6 @@ def test_submit_jobs_no_booking(
         assert sql_engine_spy.call_count <= 1
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="real simulator takes too long")
 @pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_submit_jobs_in_active_booking(
     client,
@@ -304,7 +302,6 @@ def test_submit_jobs_in_active_booking(
         )
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="real simulator takes too long")
 @pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_submit_jobs_in_idle_booking(
     client,
@@ -362,9 +359,6 @@ def test_submit_jobs_in_idle_booking(
             assert first_non_booker_job_start < booking_end_timestamp
 
 
-@pytest.mark.skipif(
-    not HAS_QUANTIFY, reason="real simulator execution is hard to estimate precisely"
-)
 @pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_submit_jobs_in_idle_booking_before_another(
     client,
@@ -533,7 +527,8 @@ def test_job_whose_booking_ended_in_preprocessing_runs(
 
 
 @pytest.mark.skipif(
-    not HAS_QUANTIFY, reason="real simulator execution is hard to estimate precisely"
+    not HAS_QUANTIFY,
+    reason="the simulators compile for long enough to reorder the jobs before the booking",
 )
 @pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_submit_long_jobs_before_booking(
@@ -980,7 +975,6 @@ def test_admin_view_job(
         assert received_job == expected_job
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="real simulator takes too long")
 @pytest.mark.parametrize("client, _redis, worker, job, device", VIEW_JOBS_PARAMS)
 def test_view_jobs(
     client, _redis, worker, job, device, jobs_folder, mocker: MockerFixture, fake_clock
@@ -1069,7 +1063,6 @@ def test_view_jobs(
         assert completed_jobs_resp == paginate(expected_jobs)
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="real simulator takes too long")
 @pytest.mark.parametrize("client, _redis, worker, job, device", VIEW_JOBS_PARAMS)
 def test_view_jobs_by_status(
     client, _redis, worker, job, device, jobs_folder, mocker: MockerFixture, fake_clock

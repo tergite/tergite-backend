@@ -33,7 +33,6 @@ from app.tests.utils.env import (
 )
 from app.tests.utils.params import (
     FASTAPI_CLIENTS,
-    HAS_QUANTIFY,
 )
 from app.utils.api import get_request_logs_store
 from app.utils.exc import (
@@ -266,8 +265,8 @@ def test_unexpected_error_answers_500(client, mocker):
         assert response.status_code == 500
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
-def test_api_workers_start_a_device_one_at_a_time(quantify_rest_client, mocker):
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_api_workers_start_a_device_one_at_a_time(client, mocker):
     from app.api import app, dependencies
 
     starting, overlaps = [], []
