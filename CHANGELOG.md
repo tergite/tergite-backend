@@ -80,6 +80,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   403; and MSS refusing or not answering a request 502 or 504, not 500
 - Fixed MSS-signed requests whose `x-mss-is-admin`, method or path could be changed in transit, as only the user,
   nonce and timestamp were signed; MSS must sign the new message too, so the two are upgraded together
+- Fixed every job token being expired when issued on a device whose `BCC_CURRENT_DATE` is in the past: its expiry is
+  now counted from the real time, as PyJWT checks it
 
 ### Removed
 

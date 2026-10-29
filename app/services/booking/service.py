@@ -352,12 +352,13 @@ def create_mss_jwt_token(
         secret_key: the key to use to sign the token; default = settings.JWT_SECRET
         ttl: the time to live for the token in seconds; default = settings.JWT_TTL
         algorithm: the algorithm to use to sign the JWT
-        current_timestamp: the current timestamp; default = settings.CURRENT_DATE, or now
+        current_timestamp: the current timestamp; default = now, by the real clock that
+            verifies the token, not BCC_CURRENT_DATE
 
     Returns:
         the JWT token
     """
-    current_timestamp = current_timestamp or settings.CURRENT_DATE or get_utc_now()
+    current_timestamp = current_timestamp or get_utc_now()
     ttl = settings.JWT_TTL if ttl is None else ttl
 
     exp = current_timestamp + timedelta(seconds=ttl)

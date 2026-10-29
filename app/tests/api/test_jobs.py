@@ -12,7 +12,8 @@
 # that they have been altered from the originals.
 #
 """Tests for the API's job routes, and the jobs' way through the queues"""
-from datetime import timedelta
+import os
+from datetime import datetime, timedelta, timezone
 from itertools import zip_longest
 from unittest.mock import Mock
 from uuid import uuid4
@@ -118,6 +119,26 @@ def test_job_token_expires_after_jwt_ttl(client):
             )
 
         assert response.status_code == 401
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_job_token_is_valid_on_a_device_whose_current_date_is_past(client, monkeypatch):
+    """BCC_CURRENT_DATE stands in for now for bookings, but a token expires by the real clock"""
+    import settings
+
+    with client as client:
+        device_settings = settings.get_device_settings(os.environ["BCC_DEFAULT_PREFIX"])
+        monkeypatch.setattr(
+            device_settings, "CURRENT_DATE", datetime(2025, 10, 1, tzinfo=timezone.utc)
+        )
+        job_id = f"{uuid4()}"
+        token, _ = get_token(client, data={"user_id": f"{uuid4()}", "job_id": job_id})
+
+        response = client.post(
+            f"/jobs/{job_id}/cancel", json={}, headers=get_bearer_headers(token)
+        )
+
+        assert response.status_code == 404
 
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)

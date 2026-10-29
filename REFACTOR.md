@@ -178,7 +178,7 @@ Tests and tooling only. After this step, a refactor commit that changes behaviou
    override.
    **Found:** a job token's `exp` is `BCC_CURRENT_DATE` plus `JWT_TTL` (`booking/service.py:360`), while PyJWT
    checks it against the real clock, so on a device whose `BCC_CURRENT_DATE` is past every job token is born
-   expired. The test pins the override for bookings only.
+   expired. The test pins the override for bookings only. **Fixed** after step 1: a token's expiry is from the real now.
    **Found too:** `QuantifyExecutor.__init__`, building for hardware it has not cached, calls `Cluster.close_all()`
    before closing the cached `ClusterComponent`s, which then fail on their closed clusters
    (`quantify/executor.py:155-156`); a process building two quantify configs crashes. The tests close the cache.
