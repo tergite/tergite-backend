@@ -38,6 +38,7 @@ import toml
 from pydantic import (
     BaseModel,
     ConfigDict,
+    Field,
     computed_field,
     field_validator,
     model_validator,
@@ -783,7 +784,7 @@ class _BackendGeneralConfig(BaseModel):
     open_pulse: bool = True
     simulator: bool = False
     version: str = "0.0.0"
-    online_date: str = utc_now_str()
+    online_date: str = Field(default_factory=utc_now_str)
 
 
 class _BackendDeviceConfig(BaseModel):

@@ -70,6 +70,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   they waited on MSS
 - Fixed `GET /recalibration/info` failing with 500 when one recalibration was queued and another scheduled
 - Fixed `/recalibration/init` scheduling a `start_timestamp` without a timezone in the server's local time, not UTC
+- Fixed a backend config without `online_date` getting the time the backend was started, not when it was read
 
 ### Removed
 
