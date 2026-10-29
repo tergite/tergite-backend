@@ -81,7 +81,6 @@ def get_queue_context() -> "QueueContext":
             "jobs_store_url": settings.RQ_REDIS_URL,
             "force_normal_queue": False,
             "max_idle_time": settings.MAX_IDLE_TIME,
-            "is_async": settings.IS_ASYNC,
             "postprocessing_folder": f"{settings.LOG_FILE_POOL}",
             "preprocessing_folder": f"{settings.PREPROCESSED_JOB_POOL}",
             "job_upload_folder": f"{settings.JOB_UPLOAD_POOL}",
@@ -482,7 +481,6 @@ class QueueContext(TypedDict):
         jobs_store_url: the Redis URL for the jobs store
         force_normal_queue: the flag for whether to force the usage of the normal queue
         max_idle_time: the maximum time a booking can remain idle
-        is_async: whether jobs should be run in async workers or in the same process; good for testing
         preprocessing_timeout: the maximum time tasks should run on the preprocessing queue
         execution_timeout: the maximum time tasks should run on the execution queue
         postprocessing_timeout: the maximum time tasks should run on the postprocessing queue
@@ -500,7 +498,6 @@ class QueueContext(TypedDict):
     preprocessing_folder: str
     job_upload_folder: str
     max_idle_time: int
-    is_async: bool
     execution_timeout: int
     preprocessing_timeout: int
     postprocessing_timeout: int

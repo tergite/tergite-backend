@@ -82,13 +82,11 @@ class QueuePool:
         postprocessing_timeout: int,
         general_queue_timeout: int,
         recalibration_timeout: int,
-        is_async: bool = True,
     ):
         """
         Args:
             prefix: the prefix for the names of the expected queues
             connection: the connection to Redis
-            is_async: whether to dispatch the enqueued tasks in other workers
             preprocessing_timeout: maximum time jobs spend preprocessing
             execution_timeout: maximum time jobs spend executing
             postprocessing_timeout: maximum time jobs spend postprocessing
@@ -96,45 +94,38 @@ class QueuePool:
             recalibration_timeout: maximum time tasks spend recalibration queue
         """
         self._connection = connection
-        self._is_async = is_async
 
         # runner queues
         self.preprocessing = get_preprocessing_queue(
             prefix,
             connection=connection,
             default_timeout=preprocessing_timeout,
-            is_async=is_async,
         )
         self.normal_execution = get_normal_execution_queue(
             prefix,
             connection=connection,
             default_timeout=execution_timeout,
-            is_async=is_async,
         )
         self.booked_execution = get_booked_execution_queue(
             prefix,
             connection=connection,
             default_timeout=execution_timeout,
-            is_async=is_async,
         )
         self.general = get_general_queue(
             prefix,
             connection=connection,
             default_timeout=general_queue_timeout,
-            is_async=is_async,
         )
         self.postprocessing = get_postprocessing_queue(
             prefix,
             connection=connection,
             default_timeout=postprocessing_timeout,
-            is_async=is_async,
         )
 
         self.recalibration: RqQueue = get_recalibration_queue(
             prefix,
             connection=connection,
             default_timeout=recalibration_timeout,
-            is_async=is_async,
         )
 
         # static queues
@@ -164,7 +155,6 @@ class QueuePool:
             postprocessing_timeout=settings.MAX_POSTPROCESSING_TIME,
             general_queue_timeout=settings.MAX_GENERAL_QUEUE_TIME,
             recalibration_timeout=settings.MAX_RECALIBRATION_QUEUE_TIME,
-            is_async=settings.IS_ASYNC,
         )
 
     def empty(self):
@@ -201,7 +191,6 @@ def get_preprocessing_queue(
     prefix: str,
     connection: Redis,
     default_timeout: int,
-    is_async: bool = True,
     **kwargs,
 ) -> RunnerQueue:
     """Gets the queue for preprocessing
@@ -209,11 +198,8 @@ def get_preprocessing_queue(
     Args:
         prefix: the prefix to add to the name of the queue
         connection: the redis connection instance where the queue is hosted
-        is_async: whether the actual queue should be created or
-            a dummy one running in the same process to use for testing
         default_timeout: the default maximum time a job can take on this queue
         kwargs: other options to pass to the Queue e.g.
-            - is_async: bool = True,
             - job_class: Optional[Union[str, type['Job']]] = None,
             - serializer: Optional[Union[Serializer, str]] = None,
             - death_penalty_class: Optional[type[BaseDeathPenalty]] = UnixSignalDeathPenalty,
@@ -229,7 +215,6 @@ def get_preprocessing_queue(
         f"{prefix}_preprocessing",
         connection,
         default_timeout=default_timeout,
-        is_async=is_async,
         **kwargs,
     )
 
@@ -238,7 +223,6 @@ def get_normal_execution_queue(
     prefix: str,
     connection: Redis,
     default_timeout: int,
-    is_async: bool = True,
     **kwargs,
 ) -> RunnerQueue:
     """Gets the queue for executing on the normal queue
@@ -246,11 +230,8 @@ def get_normal_execution_queue(
     Args:
         prefix: the prefix to add to the name of the queue
         connection: the redis connection instance where the queue is hosted
-        is_async: whether the actual queue should be created or
-            a dummy one running in the same process to use for testing
         default_timeout: the default maximum time a job can take on this queue
         kwargs: other options to pass to the Queue e.g.
-            - is_async: bool = True,
             - job_class: Optional[Union[str, type['Job']]] = None,
             - serializer: Optional[Union[Serializer, str]] = None,
             - death_penalty_class: Optional[type[BaseDeathPenalty]] = UnixSignalDeathPenalty,
@@ -266,7 +247,6 @@ def get_normal_execution_queue(
         f"{prefix}_normal_execution",
         connection,
         default_timeout=default_timeout,
-        is_async=is_async,
         **kwargs,
     )
 
@@ -275,7 +255,6 @@ def get_booked_execution_queue(
     prefix: str,
     connection: Redis,
     default_timeout: int,
-    is_async: bool = True,
     **kwargs,
 ) -> RunnerQueue:
     """Gets the queue for executing on the booked execution queue
@@ -284,11 +263,8 @@ def get_booked_execution_queue(
         prefix: the prefix to add to the name of the queue
         connection: the redis connection instance where the queue is hosted
         default_timeout: the default timeout in seconds
-        is_async: whether the actual queue should be created or
-            a dummy one running in the same process to use for testing
         default_timeout: the default maximum time a job can take on this queue
         kwargs: other options to pass to the Queue e.g.
-            - is_async: bool = True,
             - job_class: Optional[Union[str, type['Job']]] = None,
             - serializer: Optional[Union[Serializer, str]] = None,
             - death_penalty_class: Optional[type[BaseDeathPenalty]] = UnixSignalDeathPenalty,
@@ -304,7 +280,6 @@ def get_booked_execution_queue(
         f"{prefix}_booked_execution",
         connection,
         default_timeout=default_timeout,
-        is_async=is_async,
         **kwargs,
     )
 
@@ -313,7 +288,6 @@ def get_general_queue(
     prefix: str,
     connection: Redis,
     default_timeout: int,
-    is_async: bool = True,
     **kwargs,
 ) -> RqQueue:
     """Gets the queue for running general tasks
@@ -321,11 +295,8 @@ def get_general_queue(
     Args:
         prefix: the prefix to add to the name of the queue
         connection: the redis connection instance where the queue is hosted
-        is_async: whether the actual queue should be created or
-            a dummy one running in the same process to use for testing
         default_timeout: the default maximum time a job can take on this queue
         kwargs: other options to pass to the Queue e.g.
-            - is_async: bool = True,
             - job_class: Optional[Union[str, type['Job']]] = None,
             - serializer: Optional[Union[Serializer, str]] = None,
             - death_penalty_class: Optional[type[BaseDeathPenalty]] = UnixSignalDeathPenalty,
@@ -337,7 +308,6 @@ def get_general_queue(
         f"{prefix}_general",
         connection,
         default_timeout=default_timeout,
-        is_async=is_async,
         **kwargs,
     )
 
@@ -346,7 +316,6 @@ def get_postprocessing_queue(
     prefix: str,
     connection: Redis,
     default_timeout: int,
-    is_async: bool = True,
     **kwargs,
 ) -> RunnerQueue:
     """Gets the queue for postprocessing
@@ -354,11 +323,8 @@ def get_postprocessing_queue(
     Args:
         prefix: the prefix to add to the name of the queue
         connection: the redis connection instance where the queue is hosted
-        is_async: whether the actual queue should be created or
-            a dummy one running in the same process to use for testing
         default_timeout: the default maximum time a job can take on this queue
         kwargs: other options to pass to the Queue e.g.
-            - is_async: bool = True,
             - job_class: Optional[Union[str, type['Job']]] = None,
             - serializer: Optional[Union[Serializer, str]] = None,
             - death_penalty_class: Optional[type[BaseDeathPenalty]] = UnixSignalDeathPenalty,
@@ -374,7 +340,6 @@ def get_postprocessing_queue(
         f"{prefix}_postprocessing",
         connection,
         default_timeout=default_timeout,
-        is_async=is_async,
         **kwargs,
     )
 
@@ -383,7 +348,6 @@ def get_recalibration_queue(
     prefix: str,
     connection: Redis,
     default_timeout: int,
-    is_async: bool = True,
     **kwargs,
 ) -> RqQueue:
     """Gets the queue for recalibration
@@ -391,11 +355,8 @@ def get_recalibration_queue(
     Args:
         prefix: the prefix to add to the name of the queue
         connection: the redis connection instance where the queue is hosted
-        is_async: whether the actual queue should be created or
-            a dummy one running in the same process to use for testing
         default_timeout: the default maximum time a job can take on this queue
         kwargs: other options to pass to the Queue e.g.
-            - is_async: bool = True,
             - job_class: Optional[Union[str, type['Job']]] = None,
             - serializer: Optional[Union[Serializer, str]] = None,
             - death_penalty_class: Optional[type[BaseDeathPenalty]] = UnixSignalDeathPenalty,
@@ -408,6 +369,5 @@ def get_recalibration_queue(
         f"{prefix}_recalibration",
         connection,
         default_timeout=default_timeout,
-        is_async=is_async,
         **kwargs,
     )

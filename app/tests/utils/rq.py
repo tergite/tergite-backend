@@ -41,13 +41,6 @@ from app.tests.utils.env import (
 )
 
 
-class PseudoSimpleWorker(SimpleWorker):
-    death_penalty_class = TimerDeathPenalty
-
-    def work(self, burst: bool = False, **kwargs) -> bool:
-        return True
-
-
 class PreloadedSimpleWorker(SimpleWorker):
     """RQ SimpleWorker used in all test environments (no forking)."""
 
@@ -72,24 +65,18 @@ def get_rq_pool_worker(queue_pool: QueuePool) -> Union[Worker, SimpleWorker]:
         queue_pool.postprocessing,
         queue_pool.recalibration,
     ]
-    return get_rq_worker(queues, is_async=queue_pool._is_async)
+    return get_rq_worker(queues)
 
 
-def get_rq_worker(
-    queues: List[Queue], is_async: bool = True
-) -> Union[Worker, SimpleWorker]:
+def get_rq_worker(queues: List[Queue]) -> Union[Worker, SimpleWorker]:
     """Returns an rq worker to run a set of queues
 
     They must share the same redis connection
 
     Args:
         queues: the set of queues to run
-        is_async: whether the jobs should be run in separate processes
     """
     connection = queues[0].connection
-    if not is_async:
-        return PseudoSimpleWorker(queues=queues, connection=connection)
-
     return PreloadedSimpleWorker(queues=queues, connection=connection)
 
 
@@ -205,7 +192,6 @@ def _get_device_worker(redis_client: Redis, prefix: str) -> Union[Worker, Simple
     queue_pool = QueuePool(
         prefix=prefix,
         connection=redis_client,
-        is_async=True,
         execution_timeout=TEST_MAX_EXECUTION_TIME,
         preprocessing_timeout=TEST_MAX_PREPROCESSING_TIME,
         postprocessing_timeout=TEST_MAX_POSTPROCESSING_TIME,

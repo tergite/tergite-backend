@@ -76,7 +76,6 @@ TEST_MAX_TIME_SLOT_LENGTH = 3600
 TEST_MIN_TIME_SLOT_LENGTH = 2
 TEST_MAX_IDLE_TIME = 1
 TEST_MAX_SLOTS_PER_DAY = 2
-TEST_IS_ASYNC = "True"
 TEST_BOOKING_DB_URL = os.getenv(
     "TEST_BOOKING_DB_URL", f"sqlite:///{_PATH_TO_TEST_SQL_DB}"
 )
@@ -159,7 +158,6 @@ def setup_test_env():
         f"{TEST_DEFAULT_RECALIBRATION_INTERVAL}"
     )
     environ["BCC_MAX_IDLE_TIME"] = f"{TEST_MAX_IDLE_TIME}"
-    environ["BCC_IS_ASYNC"] = f"{TEST_IS_ASYNC}"
     environ["BCC_BOOKING_DB_URL"] = f"{TEST_BOOKING_DB_URL}"
     environ["BCC_JWT_SECRET"] = f"{TEST_JWT_SECRET}"
     environ["BCC_JWT_TTL"] = f"{TEST_JWT_TTL}"

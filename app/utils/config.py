@@ -134,7 +134,6 @@ class DeviceSettings(BaseSettings):
     max_recalibration_queue_time: int = 5400
     # default: 1 day
     default_recalibration_interval: float = 86_400
-    is_async: bool = True
     booking_db_url: str = "sqlite:///booking_db.db"
 
     jwt_secret: str

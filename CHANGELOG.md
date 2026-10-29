@@ -92,6 +92,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Removed
 
+- Removed `BCC_IS_ASYNC`, which ran each job inside the API request that queued it; the jobs run on the workers only
 - Removed `bcc.service` and `start_bcc.sh`'s conda-based systemd mode, which the packages replace
 - Removed the Docker image and its release jobs; the debs and macOS packages, or `bcc` from a checkout, run the backend
 
