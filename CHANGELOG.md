@@ -50,6 +50,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   so the scheduler thought more time was free before a booking than there was
 - Fixed the running job's time being left out of an execution queue's duration, so a job could be queued as fitting
   before a booking, or in what was left of one, when it did not
+- Fixed switching one device off taking every device served from the same Redis offline; a device switched off
+  before upgrading leaves every worker suspended until `rq resume` is run
 
 ### Removed
 

@@ -792,5 +792,5 @@ async def get_switch_status(
     Returns:
         general information on the status of the request
     """
-    status = "OFF" if scheduler.is_offline() else "ON"
+    status = "OFF" if scheduler.is_offline(context) else "ON"
     return {"status": status}

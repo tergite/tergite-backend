@@ -46,7 +46,6 @@ from redis import Redis
 from rq import Queue as RqQueue
 from rq import SimpleWorker
 from rq.job import Job as RqJob
-from rq.suspension import is_suspended
 
 from app.api.worker import preload_worker_globals
 from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps, get_queue_context
@@ -2792,7 +2791,8 @@ def test_switch_off(client, redis_conn, jobs_folder, worker, job, mocker, fake_c
         response = client.post("/switch/off", headers=headers)
         assert response.status_code == 200
         assert response.json() == {"status": "success"}
-        assert is_suspended(redis_conn)
+        status = client.get("/switch/status", headers=create_mss_headers(user_id))
+        assert status.json() == {"status": "OFF"}
 
         # submit many jobs from many users
         with open(job_info["file_path"], "rb") as file:
@@ -2834,7 +2834,8 @@ def test_switch_on(client, redis_conn, jobs_folder, worker, job, mocker, fake_cl
         response = client.post("/switch/on", headers=headers)
         assert response.status_code == 200
         assert response.json() == {"status": "success"}
-        assert not is_suspended(redis_conn)
+        status = client.get("/switch/status", headers=create_mss_headers(user_id))
+        assert status.json() == {"status": "ON"}
 
         # submit many jobs from many users
         with open(job_info["file_path"], "rb") as file:

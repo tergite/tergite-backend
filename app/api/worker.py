@@ -13,12 +13,17 @@
 """A worker file that is preloaded with the heavy libraries etc"""
 import logging
 import sys
+import time
 from importlib import import_module
 
 from rq import Queue, Worker
 from rq.job import Job
+from rq.worker import StopRequested
 
 import settings
+
+from ..libs.queues.dtos import get_queue_context
+from ..services.scheduler import is_offline
 
 
 class PreloadedRqWorker(Worker):
@@ -26,6 +31,8 @@ class PreloadedRqWorker(Worker):
     device whose queues it runs, and runs each job as the device of its queue."""
 
     should_preload_executor = True
+    # a heavy worker runs one device, which switching off stops
+    should_wait_while_offline = True
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -39,11 +46,26 @@ class PreloadedRqWorker(Worker):
         with settings.using_device(_get_device_of_queue(queue.name)):
             return super().perform_job(job, queue)
 
+    def check_for_suspension(self, is_burst: bool) -> None:
+        """Also waits, as rq's own suspension does, while the worker's device is switched off"""
+        super().check_for_suspension(is_burst)
+        device = _get_device_of_queue(self.queues[0].name)
+        while (
+            self.should_wait_while_offline
+            and not self._stop_requested
+            and _is_device_offline(device)
+        ):
+            if is_burst:
+                raise StopRequested
+            self.heartbeat()
+            time.sleep(1)
+
 
 class LightRqWorker(PreloadedRqWorker):
     """Preloads all but the quantum executor, for queues whose tasks never run it"""
 
     should_preload_executor = False
+    should_wait_while_offline = False
 
 
 class LoggingRqWorker(PreloadedRqWorker):
@@ -107,3 +129,8 @@ def _get_device_of_queue(queue_name: str) -> str:
     ]
     # the longest, as one device's name may prefix another's, e.g. sim and sim_2q
     return max(devices, key=len, default=settings.get_device_names()[0])
+
+
+def _is_device_offline(device: str) -> bool:
+    with settings.using_device(device):
+        return is_offline(get_queue_context())

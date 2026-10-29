@@ -135,3 +135,63 @@ def test_env_file_keys_are_bcc_prefixed(tmp_path, monkeypatch):
 
     with pytest.raises(ValueError, match="PORT must be written BCC_<NAME>"):
         load_test_devices(tmp_path, monkeypatch, ["sim"], {"PORT": "8123"})
+
+
+def test_switching_a_device_off_leaves_the_others_on(
+    tmp_path, monkeypatch, mocker, redis_client
+):
+    """/<device>/switch/off takes that device offline, and only it"""
+    from fastapi.testclient import TestClient
+
+    from app.api import app
+    from app.libs.queues.dtos import clear_queue_context
+
+    load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
+    mocker.patch("app.services.scheduler.service.get_mss_client")
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/Alpha/switch/off", headers=create_mss_headers(is_admin=True)
+        )
+        assert response.status_code == 200
+
+        alpha_status = client.get("/Alpha/switch/status", headers=create_mss_headers())
+        beta_status = client.get("/Beta/switch/status", headers=create_mss_headers())
+        assert alpha_status.json() == {"status": "OFF"}
+        assert beta_status.json() == {"status": "ON"}
+    finally:
+        clear_queue_context()
+
+
+def test_heavy_worker_waits_while_its_device_is_off(
+    tmp_path, monkeypatch, mocker, redis_client
+):
+    from fastapi.testclient import TestClient
+    from rq import Queue
+    from rq.worker import StopRequested
+
+    from app.api import app
+    from app.api.worker import PreloadedRqWorker
+    from app.libs.queues.dtos import clear_queue_context
+
+    load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
+    mocker.patch("app.services.scheduler.service.get_mss_client")
+    mocker.patch("app.api.worker.preload_worker_globals")
+    alpha_worker = PreloadedRqWorker(
+        [Queue("Alpha_preprocessing", connection=redis_client)],
+        connection=redis_client,
+    )
+    beta_worker = PreloadedRqWorker(
+        [Queue("Beta_preprocessing", connection=redis_client)],
+        connection=redis_client,
+    )
+    try:
+        TestClient(app).post(
+            "/Alpha/switch/off", headers=create_mss_headers(is_admin=True)
+        )
+
+        with pytest.raises(StopRequested):
+            alpha_worker.check_for_suspension(True)
+        beta_worker.check_for_suspension(True)
+    finally:
+        clear_queue_context()

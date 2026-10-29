@@ -25,7 +25,6 @@ from typing import List, Optional
 from fastapi import UploadFile
 from pydantic import ValidationError
 from rq import exceptions as rq_errors
-from rq.suspension import is_suspended, resume, suspend
 from sqlalchemy import Engine
 from sqlmodel import or_
 
@@ -593,8 +592,7 @@ async def switch_off(
         ValueError – error sending switch off data: {error message}
         TimeoutError – error sending switch off data: response took longer than timeout
     """
-    redis_conn = get_redis_connection()
-    suspend(redis_conn)
+    get_redis_connection().set(_get_offline_flag_key(context), 1)
 
     # update MSS
     mss_client = get_mss_client()
@@ -619,8 +617,7 @@ async def switch_on(
         ValueError – error sending switch on data: {error message}
         TimeoutError – error sending switch on data: response took longer than timeout
     """
-    redis_conn = get_redis_connection()
-    resume(redis_conn)
+    get_redis_connection().delete(_get_offline_flag_key(context))
 
     # update MSS
     mss_client = get_mss_client()
@@ -633,10 +630,9 @@ async def switch_on(
     )
 
 
-def is_offline():
-    """Checks if the scheduler is offline"""
-    redis_conn = get_redis_connection()
-    return is_suspended(redis_conn)
+def is_offline(context: QueueContext) -> bool:
+    """Checks if the device of the given queue context is switched off"""
+    return get_redis_connection().exists(_get_offline_flag_key(context)) == 1
 
 
 def _cancel_job_in_queues(queues: QueuePool, job: Job, ignore_errors: bool = False):
@@ -721,3 +717,8 @@ def _get_current_recalibration_job_id(queues: QueuePool) -> Optional[str]:
         return enqueued_jobs[0]
 
     return None
+
+
+def _get_offline_flag_key(context: QueueContext) -> str:
+    """Gets the key of the flag set while the device is switched off, one per device"""
+    return f"{context['queue_prefix']}:offline"

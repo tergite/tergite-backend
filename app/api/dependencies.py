@@ -115,7 +115,7 @@ def get_queue_context_if_online(
     Raises:
         IsOfflineError: {context["queue_prefix"]} is offline
     """
-    if is_offline():
+    if is_offline(context):
         raise IsOfflineError(f"{context["queue_prefix"]} is offline")
     return context
 
