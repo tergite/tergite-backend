@@ -117,7 +117,6 @@ private-helper-position: app/libs/quantum_executor/base/quantum_job/__init__.py:
 private-helper-position: app/libs/quantum_executor/base/quantum_job/__init__.py::to_native_qobj_config
 private-helper-position: app/libs/quantum_executor/base/quantum_job/__init__.py::xarray_to_list
 private-helper-position: app/libs/quantum_executor/quantify/experiment.py::QuantifyExperiment
-type-hints: app/api/__init__.py::download_logfile
 type-hints: app/api/__init__.py::log_requests
 type-hints: app/api/__init__.py::root
 type-hints: app/api/dependencies.py::_start_device
@@ -127,6 +126,7 @@ type-hints: app/api/dependencies.py::lifespan
 type-hints: app/api/device_routing.py::DeviceRoutingMiddleware.__call__
 type-hints: app/api/routers/devices.py::get_dynamic_properties
 type-hints: app/api/routers/devices.py::get_static_properties
+type-hints: app/api/routers/logfiles.py::download_logfile
 type-hints: app/api/routers/switch.py::get_switch_status
 type-hints: app/api/worker.py::PreloadedRqWorker.__init__
 type-hints: app/libs/device_parameters/__init__.py::save_all_device_params

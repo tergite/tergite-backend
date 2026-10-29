@@ -15,12 +15,10 @@
 # Modified:
 #
 # - Martin Ahindura 2023
-from uuid import UUID
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.requests import Request
-from fastapi.responses import FileResponse
 from pydantic import ValidationError
 
 import settings
@@ -43,9 +41,9 @@ from app.utils.exc import (
 from ..utils.api import RequestLog, get_request_logs_store, to_http_error
 from ..utils.redis_store import ItemNotFoundError
 from ..utils.strings import uuid_str
-from .dependencies import get_mss_token_claims_dep, get_verified_mss_user_id, lifespan
+from .dependencies import get_verified_mss_user_id, lifespan
 from .device_routing import DeviceRoutingMiddleware
-from .routers import bookings, devices, jobs, recalibration, switch, users
+from .routers import bookings, devices, jobs, logfiles, recalibration, switch, users
 
 # application
 app = FastAPI(
@@ -131,28 +129,10 @@ async def root():
     return {"message": "Welcome to BCC machine"}
 
 
+app.include_router(logfiles.router)
 app.include_router(devices.router)
 app.include_router(users.router)
 app.include_router(bookings.router)
 app.include_router(jobs.router)
 app.include_router(recalibration.router)
 app.include_router(switch.router)
-
-
-@app.get(
-    "/logfiles/{logfile_id}",
-    dependencies=[Depends(get_mss_token_claims_dep(job_id_field="logfile_id"))],
-)
-async def download_logfile(logfile_id: UUID):
-    """Downloads the job logfile
-
-    Args:
-        logfile_id: the id of the logfile usually the job id
-
-    Raises:
-        ItemNotFoundError: logfile {logfile_id} not found
-    """
-    file = (settings.LOG_FILE_POOL / str(logfile_id)).with_suffix(".hdf5")
-    if file.exists():
-        return FileResponse(file)
-    raise ItemNotFoundError(f"logfile {logfile_id} not found")
