@@ -353,9 +353,9 @@ TTLs, pagination and a Lua script, used by three stores of which only one needs 
      control (`:604`) moves to the calibration conversion; `model_dump_unit` and `model_dump_scalar` (`:190, 227`),
      two near-identical walkers, become `to_units` and `to_scalars` over one helper
    - `scheduler` (after 3.5): `Job.validate_model` sets `actual_duration` and `storage_id`, the latter twice
-     (`queues/dtos.py:457-482`), which become computed; `Job.current_eta` and `Timestamps.current_time_used` read the
-     clock and raise (`:437, 304`), so they become `get_job_eta(job, now)`; `Timestamps.with_updates` (`:258`) moves
-     into its caller
+     (`queues/dtos.py:457-482`), which become computed; `Timestamps.with_updates` (`:258`) moves into its caller.
+     (`Job.current_eta` and `Timestamps.current_time_used` went in step 0.4, whose queue keeps the running job's end
+     time instead.)
    - `quantum_job`: `QuantumJob.__post_init__` encodes and decodes JSON and overwrites the `local` it was given
      (`base/quantum_job/dtos.py:220`); `is_local` and `metadata` become properties and the serialisation moves to
      `save_job_in_hdf5`. `to_native_qobj_config` (`base/quantum_job/__init__.py:471`) becomes

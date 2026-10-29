@@ -13,6 +13,7 @@
 """Module containing the types of queues"""
 
 import math
+import time
 import zlib
 from contextlib import suppress
 from types import TracebackType
@@ -63,7 +64,7 @@ class StaticQueue:
         self._metadata = f"metadata_{name}"
         self._args_kwargs_db = f"__args_kwargs_{name}"
         self._duration_key = "total_duration"
-        self._current_job = "current_job"
+        self._current_job_end_key = "current_job_ends_at"
         self._connection = connection
         self._serializer = serializer
         self._pop_job_script = connection.register_script(_POP_JOB_SCRIPT)
@@ -78,13 +79,12 @@ class StaticQueue:
             return 0
 
     @property
-    def current_job(self) -> Optional[Job]:
-        """The job that is currently being run or was last run"""
-        try:
-            payload = self._connection.hget(self._metadata, self._current_job)
-            return Job.model_validate_json(payload)
-        except ValidationError:
-            return None
+    def current_job_time_left(self) -> float:
+        """the seconds left, by its estimate, of the job last taken off this queue"""
+        ends_at = self._connection.hget(self._metadata, self._current_job_end_key)
+        if ends_at is None:
+            return 0
+        return max(0.0, float(ends_at) - time.time())
 
     def add(self, job: Job, *args, **kwargs):
         """Adds the item to the queue
@@ -134,7 +134,11 @@ class StaticQueue:
             args_kwargs_bytes = pipeline_results[2]
 
             job = Job.model_validate_json(job_json)
-            self._connection.hset(self._metadata, self._current_job, job_json)
+            self._connection.hset(
+                self._metadata,
+                self._current_job_end_key,
+                time.time() + job_duration,
+            )
 
             args, kwargs = _deserialize_args_kwargs(self._serializer, args_kwargs_bytes)
             return job, args, kwargs
@@ -310,18 +314,13 @@ class RunnerQueue(Queue):
         self._success_callback = _to_callback(success_callback)
         self._failure_callback = _to_callback(failure_callback)
         self._stopped_callback = _to_callback(stopped_callback)
-        self._current_job: Optional[Job] = None
 
     @property
     def total_duration(self) -> float:
         """the total duration of all pending jobs plus the time left to the end of the current job"""
-        try:
-            return (
-                self._static_queue.total_duration
-                + self._static_queue.current_job.current_eta
-            )
-        except (AttributeError, TypeError):
-            return self._static_queue.total_duration
+        return (
+            self._static_queue.total_duration + self._static_queue.current_job_time_left
+        )
 
     def enqueue(self, job: Job, *args, job_id: str, **kwargs) -> RqJob:
         """Creates a rq job to represent the delayed function call and enqueues it.

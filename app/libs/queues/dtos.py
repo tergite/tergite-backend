@@ -49,8 +49,7 @@ from pydantic_core.core_schema import SerializationInfo
 import settings
 from app.libs.qiskit.qobj import PulseQobj
 
-from ...utils.datetime import get_utc_now, to_utc, utc_now_str
-from ...utils.exc import JobAlreadyCompleteError
+from ...utils.datetime import to_utc, utc_now_str
 from ...utils.logging import err_logger
 from ...utils.model import PartialMeta
 from ...utils.redis_store import Schema
@@ -300,25 +299,6 @@ class Timestamps(BaseModel):
             """
             return None
 
-    @property
-    def current_time_used(self) -> Optional[float]:
-        """Current time used by the job so far"""
-        # Return the total resource usage if the job has already completed execution
-        if self.execution.finish_timestamp is not None:
-            return self.resource_usage
-
-        try:
-            return (get_utc_now() - self.execution.start_timestamp).total_seconds()
-        except (TypeError, AttributeError):
-            """
-            TypeError: unsupported operand type(s) for -: 'datetime.datetime' and 'NoneType'
-            TypeError: unsupported operand type(s) for -: 'NoneType' and 'datetime.datetime'
-            TypeError: unsupported operand type(s) for -: 'NoneType' and 'NoneType'
-            AttributeError: 'NoneType' object has no attribute 'started'
-            AttributeError: 'NoneType' object has no attribute 'finished'
-            """
-            return None
-
 
 class JobStatus(str, Enum):
     PENDING = "pending"
@@ -431,26 +411,6 @@ class Job(Schema):
         try:
             return to_utc(self.timestamps.execution.finish_timestamp)
         except AttributeError:
-            return None
-
-    @property
-    def current_eta(self) -> Optional[float]:
-        """Current estimated time to completion
-
-        Raises:
-            JobAlreadyCompleteError: job '{self.job_id}' is already complete
-        """
-        if self.actual_duration is not None:
-            raise JobAlreadyCompleteError(f"job '{self.job_id}' is already complete")
-
-        try:
-            return self.estimated_duration - self.timestamps.current_time_used
-        except (TypeError, AttributeError):
-            """
-            TypeError: unsupported operand type(s) for -: 'float' and 'NoneType'
-            TypeError: unsupported operand type(s) for -: 'NoneType' and 'float'
-            TypeError: unsupported operand type(s) for -: 'NoneType' and 'NoneType'
-            """
             return None
 
     @model_validator(mode="after")

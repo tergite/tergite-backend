@@ -48,6 +48,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   rq job still ran and took whatever job was next in its queue
 - Fixed queue durations going negative: cancelling a job lowered the total duration of every queue it was not in,
   so the scheduler thought more time was free before a booking than there was
+- Fixed the running job's time being left out of an execution queue's duration, so a job could be queued as fitting
+  before a booking, or in what was left of one, when it did not
 
 ### Removed
 
