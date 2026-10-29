@@ -53,6 +53,7 @@ from ...libs.queues.dtos import (
 from ...utils.datetime import get_utc_now
 from ...utils.exc import JobAlreadyCancelled, PostProcessingError
 from ...utils.redis import get_redis_connection
+from ...utils.redis_store import Collection
 from ...utils.rq import cancel_rq_job
 from ..booking import get_active_booking
 from ..booking.models import Booking
@@ -133,14 +134,12 @@ def preprocess(
         raise exp
 
     except ValidationError as exp:
-        log_job_failure(jobs_store, job_id=job_id, reason=f"{exp}")
+        _fail_job(jobs_store, job_id=job_id, reason=f"{exp}")
         raise exp
 
     except Exception as exp:
         logging.error(f"Job failed\nJob execution failed. exp: {exp}")
-        log_job_failure(
-            jobs_store, job_id=job_id, reason="unexpected error during execution"
-        )
+        _fail_job(jobs_store, job_id=job_id, reason="unexpected error during execution")
         raise exp
 
 
@@ -283,9 +282,7 @@ def execute(
     except Exception as exp:
         logging.error(f"Job failed\nJob execution failed. exp: {exp}")
         print(f"Job failed\nJob execution failed. exp: {exp}")
-        log_job_failure(
-            jobs_store, job_id=job_id, reason="unexpected error during execution"
-        )
+        _fail_job(jobs_store, job_id=job_id, reason="unexpected error during execution")
         raise exp
 
 
@@ -310,15 +307,14 @@ def postprocess(
     backend_name = get_executor_options().backend_name
 
     jobs_store = get_jobs_store()
-    new_file = move_file(results_file_path, new_folder=working_folder, ext=".hdf5")
-    logging.info(f"Moved the logfile to {str(new_file)}")
-
-    update_job_stage(jobs_store, job_id=job_id, stage=Stage.PST_PROC_W)
-
-    quantum_job = read_job_from_hdf5(new_file)
-    redis_conn = get_redis_connection()
-
     try:
+        new_file = move_file(results_file_path, new_folder=working_folder, ext=".hdf5")
+        logging.info(f"Moved the logfile to {str(new_file)}")
+
+        update_job_stage(jobs_store, job_id=job_id, stage=Stage.PST_PROC_W)
+
+        quantum_job = read_job_from_hdf5(new_file)
+        redis_conn = get_redis_connection()
         mss_client = get_mss_client()
         if quantum_job.meas_level == MeasLvl.DISCRIMINATED:
             calibration = get_device_calibration_info(
@@ -338,11 +334,13 @@ def postprocess(
             job = update_job_results(jobs_store, job_id=job_id, data=memory)
             update_job_in_mss(mss_client, payload=job)
         else:
-            raise NotImplementedError(f"meas_level {job.meas_level} is not supported")
+            raise NotImplementedError(
+                f"meas_level {quantum_job.meas_level} is not supported"
+            )
 
         return job.job_id, context
     except Exception as exp:
-        raise PostProcessingError(exp=exp, job_id=job.job_id)
+        raise PostProcessingError(exp=exp, job_id=job_id)
 
 
 def postprocessing_success_callback(
@@ -386,18 +384,13 @@ def postprocessing_failure_callback(
         value: the value passed to the callback from the handler
         traceback: the error traceback
     """
-    mss_client = get_mss_client()
     if isinstance(value, PostProcessingError):
-        jobs_store = get_jobs_store()
-        job_id = value.job_id
-
         logging.error(value.exp)
-        job = log_job_failure(
-            jobs_store,
-            job_id=job_id,
+        _fail_job(
+            get_jobs_store(),
+            job_id=value.job_id,
             reason="error during post processing",
         )
-        update_job_in_mss(mss_client, payload=job)
 
 
 def recalibrate(
@@ -580,12 +573,10 @@ def _try_enqueue_on_booked_queue(
         if force_normal_queue:
             _push_to_waitlist(job_id=job_id, context=context)
         elif job.estimated_duration > usable_time:
-            job_store.update(
-                job_id,
-                {
-                    "status": JobStatus.FAILED,
-                    "failure_reason": "job too long for the time left in the booking",
-                },
+            _fail_job(
+                job_store,
+                job_id=job_id,
+                reason="job too long for the time left in the booking",
             )
         else:
             # restart the timer after this job is done if this is a job from the booker
@@ -719,3 +710,10 @@ def _pop_waitlist_to_normal_queue(context: QueueContext):
     for job, args, kwargs in job_tuples:
         job = update_job_stage(job_store, job_id=job.job_id, stage=Stage.EXEC_Q)
         normal_queue.enqueue(job, *args, **kwargs)
+
+
+def _fail_job(jobs_store: Collection[Job], job_id: str, reason: str) -> Job:
+    """Marks the job as failed for the given reason, and tells MSS"""
+    job = log_job_failure(jobs_store, job_id=job_id, reason=reason)
+    update_job_in_mss(get_mss_client(), payload=job)
+    return job

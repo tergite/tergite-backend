@@ -33,6 +33,7 @@ from typing import (
     TypedDict,
     TypeVar,
 )
+from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
@@ -47,6 +48,7 @@ from rq import Queue as RqQueue
 from rq import SimpleWorker
 from rq.job import Job as RqJob
 
+import app.services.scheduler.tasks as scheduler_tasks
 from app.api.worker import preload_worker_globals
 from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps, get_queue_context
 from app.services.booking.models import Booking
@@ -187,6 +189,27 @@ _ALL_INVALID_UPLOAD_JOB_PARAMS = [
     (client, redis, rq_worker, job)
     for job in _INVALID_JOBS_FOR_UPLOAD
     for client, redis, rq_worker in CLIENT_AND_RQ_WORKER_TUPLES
+]
+
+# (patch target, patch kwargs) making one stage of a job fail
+_FAILING_STAGE_PATCHES = [
+    (
+        "app.services.scheduler.tasks.decompress_qobj",
+        {"side_effect": ValueError("unreadable qobj")},
+    ),
+    (
+        "app.services.scheduler.tasks.get_quantum_executor",
+        {
+            "return_value": Mock(
+                preprocess=Mock(return_value=(0.2, None)),
+                run=Mock(side_effect=RuntimeError("device lost")),
+            )
+        },
+    ),
+    (
+        "app.services.scheduler.tasks.read_job_from_hdf5",
+        {"side_effect": OSError("unreadable results")},
+    ),
 ]
 
 _ROOT_PARAMS = [
@@ -957,6 +980,7 @@ def test_submit_jobs_in_idle_booking_before_another(
         _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
+        mss_update_spy = mocker.spy(scheduler_tasks, "update_job_in_mss")
         _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
         jobs_in_db = _get_jobs_in_redis(redis_conn)
@@ -1008,6 +1032,10 @@ def test_submit_jobs_in_idle_booking_before_another(
             "job too long for the time left in the booking"
             in booker_jobs[1].failure_reason
         )
+        jobs_sent_to_mss = _get_jobs_sent_to_mss(mss_update_spy)
+        assert (booker_jobs[1].job_id, JobStatus.FAILED) in [
+            (sent_job.job_id, sent_job.status) for sent_job in jobs_sent_to_mss
+        ]
         # non booker jobs short enough to finish before next booking (after waiting for 1 second timeout on booked queue)
         assert (
             non_booker_job_ids_pre_2nd_slot == expected_non_booker_job_ids_pre_2nd_slot
@@ -2066,6 +2094,40 @@ def test_cancel_job_directly(
         assert response.status_code == 200
         assert job_in_db == expected_job
         assert redis_conn_spy.call_count <= 1
+
+
+@pytest.mark.parametrize("patch_target, patch_kwargs", _FAILING_STAGE_PATCHES)
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_failed_job_is_marked_failed_and_sent_to_mss(
+    client,
+    redis_conn,
+    jobs_folder,
+    worker,
+    job,
+    mocker,
+    fake_clock,
+    patch_target,
+    patch_kwargs,
+):
+    """A job failing at any stage ends FAILED, and MSS is told"""
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = _get_raw_jobs(job, durations=[0.2])
+        job_info = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )[0]
+        mocker.patch(patch_target, **patch_kwargs)
+        mss_update_spy = mocker.spy(scheduler_tasks, "update_job_in_mss")
+        with open(job_info["file_path"], "rb") as file:
+            client.post(
+                "/jobs", files={"upload_file": file}, headers=job_info["headers"]
+            )
+
+        worker.work(burst=True)
+
+        job_in_db = _get_jobs_in_redis(redis_conn)[0]
+        assert job_in_db.status == JobStatus.FAILED
+        assert _get_jobs_sent_to_mss(mss_update_spy)[-1].status == JobStatus.FAILED
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
@@ -3146,6 +3208,11 @@ def _drop_microsec(timestamp: datetime) -> datetime:
         the datetime but without microseconds
     """
     return timestamp.replace(microsecond=0)
+
+
+def _get_jobs_sent_to_mss(mss_update_spy: Mock) -> List[Job]:
+    """Gets the jobs, in order, that a spy on update_job_in_mss saw sent to MSS"""
+    return [call.kwargs["payload"] for call in mss_update_spy.call_args_list]
 
 
 def _get_jobs_in_redis(redis_client: Redis) -> List[Job]:

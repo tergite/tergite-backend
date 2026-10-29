@@ -54,6 +54,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   before upgrading leaves every worker suspended until `rq resume` is run
 - Fixed devices on one Redis sharing their jobs, so one device listed, and could cancel, another's, and sharing one
   executor lock in the working folder; jobs stored before upgrading are no longer listed
+- Fixed failed jobs not reaching MSS, and some staying `executing`: a job failing in preprocessing, execution or
+  postprocessing, or too long for its booking, is now marked failed and sent to MSS
 
 ### Removed
 
