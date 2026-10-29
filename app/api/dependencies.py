@@ -58,6 +58,7 @@ from ..utils.logging import set_up_logging
 from ..utils.redis import clear_redis_connections, get_redis_connection
 from ..utils.sql_db import clear_sql_engine_cache
 from ..utils.strings import validate_uuid4_str
+from .middleware import get_request_logs_store
 
 # how long a device's start-up lock outlasts an API worker that stopped holding it
 _START_UP_LOCK_SECONDS = 300
@@ -69,6 +70,7 @@ async def lifespan(app: FastAPI):
     # each API worker, which uvicorn may start apart from main.py, sets up its own
     set_up_logging(settings.get_device_settings().log_level)
     app.state.device_resources = {}
+    app.state.request_logs_stores = {}
     for device in settings.get_device_names():
         create_device_folders(settings.get_device_settings(device))
         # one API worker at a time, as starting a device restarts its recalibration
@@ -84,6 +86,10 @@ async def lifespan(app: FastAPI):
             app.state.device_resources[device] = DeviceResources.from_settings(
                 settings.get_device_settings(device)
             )
+            app.state.request_logs_stores[device] = get_request_logs_store(
+                app.state.device_resources[device].redis,
+                settings.get_device_settings(device),
+            )
             _start_device(app.state.device_resources[device])
 
     logging.info(f"starting app at {get_utc_now()}")
@@ -93,6 +99,7 @@ async def lifespan(app: FastAPI):
         with settings.using_device(device):
             stop_recalibration(app.state.device_resources[device], ignore_errors=True)
     app.state.device_resources.clear()
+    app.state.request_logs_stores.clear()
     clear_queue_pool(ignore_errors=True)
     clear_quantum_executor(ignore_errors=True)
     disconnect_mss_client(ignore_errors=True)

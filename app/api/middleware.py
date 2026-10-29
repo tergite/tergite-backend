@@ -14,15 +14,12 @@ from typing import Optional
 
 from fastapi import Request
 from pydantic import ConfigDict, Field
+from redis import Redis
 
-import settings
-
+from ..utils.config import DeviceSettings
 from ..utils.datetime import utc_now_str
-from ..utils.redis import get_redis_connection
 from ..utils.redis_store import Collection, Schema
 from ..utils.strings import uuid_str
-
-_REQUEST_LOGS_STORES: dict[str, Collection["RequestLog"]] = {}
 
 
 class RequestLog(Schema):
@@ -77,7 +74,7 @@ async def log_requests(request: Request, call_next):
 
     response = await call_next(request)
 
-    requests_store = get_request_logs_store()
+    requests_store = request.app.state.request_logs_stores[request.state.device_name]
     if not requests_store.exists(request_id):
         requests_store.insert(RequestLog.from_request(request))
 
@@ -85,20 +82,14 @@ async def log_requests(request: Request, call_next):
     return response
 
 
-def get_request_logs_store() -> Collection[RequestLog]:
-    """Gets the current device's store for the request logs
-
-    Returns:
-        the RedisCollection containing the request logs
-    """
-    request_logs_store = _REQUEST_LOGS_STORES.get(settings.DEFAULT_PREFIX)
-    if request_logs_store is None:
-        request_logs_store = Collection(
-            connection=get_redis_connection(url=settings.RQ_REDIS_URL),
-            schema=RequestLog,
-            default_ttl=settings.REQUEST_LOG_TTL,
-            cleanup_interval=settings.REQUEST_LOG_CLEAN_INTERVAL,
-        )
-        _REQUEST_LOGS_STORES[settings.DEFAULT_PREFIX] = request_logs_store
-
-    return request_logs_store
+def get_request_logs_store(
+    redis: Redis, device_settings: DeviceSettings
+) -> Collection[RequestLog]:
+    """Gets a store of the request logs, on the device's Redis, as the device's settings
+    say to keep them"""
+    return Collection(
+        connection=redis,
+        schema=RequestLog,
+        default_ttl=device_settings.request_log_ttl,
+        cleanup_interval=device_settings.request_log_clean_interval,
+    )

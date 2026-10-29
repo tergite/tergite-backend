@@ -21,7 +21,7 @@ import pytest
 from pydantic import ValidationError
 from starlette.requests import Request
 
-from app.api.middleware import get_request_logs_store
+import settings
 from app.tests.utils.api import (
     create_invalid_mss_headers,
     create_mss_headers,
@@ -227,7 +227,9 @@ def test_every_response_carries_its_request_id(client):
         missing = client.get("/no-such-route")
 
         nonce = headers["x-mss-request-id"]
-        logged_ids = [log.request_id for log in get_request_logs_store().get_all()]
+        device = settings.get_device_settings().default_prefix
+        requests_store = client.app.state.request_logs_stores[device]
+        logged_ids = [log.request_id for log in requests_store.get_all()]
         assert answered.headers["X-Request-ID"] == nonce
         assert validate_uuid4_str(refused.headers["X-Request-ID"])
         assert validate_uuid4_str(missing.headers["X-Request-ID"])
