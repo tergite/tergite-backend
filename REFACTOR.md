@@ -213,6 +213,10 @@ Tests and tooling only. After this step, a refactor commit that changes behaviou
     counts Redis memory and keys. `record.sh` and `compare.py` follow MSS's; baselines live in
     `dev/perf/baselines/`. A step whose p95 latency, stage overhead or peak memory is more than 10% worse is not
     signed off until the cause is found.
+    **Done first in step 1**, before 1.2, so that the baselines are of the code as step 0 left it. The BCC runs one
+    `qiskit_pulse_1q` device against a stub MSS (`dev/perf/mss_stub.py`). On macOS the recorder sets
+    `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES`: without it the Objective-C runtime kills every forked work horse of
+    the light worker, so no job's postprocessing finishes, a bug neither the suite nor the e2e test reaches.
 11. **Tooling out of the app.** `start_bcc.sh` moves to `dev/`; nothing writes into the working directory or under
     `app/tests/` (`tmp/`, `tmp.*`, `test_booking.db`); `settings.FIXTURES_DIR` (`settings.py:44`) stops pointing
     into the tests.
