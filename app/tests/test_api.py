@@ -536,6 +536,35 @@ def test_unexpected_error_answers_500(client, mocker):
 
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_start_up_sends_the_device_and_its_calibration_to_mss(client, mock_mss):
+    with client as client:
+        headers = create_mss_headers()
+        static_properties = client.get("/static-properties", headers=headers).json()
+        dynamic_properties = client.get(
+            "/dynamic-properties", headers=create_mss_headers()
+        ).json()
+
+        [initialized, recalibrated] = mock_mss.sent_events[:2]
+        assert initialized["name"] == "initialized"
+        assert initialized["data"] == static_properties
+        assert recalibrated["name"] == "recalibrated"
+        assert recalibrated["data"] == dynamic_properties
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_switch_tells_mss_when(client, mock_mss):
+    with client as client:
+        client.post("/switch/off", headers=create_mss_headers(is_admin=True))
+        client.post("/switch/on", headers=create_mss_headers(is_admin=True))
+
+        [switched_off, switched_on] = mock_mss.sent_events[-2:]
+        assert switched_off["name"] == "switched_off"
+        assert switched_on["name"] == "switched_on"
+        assert datetime.fromisoformat(switched_off["data"]["date"])
+        assert datetime.fromisoformat(switched_on["data"]["date"])
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
 def test_create_user(client):
     """POST to '/users' should create the user via MSS"""
     with client as client:
@@ -2528,6 +2557,45 @@ def test_failed_job_is_marked_failed_and_sent_to_mss(
         job_in_db = _get_jobs_in_redis(redis_conn)[0]
         assert job_in_db.status == JobStatus.FAILED
         assert _get_jobs_sent_to_mss(mss_update_spy)[-1].status == JobStatus.FAILED
+
+
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_finished_job_is_sent_to_mss_with_its_results(
+    client, redis_conn, jobs_folder, worker, job, mocker, mock_mss, fake_clock
+):
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = _get_raw_jobs(job, durations=[0.2])
+        job_info = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )[0]
+        _submit_multiple_jobs_v2(client, data=[job_info])
+
+        worker.work(burst=True)
+
+        job_updates = [
+            event["data"]
+            for event in mock_mss.sent_events
+            if event["name"] == "job_updated"
+        ]
+        assert {update["job_id"] for update in job_updates} == {job_info["job_id"]}
+        assert job_updates[-1]["status"] == "successful"
+        assert job_updates[-1]["result"]["memory"]
+
+
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="the simulators send no calibration")
+@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
+def test_recalibration_sends_the_calibration_to_mss(
+    client, redis_conn, worker, mock_mss
+):
+    with client as client:
+        start_up_event_count = len(mock_mss.sent_events)
+
+        worker.work(burst=True, max_jobs=1)
+
+        [recalibrated] = mock_mss.sent_events[start_up_event_count:]
+        assert recalibrated["name"] == "recalibrated"
+        assert recalibrated["data"]["qubits"]
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)

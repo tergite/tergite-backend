@@ -12,22 +12,27 @@
 # that they have been altered from the originals.
 
 """Utilities for stuff related to MSS connection"""
+import base64
 import json
 import logging
 import re
 import threading
 from collections.abc import Iterable
 from datetime import datetime
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Set, Union
 
 import websockets
 from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding
 from websockets import ClientProtocol, HeadersLike
 from websockets.frames import CloseCode
 from websockets.http11 import USER_AGENT
 from websockets.sync.client import ClientConnection
 from websockets.typing import DataLike
 from websockets.uri import parse_uri
+
+from app.tests.utils.env import TEST_PUBLIC_KEY_FILE
 
 _MESSAGE_TYPES = (
     "initialized",
@@ -43,12 +48,41 @@ type Data = Union[bytes, str]
 _default_protocol = ClientProtocol(uri=parse_uri("ws://localhost:8000"))
 
 
+class MockMss:
+    """The MSS end of the websockets the BCC opens: it records the events sent on each, and
+    can refuse an event, stay silent, or drop a connection while the BCC waits, as MSS may
+    """
+
+    def __init__(self):
+        self.connections: List["MockWebsocket"] = []
+        self.rejected_event_names: Set[str] = set()
+        self.is_silent = False
+        self.should_drop_next_recv = False
+
+    def connect(self, uri: str, **kwargs: Any) -> "MockWebsocket":
+        """Replaces websockets.sync.client.connect, handshaking as it does"""
+        connection = MockWebsocket(mss=self, uri=uri, **kwargs)
+        connection.handshake(additional_headers=kwargs.get("additional_headers"))
+        self.connections.append(connection)
+        return connection
+
+    @property
+    def sent_events(self) -> List[Dict[str, Any]]:
+        """the events sent to MSS on every connection, in order"""
+        return [
+            event for connection in self.connections for event in connection.sent_events
+        ]
+
+
 class MockWebsocket(ClientConnection):
     """Sync mock of websockets.sync.client.ClientConnection for testing MSS."""
 
-    def __init__(self, sock=None, protocol=_default_protocol, *args, **kwargs):
+    def __init__(
+        self, sock=None, protocol=_default_protocol, *args, mss: MockMss, **kwargs
+    ):
         # Skip super().__init__() — it starts a recv_events thread that
         # performs real socket I/O; our mock overrides all I/O methods.
+        self.__mss = mss
         self.__message_types = _MESSAGE_TYPES
         self.__url: Optional[str] = None
         self.__conn_kwargs: Dict[str, str] = {}
@@ -113,6 +147,8 @@ class MockWebsocket(ClientConnection):
             event_id = payload_json["id"]
             if payload_json["name"] not in self.__message_types:
                 raise ValueError(f"'{payload_json['name']}' event is not permitted")
+            if payload_json["name"] in self.__mss.rejected_event_names:
+                raise ValueError(f"'{payload_json['name']}' events are rejected")
 
             response_json = {
                 "status": "success",
@@ -123,37 +159,37 @@ class MockWebsocket(ClientConnection):
             logging.error(exp)
             response_json = {
                 "status": "error",
-                "detail": "unexpected server error",
+                "detail": f"{exp}",
                 "id": event_id,
             }
 
-        self.__inbox.append(json.dumps(response_json))
+        if not self.__mss.is_silent:
+            self.__inbox.append(json.dumps(response_json))
+
+    @property
+    def sent_events(self) -> List[Dict[str, Any]]:
+        """the events sent on this connection, in order"""
+        return [json.loads(message) for message in self.__outbox]
 
     def recv(self, timeout: float | None = None, decode: bool | None = None) -> Data:
-        """Receive the next mock response."""
+        """Receive the oldest mock response, or time out as a socket does without one"""
+        if self.__mss.should_drop_next_recv:
+            self.__mss.should_drop_next_recv = False
+            self._connected = False
         if not self._connected:
             raise websockets.ConnectionClosed(
                 rcvd=websockets.Close(code=1008, reason="socket is already closed."),
                 sent=None,
             )
-        return self.__inbox.pop()
+        if not self.__inbox:
+            raise TimeoutError("timed out while waiting for a message")
+        return self.__inbox.pop(0)
 
     def close(
         self, code: CloseCode | int = CloseCode.NORMAL_CLOSURE, reason: str = ""
     ) -> None:
         """Shutdown the connection."""
         self._connected = False
-
-
-def mock_sync_connect(uri: str, **kwargs) -> MockWebsocket:
-    """Replacement for websockets.sync.client.connect used in tests.
-
-    Mirrors what the real connect() does: constructs the connection and then
-    calls handshake() so that _connected is True before the caller sends data.
-    """
-    ws = MockWebsocket(uri=uri, **kwargs)
-    ws.handshake(additional_headers=kwargs.get("additional_headers"))
-    return ws
 
 
 async def mock_mss_websocket_handler(websocket: websockets.ServerConnection):
@@ -202,10 +238,16 @@ def _verify_headers(headers):
     """
     bcc_nonce_ttl = 300
     try:
-        # the mock checks the signed headers are sent, not that the signature verifies
-        for key in ("x-id", "x-request-id", "x-signature"):
-            headers[key]
         timestamp = headers["x-timestamp"]
+        message = f"{headers['x-id']}-{headers['x-request-id']}-{timestamp}"
+        _get_bcc_public_key().verify(
+            base64.b64decode(headers["x-signature"]),
+            message.encode(),
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256(),
+        )
 
         current_timestamp = datetime.now().timestamp()
         timestamp_float = float(timestamp)
@@ -220,3 +262,8 @@ def _verify_headers(headers):
     except (KeyError, InvalidSignature, ValueError, AttributeError) as exp:
         logging.error(exp)
         raise websockets.WebSocketException("unauthorized")
+
+
+def _get_bcc_public_key():
+    with open(TEST_PUBLIC_KEY_FILE, "rb") as file:
+        return serialization.load_pem_public_key(file.read())

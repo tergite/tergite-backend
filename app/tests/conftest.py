@@ -64,7 +64,7 @@ from ..services.scheduler.queues import QueuePool
 from .utils.analysis import MockLinearDiscriminantAnalysis
 from .utils.api import get_test_client
 from .utils.fixtures import load_fixture
-from .utils.mss import mock_sync_connect
+from .utils.mss import MockMss
 from .utils.rq import get_rq_pool_worker
 
 HAS_QISKIT_DYNAMICS = importlib.util.find_spec("qiskit_dynamics") is not None
@@ -239,7 +239,7 @@ def quantify_seed_file(tmp_path) -> Generator[str, Any, None]:
 
 @pytest.fixture
 def quantify_rest_client(
-    mocker, redis_client, quantify_seed_file
+    mocker, mock_mss, redis_client, quantify_seed_file
 ) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
     _patch_async_client(mocker)
@@ -295,16 +295,23 @@ def fake_clock(mocker) -> Generator[time_machine.Traveller, Any, None]:
 
 
 @pytest.fixture
-def patched_mss_websockets(mocker) -> Generator[MockerFixture, Any, None]:
+def mock_mss(mocker) -> MockMss:
+    """The MSS that the BCC's websocket reaches"""
+    mss = MockMss()
+    mocker.patch("app.services.external.mss.service.connect", side_effect=mss.connect)
+    return mss
+
+
+@pytest.fixture
+def patched_mss_websockets(mocker, mock_mss) -> Generator[MockerFixture, Any, None]:
     """Patch the websocket used to connect to MSS"""
-    mocker.patch(
-        "app.services.external.mss.service.connect", side_effect=mock_sync_connect
-    )
     yield mocker
 
 
 @pytest.fixture
-def qiskit_1q_rest_client(request, mocker) -> Generator[TestClient, Any, None]:
+def qiskit_1q_rest_client(
+    request, mocker, mock_mss
+) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
     os.environ["BCC_EXECUTOR_TYPE"] = "qiskit_pulse_1q"
     os.environ["BCC_DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_1Q
@@ -323,9 +330,6 @@ def qiskit_1q_rest_client(request, mocker) -> Generator[TestClient, Any, None]:
         else StubQiskitDynamicsExecutor
     )
 
-    mocker.patch(
-        "app.services.external.mss.service.connect", side_effect=mock_sync_connect
-    )
     mocker.patch(
         "app.libs.quantum_executor.qiskit.executor.QiskitDynamicsExecutor",
         new=executor_class,
@@ -352,7 +356,9 @@ def qiskit_1q_rest_client(request, mocker) -> Generator[TestClient, Any, None]:
 
 
 @pytest.fixture
-def qiskit_2q_rest_client(request, mocker) -> Generator[TestClient, Any, None]:
+def qiskit_2q_rest_client(
+    request, mocker, mock_mss
+) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
     _patch_async_client(mocker)
     os.environ["BCC_EXECUTOR_TYPE"] = "qiskit_pulse_2q"
@@ -463,14 +469,10 @@ def redis_conn_spy(mocker):
 
 
 @pytest.fixture
-def mss_conn_spy(mocker):
-    """Spies on calls to websockets.sync.client.connect (as imported in mss.service).
-
-    Uses side_effect=mock_sync_connect so this doesn't override the MSS mock
-    already installed by client fixtures (qiskit_1q_rest_client etc.).
-    """
+def mss_conn_spy(mocker, mock_mss):
+    """Spies on calls to websockets.sync.client.connect (as imported in mss.service)."""
     return mocker.patch(
-        "app.services.external.mss.service.connect", side_effect=mock_sync_connect
+        "app.services.external.mss.service.connect", side_effect=mock_mss.connect
     )
 
 
@@ -533,9 +535,6 @@ def _patch_async_client(mocker, *extra_patches: Tuple[str, Dict[str, Any]]):
         mocker: the pytest mocker object
         extra_patches: extra patches to patch with the mocker object
     """
-    mocker.patch(
-        "app.services.external.mss.service.connect", side_effect=mock_sync_connect
-    )
     os.environ["BLACKLISTED"] = ""
 
     for url, kwargs in extra_patches:
