@@ -57,10 +57,11 @@ class UnauthorizedError(BaseBccException):
     """Error when a user is not authorized to do something"""
 
 
-class PostProcessingError(Exception):
+class PostProcessingError(BaseBccException):
     """Exception raised when something unexpected happens during postprocessing"""
 
     def __init__(self, exp: Exception, job_id: str):
+        super().__init__(f"{exp}")
         self.exp = exp
         self.job_id = job_id
 

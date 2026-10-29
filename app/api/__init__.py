@@ -19,30 +19,14 @@
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.requests import Request
-from pydantic import ValidationError
 
 import settings
-from app.utils.exc import (
-    BookingAlreadyActiveError,
-    BookingAlreadyCompleteError,
-    ConflictError,
-    InvalidJobIdInUploadedFileError,
-    InvalidRequestError,
-    IsOfflineError,
-    JobAlreadyCancelled,
-    JobAlreadyCompleteError,
-    MaxBookingsError,
-    MssRejectedError,
-    MssTimeoutError,
-    NotAuthenticatedError,
-    UnauthorizedError,
-)
 
-from ..utils.api import RequestLog, get_request_logs_store, to_http_error
-from ..utils.redis_store import ItemNotFoundError
+from ..utils.api import RequestLog, get_request_logs_store
 from ..utils.strings import uuid_str
 from .dependencies import get_verified_mss_user_id, lifespan
 from .device_routing import DeviceRoutingMiddleware
+from .errors import add_error_handlers
 from .routers import bookings, devices, jobs, logfiles, recalibration, switch, users
 
 # application
@@ -53,27 +37,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# exception handlers
-app.add_exception_handler(NotAuthenticatedError, to_http_error(401))
-app.add_exception_handler(UnauthorizedError, to_http_error(403))
-app.add_exception_handler(ItemNotFoundError, to_http_error(404))
-app.add_exception_handler(JobAlreadyCompleteError, to_http_error(406))
-app.add_exception_handler(ConflictError, to_http_error(409))
-app.add_exception_handler(MaxBookingsError, to_http_error(400))
-app.add_exception_handler(InvalidRequestError, to_http_error(400))
-app.add_exception_handler(BookingAlreadyCompleteError, to_http_error(400))
-app.add_exception_handler(BookingAlreadyActiveError, to_http_error(400))
-app.add_exception_handler(ValidationError, to_http_error(422))
-app.add_exception_handler(ValueError, to_http_error(500, "Unexpected server error"))
-app.add_exception_handler(IndexError, to_http_error(500, "Unexpected server error"))
-app.add_exception_handler(TypeError, to_http_error(500, "Unexpected server error"))
-app.add_exception_handler(RuntimeError, to_http_error(500, "Unexpected server error"))
-app.add_exception_handler(TimeoutError, to_http_error(500, "Unexpected server error"))
-app.add_exception_handler(InvalidJobIdInUploadedFileError, to_http_error(400))
-app.add_exception_handler(JobAlreadyCancelled, to_http_error(406))
-app.add_exception_handler(IsOfflineError, to_http_error(503))
-app.add_exception_handler(MssRejectedError, to_http_error(502))
-app.add_exception_handler(MssTimeoutError, to_http_error(504))
+add_error_handlers(app)
 
 # setup CORS if any device's CORS_ORIGINS are set
 cors_origins = sorted(

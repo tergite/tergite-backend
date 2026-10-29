@@ -63,7 +63,6 @@ boolean: app/utils/sql_db.py::get_sql_engine(checkfirst)
 constant-position: app/libs/quantum_executor/quantify/utils/calibration.py::_FIXED_DURATION_COUPLER_NODES
 constant-position: app/libs/quantum_executor/quantify/utils/calibration.py::_NON_FIXED_DURATION_COUPLER_NODES
 constant-position: settings.py::_CURRENT_DEVICE
-http-exception: app/utils/api.py
 import-layering: app/libs/device_parameters/__init__.py::import app.services.external.mss.dtos
 import-layering: app/libs/device_parameters/__init__.py::import app.services.external.mss.service
 import-layering: app/libs/quantum_executor/base/executor.py::import settings
@@ -387,7 +386,6 @@ verb: app/services/scheduler/tasks.py::post_booking_cleanup
 verb: app/services/scheduler/tasks.py::postprocessing_failure_callback
 verb: app/services/scheduler/tasks.py::postprocessing_success_callback
 verb: app/utils/api.py::PaginatedListResponse.model_dump
-verb: app/utils/api.py::to_http_error.handler
 verb: app/utils/compat.py::gen_tuid
 verb: app/utils/datetime.py::utc_now_str
 verb: app/utils/model.py::PartialMeta.model_dump

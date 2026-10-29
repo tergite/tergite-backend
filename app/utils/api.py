@@ -13,13 +13,10 @@
 # that they have been altered from the originals.
 """Utilities to do with HTTP APIs"""
 import base64
-import logging
 import shutil
 from pathlib import Path
 from typing import (
     Any,
-    Awaitable,
-    Callable,
     Generic,
     List,
     Literal,
@@ -27,14 +24,12 @@ from typing import (
     Optional,
     TypedDict,
     TypeVar,
-    Union,
 )
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
-from fastapi import HTTPException, Request, Response, UploadFile
-from fastapi.exception_handlers import http_exception_handler
+from fastapi import Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
 import settings
@@ -168,34 +163,6 @@ def save_uploaded_file(file: UploadFile, target: Path) -> Path:
     file.file.close()
 
     return target
-
-
-def to_http_error(
-    status_code: int, custom_message: Optional[str] = None
-) -> Callable[[Request, Exception], Union[Response, Awaitable[Response]]]:
-    """An error handler that converts the exception to an HTTPException
-
-    The details in the http error are got from the exception itself.
-    It also logs the original error.
-
-    Args:
-        status_code: the HTTP status code
-        custom_message: a custom message to send to the client
-
-    Returns:
-        an HTTP exception handler function
-    """
-
-    async def handler(request: Request, exp: Exception) -> Response:
-        logging.error(exp)
-        message = custom_message
-        if message is None:
-            message = f"{exp}"
-
-        http_exp = HTTPException(status_code, message)
-        return await http_exception_handler(request, http_exp)
-
-    return handler
 
 
 def get_request_logs_store() -> Collection[RequestLog]:

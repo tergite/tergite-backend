@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse
 
 import settings
 
-from ...utils.redis_store import ItemNotFoundError
+from ...utils.exc import ItemNotFoundError
 from ..dependencies import get_mss_token_claims_dep
 
 router = APIRouter()

@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from cryptography.exceptions import InvalidSignature
-from fastapi import Depends, FastAPI, HTTPException, UploadFile, status
+from fastapi import Depends, FastAPI, UploadFile
 from fastapi.requests import Request
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import Engine
@@ -49,6 +49,7 @@ from ..utils.datetime import get_utc_now
 from ..utils.exc import (
     ConflictError,
     InvalidJobIdInUploadedFileError,
+    InvalidRequestError,
     IsOfflineError,
     ItemNotFoundError,
     NotAuthenticatedError,
@@ -362,9 +363,7 @@ async def validate_job_file(upload_file: UploadFile) -> UploadFile:
         upload_file.file.seek(0)
         return upload_file
     except (ValidationError, KeyError, TypeError) as exp:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid file: {exp}"
-        )
+        raise InvalidRequestError(f"Invalid file: {exp}")
 
 
 def get_bearer_token(request: Request) -> Optional[str]:
@@ -376,7 +375,7 @@ def get_bearer_token(request: Request) -> Optional[str]:
         request: the request object from FastAPI
 
     Raises:
-        HTTPException: Unauthorized
+        NotAuthenticatedError: user not authenticated
 
     Returns:
         the bearer token as a string or None if it does not exist and `raise_if_error` is False
@@ -385,9 +384,7 @@ def get_bearer_token(request: Request) -> Optional[str]:
         authorization_header = request.headers["Authorization"]
         return authorization_header.split("Bearer ")[1].strip()
     except (KeyError, IndexError):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="user not authenticated"
-        )
+        raise NotAuthenticatedError("user not authenticated")
 
 
 class MSSAuthDetails(BaseModel):
