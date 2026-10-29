@@ -41,7 +41,9 @@ def test_concurrent_overlapping_bookings_book_the_slot_once(tmp_path, mocker):
 
     def book(user_id: str):
         try:
-            booking_service.create_booking(db_engine, user_id, data=booking_info)
+            booking_service.create_booking(
+                db_engine, user_id, data=booking_info, max_slots_per_day=1
+            )
         except ConflictError as exp:
             errors.append(exp)
 

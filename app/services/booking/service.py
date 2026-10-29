@@ -25,8 +25,6 @@ from sqlalchemy.sql._typing import (
 )
 from sqlmodel import Session, delete, select
 
-import settings
-
 from ...utils.datetime import get_day_range, get_utc_now
 from ...utils.exc import (
     ConflictError,
@@ -47,24 +45,32 @@ from .dtos import (
 _Filter = _ColumnExpressionArgument[bool] | bool
 
 
-def create_booking(db_engine: Engine, user_id: str, data: NewBookingInfo) -> Booking:
+def create_booking(
+    db_engine: Engine, user_id: str, data: NewBookingInfo, max_slots_per_day: int
+) -> Booking:
     """Creates a new booking for the given user and returns it
 
     Args:
         db_engine: the SQL engine to save new job in
         user_id: the id of the User who is making the booking
         data: the booking info
+        max_slots_per_day: the most bookings a user may hold in a day
 
     Returns:
         the created booking
 
     Raises:
         ConflictError: booking conflicts with another booking at {start_utc} to {end_utc}
-        MaxBookingsError: you have exceeded the maximum {settings.MAX_SLOTS_PER_DAY} bookings per day for {day_start}-{day_end}
+        MaxBookingsError: you have exceeded the maximum {max_slots_per_day} bookings per day for {day_start}-{day_end}
     """
     with open_immediate_session(db_engine) as session:
         _validate_no_overlap(session, data)
-        _validate_max_slots(session, user_id=user_id, booking_info=data)
+        _validate_max_slots(
+            session,
+            user_id=user_id,
+            booking_info=data,
+            max_slots_per_day=max_slots_per_day,
+        )
 
         booking = Booking(user_id=user_id, **data.model_dump())
         session.add(booking)
@@ -332,8 +338,8 @@ def get_many_user_profiles(
 def create_mss_jwt_token(
     user: "User",
     job_id: str,
-    secret_key: Optional[str] = None,
-    ttl: Optional[float] = None,
+    secret_key: str,
+    ttl: float,
     algorithm: str = "HS256",
     current_timestamp: Optional[datetime] = None,
 ) -> str:
@@ -345,8 +351,8 @@ def create_mss_jwt_token(
     Args:
         user: the user for whom the token is to be created
         job_id: the unique identifier fo the job from MSS
-        secret_key: the key to use to sign the token; default = settings.JWT_SECRET
-        ttl: the time to live for the token in seconds; default = settings.JWT_TTL
+        secret_key: the key to use to sign the token
+        ttl: the time to live for the token in seconds
         algorithm: the algorithm to use to sign the JWT
         current_timestamp: the current timestamp; default = now, by the real clock that
             verifies the token, not BCC_CURRENT_DATE
@@ -355,23 +361,22 @@ def create_mss_jwt_token(
         the JWT token
     """
     current_timestamp = current_timestamp or get_utc_now()
-    ttl = settings.JWT_TTL if ttl is None else ttl
 
     exp = current_timestamp + timedelta(seconds=ttl)
     payload = dict(job=job_id, exp=exp, sub=user.id)
-    return jwt.encode(payload, secret_key or settings.JWT_SECRET, algorithm=algorithm)
+    return jwt.encode(payload, secret_key, algorithm=algorithm)
 
 
 def get_user_job_id_pair_from_token(
     token: str,
-    secret_key: Optional[str] = None,
+    secret_key: str,
     algorithm: str = "HS256",
 ) -> tuple[str, str]:
     """Gets the user_id and the job_id from the given JWT token
 
     Args:
         token: the JWT token of the user
-        secret_key: the secret key for the JWT encoding/decoding; default = settings.JWT_SECRET
+        secret_key: the secret key for the JWT encoding/decoding
         algorithm: the algorithm used to encode the JWT
 
     Returns:
@@ -381,9 +386,7 @@ def get_user_job_id_pair_from_token(
         NotAuthenticatedError: not authenticated
     """
     try:
-        payload = jwt.decode(
-            token, secret_key or settings.JWT_SECRET, algorithms=[algorithm]
-        )
+        payload = jwt.decode(token, secret_key, algorithms=[algorithm])
         user_id, job_id = payload["sub"], payload["job"]
         if user_id is None:
             raise ValueError("user_id is None")
@@ -451,22 +454,28 @@ def _validate_no_overlap(session: Session, booking_info: NewBookingInfo):
         pass
 
 
-def _validate_max_slots(session: Session, user_id: str, booking_info: NewBookingInfo):
+def _validate_max_slots(
+    session: Session,
+    user_id: str,
+    booking_info: NewBookingInfo,
+    max_slots_per_day: int,
+):
     """Validates that the pre-existing bookings in the day this booking starts, are not above the limit
 
     Args:
         session: the database session for accessing the saved bookings
         user_id: the unique identifier of the user creating the booking
         booking_info: the booking info under examination
+        max_slots_per_day: the most bookings a user may hold in a day
 
     Raises:
-        MaxBookingsError: you have exceeded the maximum {settings.MAX_SLOTS_PER_DAY} bookings per day for {day_start}-{day_end}
+        MaxBookingsError: you have exceeded the maximum {max_slots_per_day} bookings per day for {day_start}-{day_end}
     """
     day_start, day_end = get_day_range(booking_info.start_utc)
     user_bookings = _get_overlapping_bookings(
         session, day_start, day_end, Booking.user_id == user_id
     )
-    if len(user_bookings) >= settings.MAX_SLOTS_PER_DAY:
+    if len(user_bookings) >= max_slots_per_day:
         raise MaxBookingsError(
-            f"you have exceeded the maximum {settings.MAX_SLOTS_PER_DAY} bookings per day for {day_start}-{day_end}"
+            f"you have exceeded the maximum {max_slots_per_day} bookings per day for {day_start}-{day_end}"
         )

@@ -110,7 +110,12 @@ async def get_mss_token(
     user = booking.get_or_create_user(device.bookings_db, user_id)
 
     # create encrypted token
-    token = booking.create_mss_jwt_token(user, job_id=job_id)
+    token = booking.create_mss_jwt_token(
+        user,
+        job_id=job_id,
+        secret_key=device.settings.jwt_secret,
+        ttl=device.settings.jwt_ttl,
+    )
     encrypted_token = encrypt_mss_jwt_token(token, device.mss_public_key)
     return {"access_token": encrypted_token, "token_type": "bearer"}
 

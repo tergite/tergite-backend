@@ -337,7 +337,9 @@ def get_mss_token_claims_dep(
             ItemNotFoundError: job {job_id} does not exist
             InvalidJobIdInUploadedFileError: The job does not have a valid UUID4 {job_id_field}
         """
-        user_id, token_job_id = get_user_job_id_pair_from_token(token)
+        user_id, token_job_id = get_user_job_id_pair_from_token(
+            token, secret_key=device.settings.jwt_secret
+        )
         if job_id != token_job_id:
             raise UnauthorizedError(f"unexpected job id {job_id}")
 
@@ -425,7 +427,10 @@ def get_verified_mss_details(request: Request) -> MSSAuthDetails:
         return MSSAuthDetails(user_id=user_id, job_id=job_id, is_mss_admin=is_mss_admin)
     except NotAuthenticatedError:
         token = get_bearer_token(request)
-        user_id, token_job_id = get_user_job_id_pair_from_token(token)
+        secret_key = get_device_resources(request).settings.jwt_secret
+        user_id, token_job_id = get_user_job_id_pair_from_token(
+            token, secret_key=secret_key
+        )
         if token_job_id != job_id:
             raise UnauthorizedError("forbidden")
         return MSSAuthDetails(user_id=user_id, job_id=job_id)

@@ -97,7 +97,12 @@ def submit_booking(
         the submitted booking
     """
     # create the new booking
-    booking = create_booking(device.bookings_db, user_id=user_id, data=booking_info)
+    booking = create_booking(
+        device.bookings_db,
+        user_id=user_id,
+        data=booking_info,
+        max_slots_per_day=device.settings.max_slots_per_day,
+    )
 
     # at the start_utc, reset the idle time tracker
     device.queues.general.enqueue_at(
