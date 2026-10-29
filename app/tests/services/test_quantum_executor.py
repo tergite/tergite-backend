@@ -25,6 +25,17 @@ _BACKEND_CONFIG_PATH = get_fixture_path("backend_config.toml")
 _CALIBRATION_SEED_FILE = get_fixture_path("quantify.seed.toml")
 
 
+@pytest.fixture(autouse=True)
+def _close_cached_instruments():
+    """Closes the dummy clusters other tests' executors left cached: building an executor of
+    other hardware closes every cluster first, and then fails to close their components
+    """
+    if HAS_QUANTIFY:
+        from ...libs.quantum_executor.quantify.executor import QuantifyExecutor
+
+        QuantifyExecutor._close_cached_instruments()
+
+
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 def test_attempts_to_connect_to_real_hardware():
     """Loads the config for the real hardware in the appropriate way"""
