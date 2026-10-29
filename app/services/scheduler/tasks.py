@@ -61,6 +61,7 @@ from ..booking import (
 from ..devices import get_device_calibration_info
 from ..external.mss import DeviceEvent, DeviceEventName, get_mss_client
 from .dtos import JobFile
+from .queues import get_queue_pool
 from .store import get_jobs_store
 from .utils import (
     apply_linear_discriminator,
@@ -189,8 +190,6 @@ def reset_idleness_timer(
     Returns:
         the refreshed rq.job.Job that is constructed and enqueued to track the time or None if end_utc is in the past
     """
-    from .queues import get_queue_pool
-
     if max_idle_time is None:
         max_idle_time = context["max_idle_time"]
 
@@ -241,8 +240,6 @@ def execute(
     Returns:
         the tuple of the updated job's job ID and the context and the results file path
     """
-    from .queues import get_queue_pool
-
     job_id = job.job_id
     jobs_store = get_jobs_store()
     preprocessing_dir = Path(context["preprocessing_folder"])
@@ -458,8 +455,6 @@ def _try_enqueue_on_normal_queue(
     Returns:
         the pair of the updated job's job ID and the context
     """
-    from .queues import get_queue_pool
-
     job_id = job.job_id
 
     bookings_sql_engine = get_bookings_sql_engine(context["booking_db_url"])
@@ -512,8 +507,6 @@ def _try_enqueue_on_booked_queue(
     Returns:
         the pair of the updated job's job ID and the context
     """
-    from .queues import get_queue_pool
-
     force_normal_queue = context.get("force_normal_queue")
     user_id = job.user_id
     job_id = job.job_id
@@ -573,8 +566,6 @@ def _push_to_waitlist(
     Returns:
         a tuple of the job_id and context
     """
-    from .queues import get_queue_pool
-
     queue_pool = get_queue_pool()
     waitlist = queue_pool.waitlist
 
@@ -604,8 +595,6 @@ def _pop_waitlist_to_booking(
     Returns:
         a tuple of job_id/None and context
     """
-    from .queues import get_queue_pool
-
     queue_pool = get_queue_pool()
 
     waitlist = queue_pool.waitlist
@@ -652,8 +641,6 @@ def _pop_waitlist_to_normal_queue(context: QueueContext):
     Returns:
         a tuple of job_id/None and context
     """
-    from .queues import get_queue_pool
-
     booking_db_url = context["booking_db_url"]
     jobs_store_url = context["jobs_store_url"]
     bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
@@ -684,8 +671,6 @@ def _schedule_next_recalibration(
     context: QueueContext, interval: Optional[float]
 ) -> Optional[rq.job.Job]:
     """Schedules a recalibration interval seconds from now, if interval is set"""
-    from .queues import get_queue_pool
-
     if not isinstance(interval, float):
         return None
 

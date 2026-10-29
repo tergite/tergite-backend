@@ -120,16 +120,14 @@ class NewBookingInfo(BaseModel):
     @model_validator(mode="after")
     def validate_total_duration(self):
         """Generate and validate the total duration of this booking"""
-        from settings import MAX_TIME_SLOT_LENGTH, MIN_TIME_SLOT_LENGTH
-
         duration = (self.end_utc - self.start_utc).total_seconds()
-        if duration > MAX_TIME_SLOT_LENGTH:
+        if duration > settings.MAX_TIME_SLOT_LENGTH:
             raise ValueError(
-                f"duration is beyond the limit of {MAX_TIME_SLOT_LENGTH} seconds"
+                f"duration is beyond the limit of {settings.MAX_TIME_SLOT_LENGTH} seconds"
             )
-        if duration < MIN_TIME_SLOT_LENGTH:
+        if duration < settings.MIN_TIME_SLOT_LENGTH:
             raise ValueError(
-                f"duration is too short compared to the minimum of {MIN_TIME_SLOT_LENGTH} seconds"
+                f"duration is too short compared to the minimum of {settings.MIN_TIME_SLOT_LENGTH} seconds"
             )
 
         self._total_duration = duration
@@ -252,8 +250,6 @@ class BookingsConfig(BaseModel):
     @classmethod
     def from_settings(cls) -> "BookingsConfig":
         """Creates this configuration from the settings"""
-        import settings
-
         return cls(
             max_time_slot_length=settings.MAX_TIME_SLOT_LENGTH,
             min_time_slot_length=settings.MIN_TIME_SLOT_LENGTH,

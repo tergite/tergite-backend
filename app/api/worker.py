@@ -21,7 +21,15 @@ from rq.worker import StopRequested
 import settings
 
 from ..libs.queues.dtos import get_queue_context
-from ..services.devices import is_offline
+from ..services.booking import get_bookings_sql_engine
+from ..services.devices import is_offline, save_all_device_params
+from ..services.external.mss import get_mss_client
+from ..services.scheduler import (
+    get_executor_and_options,
+    get_jobs_store,
+    get_queue_pool,
+)
+from ..utils.redis import get_redis_connection
 
 
 class PreloadedRqWorker(Worker):
@@ -69,17 +77,6 @@ class LightRqWorker(PreloadedRqWorker):
 def preload_worker_globals(should_load_executor: bool) -> None:
     """Initializes connections and other globals, so that the jobs, forked or run in
     process, find them cached"""
-    from app.libs.queues.dtos import get_queue_context
-    from app.services.booking import get_bookings_sql_engine
-    from app.services.devices import save_all_device_params
-    from app.services.external.mss import get_mss_client
-    from app.services.scheduler import (
-        get_executor_and_options,
-        get_jobs_store,
-        get_queue_pool,
-    )
-    from app.utils.redis import get_redis_connection
-
     # so that the jobs need not import it
     import_module("app.services.scheduler.tasks")
 
