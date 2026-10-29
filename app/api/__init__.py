@@ -51,7 +51,6 @@ from app.utils.exc import (
     MaxBookingsError,
     MssRejectedError,
     MssTimeoutError,
-    NotAllowedError,
     NotAuthenticatedError,
     UnauthorizedError,
 )
@@ -98,7 +97,6 @@ app = FastAPI(
 )
 
 # exception handlers
-app.add_exception_handler(NotAllowedError, to_http_error(405))
 app.add_exception_handler(NotAuthenticatedError, to_http_error(401))
 app.add_exception_handler(UnauthorizedError, to_http_error(403))
 app.add_exception_handler(ItemNotFoundError, to_http_error(404))

@@ -48,7 +48,6 @@ from app.utils.exc import (
     MaxBookingsError,
     MssRejectedError,
     MssTimeoutError,
-    NotAllowedError,
     NotAuthenticatedError,
     UnauthorizedError,
 )
@@ -85,7 +84,6 @@ _OFFLINE_ANSWERED_ROUTES = [
     ("GET", "/switch/status"),
 ]
 _ERROR_STATUS_CODES = [
-    (NotAllowedError(), 405),
     (NotAuthenticatedError(), 401),
     (UnauthorizedError(), 403),
     (ItemNotFoundError(), 404),

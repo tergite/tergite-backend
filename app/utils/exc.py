@@ -57,14 +57,6 @@ class UnauthorizedError(BaseBccException):
     """Error when a user is not authorized to do something"""
 
 
-class NotAllowedError(BaseBccException):
-    """Error when a given operation is not allowed"""
-
-
-class NotInstalledError(BaseBccException):
-    """when a given dependency is not installed"""
-
-
 class PostProcessingError(Exception):
     """Exception raised when something unexpected happens during postprocessing"""
 
