@@ -64,6 +64,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   job token from
 - Fixed deleting a user leaving their running jobs to finish, and leaving other users' jobs waiting on the
   waitlist until a later booking ended, when the user's booking was under way
+- Fixed two API workers being able to book the same slot, and a first request for a new user, or a duplicate
+  `POST /users`, failing with 500 when it raced another; a duplicate user now answers 409
 
 ### Removed
 

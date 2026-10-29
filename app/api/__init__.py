@@ -37,7 +37,6 @@ from app.services.booking.models import (
     MSSTokenClaims,
     NewBookingInfo,
     NewUserInfo,
-    User,
     UserProfile,
 )
 from app.utils.exc import (
@@ -57,7 +56,6 @@ from app.utils.exc import (
 
 from ..libs import device_parameters as props_lib
 from ..libs.queues.dtos import Job, JobStatus, QueueContext, get_queue_context
-from ..services.booking import get_user
 from ..services.scheduler.dtos import RecalibrationInfo
 from ..services.scheduler.queues import QueuePool, get_queue_pool
 from ..utils.api import (
@@ -311,10 +309,7 @@ async def get_mss_token(
         # just some house-keeping to ensure the two user ids are the same
         raise UnauthorizedError("Forbidden")
 
-    user = get_user(db_engine, User.id == user_id)
-    if user is None:
-        # create a random user if the user does not exist
-        user = booking.create_random_user(db_engine, user_id)
+    user = booking.get_or_create_user(db_engine, user_id)
 
     # create encrypted token
     token = booking.create_mss_jwt_token(user, job_id=job_id)
@@ -412,10 +407,7 @@ async def create_booking(
     Returns:
         the newly created booking
     """
-    user = get_user(db_engine, User.id == user_id)
-    if user is None:
-        # create a random user if the user does not exist
-        booking.create_random_user(db_engine, user_id)
+    booking.get_or_create_user(db_engine, user_id)
 
     return scheduler.submit_booking(
         context,

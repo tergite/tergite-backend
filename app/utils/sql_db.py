@@ -12,11 +12,12 @@
 #
 """Module the SQL store"""
 
-from typing import Dict, Iterable, List, Type
+from contextlib import contextmanager
+from typing import Dict, Iterable, Iterator, List, Type
 
 from sqlalchemy import Engine
 from sqlalchemy.pool import NullPool
-from sqlmodel import SQLModel, col, create_engine, desc
+from sqlmodel import Session, SQLModel, col, create_engine, desc
 
 from .exc import InvalidRequestError
 
@@ -55,6 +56,16 @@ def get_sql_engine(
         SQLModel.metadata.create_all(engine, tables=tables, checkfirst=checkfirst)
         _ENGINE_CACHE[url] = engine
     return engine
+
+
+@contextmanager
+def open_immediate_session(db_engine: Engine) -> Iterator[Session]:
+    """Opens a session that, on SQLite, takes the write lock as it begins, so that what it
+    reads cannot change before it writes, even from another process"""
+    with Session(db_engine) as session:
+        if db_engine.dialect.name == "sqlite":
+            session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+        yield session
 
 
 def convert_http_sort_to_db_sort(model: Type[SQLModel], http_sort: Iterable[str] = ()):

@@ -18,6 +18,7 @@ from typing import Any, List, Optional
 import jwt
 from jwt import InvalidTokenError
 from sqlalchemy import Engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.sql._typing import (
     _ColumnExpressionArgument,
     _ColumnExpressionOrStrLabelArgument,
@@ -33,6 +34,7 @@ from ...utils.exc import (
     MaxBookingsError,
     NotAuthenticatedError,
 )
+from ...utils.sql_db import open_immediate_session
 from ...utils.strings import get_random_name, uuid_str
 from .models import (
     Booking,
@@ -61,7 +63,7 @@ def create_booking(db_engine: Engine, user_id: str, data: NewBookingInfo) -> Boo
         ConflictError: booking conflicts with another booking at {start_utc} to {end_utc}
         MaxBookingsError: you have exceeded the maximum {settings.MAX_SLOTS_PER_DAY} bookings per day for {day_start}-{day_end}
     """
-    with Session(db_engine) as session:
+    with open_immediate_session(db_engine) as session:
         _validate_no_overlap(session, data)
         _validate_max_slots(session, user_id=user_id, booking_info=data)
 
@@ -192,26 +194,32 @@ def get_next_booking(db_engine: Engine) -> Optional[Booking]:
         return booking
 
 
-def create_random_user(db_engine: Engine, user_id: str) -> User:
-    """Creates a new random user for the given user id and returns it
+def get_or_create_user(db_engine: Engine, user_id: str) -> User:
+    """Gets the user of the given id, creating one with a random name and email if none exists
 
     Args:
-        db_engine: the SQL engine to save new job in
+        db_engine: the SQL engine where the users are saved
         user_id: the unique identifier of the user
 
     Returns:
-        the created user
-
-    Raises:
-        ConflictError: booking conflicts with another user
+        the user
     """
-    user_data = NewUserInfo(
-        id=user_id,
-        name=f"User-{user_id}",
-        email=f"{user_id}@{get_random_name()}.com",
-        password=uuid_str(),
-    )
-    return create_user(db_engine, data=user_data)
+    with open_immediate_session(db_engine) as session:
+        user = session.exec(select(User).where(User.id == user_id)).first()
+        if user is None:
+            user = _get_new_user(
+                NewUserInfo(
+                    id=user_id,
+                    name=f"User-{user_id}",
+                    email=f"{user_id}@{get_random_name()}.com",
+                    password=uuid_str(),
+                )
+            )
+            session.add(user)
+            session.commit()
+            session.refresh(user)
+        session.expunge_all()
+        return user
 
 
 def create_user(db_engine: Engine, data: NewUserInfo) -> User:
@@ -225,14 +233,17 @@ def create_user(db_engine: Engine, data: NewUserInfo) -> User:
         the created user
 
     Raises:
-        ConflictError: booking conflicts with another user
+        ConflictError: a user with the id {id} or the email {email} already exists
     """
     with Session(db_engine) as session:
-        user = User(**data.model_dump())
-        # obfuscate the password
-        user.password = hash_password(user.password)
+        user = _get_new_user(data)
         session.add(user)
-        session.commit()
+        try:
+            session.commit()
+        except IntegrityError:
+            raise ConflictError(
+                f"a user with the id {data.id} or the email {data.email} already exists"
+            )
         session.refresh(user)
         session.expunge_all()
         return user
@@ -462,3 +473,10 @@ def _validate_max_slots(session: Session, user_id: str, booking_info: NewBooking
         raise MaxBookingsError(
             f"you have exceeded the maximum {settings.MAX_SLOTS_PER_DAY} bookings per day for {day_start}-{day_end}"
         )
+
+
+def _get_new_user(data: NewUserInfo) -> User:
+    """Gets the user to save for the given info, its password hashed"""
+    user = User(**data.model_dump())
+    user.password = hash_password(user.password)
+    return user

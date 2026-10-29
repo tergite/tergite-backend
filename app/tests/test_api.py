@@ -280,6 +280,20 @@ def test_create_user(client):
 
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_create_existing_user(client):
+    """POST to '/users' with the id of a user that exists answers 409"""
+    with client as client:
+        user_id, _ = _create_user(client, user=USERS[1])
+        response = client.post(
+            "/users",
+            json={**USERS[1], "id": user_id},
+            headers=create_mss_headers(is_admin=True),
+        )
+
+        assert response.status_code == 409
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
 def test_view_profile(client):
     """GET '/me' should show the user profile in the REST API"""
     with client as client:

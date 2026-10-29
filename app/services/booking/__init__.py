@@ -13,7 +13,6 @@
 from .service import (
     create_booking,
     create_mss_jwt_token,
-    create_random_user,
     create_user,
     delete_bookings,
     delete_users,
@@ -22,6 +21,7 @@ from .service import (
     get_many_bookings,
     get_many_user_profiles,
     get_next_booking,
+    get_or_create_user,
     get_user,
     get_user_profile,
 )
@@ -29,7 +29,6 @@ from .service import (
 __all__ = [
     "create_booking",
     "create_mss_jwt_token",
-    "create_random_user",
     "create_user",
     "delete_bookings",
     "delete_users",
@@ -38,6 +37,7 @@ __all__ = [
     "get_many_bookings",
     "get_many_user_profiles",
     "get_next_booking",
+    "get_or_create_user",
     "get_user",
     "get_user_profile",
 ]
