@@ -24,7 +24,6 @@ from fastapi.responses import FileResponse
 from pydantic import ValidationError
 
 import settings
-from app.services import scheduler
 from app.utils.exc import (
     BookingAlreadyActiveError,
     BookingAlreadyCompleteError,
@@ -41,24 +40,12 @@ from app.utils.exc import (
     UnauthorizedError,
 )
 
-from ..libs.queues.dtos import QueueContext, get_queue_context
-from ..utils.api import (
-    GeneralMessage,
-    RequestLog,
-    get_request_logs_store,
-    to_http_error,
-)
+from ..utils.api import RequestLog, get_request_logs_store, to_http_error
 from ..utils.redis_store import ItemNotFoundError
 from ..utils.strings import uuid_str
-from .dependencies import (
-    get_mss_token_claims_dep,
-    get_queue_context_if_online,
-    get_verified_mss_admin_user_id,
-    get_verified_mss_user_id,
-    lifespan,
-)
+from .dependencies import get_mss_token_claims_dep, get_verified_mss_user_id, lifespan
 from .device_routing import DeviceRoutingMiddleware
-from .routers import bookings, devices, jobs, recalibration, users
+from .routers import bookings, devices, jobs, recalibration, switch, users
 
 # application
 app = FastAPI(
@@ -149,6 +136,7 @@ app.include_router(users.router)
 app.include_router(bookings.router)
 app.include_router(jobs.router)
 app.include_router(recalibration.router)
+app.include_router(switch.router)
 
 
 @app.get(
@@ -168,56 +156,3 @@ async def download_logfile(logfile_id: UUID):
     if file.exists():
         return FileResponse(file)
     raise ItemNotFoundError(f"logfile {logfile_id} not found")
-
-
-# plain def, so FastAPI runs them in a thread: telling MSS blocks, for up to minutes
-@app.post("/switch/off", dependencies=[Depends(get_verified_mss_admin_user_id)])
-def switch_off(
-    context: QueueContext = Depends(get_queue_context_if_online),
-) -> GeneralMessage:
-    """Switches off this device
-
-    Only MSS admin users can switch on and off this device
-
-    Args:
-        context: the queue context for the recalibration
-
-    Returns:
-        general information on the status of the request
-    """
-    scheduler.switch_off(context)
-    return {"status": "success"}
-
-
-@app.post("/switch/on", dependencies=[Depends(get_verified_mss_admin_user_id)])
-def switch_on(
-    context: QueueContext = Depends(get_queue_context),
-) -> GeneralMessage:
-    """Switches on this device
-
-    Only MSS admin users can switch on and off this device
-
-    Args:
-        context: the queue context for the recalibration
-
-    Returns:
-        general information on the status of the request
-    """
-    scheduler.switch_on(context)
-    return {"status": "success"}
-
-
-@app.get("/switch/status", dependencies=[Depends(get_verified_mss_user_id)])
-async def get_switch_status(
-    context: QueueContext = Depends(get_queue_context),
-):
-    """Gets the status of this device
-
-    Args:
-        context: the queue context for the recalibration
-
-    Returns:
-        general information on the status of the request
-    """
-    status = "OFF" if scheduler.is_offline(context) else "ON"
-    return {"status": status}
