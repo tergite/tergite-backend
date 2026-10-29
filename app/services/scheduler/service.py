@@ -153,13 +153,15 @@ def cancel_booking(
         BookingAlreadyComplete: the booking of id {booking_id} is already completed.
     """
     user = get_user(db_engine, User.id == user_id)
-    if user is None:
+    if user is None and not is_mss_admin:
         raise ItemNotFoundError(f"the user of id {user_id} was not found")
 
+    # MSS knows its admins before they have used this device
+    is_admin = is_mss_admin or user.is_admin
     booking = get_booking(
         db_engine,
         Booking.id == booking_id,
-        or_(Booking.user_id == user_id, user.is_admin == True, is_mss_admin == True),
+        or_(Booking.user_id == user_id, is_admin == True),
     )
     if booking is None:
         raise ItemNotFoundError(f"the booking of id {booking_id} was not found")
@@ -394,15 +396,15 @@ def get_job(
         ItemNotFoundError: Job {job_id} not found
     """
     user = get_user(db_engine, User.id == user_id)
-
-    if user is None:
+    if user is None and not is_mss_admin:
         raise NotAuthenticatedError("user not found")
 
-    job_store = get_jobs_store()
-    job: Job = job_store.get_one(job_id)
+    job: Job = get_jobs_store().get_one(job_id)
 
+    # MSS knows its admins before they have used this device
+    is_admin = is_mss_admin or user.is_admin
     is_owner = job.user_id == user_id
-    if user.is_admin or is_mss_admin or is_owner:
+    if is_admin or is_owner:
         return job
 
     raise ItemNotFoundError(f"Job {job_id} not found")

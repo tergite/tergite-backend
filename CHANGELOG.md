@@ -60,6 +60,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   recalibration that was running; the interval now runs from one recalibration's start to the next's
 - Fixed finished jobs being cancellable, which turned a successful or failed job `cancelled`, and deleting a
   cancelled job failing with a 500; cancelling a finished job now answers 406
+- Fixed MSS admins being refused, with 401 or 404, the jobs and bookings of a device they had not yet fetched a
+  job token from
 
 ### Removed
 

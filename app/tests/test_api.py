@@ -1454,6 +1454,22 @@ def test_admin_cancel_future_booking(client):
         assert got == expected
 
 
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_mss_admin_new_to_the_device_cancels_booking(client):
+    """An MSS admin cancels a booking before the device has heard of them"""
+    with client as client:
+        [user] = _create_many_users(client, raw_users=USERS[:1])
+        booking_info = {"duration": 3, "starts_in": 2}
+        _, response = _create_booking(client, user_id=user["id"], booking=booking_info)
+        booking = Booking.model_validate(response.json())
+
+        response = _cancel_booking(
+            client, user_id=f"{uuid4()}", booking_id=booking.id, is_admin=True
+        )
+
+        assert response.status_code == 200
+
+
 @pytest.mark.parametrize(
     "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-1]
 )
@@ -2152,6 +2168,31 @@ def test_cancel_job_cancels_its_rq_job(
 
         rq_job = RqJob.fetch(get_rq_job_id(job_id, Stage.EXEC_Q), connection=redis_conn)
         assert rq_job.get_status() == "canceled"
+
+
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_mss_admin_new_to_the_device_views_and_cancels_job(
+    client, redis_conn, jobs_folder, worker, job, mocker
+):
+    """An MSS admin views and cancels a job before the device has heard of them"""
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = _get_raw_jobs(job, durations=[0.2])
+        job_info = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )[0]
+        _submit_multiple_jobs_v2(client, data=[job_info])
+        admin_id = f"{uuid4()}"
+
+        _, view_response = _view_job(
+            client, user_id=admin_id, job_id=job_info["job_id"], is_admin=True
+        )
+        cancel_response = _cancel_job_via_mss(
+            client, user_id=admin_id, job_id=job_info["job_id"], is_admin=True
+        )
+
+        assert view_response.status_code == 200
+        assert cancel_response.status_code == 200
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
