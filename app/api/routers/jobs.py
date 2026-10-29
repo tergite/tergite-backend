@@ -22,7 +22,7 @@ from app.services.booking.models import MSSTokenClaims
 
 from ...libs.queues.dtos import Job, JobStatus, QueueContext
 from ...services.scheduler.queues import QueuePool, get_queue_pool
-from ...utils.api import CancellationDetails, GeneralMessage, PaginatedListResponse
+from ...utils.messages import GeneralMessage
 from ..dependencies import (
     MSSAuthDetails,
     get_backend_name,
@@ -34,6 +34,7 @@ from ..dependencies import (
     get_verified_mss_user_id,
     validate_job_file,
 )
+from ..dtos import CancellationDetails, PaginatedListResponse
 
 router = APIRouter()
 

@@ -21,7 +21,7 @@ from app.services.booking.models import Booking, BookingsConfig, NewBookingInfo
 
 from ...libs.queues.dtos import QueueContext
 from ...services.scheduler.queues import QueuePool, get_queue_pool
-from ...utils.api import GeneralMessage, PaginatedListResponse
+from ...utils.messages import GeneralMessage
 from ...utils.sql_db import convert_http_sort_to_db_sort
 from ..dependencies import (
     get_booking_db,
@@ -29,6 +29,7 @@ from ..dependencies import (
     get_unverified_mss_is_admin,
     get_verified_mss_user_id,
 )
+from ..dtos import PaginatedListResponse
 
 router = APIRouter()
 

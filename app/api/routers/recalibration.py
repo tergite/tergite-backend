@@ -20,7 +20,7 @@ from app.services import scheduler
 from ...libs.queues.dtos import QueueContext
 from ...services.scheduler.dtos import RecalibrationInfo
 from ...services.scheduler.queues import QueuePool, get_queue_pool
-from ...utils.api import GeneralMessage
+from ...utils.messages import GeneralMessage
 from ..dependencies import get_queue_context_if_online, get_verified_mss_admin_user_id
 
 router = APIRouter()

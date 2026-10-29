@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends
 from app.services import devices
 
 from ...libs.queues.dtos import QueueContext, get_queue_context
-from ...utils.api import GeneralMessage
+from ...utils.messages import GeneralMessage
 from ..dependencies import (
     get_queue_context_if_online,
     get_verified_mss_admin_user_id,

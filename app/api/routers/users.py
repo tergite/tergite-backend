@@ -20,19 +20,16 @@ from app.services.booking.models import MSSTokenClaims, NewUserInfo, UserProfile
 from app.utils.exc import UnauthorizedError
 
 from ...libs.queues.dtos import QueueContext
+from ...services.external.mss.auth import encrypt_mss_jwt_token
 from ...services.scheduler.queues import QueuePool, get_queue_pool
-from ...utils.api import (
-    GeneralMessage,
-    PaginatedListResponse,
-    TokenResponse,
-    encrypt_mss_jwt_token,
-)
+from ...utils.messages import GeneralMessage
 from ..dependencies import (
     get_booking_db,
     get_queue_context_if_online,
     get_verified_mss_admin_user_id,
     get_verified_mss_user_id,
 )
+from ..dtos import PaginatedListResponse, TokenResponse
 
 router = APIRouter()
 

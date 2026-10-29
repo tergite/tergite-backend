@@ -17,6 +17,7 @@
 #
 """Module containing service for scheduling jobs"""
 import logging
+import shutil
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
@@ -29,7 +30,6 @@ from sqlalchemy import Engine
 from sqlmodel import or_
 
 from ...libs.queues.dtos import Job, JobStatus, QueueContext, Stage, StorageID
-from ...utils.api import GeneralMessage, save_uploaded_file
 from ...utils.datetime import get_utc_now, to_utc, utc_now_str
 from ...utils.exc import (
     BookingAlreadyActiveError,
@@ -40,6 +40,7 @@ from ...utils.exc import (
     JobAlreadyCompleteError,
     NotAuthenticatedError,
 )
+from ...utils.messages import GeneralMessage
 from ...utils.redis import get_redis_connection
 from ...utils.rq import cancel_rq_job
 from ..booking import get_many_bookings
@@ -235,7 +236,7 @@ def submit_job_file(
 
     # save job file
     new_file_path = upload_folder / job_id
-    job_file_path = save_uploaded_file(upload_file, target=new_file_path)
+    job_file_path = _save_uploaded_file(upload_file, target=new_file_path)
 
     # save job in database
     calibration_info = get_device_calibration_info(redis_conn, backend_name)
@@ -654,3 +655,22 @@ def _cancel_booking_from_queues(queues: QueuePool, booking: Booking):
 
     # cancel and remove any end_event jobs
     cancel_rq_job(queue_connection, booking.end_event_id, ignore_errors=True)
+
+
+def _save_uploaded_file(file: UploadFile, target: Path) -> Path:
+    """Saves the uploaded file to the given target path
+
+    Args:
+        file: the file to upload
+        target: the target path to save to
+
+    Returns:
+        the new path to the saved file
+    """
+    target.parent.mkdir(parents=True, exist_ok=True)
+    file.file.seek(0)
+    with target.open("wb") as destination:
+        shutil.copyfileobj(file.file, destination)
+    file.file.close()
+
+    return target

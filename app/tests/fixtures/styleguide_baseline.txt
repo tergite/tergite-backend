@@ -6,6 +6,12 @@ banner: settings.py:210
 banner: settings.py:239
 banner: settings.py:241
 boolean: app/api/dependencies.py::get_mss_token_claims_dep(job_exists)
+boolean: app/api/dtos.py::PaginatedListResponse.model_dump(by_alias)
+boolean: app/api/dtos.py::PaginatedListResponse.model_dump(exclude_data_none_fields)
+boolean: app/api/dtos.py::PaginatedListResponse.model_dump(exclude_defaults)
+boolean: app/api/dtos.py::PaginatedListResponse.model_dump(exclude_unset)
+boolean: app/api/dtos.py::PaginatedListResponse.model_dump(round_trip)
+boolean: app/api/dtos.py::PaginatedListResponse.model_dump(serialize_as_any)
 boolean: app/api/routers/jobs.py::submit_job(force_normal_queue)
 boolean: app/api/routers/recalibration.py::cancel_recalibration(ignore_errors)
 boolean: app/libs/device_parameters/dtos.py::CalibrationValueSet.model_dump_scalar(exclude_none)
@@ -38,12 +44,6 @@ boolean: app/services/scheduler/service.py::_cancel_job_in_queues(ignore_errors)
 boolean: app/services/scheduler/service.py::stop_recalibration(ignore_errors)
 boolean: app/services/scheduler/utils.py::_init_executor(reset)
 boolean: app/services/scheduler/utils.py::clear_quantum_executor(ignore_errors)
-boolean: app/utils/api.py::PaginatedListResponse.model_dump(by_alias)
-boolean: app/utils/api.py::PaginatedListResponse.model_dump(exclude_data_none_fields)
-boolean: app/utils/api.py::PaginatedListResponse.model_dump(exclude_defaults)
-boolean: app/utils/api.py::PaginatedListResponse.model_dump(exclude_unset)
-boolean: app/utils/api.py::PaginatedListResponse.model_dump(round_trip)
-boolean: app/utils/api.py::PaginatedListResponse.model_dump(serialize_as_any)
 boolean: app/utils/model.py::PartialMeta.model_dump(by_alias)
 boolean: app/utils/model.py::PartialMeta.model_dump(exclude_defaults)
 boolean: app/utils/model.py::PartialMeta.model_dump(exclude_none)
@@ -71,11 +71,11 @@ import-layering: app/services/booking/models.py::import settings
 import-layering: app/services/booking/models.py::import settings
 import-layering: app/services/booking/service.py::import settings
 import-layering: app/services/booking/store.py::import settings
+import-layering: app/services/external/mss/auth.py::import settings
 import-layering: app/services/external/mss/service.py::import settings
 import-layering: app/services/scheduler/queues.py::import settings
 import-layering: app/services/scheduler/store.py::import settings
 import-layering: app/services/scheduler/utils.py::import settings
-import-layering: app/utils/api.py::import settings
 import-layering: app/utils/compat.py::import settings
 import-layering: app/utils/logging.py::import settings
 import-layering: app/utils/redis.py::import settings
@@ -120,6 +120,7 @@ type-hints: app/api/dependencies.py::get_job_id_dependency
 type-hints: app/api/dependencies.py::get_mss_token_claims_dep
 type-hints: app/api/dependencies.py::lifespan
 type-hints: app/api/device_routing.py::DeviceRoutingMiddleware.__call__
+type-hints: app/api/dtos.py::PaginatedListResponse.model_dump
 type-hints: app/api/middleware.py::log_requests
 type-hints: app/api/routers/devices.py::get_dynamic_properties
 type-hints: app/api/routers/devices.py::get_static_properties
@@ -324,8 +325,6 @@ type-hints: app/services/scheduler/tasks.py::post_booking_cleanup
 type-hints: app/services/scheduler/tasks.py::postprocessing_failure_callback
 type-hints: app/services/scheduler/tasks.py::postprocessing_success_callback
 type-hints: app/services/scheduler/tasks.py::reset_idleness_timer
-type-hints: app/utils/api.py::PaginatedListResponse.model_dump
-type-hints: app/utils/api.py::_get_mss_public_key
 type-hints: app/utils/compat.py::create_exp_folder
 type-hints: app/utils/compat.py::gen_tuid
 type-hints: app/utils/compat.py::locate_experiment_container
@@ -347,6 +346,7 @@ type-hints: settings.py::__getattr__
 verb: app/api/__init__.py::root
 verb: app/api/dependencies.py::get_mss_token_claims_dep.dependency_injector
 verb: app/api/dependencies.py::lifespan
+verb: app/api/dtos.py::PaginatedListResponse.model_dump
 verb: app/libs/device_parameters/dtos.py::CalibrationModel.model_dump_scalar
 verb: app/libs/device_parameters/dtos.py::CalibrationModel.model_dump_unit
 verb: app/libs/device_parameters/dtos.py::CalibrationValue.model_dump_scalar
@@ -376,7 +376,6 @@ verb: app/services/external/mss/service.py::MssClient.recv
 verb: app/services/scheduler/tasks.py::post_booking_cleanup
 verb: app/services/scheduler/tasks.py::postprocessing_failure_callback
 verb: app/services/scheduler/tasks.py::postprocessing_success_callback
-verb: app/utils/api.py::PaginatedListResponse.model_dump
 verb: app/utils/compat.py::gen_tuid
 verb: app/utils/datetime.py::utc_now_str
 verb: app/utils/model.py::PartialMeta.model_dump

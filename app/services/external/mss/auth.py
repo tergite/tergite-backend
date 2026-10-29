@@ -1,5 +1,7 @@
 # This code is part of Tergite
 #
+# (C) Copyright Miroslav Dobsicek 2020, 2021
+# (C) Copyright Martin Ahindura 2023
 # (C) Copyright Chalmers Next Labs 2025, 2026
 #
 # This code is licensed under the Apache License, Version 2.0. You may
@@ -19,9 +21,12 @@ from typing import Dict, Optional
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
-from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
+
+import settings
 
 _BCC_PRIVATE_KEYS: Dict[str, RSAPrivateKey] = {}
+_MSS_PUBLIC_KEYS: dict[Path, RSAPublicKey] = {}
 
 
 def create_headers(
@@ -93,3 +98,68 @@ def get_private_key(key_file: Path, password: Optional[bytes]) -> RSAPrivateKey:
                 file.read(), password=password
             )
         return key
+
+
+def encrypt_mss_jwt_token(token: str, key_path: Optional[Path] = None) -> str:
+    """Encrypts the token passed so that it is only readable by the right MSS instance
+
+    Args:
+        token: the raw token to encrypt
+        key_path: the file path to the RSA public key PEM file; default = settings.MSS_PUBLIC_KEY_PATH
+
+    Returns:
+        the encrypted token
+    """
+    mss_pub_key = _get_mss_public_key(key_path=key_path)
+    cipher_bytes = mss_pub_key.encrypt(
+        token.encode(),
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None,
+        ),
+    )
+    return base64.b64encode(cipher_bytes).decode()
+
+
+def verify_mss_signature(
+    signature: str, message: str, key_path: Optional[Path] = None
+) -> None:
+    """Verifies that the given message is from MSS, given the signature
+
+    Args:
+        signature: the signature of the message signed by MSS
+        message: the message from MSS
+        key_path: the file path to the RSA public key PEM file; default = settings.MSS_PUBLIC_KEY_PATH
+
+    Raises:
+        InvalidSignature: if signature does not match with what would be expected from MSS
+    """
+    mss_pub_key = _get_mss_public_key(key_path=key_path)
+    mss_pub_key.verify(
+        base64.b64decode(signature),
+        message.encode(),
+        padding.PSS(
+            mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH
+        ),
+        hashes.SHA256(),
+    )
+
+
+def _get_mss_public_key(key_path: Optional[Path] = None) -> RSAPublicKey:
+    """Loads the public key for MSS given the path to the key file
+
+    Args:
+        key_path: the file path to the RSA public key PEM file; default = settings.MSS_PUBLIC_KEY_PATH
+
+    Returns:
+        the public key of the MSS
+    """
+    key_path = key_path or settings.MSS_PUBLIC_KEY_PATH
+    mss_public_key = _MSS_PUBLIC_KEYS.get(key_path)
+    if mss_public_key is None:
+        with open(key_path, "rb") as key_file:
+            mss_public_key = serialization.load_pem_public_key(key_file.read())
+        _MSS_PUBLIC_KEYS[key_path] = mss_public_key
+
+    return mss_public_key

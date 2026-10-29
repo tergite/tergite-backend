@@ -33,6 +33,7 @@ from ..services.booking.models import MSSTokenClaims
 from ..services.booking.service import get_user_job_id_pair_from_token
 from ..services.booking.store import get_bookings_sql_engine
 from ..services.devices import is_offline, save_all_device_params
+from ..services.external.mss.auth import verify_mss_signature
 from ..services.external.mss.service import disconnect_mss_client, get_mss_client
 from ..services.scheduler import (
     get_job,
@@ -43,7 +44,6 @@ from ..services.scheduler.dtos import JobFile
 from ..services.scheduler.queues import clear_queue_pool, get_queue_pool
 from ..services.scheduler.store import clear_jobs_stores_registry
 from ..services.scheduler.utils import clear_quantum_executor, get_executor_options
-from ..utils.api import verify_mss_signature
 from ..utils.datetime import get_utc_now
 from ..utils.exc import (
     ConflictError,

@@ -18,7 +18,7 @@ from pydantic_core.core_schema import ValidationInfo
 
 from app.libs.device_parameters import Device, DeviceCalibration
 from app.libs.queues.dtos import Job
-from app.utils.api import GeneralMessage
+from app.utils.messages import GeneralMessage
 from app.utils.strings import uuid_str
 
 
