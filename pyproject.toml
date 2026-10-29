@@ -71,6 +71,7 @@ quantify = [
     "quantify-scheduler~=0.22.2",
     "qblox-instruments~=0.14.2",
     "tergite-tuner~=2026.06.0-rc.5",
+    "numpy>=2.0",
     # Fixing networkx to the last usable one; can be changed when code is updated
     "networkx~=3.4.2",
     "h5py>=3.14.0",

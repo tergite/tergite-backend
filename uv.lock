@@ -3375,6 +3375,7 @@ qiskit = [
 quantify = [
     { name = "h5py" },
     { name = "networkx" },
+    { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" } },
     { name = "qblox-instruments" },
     { name = "quantify-core" },
     { name = "quantify-scheduler" },
@@ -3412,6 +3413,7 @@ requires-dist = [
     { name = "jax", marker = "extra == 'qiskit'", specifier = ">=0.5.1" },
     { name = "networkx", marker = "extra == 'quantify'", specifier = "~=3.4.2" },
     { name = "numpy", specifier = ">=1.26.0" },
+    { name = "numpy", marker = "extra == 'quantify'", specifier = ">=2.0" },
     { name = "pandas", specifier = "~=2.3.3" },
     { name = "pydantic", specifier = "~=2.11.3" },
     { name = "pyjwt", specifier = "~=2.9.0" },

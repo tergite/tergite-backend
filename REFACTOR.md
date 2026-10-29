@@ -278,7 +278,8 @@ Each item greps for its names once more before deleting.
    imported but not listed: `redis`, `websockets`, `uvicorn`, `starlette`, `pandas`.
    *Done, with departures:* the three tests await the app's lifespan since step 1, so they enter it through
    `TestClient` instead; `psutil` goes too, as `dev/perf/record.sh` brings its own; `xarray`, which the base executor
-   code imports, is declared in the quantify extra as in qiskit's; the lock keeps quantify on numpy 2.
+   code imports, is declared in the quantify extra as in qiskit's; quantify's `numpy>=2.0` stays, as pip reads no lock and
+   would keep a qiskit environment's numpy 1.
 
 ## Step 3: one shape for the API and the services
 
