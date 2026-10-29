@@ -148,7 +148,7 @@ changelog entry.
     **Decided:** 503, 404, and 502/504; MSS's `BccClient` passes the BCC's code on to its caller and checks none.
 17. **What the signature covers.** The signed message is `user_id-nonce-timestamp` (`dependencies.py:197, 217, 251`):
     `x-mss-is-admin`, the method and the path are not signed, so on a plain-HTTP link anyone in between can turn on
-    admin or move a signature to another route. **Decide:** sign `is_admin|method|path` too, together with MSS's
+    admin or move a signature to another route. **Decided:** sign `is_admin|method|path` too, together with MSS's
     `_create_headers` in tergite-frontend `services/external/bcc/service.py`, released together.
 
 ## Step 1: pin behaviour with tests

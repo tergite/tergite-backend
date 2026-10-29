@@ -68,7 +68,11 @@ from app.tests.conftest import (
     BasicBookingInfo,
     PaginationInfo,
 )
-from app.tests.utils.api import create_invalid_mss_headers, create_mss_headers
+from app.tests.utils.api import (
+    create_invalid_mss_headers,
+    create_mss_headers,
+    create_mss_signature,
+)
 from app.tests.utils.datetime import get_timestamp_str
 from app.tests.utils.env import (
     TEST_DEFAULT_RECALIBRATION_INTERVAL,
@@ -245,6 +249,38 @@ def test_root_invalid_headers(client, headers):
         response = client.get("/", headers=headers)
         assert response.status_code == 401
         assert response.json() == {"detail": "user not authenticated"}
+
+
+@pytest.mark.parametrize(
+    "signed_message",
+    [
+        "-{nonce}-{timestamp}",
+        "|{nonce}|{timestamp}|True|GET|/me",
+        "|{nonce}|{timestamp}|True|POST|/users",
+        "|{nonce}|{timestamp}||GET|/users",
+    ],
+    ids=["user-nonce-timestamp", "other path", "other method", "is_admin added"],
+)
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_mss_signature_covers_is_admin_method_and_path(client, signed_message):
+    """MSS headers signed for another route, or before is_admin was set, are refused, so
+    that no one between MSS and the BCC can turn on admin or move them"""
+    with client as client:
+        nonce, timestamp = f"{uuid4()}", f"{time.time()}"
+        signature = create_mss_signature(
+            signed_message.format(nonce=nonce, timestamp=timestamp)
+        )
+        headers = {
+            "x-mss-user-id": "",
+            "x-mss-request-id": nonce,
+            "x-mss-timestamp": timestamp,
+            "x-mss-signature": signature,
+            "x-mss-is-admin": "True",
+        }
+
+        response = client.get("/users", headers=headers)
+
+        assert response.status_code == 401
 
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)

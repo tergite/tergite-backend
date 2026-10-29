@@ -229,7 +229,8 @@ def get_verified_mss_user_id(request: Request) -> str:
     is verified by MSS public key.
 
     For better security against replay attacks, we also use the `x-mss-request-id` and
-    `x-mss-timestamp` headers
+    `x-mss-timestamp` headers. The signature also covers `x-mss-is-admin`, the method and
+    the path, so that the headers cannot be given admin or moved to another route.
 
     Note that the user can be "" i.e. no user especially where there is no user expected
 
@@ -248,7 +249,8 @@ def get_verified_mss_user_id(request: Request) -> str:
         timestamp = request.headers["x-mss-timestamp"]
         signature = request.headers["x-mss-signature"]
 
-        message = f"{user_id}-{nonce}-{timestamp}"
+        is_admin = request.headers.get("x-mss-is-admin", "")
+        message = f"{user_id}|{nonce}|{timestamp}|{is_admin}|{request.method}|{request.url.path}"
         verify_mss_signature(signature=signature, message=message)
 
         current_timestamp = datetime.now().timestamp()

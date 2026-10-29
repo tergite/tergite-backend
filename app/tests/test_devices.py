@@ -9,7 +9,7 @@ from uuid import uuid4
 import pytest
 
 from app.tests.conftest import USERS
-from app.tests.utils.api import create_mss_headers
+from app.tests.utils.api import create_mss_headers, get_test_client
 from app.tests.utils.devices import load_test_devices
 
 
@@ -74,11 +74,9 @@ def test_each_device_has_its_own_queues(tmp_path, monkeypatch):
 def test_each_device_path_reaches_that_device(tmp_path, monkeypatch):
     """/<device>/... is that device's API, and a path naming no device the default one's"""
     load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
-    from fastapi.testclient import TestClient
-
     from app.api import app
 
-    client = TestClient(app)
+    client = get_test_client(app)
     user_id = f"{uuid4()}"
 
     response = client.post(
@@ -141,14 +139,12 @@ def test_switching_a_device_off_leaves_the_others_on(
     tmp_path, monkeypatch, mocker, redis_client
 ):
     """/<device>/switch/off takes that device offline, and only it"""
-    from fastapi.testclient import TestClient
-
     from app.api import app
     from app.libs.queues.dtos import clear_queue_context
 
     load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
     mocker.patch("app.services.scheduler.service.get_mss_client")
-    client = TestClient(app)
+    client = get_test_client(app)
     try:
         response = client.post(
             "/Alpha/switch/off", headers=create_mss_headers(is_admin=True)
@@ -166,7 +162,6 @@ def test_switching_a_device_off_leaves_the_others_on(
 def test_heavy_worker_waits_while_its_device_is_off(
     tmp_path, monkeypatch, mocker, redis_client
 ):
-    from fastapi.testclient import TestClient
     from rq import Queue
     from rq.worker import StopRequested
 
@@ -186,7 +181,7 @@ def test_heavy_worker_waits_while_its_device_is_off(
         connection=redis_client,
     )
     try:
-        TestClient(app).post(
+        get_test_client(app).post(
             "/Alpha/switch/off", headers=create_mss_headers(is_admin=True)
         )
 

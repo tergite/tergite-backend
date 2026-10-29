@@ -34,4 +34,6 @@ MSS should be able to send data and request for other data from BCC.
     - `x-mss-signature` (contains the `MSS_PRIVATE_KEY_PATH`-signed secret)
     - `x-mss-timestamp` (contains the timestamp when the signature was made. the signature is valid for only a given time-to-live)
     - `x-mss-is-admin` (contains the 'True' if the user, from whom the original request in MSS came)
+- The signed secret is `<x-mss-user-id>|<x-mss-request-id>|<x-mss-timestamp>|<x-mss-is-admin, or empty>|<HTTP method>|<URL path>`,
+  so the headers cannot be given admin or moved to another route
 - BCC validates that this signature using the MSS's `MSS_PRIVATE_KEY_PATH` (RSA) PEM file. It rejects requests with invalid or expired signatures.

@@ -62,6 +62,7 @@ from sqlmodel import SQLModel
 
 from ..services.scheduler.queues import QueuePool
 from .utils.analysis import MockLinearDiscriminantAnalysis
+from .utils.api import get_test_client
 from .utils.fixtures import load_fixture
 from .utils.mss import mock_sync_connect
 from .utils.rq import get_rq_pool_worker
@@ -269,7 +270,7 @@ def quantify_rest_client(
     importlib.reload(app)
     from app import api
 
-    yield TestClient(api.app)
+    yield get_test_client(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
     clear_quantum_executor(ignore_errors=True)
 
@@ -344,7 +345,7 @@ def qiskit_1q_rest_client(request, mocker) -> Generator[TestClient, Any, None]:
     importlib.reload(app)
     from app import api
 
-    yield TestClient(api.app)
+    yield get_test_client(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
     _redis_connection.flushall()
     clear_quantum_executor(ignore_errors=True)
@@ -390,7 +391,7 @@ def qiskit_2q_rest_client(request, mocker) -> Generator[TestClient, Any, None]:
     importlib.reload(app)
     from app import api
 
-    yield TestClient(api.app)
+    yield get_test_client(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
     _redis_connection.flushall()
     clear_quantum_executor(ignore_errors=True)
