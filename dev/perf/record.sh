@@ -43,8 +43,8 @@ BCC_PORT=8102
 MSS_PORT=8006
 REDIS_PORT=6382
 export PERF_BACKLOG_USER_ID="perf-backlog-user" PERF_SDK_USER_ID="perf-sdk-user"
-# on macOS a worker's forked work horse is otherwise killed by the Objective-C runtime on its
-# first job, so that no postprocessing finishes: a bug of the BCC's, which this measures around
+# on macOS a worker's forked work horse is otherwise killed by the Objective-C runtime, as
+# start_bcc.sh and the launchd plist know
 export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
 
 main() {

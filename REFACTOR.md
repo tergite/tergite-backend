@@ -237,8 +237,9 @@ Tests and tooling only. After this step, a refactor commit that changes behaviou
     signed off until the cause is found.
     **Done first in step 1**, before 1.2, so that the baselines are of the code as step 0 left it. The BCC runs one
     `qiskit_pulse_1q` device against a stub MSS (`dev/perf/mss_stub.py`). On macOS the recorder sets
-    `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES`: without it the Objective-C runtime kills every forked work horse of
-    the light worker, so no job's postprocessing finishes, a bug neither the suite nor the e2e test reaches.
+    `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES`, as `start_bcc.sh` and the macOS package's launchd plist do: without
+    it the Objective-C runtime kills every forked work horse, so `main.py start` or `rq` run directly on macOS
+    finishes no job's postprocessing.
 11. **Tooling out of the app.** `start_bcc.sh` moves to `dev/`; nothing writes into the working directory or under
     `app/tests/` (`tmp/`, `tmp.*`, `test_booking.db`); `settings.FIXTURES_DIR` (`settings.py:44`) stops pointing
     into the tests.
