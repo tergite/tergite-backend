@@ -298,6 +298,13 @@ Each item greps for its names once more before deleting.
    (`device_parameters/__init__.py:34, 169`) → `libs/device_parameters` (`mss/dtos.py:19`).
 5. **The scheduler's DTOs in the scheduler.** `Job`, `JobStatus`, `Stage` and `JobFile` move from
    `app/libs/queues/dtos.py` to `app/services/scheduler/dtos.py`; `libs/queues` keeps only the queue types.
+   *Done in part:* `JobFile` and `LogLevel`, which only the API and the scheduler use, move. `Job`,
+   and `Stage`, `JobStatus`, `Timestamps` and `JobResult` it is built from, stay: the waitlist and runner queues store and
+   rebuild `Job`, in `_run_next_job` too, which RQ calls with the arguments pickled when it was queued, so the queues
+   would have to take the item type, and the jobs queued before an upgrade would come with arguments of the old shape.
+   Step 5.5 replaces these queues; the rest moves then. `QueueContext` stays as the queues' context, so the devices
+   service, which the scheduler imports, need not import the scheduler. `ExecutorOptions` stays until step 4: its
+   `from_settings` reads `settings`, which a service may not import.
 6. **Split `app/utils/api.py`.** The response shapes (`PaginatedListResponse`, `TokenResponse`,
    `CancellationDetails`) move to `app/api/`; MSS signature verification and token encryption to
    `app/services/external/mss/auth.py`, beside the signing. Services stop importing the FastAPI-bound module

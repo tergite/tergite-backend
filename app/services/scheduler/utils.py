@@ -33,7 +33,6 @@ from ...libs.queues.dtos import (
     JobResult,
     JobStage,
     JobStatus,
-    LogLevel,
     Stage,
     Timestamps,
 )
@@ -43,6 +42,7 @@ from ...utils.logging import err_logger
 from ...utils.redis_store import Collection
 from ..external.mss.dtos import DeviceEvent, DeviceEventName, EventResponse
 from ..external.mss.service import MssClient
+from .dtos import LogLevel
 
 if TYPE_CHECKING:
     from ...libs.quantum_executor.base.executor import QuantumExecutor

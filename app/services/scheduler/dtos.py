@@ -1,6 +1,6 @@
 # This code is part of Tergite
 #
-# (C) Chalmers Next Labs 2026
+# (C) Chalmers Next Labs 2025, 2026
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -12,18 +12,24 @@
 #
 
 """Definitions for some data transfer objects for the scheduler service"""
+import json
 from datetime import datetime
+from enum import Enum, unique
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
+from pydantic_core.core_schema import SerializationInfo
 from rq import Queue as RqQueue
 from rq.job import JobStatus
 
+from app.libs.qiskit.qobj import PulseQobj
 from app.utils.rq import (
     get_current_job_on_queue,
     get_next_job_on_queue,
     get_previous_job_on_queue,
 )
+
+from ...libs.qiskit_providers.utils.json_encoder import IQXJsonEncoder
 
 
 class RecalibrationInfo(BaseModel):
@@ -89,3 +95,52 @@ class RecalibrationInfo(BaseModel):
             kwargs["interval"] = next_job.meta.get("interval")
 
         return RecalibrationInfo(**kwargs)
+
+
+class JobFileParams(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        arbitrary_types_allowed=True,
+    )
+
+    qobj: PulseQobj
+
+    @field_serializer("qobj")
+    def serialize_qobj(self, qobj: PulseQobj, _info: SerializationInfo):
+        """Converts qobj into a dict"""
+        qobj_dict = qobj.to_dict()
+
+        if _info.mode_is_json():
+            return json.dumps(qobj_dict, cls=IQXJsonEncoder)
+        return qobj_dict
+
+    @field_validator("qobj", mode="before")
+    @classmethod
+    def parse_qobj(cls, v):
+        """Parses the qobject from dict/str to Qobj"""
+        if isinstance(v, PulseQobj):
+            return v
+        elif isinstance(v, dict):
+            return PulseQobj.from_dict(v)
+        elif isinstance(v, str):
+            return PulseQobj.from_dict(json.loads(v))
+
+        raise TypeError(f"Invalid type for PulseQobj: {type(v)}")
+
+
+class JobFile(BaseModel):
+    """The expected structure of the job file"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: str
+    params: JobFileParams
+
+
+@unique
+class LogLevel(Enum):
+    """Log level of job supervisor log messages"""
+
+    INFO = 0
+    WARNING = 1
+    ERROR = 2

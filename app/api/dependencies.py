@@ -25,7 +25,6 @@ from sqlalchemy import Engine
 import settings
 
 from ..libs.queues.dtos import (
-    JobFile,
     QueueContext,
     clear_queue_context,
     get_queue_context,
@@ -40,6 +39,7 @@ from ..services.scheduler import (
     init_recalibration,
     stop_recalibration,
 )
+from ..services.scheduler.dtos import JobFile
 from ..services.scheduler.queues import clear_queue_pool, get_queue_pool
 from ..services.scheduler.store import clear_jobs_stores_registry
 from ..services.scheduler.utils import clear_quantum_executor, get_executor_options

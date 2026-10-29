@@ -12,7 +12,6 @@
 #
 """Shared Data Transfer Objects"""
 import dataclasses
-import json
 from datetime import datetime
 from enum import Enum, unique
 from functools import cached_property
@@ -39,15 +38,12 @@ from pydantic import (
     GetCoreSchemaHandler,
     RedisDsn,
     computed_field,
-    field_serializer,
     field_validator,
     model_validator,
 )
 from pydantic_core import CoreSchema, core_schema
-from pydantic_core.core_schema import SerializationInfo
 
 import settings
-from app.libs.qiskit.qobj import PulseQobj
 
 from ...utils.datetime import to_utc, utc_now_str
 from ...utils.logging import err_logger
@@ -55,7 +51,6 @@ from ...utils.model import PartialMeta
 from ...utils.redis_store import Schema
 from ...utils.strings import uuid_str
 from ..device_parameters import BackendConfig
-from ..qiskit_providers.utils.json_encoder import IQXJsonEncoder
 
 _STORAGE_ID_SEPARATOR = ":::"
 
@@ -320,46 +315,6 @@ class JobResult(BaseModel):
     memory: Memory = Field(default_factory=list)
 
 
-class JobFileParams(BaseModel):
-    model_config = ConfigDict(
-        extra="forbid",
-        arbitrary_types_allowed=True,
-    )
-
-    qobj: PulseQobj
-
-    @field_serializer("qobj")
-    def serialize_qobj(self, qobj: PulseQobj, _info: SerializationInfo):
-        """Converts qobj into a dict"""
-        qobj_dict = qobj.to_dict()
-
-        if _info.mode_is_json():
-            return json.dumps(qobj_dict, cls=IQXJsonEncoder)
-        return qobj_dict
-
-    @field_validator("qobj", mode="before")
-    @classmethod
-    def parse_qobj(cls, v):
-        """Parses the qobject from dict/str to Qobj"""
-        if isinstance(v, PulseQobj):
-            return v
-        elif isinstance(v, dict):
-            return PulseQobj.from_dict(v)
-        elif isinstance(v, str):
-            return PulseQobj.from_dict(json.loads(v))
-
-        raise TypeError(f"Invalid type for PulseQobj: {type(v)}")
-
-
-class JobFile(BaseModel):
-    """The expected structure of the job file"""
-
-    model_config = ConfigDict(extra="forbid")
-
-    job_id: str
-    params: JobFileParams
-
-
 class Job(Schema):
     """Representation of the job to be executed by this application
 
@@ -459,15 +414,6 @@ class Job(Schema):
         if isinstance(value, str):
             return StorageID(value)
         return value
-
-
-@unique
-class LogLevel(Enum):
-    """Log level of job supervisor log messages"""
-
-    INFO = 0
-    WARNING = 1
-    ERROR = 2
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

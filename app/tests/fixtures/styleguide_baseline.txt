@@ -278,8 +278,6 @@ type-hints: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.log_sche
 type-hints: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.make_logger
 type-hints: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.warning
 type-hints: app/libs/queues/dtos.py::Job.validate_model
-type-hints: app/libs/queues/dtos.py::JobFileParams.parse_qobj
-type-hints: app/libs/queues/dtos.py::JobFileParams.serialize_qobj
 type-hints: app/libs/queues/dtos.py::JobStatus.is_terminal
 type-hints: app/libs/queues/dtos.py::TimestampPair.set_finish_timestamp
 type-hints: app/libs/queues/dtos.py::TimestampPair.set_start_timestamp
@@ -307,6 +305,8 @@ type-hints: app/services/booking/service.py::delete_bookings
 type-hints: app/services/booking/service.py::delete_users
 type-hints: app/services/external/mss/service.py::MssClient.send
 type-hints: app/services/external/mss/service.py::disconnect_mss_client
+type-hints: app/services/scheduler/dtos.py::JobFileParams.parse_qobj
+type-hints: app/services/scheduler/dtos.py::JobFileParams.serialize_qobj
 type-hints: app/services/scheduler/queues.py::QueuePool.empty
 type-hints: app/services/scheduler/queues.py::get_booked_execution_queue
 type-hints: app/services/scheduler/queues.py::get_general_queue

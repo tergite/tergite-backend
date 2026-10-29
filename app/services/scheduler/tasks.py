@@ -41,7 +41,6 @@ from ...libs.quantum_executor.base.quantum_job import (
 )
 from ...libs.queues.dtos import (
     Job,
-    JobFile,
     JobStatus,
     QueueContext,
     Stage,
@@ -59,6 +58,7 @@ from ..booking.store import get_bookings_sql_engine
 from ..devices import get_device_calibration_info
 from ..external.mss.dtos import DeviceEvent, DeviceEventName
 from ..external.mss.service import get_mss_client
+from .dtos import JobFile
 from .store import get_jobs_store
 from .utils import (
     apply_linear_discriminator,
