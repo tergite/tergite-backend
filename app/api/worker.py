@@ -11,8 +11,6 @@
 # that they have been altered from the originals.
 
 """A worker file that is preloaded with the heavy libraries etc"""
-import logging
-import sys
 import time
 from importlib import import_module
 
@@ -66,26 +64,6 @@ class LightRqWorker(PreloadedRqWorker):
 
     should_preload_executor = False
     should_wait_while_offline = False
-
-
-class LoggingRqWorker(PreloadedRqWorker):
-    """A special RQ worker that logs its messages for ease of tracking"""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        level = getattr(logging, settings.LOG_LEVEL, logging.INFO)
-
-        root = logging.getLogger()
-        # avoid duplicate handlers if RQ restarts a child, etc.
-        if not root.handlers:
-            h = logging.StreamHandler(sys.stdout)
-            fmt = logging.Formatter(
-                "%(asctime)s [%(levelname)-8s] %(name)s: %(message)s"
-            )
-            h.setFormatter(fmt)
-            root.addHandler(h)
-        root.setLevel(level)
 
 
 def preload_worker_globals(should_load_executor: bool) -> None:

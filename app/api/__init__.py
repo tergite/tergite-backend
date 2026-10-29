@@ -139,28 +139,6 @@ if len(cors_origins) > 0:
 
 
 @app.middleware("http")
-async def add_request_id_header(request: Request, call_next):
-    """Adds an `x-request-id` header
-
-    It will get it from `x-mss-request-id` if that is present or generate a new one
-
-    Args:
-        request: the current FastAPI request object
-        call_next: the callback that calls the next middleware or route handler
-    """
-    request_id = request.headers.get("x-mss-request-id")
-    if request_id is None:
-        request_id = uuid_str()
-
-    request.state.request_id = request_id
-
-    response = await call_next(request)
-
-    response.headers["X-Request-ID"] = request_id
-    return response
-
-
-@app.middleware("http")
 async def log_requests(request: Request, call_next):
     """Adds an `x-request-id` header and logs requests received
 

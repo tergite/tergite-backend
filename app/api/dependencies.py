@@ -19,7 +19,6 @@ from typing import Optional
 from cryptography.exceptions import InvalidSignature
 from fastapi import Depends, FastAPI, HTTPException, UploadFile, status
 from fastapi.requests import Request
-from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import Engine
 
@@ -59,7 +58,6 @@ from ..utils.redis import clear_redis_connections, get_redis_connection
 from ..utils.sql_db import clear_sql_engine_cache
 from ..utils.strings import validate_uuid4_str
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 # how long a device's start-up lock outlasts an API worker that stopped holding it
 _START_UP_LOCK_SECONDS = 300
 
@@ -175,9 +173,9 @@ async def get_job_id_from_uploaded_file(
     except KeyError:
         pass
 
-    error_message = f"The job does not have a valid UUID4 {job_id_field}"
-    print(error_message)
-    raise InvalidJobIdInUploadedFileError(error_message)
+    raise InvalidJobIdInUploadedFileError(
+        f"The job does not have a valid UUID4 {job_id_field}"
+    )
 
 
 def get_verified_mss_admin_user_id(request: Request) -> str:
