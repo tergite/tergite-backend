@@ -34,23 +34,6 @@ if TYPE_CHECKING:
     from ...services.external.mss.service import MssClient
 
 
-def get_backend_config(
-    connection: Redis,
-    backend_name: str,
-) -> BackendConfig:
-    """Retrieves the saved backend configuration of the backend of given name
-
-    Args:
-        connection: connection to the redis server
-        backend_name: name of the backend
-
-    Returns:
-        the configuration of the backend
-    """
-    configs_store = Collection(connection, schema=BackendConfig)
-    return configs_store.get_one(backend_name)
-
-
 def get_device_info(
     connection: Redis,
     backend_name: str,
