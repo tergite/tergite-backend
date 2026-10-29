@@ -37,7 +37,6 @@ from ..services.scheduler import (
     DeviceResources,
     JobFile,
     clear_quantum_executor,
-    clear_queue_pool,
     get_job,
     init_recalibration,
     stop_recalibration,
@@ -99,7 +98,6 @@ async def lifespan(app: FastAPI):
             stop_recalibration(app.state.device_resources[device], ignore_errors=True)
     app.state.device_resources.clear()
     app.state.request_logs_stores.clear()
-    clear_queue_pool(ignore_errors=True)
     clear_quantum_executor(ignore_errors=True)
     disconnect_mss_client(ignore_errors=True)
     clear_redis_connections(ignore_errors=True)

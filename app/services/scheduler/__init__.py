@@ -12,7 +12,7 @@
 #
 """Runs the jobs on the device: their queues, the bookings' hold on them, and recalibration"""
 from .dtos import JobFile, RecalibrationInfo
-from .queues import QueuePool, clear_queue_pool, get_queue_pool
+from .queues import QueuePool
 from .resources import DeviceResources
 from .service import (
     cancel_booking,
@@ -42,7 +42,6 @@ __all__ = [
     "cancel_booking",
     "cancel_job",
     "clear_quantum_executor",
-    "clear_queue_pool",
     "delete_job",
     "delete_user_profile",
     "get_executor_and_options",
@@ -50,7 +49,6 @@ __all__ = [
     "get_job",
     "get_jobs_store",
     "get_many_jobs",
-    "get_queue_pool",
     "get_recalibration_info",
     "init_recalibration",
     "stop_recalibration",

@@ -18,48 +18,11 @@ from typing import Self
 from redis import Redis
 from rq import Queue as RqQueue
 
-import settings
-
 from ...libs.queues.types import RunnerQueue, StaticQueue
-from ...utils.logging import err_logger
-from ...utils.redis import get_redis_connection
+from ...utils.config import DeviceSettings
 
 # the tasks go by import path, as importing them loads the executor's heavy libraries
 _TASKS_MODULE = f"{__package__}.tasks"
-
-_QUEUE_POOLS: dict[str, "QueuePool"] = {}
-
-
-def get_queue_pool() -> "QueuePool":
-    """Gets the queue pool of the current device"""
-    queue_pool = _QUEUE_POOLS.get(settings.DEFAULT_PREFIX)
-    if queue_pool is None:
-        queue_pool = QueuePool.from_settings()
-        _QUEUE_POOLS[settings.DEFAULT_PREFIX] = queue_pool
-
-    return queue_pool
-
-
-def clear_queue_pool(empty_queues: bool = False, ignore_errors: bool = False) -> None:
-    """Clears the queue pools of all devices
-
-    Args:
-        empty_queues: Whether to empty the queues before clearing them
-        ignore_errors: Whether to ignore any errors raised by this function. Defaults to False
-    """
-    if empty_queues:
-        for queue_pool in _QUEUE_POOLS.values():
-            try:
-                queue_pool.empty()
-            except ExceptionGroup as exp_group:
-                if ignore_errors:
-                    err_logger.warning(
-                        f"errors emptying queue pool: {exp_group.exceptions}"
-                    )
-                else:
-                    raise exp_group
-
-    _QUEUE_POOLS.clear()
 
 
 class QueuePool:
@@ -145,16 +108,16 @@ class QueuePool:
         }
 
     @classmethod
-    def from_settings(cls) -> Self:
-        """Constructs a queue pool from the settings"""
+    def from_settings(cls, device_settings: DeviceSettings, connection: Redis) -> Self:
+        """Constructs the device's queue pool, on the given connection"""
         return cls(
-            prefix=settings.DEFAULT_PREFIX,
-            connection=get_redis_connection(settings.RQ_REDIS_URL),
-            preprocessing_timeout=settings.MAX_PREPROCESSING_TIME,
-            execution_timeout=settings.MAX_EXECUTION_TIME,
-            postprocessing_timeout=settings.MAX_POSTPROCESSING_TIME,
-            general_queue_timeout=settings.MAX_GENERAL_QUEUE_TIME,
-            recalibration_timeout=settings.MAX_RECALIBRATION_QUEUE_TIME,
+            prefix=device_settings.default_prefix,
+            connection=connection,
+            preprocessing_timeout=device_settings.max_preprocessing_time,
+            execution_timeout=device_settings.max_execution_time,
+            postprocessing_timeout=device_settings.max_postprocessing_time,
+            general_queue_timeout=device_settings.max_general_queue_time,
+            recalibration_timeout=device_settings.max_recalibration_queue_time,
         )
 
     def empty(self):

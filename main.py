@@ -248,7 +248,7 @@ def _run_rq_worker(kind: str, env_files: list[str], device: str | None = None) -
     _load_devices(env_files)
     import settings
     from app.api.worker import LightRqWorker, PreloadedRqWorker
-    from app.services.scheduler import get_queue_pool
+    from app.services.scheduler import QueuePool
     from app.utils.logging import set_up_logging
     from app.utils.redis import get_redis_connection
 
@@ -267,13 +267,15 @@ def _run_rq_worker(kind: str, env_files: list[str], device: str | None = None) -
             "so the devices must share their RQ_REDIS_URL"
         )
 
+    connection = get_redis_connection(redis_urls.pop())
     queues = []
     for name in devices:
-        with settings.using_device(name):
-            queue_pool = get_queue_pool()
-            queues.extend(queue_pool.queues[f"{name}_{queue}"] for queue in queue_names)
+        queue_pool = QueuePool.from_settings(
+            settings.get_device_settings(name), connection
+        )
+        queues.extend(queue_pool.queues[f"{name}_{queue}"] for queue in queue_names)
 
-    worker = worker_class(queues, connection=get_redis_connection(redis_urls.pop()))
+    worker = worker_class(queues, connection=connection)
     # the scheduler moves due enqueue_at and enqueue_in jobs, e.g. a booking's start and end,
     # onto the worker's queues; RQ's locks let one worker per queue do it
     worker.work(with_scheduler=True)

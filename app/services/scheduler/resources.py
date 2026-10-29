@@ -29,7 +29,7 @@ from ..external.mss import (
     get_mss_public_key,
     get_private_key,
 )
-from .queues import QueuePool, get_queue_pool
+from .queues import QueuePool
 from .store import get_jobs_store
 from .utils import get_executor_options
 
@@ -61,7 +61,7 @@ class DeviceResources:
             redis=redis,
             bookings_db=get_bookings_sql_engine(device_settings.booking_db_url),
             jobs_store=get_jobs_store(redis, device_settings),
-            queues=get_queue_pool(),
+            queues=QueuePool.from_settings(device_settings, redis),
             mss_client=get_mss_client(),
             executor_options=get_executor_options(),
             mss_public_key=get_mss_public_key(device_settings.mss_public_key_path),

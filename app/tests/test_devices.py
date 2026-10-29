@@ -51,21 +51,23 @@ def test_bcc_env_file_names_each_device_an_api_worker_serves(tmp_path):
 
 
 def test_each_device_has_its_own_queues(tmp_path, monkeypatch):
-    """The queue pool is the current device's"""
+    """Each device's queue pool has its own queues"""
     import settings
-    from app.services.scheduler.queues import clear_queue_pool, get_queue_pool
+    from app.services.scheduler import QueuePool
+    from app.utils.redis import get_redis_connection
 
     load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
-    try:
-        with settings.using_device("Alpha"):
-            alpha_pool = get_queue_pool()
-        with settings.using_device("Beta"):
-            beta_pool = get_queue_pool()
+    connection = get_redis_connection()
 
-        assert alpha_pool.general.name == "Alpha_general"
-        assert beta_pool.general.name == "Beta_general"
-    finally:
-        clear_queue_pool()
+    alpha_pool = QueuePool.from_settings(
+        settings.get_device_settings("Alpha"), connection
+    )
+    beta_pool = QueuePool.from_settings(
+        settings.get_device_settings("Beta"), connection
+    )
+
+    assert alpha_pool.general.name == "Alpha_general"
+    assert beta_pool.general.name == "Beta_general"
 
 
 def test_app_keeps_each_device_resources_while_it_runs(

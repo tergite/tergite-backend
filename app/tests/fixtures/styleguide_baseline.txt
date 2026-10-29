@@ -34,8 +34,6 @@ boolean: app/libs/quantum_executor/quantify/experiment.py::_State.has_emitted
 boolean: app/libs/quantum_executor/quantify/experiment.py::_construct_schedule(include_dynamic_frequency_ops)
 boolean: app/libs/queues/dtos.py::ExecutorOptions.are_clusters_resettable
 boolean: app/services/external/mss/service.py::disconnect_mss_client(ignore_errors)
-boolean: app/services/scheduler/queues.py::clear_queue_pool(empty_queues)
-boolean: app/services/scheduler/queues.py::clear_queue_pool(ignore_errors)
 boolean: app/services/scheduler/service.py::_cancel_job_in_queues(ignore_errors)
 boolean: app/services/scheduler/service.py::stop_recalibration(ignore_errors)
 boolean: app/services/scheduler/utils.py::_init_executor(reset)
@@ -69,7 +67,6 @@ import-layering: app/services/booking/service.py::import settings
 import-layering: app/services/booking/store.py::import settings
 import-layering: app/services/external/mss/auth.py::import settings
 import-layering: app/services/external/mss/service.py::import settings
-import-layering: app/services/scheduler/queues.py::import settings
 import-layering: app/services/scheduler/utils.py::import settings
 import-layering: app/utils/compat.py::import settings
 import-layering: app/utils/redis.py::import settings
