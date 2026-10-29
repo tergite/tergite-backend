@@ -12,13 +12,13 @@
 # that they have been altered from the originals.
 #
 # Starts the backend from this checkout with `main.py start`, passing on its arguments: from the
-# repo root, `./start_bcc.sh` or `./start_bcc.sh --light-workers 2`. It reads the env file
+# repo root, `./dev/start_bcc.sh` or `./dev/start_bcc.sh --light-workers 2`. It reads the env file
 # BCC_ENV_FILE names, .env by default, which a SOPS file encrypted with a Hashicorp Vault key
 # may be: that needs sops, VAULT_ADDR and VAULT_TOKEN.
 
 set -e
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 # the RQ workers fork a process for every job, which macOS refuses once frameworks are loaded
 [ "$(uname -s)" != "Darwin" ] || export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
 

@@ -77,7 +77,7 @@ cp app/tests/fixtures/backend_config.simq1.toml backend_config.toml
 And run the application.
 
 ```shell
-./start_bcc.sh
+./dev/start_bcc.sh
 ```
 
 #### Two-qubit-gate Qiskit Pulse Simulator
@@ -99,5 +99,5 @@ cp app/tests/fixtures/backend_config.simq2.toml backend_config.toml
 And run the application.
 
 ```shell
-./start_bcc.sh
+./dev/start_bcc.sh
 ```

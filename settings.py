@@ -41,7 +41,6 @@ _ROOT_PATH = Path(__file__).parent
 
 # Automatic root directory settings
 APP_ROOT_DIR = _ROOT_PATH / "app"
-FIXTURES_DIR = _ROOT_PATH / "app" / "tests" / "fixtures"
 
 
 class DeviceSettings:

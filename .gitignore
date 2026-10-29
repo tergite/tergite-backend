@@ -147,7 +147,6 @@ Labber/
 tmp/
 
 # quantum_executor
-.quantum-executor.lock
 
 # test data
 app/tests/data/

@@ -118,7 +118,7 @@ cp calibration.seed.example.toml calibration.seed.toml
 - Run start script
 
 ```shell
-./start_bcc.sh
+./dev/start_bcc.sh
 ```
 
 - Open your browser at [http://localhost:8000/docs](http://localhost:8000/docs) to see the interactive API docs
