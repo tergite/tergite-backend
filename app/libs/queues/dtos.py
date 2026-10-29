@@ -21,14 +21,11 @@ from typing import (
     Dict,
     List,
     Literal,
-    NotRequired,
     Optional,
     Self,
     Tuple,
     TypeAlias,
-    TypedDict,
     Union,
-    cast,
 )
 
 from pydantic import (
@@ -46,7 +43,6 @@ from pydantic_core import CoreSchema, core_schema
 import settings
 
 from ...utils.datetime import to_utc, utc_now_str
-from ...utils.logging import err_logger
 from ...utils.model import PartialMeta
 from ...utils.redis_store import Schema
 from ...utils.strings import uuid_str
@@ -67,40 +63,6 @@ JobStage: TypeAlias = Literal[
     "post_processing",
     "final",
 ]
-
-_QUEUE_CONTEXTS: dict[str, "QueueContext"] = {}
-
-
-def get_queue_context() -> "QueueContext":
-    """Retrieves the queue context of the current device"""
-    queue_context = _QUEUE_CONTEXTS.get(settings.DEFAULT_PREFIX)
-    if queue_context is None:
-        queue_context = {
-            "queue_prefix": settings.DEFAULT_PREFIX,
-            "booking_db_url": settings.BOOKING_DB_URL,
-            "jobs_store_url": settings.RQ_REDIS_URL,
-            "force_normal_queue": False,
-            "max_idle_time": settings.MAX_IDLE_TIME,
-            "postprocessing_folder": f"{settings.LOG_FILE_POOL}",
-            "preprocessing_folder": f"{settings.PREPROCESSED_JOB_POOL}",
-            "job_upload_folder": f"{settings.JOB_UPLOAD_POOL}",
-            "executor_lock_file": f"{settings.EXECUTOR_DATA_DIR}/.quantum-executor.lock",
-            "preprocessing_timeout": settings.MAX_PREPROCESSING_TIME,
-            "execution_timeout": settings.MAX_EXECUTION_TIME,
-            "postprocessing_timeout": settings.MAX_POSTPROCESSING_TIME,
-            "general_queue_timeout": settings.MAX_GENERAL_QUEUE_TIME,
-            "recalibration_queue_timeout": settings.MAX_RECALIBRATION_QUEUE_TIME,
-            "default_recalibration_interval": settings.DEFAULT_RECALIBRATION_INTERVAL,
-        }
-        err_logger.info("Initializing queue context")
-        _QUEUE_CONTEXTS[settings.DEFAULT_PREFIX] = cast(QueueContext, queue_context)
-
-    return _QUEUE_CONTEXTS[settings.DEFAULT_PREFIX]
-
-
-def clear_queue_context():
-    """Clears the queue contexts of all devices"""
-    _QUEUE_CONTEXTS.clear()
 
 
 @unique
@@ -470,41 +432,6 @@ class ExecutorOptions:
             calibration_spi_config=settings.CALIBRATION_SPI_CONFIG_FILE,
             redis_url=settings.RQ_REDIS_URL,
         )
-
-
-class QueueContext(TypedDict):
-    """Options passed to all queue callback creators
-
-    Attributes:
-        queue_prefix: the prefix attached to all queues
-        booking_db_url: the database URL for the bookings SQLAlchemy engine
-        jobs_store_url: the Redis URL for the jobs store
-        force_normal_queue: the flag for whether to force the usage of the normal queue
-        max_idle_time: the maximum time a booking can remain idle
-        preprocessing_timeout: the maximum time tasks should run on the preprocessing queue
-        execution_timeout: the maximum time tasks should run on the execution queue
-        postprocessing_timeout: the maximum time tasks should run on the postprocessing queue
-        general_queue_timeout: the maximum time tasks should run on the general queue
-        recalibration_queue_timeout: the maximum time tasks should run on the recalibration queue
-        default_recalibration_interval: the default recalibration interval in seconds
-        executor_lock_file: the file locked while the device's quantum executor is in use
-    """
-
-    queue_prefix: str
-    booking_db_url: str
-    jobs_store_url: str
-    force_normal_queue: NotRequired[bool]
-    postprocessing_folder: str
-    preprocessing_folder: str
-    job_upload_folder: str
-    max_idle_time: int
-    execution_timeout: int
-    preprocessing_timeout: int
-    postprocessing_timeout: int
-    general_queue_timeout: int
-    recalibration_queue_timeout: int
-    default_recalibration_interval: float
-    executor_lock_file: str
 
 
 _STAGE_VERBOSE_NAME_MAP: Dict[Stage, str] = {

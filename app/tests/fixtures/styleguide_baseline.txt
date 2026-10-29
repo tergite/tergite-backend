@@ -276,7 +276,6 @@ type-hints: app/libs/queues/dtos.py::JobStatus.is_terminal
 type-hints: app/libs/queues/dtos.py::TimestampPair.set_finish_timestamp
 type-hints: app/libs/queues/dtos.py::TimestampPair.set_start_timestamp
 type-hints: app/libs/queues/dtos.py::Timestamps.with_updates
-type-hints: app/libs/queues/dtos.py::clear_queue_context
 type-hints: app/libs/queues/types.py::RunnerQueue.enqueue
 type-hints: app/libs/queues/types.py::StaticQueue.add
 type-hints: app/libs/queues/types.py::StaticQueue.clear
@@ -313,7 +312,6 @@ type-hints: app/services/scheduler/service.py::_cancel_job_in_queues
 type-hints: app/services/scheduler/service.py::cancel_booking
 type-hints: app/services/scheduler/service.py::stop_recalibration
 type-hints: app/services/scheduler/tasks.py::_pop_waitlist_to_normal_queue
-type-hints: app/services/scheduler/tasks.py::_push_to_waitlist
 type-hints: app/services/scheduler/tasks.py::post_booking_cleanup
 type-hints: app/services/scheduler/tasks.py::postprocessing_failure_callback
 type-hints: app/services/scheduler/tasks.py::postprocessing_success_callback

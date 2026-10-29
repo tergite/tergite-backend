@@ -18,6 +18,7 @@ from pydantic import ValidationError
 from rq import Queue, SimpleWorker, get_current_job
 from rq.job import Job as RqJob
 
+from app.api.worker import DeviceJob
 from app.libs.queues.dtos import Job
 from app.libs.queues.types import RunnerQueue, StaticQueue
 from app.utils.rq import get_next_job_on_queue
@@ -68,7 +69,9 @@ def test_total_duration_counts_the_time_left_of_the_running_job(redis_client):
         Job(device="loke", calibration_date="", estimated_duration=5), job_id="second"
     )
 
-    SimpleWorker([queue], connection=redis_client).work(burst=True, max_jobs=1)
+    SimpleWorker([queue], connection=redis_client, job_class=DeviceJob).work(
+        burst=True, max_jobs=1
+    )
 
     first_job = RqJob.fetch("first", connection=redis_client)
     assert first_job.return_value() == pytest.approx(15, abs=1)
@@ -81,7 +84,9 @@ def test_total_duration_stops_counting_a_job_past_its_estimate(redis_client):
             Job(device="loke", calibration_date="", estimated_duration=10),
             job_id="first",
         )
-        SimpleWorker([queue], connection=redis_client).work(burst=True)
+        SimpleWorker([queue], connection=redis_client, job_class=DeviceJob).work(
+            burst=True
+        )
 
         clock.shift(4)
         assert queue.total_duration == 6
@@ -99,6 +104,6 @@ def test_next_job_on_queue_is_a_queued_one_before_a_scheduled_one(redis_client):
     assert get_next_job_on_queue(queue).id == "queued"
 
 
-def _get_test_queue_total_duration(job: Job) -> float:
+def _get_test_queue_total_duration(_device_resources: None, job: Job) -> float:
     connection = get_current_job().connection
     return RunnerQueue("test_queue", connection=connection).total_duration

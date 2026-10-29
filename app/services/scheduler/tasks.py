@@ -25,9 +25,8 @@ from typing import Any, Optional, Tuple, Type
 
 import redis
 import rq.job
-from filelock import FileLock
 from pydantic import ValidationError
-from rq import Repeat, get_current_job
+from rq import Repeat
 
 from app.libs.qiskit.qobj import PulseQobj
 
@@ -42,31 +41,25 @@ from ...libs.quantum_executor.base.quantum_job import (
 from ...libs.queues.dtos import (
     Job,
     JobStatus,
-    QueueContext,
     Stage,
     StorageID,
 )
 from ...utils.datetime import get_utc_now
 from ...utils.exc import JobAlreadyCancelled, PostProcessingError
-from ...utils.redis import get_redis_connection
-from ...utils.redis_store import Collection
 from ...utils.rq import cancel_rq_job
 from ..booking import (
     Booking,
     get_active_booking,
     get_booking,
-    get_bookings_sql_engine,
     get_next_booking,
 )
 from ..devices import get_device_calibration_info
-from ..external.mss import DeviceEvent, DeviceEventName, get_mss_client
+from ..external.mss import DeviceEvent, DeviceEventName
 from .dtos import JobFile
-from .queues import get_queue_pool
-from .store import get_jobs_store
+from .resources import DeviceResources
 from .utils import (
     apply_linear_discriminator,
     decompress_qobj,
-    get_executor_options,
     get_quantum_executor,
     get_rq_job_id,
     log_job_failure,
@@ -78,31 +71,33 @@ from .utils import (
 
 
 def preprocess(
+    device: DeviceResources,
     job: Job,
-    context: QueueContext,
     job_file: Path,
     booking_id: Optional[str] = None,
-) -> Tuple[str, QueueContext]:
+    should_force_normal_queue: bool = False,
+) -> str:
     """Prepares the job for execution
 
     One of the most important thing it does is to set the estimated_duration of the job.
     This requires compiling the job to get the absolute timings of the schedules.
 
-    if force_normal_queue is True:
+    if should_force_normal_queue:
         - Push the job to the waitlist
 
     Args:
+        device: what the device runs on
         job: the job that is to be preprocessed
-        context: the context required when running a job on a queue
         job_file: the path to the job file
         booking_id: the unique identifier of the current booking if any
+        should_force_normal_queue: whether a booker's job is to wait for the normal queue
 
     Returns:
-        the pair of the updated job's job ID and the context
+        the updated job's job ID
     """
     job_id = job.job_id
-    jobs_store = get_jobs_store()
-    results_folder = Path(context["preprocessing_folder"])
+    jobs_store = device.jobs_store
+    results_folder = device.settings.preprocessed_job_pool
 
     try:
         with job_file.open() as file:
@@ -117,7 +112,7 @@ def preprocess(
         # --- In-place decode complex values
         # [[a,b],[c,d],...] -> [a + ib,c + id,...]
         json_decoder.decode_pulse_qobj(qobj)
-        with FileLock(context["executor_lock_file"]):
+        with device.executor_lock:
             executor = get_quantum_executor()
             duration, _ = executor.preprocess(
                 PulseQobj.from_dict(qobj),
@@ -127,24 +122,29 @@ def preprocess(
         job = jobs_store.update(job.job_id, {"estimated_duration": duration})
 
         if booking_id is None:
-            return _try_enqueue_on_normal_queue(job, context)
+            return _try_enqueue_on_normal_queue(device, job)
         else:
-            return _try_enqueue_on_booked_queue(job, context, booking_id=booking_id)
+            return _try_enqueue_on_booked_queue(
+                device,
+                job,
+                booking_id=booking_id,
+                should_force_normal_queue=should_force_normal_queue,
+            )
     except JobAlreadyCancelled as exp:
         logging.error(f"{exp}")
         raise exp
 
     except ValidationError as exp:
-        _fail_job(jobs_store, job_id=job_id, reason=f"{exp}")
+        _fail_job(device, job_id=job_id, reason=f"{exp}")
         raise exp
 
     except Exception as exp:
         logging.error(f"Job failed\nJob execution failed. exp: {exp}")
-        _fail_job(jobs_store, job_id=job_id, reason="unexpected error during execution")
+        _fail_job(device, job_id=job_id, reason="unexpected error during execution")
         raise exp
 
 
-def post_booking_cleanup(booking_id: str, context: QueueContext):
+def post_booking_cleanup(device: DeviceResources, booking_id: str):
     """Cleans up after the booking of the given booking_id
 
     It should cancel the idle time interval job and allow for all the jobs on the booked_execution queues to clear out.
@@ -152,27 +152,24 @@ def post_booking_cleanup(booking_id: str, context: QueueContext):
     even when the booking has been deleted, as with its user.
 
     Args:
+        device: what the device runs on
         booking_id: the unique identifier of the booking
-        context: extra variables that describe the environment the job is to run in
     """
-    booking_db_url = context["booking_db_url"]
-    bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
-    booking = get_booking(bookings_sql_engine, Booking.id == booking_id)
-    redis_connection = get_current_job().connection
+    booking = get_booking(device.bookings_db, Booking.id == booking_id)
 
     # a deleted booking's idleness timer was cancelled when it was deleted
     if booking is not None:
-        cancel_rq_job(redis_connection, job_id=booking.idle_timer_id)
+        cancel_rq_job(device.redis, job_id=booking.idle_timer_id)
 
     # push to normal execution queue all jobs that have duration
     # small enough to run before next booking
-    _pop_waitlist_to_normal_queue(context)
+    _pop_waitlist_to_normal_queue(device)
 
 
 def reset_idleness_timer(
+    device: DeviceResources,
     booking_id: str,
     end_utc: datetime,
-    context: QueueContext,
     restart_in: float = 0,
     max_idle_time: Optional[float] = None,
 ):
@@ -181,29 +178,26 @@ def reset_idleness_timer(
     If end_utc is in the past, no, new timer will be created but the old one will be removed
 
     Args:
+        device: what the device runs on
         booking_id: the unique identifier of the booking whose idleness timer is to be reset
         end_utc: the timestamp beyond which the timer should not run
         restart_in: the number of seconds when the timer should restart; default = 0 i.e. immediately
-        context: the environment in which the jobs are running
         max_idle_time: the maximum acceptable time for queue to be idle
 
     Returns:
         the refreshed rq.job.Job that is constructed and enqueued to track the time or None if end_utc is in the past
     """
     if max_idle_time is None:
-        max_idle_time = context["max_idle_time"]
+        max_idle_time = device.settings.max_idle_time
 
-    bookings_sql_engine = get_bookings_sql_engine(context["booking_db_url"])
-    redis_connection = get_current_job().connection
-    queue_pool = get_queue_pool()
-    general_queue = queue_pool.general
+    general_queue = device.queues.general
 
-    booking = get_booking(bookings_sql_engine, Booking.id == booking_id)
+    booking = get_booking(device.bookings_db, Booking.id == booking_id)
     if booking is None:
         logging.error(f"no booking found with id {booking_id}")
         return None
 
-    cancel_rq_job(redis_connection, job_id=booking.idle_timer_id)
+    cancel_rq_job(device.redis, job_id=booking.idle_timer_id)
 
     duration = (end_utc - get_utc_now()).total_seconds() - restart_in
     if duration < max_idle_time:
@@ -219,7 +213,6 @@ def reset_idleness_timer(
     general_queue.enqueue_in(
         timedelta(seconds=restart_in),
         _pop_waitlist_to_booking,
-        context=context,
         # rq specific kwargs
         job_id=booking.idle_timer_id,
         repeat=repeat,
@@ -227,28 +220,25 @@ def reset_idleness_timer(
     return None
 
 
-def execute(
-    job: Job,
-    context: QueueContext,
-) -> Tuple[str, QueueContext, str]:
+def execute(device: DeviceResources, job: Job) -> Tuple[str, str]:
     """Runs the job given the file containing compiled experiments
 
     Args:
+        device: what the device runs on
         job: the job that is to be run
-        context: the context required when running a job on a queue
 
     Returns:
-        the tuple of the updated job's job ID and the context and the results file path
+        the pair of the updated job's job ID and the results file path
     """
     job_id = job.job_id
-    jobs_store = get_jobs_store()
-    preprocessing_dir = Path(context["preprocessing_folder"])
+    jobs_store = device.jobs_store
+    preprocessing_dir = device.settings.preprocessed_job_pool
 
     try:
         update_job_stage(jobs_store, job_id=job_id, stage=Stage.EXEC_W)
 
         # Just a locking mechanism to ensure jobs don't interfere with each other
-        with FileLock(context["executor_lock_file"]):
+        with device.executor_lock:
             executor = get_quantum_executor()
             results_file = executor.run(job_id, inputs_folder=preprocessing_dir)
 
@@ -256,51 +246,46 @@ def execute(
         if job.status == JobStatus.CANCELLED:
             raise JobAlreadyCancelled("cancelled")
 
-        queue_pool = get_queue_pool()
-
-        postproc_queue = queue_pool.postprocessing
+        postproc_queue = device.queues.postprocessing
         job = update_job_stage(jobs_store, job_id=job_id, stage=Stage.PST_PROC_Q)
         postproc_queue.enqueue(
             job,
-            context,
             results_file=results_file,
             job_id=get_rq_job_id(job_id, Stage.PST_PROC_Q),
         )
 
         # clean up
         logging.info("Job executed successfully")
-        return job.job_id, context, results_file
+        return job.job_id, results_file
     except JobAlreadyCancelled as exp:
         logging.error(f"{exp}")
         raise exp
 
     except Exception as exp:
         logging.error(f"Job failed\nJob execution failed. exp: {exp}")
-        _fail_job(jobs_store, job_id=job_id, reason="unexpected error during execution")
+        _fail_job(device, job_id=job_id, reason="unexpected error during execution")
         raise exp
 
 
-def postprocess(
-    job: "Job", context: "QueueContext", results_file: str
-) -> Tuple[str, "QueueContext"]:
+def postprocess(device: DeviceResources, job: Job, results_file: str) -> str:
     """Processes the results got from running the experiments on the quantum computer
 
     Args:
+        device: what the device runs on
         job: the quantum job that is to be post processed
-        context: the context in the queue
         results_file: the path to the file containing the results from the experiments
 
     Returns:
-        the tuple of job_id and the context
+        the job's ID
     """
     logging.info(f"Postprocessing logfile {results_file}")
     results_file_path = Path(results_file)
 
     job_id = job.job_id
-    working_folder = Path(context["postprocessing_folder"])
-    backend_name = get_executor_options().backend_name
+    working_folder = device.settings.log_file_pool
+    backend_name = device.executor_options.backend_name
 
-    jobs_store = get_jobs_store()
+    jobs_store = device.jobs_store
     try:
         new_file = move_file(results_file_path, new_folder=working_folder, ext=".hdf5")
         logging.info(f"Moved the logfile to {str(new_file)}")
@@ -308,11 +293,9 @@ def postprocess(
         update_job_stage(jobs_store, job_id=job_id, stage=Stage.PST_PROC_W)
 
         quantum_job = read_job_from_hdf5(new_file)
-        redis_conn = get_redis_connection()
-        mss_client = get_mss_client()
         if quantum_job.meas_level == MeasLvl.DISCRIMINATED:
             calibration = get_device_calibration_info(
-                redis_conn, backend_name=backend_name
+                device.redis, backend_name=backend_name
             )
             discriminator = functools.partial(apply_linear_discriminator, calibration)
 
@@ -322,44 +305,43 @@ def postprocess(
                 calibration=calibration,
             )
             job = update_job_results(jobs_store, job_id=job_id, data=memory)
-            update_job_in_mss(mss_client, payload=job)
+            update_job_in_mss(device.mss_client, payload=job)
         elif quantum_job.meas_level == MeasLvl.INTEGRATED:
             memory = xarray_to_list(quantum_job)
             job = update_job_results(jobs_store, job_id=job_id, data=memory)
-            update_job_in_mss(mss_client, payload=job)
+            update_job_in_mss(device.mss_client, payload=job)
         else:
             raise NotImplementedError(
                 f"meas_level {quantum_job.meas_level} is not supported"
             )
 
-        return job.job_id, context
+        return job.job_id
     except Exception as exp:
         raise PostProcessingError(exp=exp, job_id=job_id)
 
 
 def postprocessing_success_callback(
-    _rq_job, _rq_connection, result: Tuple[str, QueueContext], *args, **kwargs
+    rq_job: rq.job.Job, _rq_connection, job_id: str, *args, **kwargs
 ):
     """Callback to invoke when postprocessing succeeds
 
     Args:
-        _rq_job: the rq job
+        rq_job: the rq job, which the worker gave its device's resources
         _rq_connection: the redis connection
-        result: the result from the postprocessing worker handler
+        job_id: the result of the postprocessing, the job's ID
     """
-    job_id, context = result
-    jobs_store = get_jobs_store()
+    device: DeviceResources = rq_job.device_resources
+    jobs_store = device.jobs_store
 
     job = update_job_stage(jobs_store, job_id=job_id, stage=Stage.FINAL_Q)
-    mss_client = get_mss_client()
     if job.status == JobStatus.SUCCESSFUL:
         job = update_job_stage(jobs_store, job_id=job_id, stage=Stage.FINAL_W)
 
-    update_job_in_mss(mss_client, payload=job)
+    update_job_in_mss(device.mss_client, payload=job)
 
 
 def postprocessing_failure_callback(
-    _rq_job: rq.job.Job,
+    rq_job: rq.job.Job,
     _rq_connection: redis.Redis,
     _type: Type,
     value: Any,
@@ -369,7 +351,7 @@ def postprocessing_failure_callback(
     """Callback to be called when postprocessing fails
 
     Args:
-        _rq_job: the rq job
+        rq_job: the rq job, which the worker gave its device's resources
         _rq_connection: the redis connection
         _type: the error type
         value: the value passed to the callback from the handler
@@ -378,14 +360,14 @@ def postprocessing_failure_callback(
     if isinstance(value, PostProcessingError):
         logging.error(value.exp)
         _fail_job(
-            get_jobs_store(),
+            rq_job.device_resources,
             job_id=value.job_id,
             reason="error during post processing",
         )
 
 
 def recalibrate(
-    context: QueueContext, interval: Optional[float] = None
+    device: DeviceResources, interval: Optional[float] = None
 ) -> Optional[rq.job.Job]:
     """Recalibrates the device, having first scheduled the next recalibration
 
@@ -393,23 +375,22 @@ def recalibrate(
     cancellation while this one runs cancels the next.
 
     Args:
-        context: the context required when running a job on a queue
+        device: what the device runs on
         interval: the interval in seconds between two concurrent jobs; default = None i.e. no repeat
 
     Returns:
         the rq.job.Job that is constructed and enqueued to schedule next recalibration, or None if interval was not set
     """
-    next_job = _schedule_next_recalibration(context, interval=interval)
+    next_job = _schedule_next_recalibration(device, interval=interval)
 
     # ensure recalibration runs without interference
-    with FileLock(context["executor_lock_file"]):
+    with device.executor_lock:
         executor = get_quantum_executor()
         results = executor.recalibrate()
 
         if isinstance(results, DeviceCalibration):
             logging.info("Updating MSS...")
-            mss_client = get_mss_client()
-            response = mss_client.send_event(
+            response = device.mss_client.send_event(
                 DeviceEvent(
                     name=DeviceEventName.RECALIBRATED,
                     data=results,
@@ -437,10 +418,7 @@ def _is_job_shorter(storage_id: StorageID, duration: float) -> bool:
     return storage_id.duration < duration
 
 
-def _try_enqueue_on_normal_queue(
-    job: Job,
-    context: QueueContext,
-) -> Tuple[str, QueueContext]:
+def _try_enqueue_on_normal_queue(device: DeviceResources, job: Job) -> str:
     """Attempts to push the job to the normal queue, waitlisting it if it is too long
 
     If the job's execution duration is greater than the total time left on the execution queue before the next booking:
@@ -449,20 +427,17 @@ def _try_enqueue_on_normal_queue(
         - the job is pushed to the execution queue
 
     Args:
+        device: what the device runs on
         job: the job that is to be run
-        context: the context required when running a job on a queue
 
     Returns:
-        the pair of the updated job's job ID and the context
+        the updated job's job ID
     """
     job_id = job.job_id
+    jobs_store = device.jobs_store
 
-    bookings_sql_engine = get_bookings_sql_engine(context["booking_db_url"])
-    jobs_store = get_jobs_store()
-
-    next_booking = get_next_booking(bookings_sql_engine)
-    queue_pool = get_queue_pool()
-    queue = queue_pool.normal_execution
+    next_booking = get_next_booking(device.bookings_db)
+    queue = device.queues.normal_execution
 
     if next_booking:
         time_to_next_booking = (next_booking.start_utc - get_utc_now()).total_seconds()
@@ -471,25 +446,26 @@ def _try_enqueue_on_normal_queue(
         usable_time = time_to_next_booking - queue_duration
 
         if job.estimated_duration > usable_time:
-            _push_to_waitlist(job_id=job_id, context=context)
-            return job_id, context
+            _push_to_waitlist(device, job_id=job_id)
+            return job_id
 
     job = update_job_stage(jobs_store, job_id=job_id, stage=Stage.EXEC_Q)
-    queue.enqueue(job, context, job_id=get_rq_job_id(job_id, Stage.EXEC_Q))
-    return job_id, context
+    queue.enqueue(job, job_id=get_rq_job_id(job_id, Stage.EXEC_Q))
+    return job_id
 
 
 def _try_enqueue_on_booked_queue(
+    device: DeviceResources,
     job: Job,
-    context: QueueContext,
     booking_id: str,
-) -> Tuple[str, QueueContext]:
+    should_force_normal_queue: bool,
+) -> str:
     """Attempts to push the job to the booked execution queue, failing it or waitlisting it if too long
 
     if the booking has ended, or been deleted, since the job was submitted:
         - Try the normal queue instead
     else if the user is owner of the current booking:
-        - If force_normal_queue is True:
+        - If should_force_normal_queue:
             - Push the job to the waitlist
         - If the job's execution duration is greater than the total time left on the booked_execution queue:
             - raise error "job too long for the time left in the booking"
@@ -500,38 +476,34 @@ def _try_enqueue_on_booked_queue(
         - Push the job to the waitlist
 
     Args:
+        device: what the device runs on
         job: the job that is to be run
-        context: the context required when running a job on a queue
         booking_id: the unique identifier of the booking under way when the job was submitted
+        should_force_normal_queue: whether a booker's job is to wait for the normal queue
 
     Returns:
-        the pair of the updated job's job ID and the context
+        the updated job's job ID
     """
-    force_normal_queue = context.get("force_normal_queue")
     user_id = job.user_id
     job_id = job.job_id
 
-    job_store = get_jobs_store()
-    bookings_sql_engine = get_bookings_sql_engine(context["booking_db_url"])
-
-    active_booking = get_booking(bookings_sql_engine, Booking.id == booking_id)
+    active_booking = get_booking(device.bookings_db, Booking.id == booking_id)
     # its end has drained the waitlist already, so nothing would release the job from it
     if active_booking is None or active_booking.is_complete:
-        return _try_enqueue_on_normal_queue(job, context)
+        return _try_enqueue_on_normal_queue(device, job)
 
-    queue_pool = get_queue_pool()
-    queue = queue_pool.booked_execution
+    queue = device.queues.booked_execution
 
     time_left = (active_booking.end_utc - get_utc_now()).total_seconds()
     usable_time = time_left - queue.total_duration
     is_booker = user_id == active_booking.user_id
 
     if is_booker:
-        if force_normal_queue:
-            _push_to_waitlist(job_id=job_id, context=context)
+        if should_force_normal_queue:
+            _push_to_waitlist(device, job_id=job_id)
         elif job.estimated_duration > usable_time:
             _fail_job(
-                job_store,
+                device,
                 job_id=job_id,
                 reason="job too long for the time left in the booking",
             )
@@ -539,146 +511,111 @@ def _try_enqueue_on_booked_queue(
             # restart the timer after this job is done if this is a job from the booker
             # Otherwise, if the booker sends no more jobs, this queue is taken over by other user's jobs
             reset_idleness_timer(
+                device,
                 end_utc=active_booking.end_utc,
                 booking_id=active_booking.id,
-                context=context,
                 restart_in=job.estimated_duration,
             )
-            job = update_job_stage(job_store, job_id=job_id, stage=Stage.EXEC_Q)
-            queue.enqueue(job, context, job_id=get_rq_job_id(job_id, Stage.EXEC_Q))
-        return job_id, context
+            job = update_job_stage(device.jobs_store, job_id=job_id, stage=Stage.EXEC_Q)
+            queue.enqueue(job, job_id=get_rq_job_id(job_id, Stage.EXEC_Q))
+        return job_id
 
-    _push_to_waitlist(job_id=job_id, context=context)
-    return job_id, context
+    _push_to_waitlist(device, job_id=job_id)
+    return job_id
 
 
-def _push_to_waitlist(
-    job_id: str, context: QueueContext, *args, **kwargs
-) -> Tuple[str, QueueContext]:
+def _push_to_waitlist(device: DeviceResources, job_id: str) -> str:
     """Pushes a job to the waitlist
 
     Args:
+        device: what the device runs on
         job_id: the id of the job
-        context: the context that the job is to run in
-        args: extra args to pass when enqueueing the job
-        kwargs: extra key-word args to pass when enqueuing the job
 
     Returns:
-        a tuple of the job_id and context
+        the job_id
     """
-    queue_pool = get_queue_pool()
-    waitlist = queue_pool.waitlist
-
-    jobs_store = get_jobs_store()
-    uptodate_job = jobs_store.get_one(job_id)
-
-    waitlist.add(
-        uptodate_job,
-        context,
-        *args,
-        **kwargs,
-        job_id=get_rq_job_id(job_id, Stage.EXEC_Q),
-    )
-    return job_id, context
+    uptodate_job = device.jobs_store.get_one(job_id)
+    device.queues.waitlist.add(uptodate_job, job_id=get_rq_job_id(job_id, Stage.EXEC_Q))
+    return job_id
 
 
-def _pop_waitlist_to_booking(
-    context: QueueContext,
-) -> Tuple[Optional[str], QueueContext]:
+def _pop_waitlist_to_booking(device: DeviceResources) -> Optional[str]:
     """Moves to the booked execution queue, the first waitlisted job that can finish before the next booking
 
-    If there is no job to transfer, it returns no job and the context
-
     Args:
-        context: extra variables that describe the environment the job is to run in
+        device: what the device runs on
 
     Returns:
-        a tuple of job_id/None and context
+        the job_id of the job moved, or None if there was none to move
     """
-    queue_pool = get_queue_pool()
-
-    waitlist = queue_pool.waitlist
-    booking_db_url = context["booking_db_url"]
-    jobs_store_url = context["jobs_store_url"]
-    bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
-    job_store = get_jobs_store(jobs_store_url)
-    queue = queue_pool.booked_execution
+    waitlist = device.queues.waitlist
+    queue = device.queues.booked_execution
 
     usable_time = float("inf")
-    next_booking = get_next_booking(bookings_sql_engine)
+    next_booking = get_next_booking(device.bookings_db)
     if isinstance(next_booking, Booking):
         usable_time = (next_booking.start_utc - get_utc_now()).total_seconds()
 
     next_job_tuple = waitlist.pop_first(_is_job_shorter, usable_time)
     if next_job_tuple is None:
-        return None, context
+        return None
 
     job, args, kwargs = next_job_tuple
-    active_booking = get_active_booking(bookings_sql_engine)
+    active_booking = get_active_booking(device.bookings_db)
     if active_booking:
         # restart the timer to run once to push next waitlisted job to this queue
         # immediately after this job is done.
         # This will be canceled if a new job from the booker is sent to run on this queue
         reset_idleness_timer(
+            device,
             end_utc=active_booking.end_utc,
             booking_id=active_booking.id,
-            context=context,
             restart_in=job.estimated_duration,
             max_idle_time=0,
         )
-    job = update_job_stage(job_store, job_id=job.job_id, stage=Stage.EXEC_Q)
+    job = update_job_stage(device.jobs_store, job_id=job.job_id, stage=Stage.EXEC_Q)
     queue.enqueue(job, *args, **kwargs)
 
-    return job.job_id, context
+    return job.job_id
 
 
-def _pop_waitlist_to_normal_queue(context: QueueContext):
+def _pop_waitlist_to_normal_queue(device: DeviceResources):
     """Moves to the normal execution queue, the waitlisted jobs that can finish before the next booking
 
     Args:
-        context: extra variables that describe the environment the job is to run in
-
-    Returns:
-        a tuple of job_id/None and context
+        device: what the device runs on
     """
-    booking_db_url = context["booking_db_url"]
-    jobs_store_url = context["jobs_store_url"]
-    bookings_sql_engine = get_bookings_sql_engine(url=booking_db_url)
-    job_store = get_jobs_store(jobs_store_url)
-    queue_pool = get_queue_pool()
-    waitlist = queue_pool.waitlist
-    next_booking = get_next_booking(bookings_sql_engine)
+    next_booking = get_next_booking(device.bookings_db)
     max_total_duration = None
     if next_booking is not None:
         max_total_duration = (next_booking.start_utc - get_utc_now()).total_seconds()
 
-    job_tuples = waitlist.pop_many(max_total_duration=max_total_duration)
-    normal_queue = queue_pool.normal_execution
+    job_tuples = device.queues.waitlist.pop_many(max_total_duration=max_total_duration)
+    normal_queue = device.queues.normal_execution
 
     for job, args, kwargs in job_tuples:
-        job = update_job_stage(job_store, job_id=job.job_id, stage=Stage.EXEC_Q)
+        job = update_job_stage(device.jobs_store, job_id=job.job_id, stage=Stage.EXEC_Q)
         normal_queue.enqueue(job, *args, **kwargs)
 
 
-def _fail_job(jobs_store: Collection[Job], job_id: str, reason: str) -> Job:
+def _fail_job(device: DeviceResources, job_id: str, reason: str) -> Job:
     """Marks the job as failed for the given reason, and tells MSS"""
-    job = log_job_failure(jobs_store, job_id=job_id, reason=reason)
-    update_job_in_mss(get_mss_client(), payload=job)
+    job = log_job_failure(device.jobs_store, job_id=job_id, reason=reason)
+    update_job_in_mss(device.mss_client, payload=job)
     return job
 
 
 def _schedule_next_recalibration(
-    context: QueueContext, interval: Optional[float]
+    device: DeviceResources, interval: Optional[float]
 ) -> Optional[rq.job.Job]:
     """Schedules a recalibration interval seconds from now, if interval is set"""
     if not isinstance(interval, float):
         return None
 
     func_name = f"{__name__}.{recalibrate.__qualname__}"
-    job = get_queue_pool().recalibration.enqueue_in(
+    job = device.queues.recalibration.enqueue_in(
         timedelta(seconds=interval),
         func_name,
-        context=context,
         interval=interval,
     )
 

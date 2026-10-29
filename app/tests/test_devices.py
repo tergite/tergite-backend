@@ -51,25 +51,21 @@ def test_bcc_env_file_names_each_device_an_api_worker_serves(tmp_path):
 
 
 def test_each_device_has_its_own_queues(tmp_path, monkeypatch):
-    """The queue pool and queue context are the current device's"""
+    """The queue pool is the current device's"""
     import settings
-    from app.libs.queues.dtos import clear_queue_context, get_queue_context
     from app.services.scheduler.queues import clear_queue_pool, get_queue_pool
 
     load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
     try:
         with settings.using_device("Alpha"):
-            alpha_pool, alpha_context = get_queue_pool(), get_queue_context()
+            alpha_pool = get_queue_pool()
         with settings.using_device("Beta"):
-            beta_pool, beta_context = get_queue_pool(), get_queue_context()
+            beta_pool = get_queue_pool()
 
         assert alpha_pool.general.name == "Alpha_general"
         assert beta_pool.general.name == "Beta_general"
-        assert alpha_context["queue_prefix"] == "Alpha"
-        assert beta_context["booking_db_url"] == f"sqlite:///{tmp_path}/Beta.db"
     finally:
         clear_queue_pool()
-        clear_queue_context()
 
 
 def test_app_keeps_each_device_resources_while_it_runs(
@@ -160,27 +156,19 @@ def test_switching_a_device_off_leaves_the_others_on(
 ):
     """/<device>/switch/off takes that device offline, and only it"""
     from app.api import app
-    from app.libs.queues.dtos import clear_queue_context
 
     load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
     mocker.patch.object(MssClient, "send_event")
-    try:
-        with get_test_client(app) as client:
-            response = client.post(
-                "/Alpha/switch/off", headers=create_mss_headers(is_admin=True)
-            )
-            assert response.status_code == 200
+    with get_test_client(app) as client:
+        response = client.post(
+            "/Alpha/switch/off", headers=create_mss_headers(is_admin=True)
+        )
+        assert response.status_code == 200
 
-            alpha_status = client.get(
-                "/Alpha/switch/status", headers=create_mss_headers()
-            )
-            beta_status = client.get(
-                "/Beta/switch/status", headers=create_mss_headers()
-            )
-            assert alpha_status.json() == {"status": "OFF"}
-            assert beta_status.json() == {"status": "ON"}
-    finally:
-        clear_queue_context()
+        alpha_status = client.get("/Alpha/switch/status", headers=create_mss_headers())
+        beta_status = client.get("/Beta/switch/status", headers=create_mss_headers())
+        assert alpha_status.json() == {"status": "OFF"}
+        assert beta_status.json() == {"status": "ON"}
 
 
 def test_heavy_worker_waits_while_its_device_is_off(
@@ -192,7 +180,6 @@ def test_heavy_worker_waits_while_its_device_is_off(
     import settings
     from app.api import app
     from app.api.worker import PreloadedRqWorker
-    from app.libs.queues.dtos import clear_queue_context
     from app.services.scheduler import DeviceResources
 
     load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
@@ -212,15 +199,12 @@ def test_heavy_worker_waits_while_its_device_is_off(
         [Queue("Beta_preprocessing", connection=redis_client)],
         connection=redis_client,
     )
-    try:
-        with get_test_client(app) as client:
-            client.post("/Alpha/switch/off", headers=create_mss_headers(is_admin=True))
+    with get_test_client(app) as client:
+        client.post("/Alpha/switch/off", headers=create_mss_headers(is_admin=True))
 
-        with pytest.raises(StopRequested):
-            alpha_worker.check_for_suspension(True)
-        beta_worker.check_for_suspension(True)
-    finally:
-        clear_queue_context()
+    with pytest.raises(StopRequested):
+        alpha_worker.check_for_suspension(True)
+    beta_worker.check_for_suspension(True)
 
 
 def test_each_device_has_its_own_jobs(tmp_path, monkeypatch, redis_client):
@@ -240,18 +224,15 @@ def test_each_device_has_its_own_jobs(tmp_path, monkeypatch, redis_client):
 
 def test_each_device_has_its_own_executor_lock(tmp_path, monkeypatch):
     import settings
-    from app.libs.queues.dtos import clear_queue_context, get_queue_context
+    from app.services.scheduler import DeviceResources
 
     load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
-    try:
-        with settings.using_device("Alpha"):
-            alpha_lock_file = get_queue_context()["executor_lock_file"]
-        with settings.using_device("Beta"):
-            beta_lock_file = get_queue_context()["executor_lock_file"]
+    with settings.using_device("Alpha"):
+        alpha = DeviceResources.from_settings(settings.get_device_settings())
+    with settings.using_device("Beta"):
+        beta = DeviceResources.from_settings(settings.get_device_settings())
 
-        assert alpha_lock_file != beta_lock_file
-    finally:
-        clear_queue_context()
+    assert alpha.executor_lock.lock_file != beta.executor_lock.lock_file
 
 
 @pytest.mark.parametrize(
@@ -277,7 +258,6 @@ def test_each_route_group_reaches_the_device_its_path_names(
         get_verified_mss_admin_user_id,
         get_verified_mss_user_id,
     )
-    from app.libs.queues.dtos import clear_queue_context
     from app.utils.exc import NotAuthenticatedError
 
     load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
@@ -295,10 +275,7 @@ def test_each_route_group_reaches_the_device_its_path_names(
     )
     monkeypatch.setitem(app.dependency_overrides, get_bearer_token, record_device)
     mocker.patch.object(MssClient, "send_event")
-    try:
-        with get_test_client(app) as client:
-            client.get(f"/Beta{path}")
+    with get_test_client(app) as client:
+        client.get(f"/Beta{path}")
 
-        assert reached_devices == ["Beta"]
-    finally:
-        clear_queue_context()
+    assert reached_devices == ["Beta"]

@@ -26,7 +26,7 @@ from rq import Queue as RqQueue
 from rq import SimpleWorker, Worker
 from rq.timeouts import TimerDeathPenalty
 
-from app.api.worker import preload_worker_globals
+from app.api.worker import PreloadedRqWorker
 from app.services.scheduler.queues import QueuePool
 from app.tests.utils.env import (
     TEST_DEFAULT_PREFIX,
@@ -41,14 +41,11 @@ from app.tests.utils.env import (
 )
 
 
-class PreloadedSimpleWorker(SimpleWorker):
-    """RQ SimpleWorker used in all test environments (no forking)."""
+class PreloadedSimpleWorker(PreloadedRqWorker, SimpleWorker):
+    """The app's worker, running each job in the tests' own process, without forking"""
 
     death_penalty_class = TimerDeathPenalty
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        preload_worker_globals(should_load_executor=True)
+    should_wait_while_offline = False
 
 
 def get_rq_pool_worker(queue_pool: QueuePool) -> Union[Worker, SimpleWorker]:

@@ -19,13 +19,12 @@ from app.services import booking, scheduler
 from app.services.booking import MSSTokenClaims, NewUserInfo, UserProfile
 from app.utils.exc import UnauthorizedError
 
-from ...libs.queues.dtos import QueueContext
 from ...services.external.mss import encrypt_mss_jwt_token
 from ...utils.messages import GeneralMessage
 from ..dependencies import (
     DeviceResourcesDep,
+    check_device_is_online,
     get_booking_db,
-    get_queue_context_if_online,
     get_verified_mss_admin_user_id,
     get_verified_mss_user_id,
 )
@@ -54,18 +53,16 @@ async def view_profile(
     return booking.get_user_profile(db_engine, user_id)
 
 
-@router.delete("/me")
+@router.delete("/me", dependencies=[Depends(check_device_is_online)])
 async def delete_profile(
     device: DeviceResourcesDep,
     user_id: str = Depends(get_verified_mss_user_id),
-    context: QueueContext = Depends(get_queue_context_if_online),
 ) -> GeneralMessage:
     """Deletes the profile of the current user
 
     Args:
         device: what the device runs on
         user_id: the user_id as submitted by MSS
-        context: the queue context of the queues for all jobs
 
     Raises:
         ItemNotFoundError (404): user not found
@@ -73,7 +70,7 @@ async def delete_profile(
     Returns:
         A general message object with status
     """
-    scheduler.delete_user_profile(device, context, user_id=user_id)
+    scheduler.delete_user_profile(device, user_id=user_id)
     return GeneralMessage(status="success", detail="Profile deleted")
 
 
@@ -138,12 +135,15 @@ async def create_user(
 
 
 @router.delete(
-    "/users/{user_id}", dependencies=[Depends(get_verified_mss_admin_user_id)]
+    "/users/{user_id}",
+    dependencies=[
+        Depends(get_verified_mss_admin_user_id),
+        Depends(check_device_is_online),
+    ],
 )
 async def remove_user(
     device: DeviceResourcesDep,
     user_id: str,
-    context: QueueContext = Depends(get_queue_context_if_online),
 ) -> GeneralMessage:
     """Deletes the user of the given user_id
 
@@ -152,7 +152,6 @@ async def remove_user(
     Args:
         device: what the device runs on
         user_id: the unique identifier of the user
-        context: the context of the queues for all jobs
 
     Raises:
         ItemNotFoundError: user not found
@@ -160,7 +159,7 @@ async def remove_user(
     Returns:
         A general message object with status
     """
-    scheduler.delete_user_profile(device, context, user_id=user_id)
+    scheduler.delete_user_profile(device, user_id=user_id)
     return GeneralMessage(status="success", detail="User deleted")
 
 

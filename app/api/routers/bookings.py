@@ -19,13 +19,12 @@ from sqlalchemy import Engine
 from app.services import booking, scheduler
 from app.services.booking import Booking, BookingsConfig, NewBookingInfo
 
-from ...libs.queues.dtos import QueueContext
 from ...utils.messages import GeneralMessage
 from ...utils.sql_db import convert_http_sort_to_db_sort
 from ..dependencies import (
     DeviceResourcesDep,
+    check_device_is_online,
     get_booking_db,
-    get_queue_context_if_online,
     get_unverified_mss_is_admin,
     get_verified_mss_user_id,
 )
@@ -34,11 +33,10 @@ from ..dtos import PaginatedListResponse
 router = APIRouter()
 
 
-@router.post("/bookings")
+@router.post("/bookings", dependencies=[Depends(check_device_is_online)])
 async def create_booking(
     device: DeviceResourcesDep,
     data: NewBookingInfo,
-    context: QueueContext = Depends(get_queue_context_if_online),
     user_id: str = Depends(get_verified_mss_user_id),
 ) -> Booking:
     """Creates a booking for the user of the given token
@@ -46,7 +44,6 @@ async def create_booking(
     Args:
         device: what the device runs on
         user_id: the MSS user_id as sent by MSS
-        context: the queue context for the queues
         data: the information about the new booking
 
     Returns:
@@ -54,12 +51,12 @@ async def create_booking(
     """
     booking.get_or_create_user(device.bookings_db, user_id)
 
-    return scheduler.submit_booking(device, context, user_id=user_id, booking_info=data)
+    return scheduler.submit_booking(device, user_id=user_id, booking_info=data)
 
 
 @router.post(
     "/bookings/{booking_id}/cancel",
-    dependencies=[Depends(get_queue_context_if_online)],
+    dependencies=[Depends(check_device_is_online)],
 )
 async def cancel_booking(
     device: DeviceResourcesDep,

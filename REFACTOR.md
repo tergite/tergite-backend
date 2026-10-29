@@ -340,6 +340,10 @@ the connections. This step makes the device explicit.
    resources. `QueueContext` (`app/libs/queues/dtos.py:569`), a dict of URLs, folders and timeouts handed to every
    task so that each rebuilds engines from URLs (`tasks.py:200`), and copied per request to set `force_normal_queue`
    (`api/__init__.py:535`), goes.
+   *Done:* the worker's jobs are `DeviceJob`s, which call their task with the device's resources first, set by the
+   worker before it forks, so that the callbacks a dead work horse leaves to it have them too. `force_normal_queue`
+   is the preprocessing task's own argument. `BCC_IS_ASYNC`, which ran a job in place, with no worker to give it
+   the resources, goes first, in its own commit; the online check is a route dependency.
 4. **The registries go**, one per commit, each replaced by its field on `DeviceResources`: `_REDIS_CONNECTIONS`
    (`app/utils/redis.py:20`), `_ENGINE_CACHE` (`app/utils/sql_db.py:23`; closing now disposes the engine),
    `_REQUEST_LOGS_STORES` (`app/utils/api.py:50`), `_QUEUE_CONTEXTS` (`app/libs/queues/dtos.py:77`), `_JOB_STORES`

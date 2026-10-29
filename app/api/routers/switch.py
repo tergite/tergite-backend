@@ -17,7 +17,7 @@ from app.services import devices
 from ...utils.messages import GeneralMessage
 from ..dependencies import (
     DeviceResourcesDep,
-    get_queue_context_if_online,
+    check_device_is_online,
     get_verified_mss_admin_user_id,
     get_verified_mss_user_id,
 )
@@ -30,7 +30,7 @@ router = APIRouter()
     "/switch/off",
     dependencies=[
         Depends(get_verified_mss_admin_user_id),
-        Depends(get_queue_context_if_online),
+        Depends(check_device_is_online),
     ],
 )
 def switch_off(device: DeviceResourcesDep) -> GeneralMessage:

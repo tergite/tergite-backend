@@ -372,10 +372,12 @@ class RunnerQueue(Queue):
             self._static_queue.pop_job(storage_id)
 
 
-def _run_next_job(static_queue_name, exec_func_path: str):
+def _run_next_job(device_resources: Any, static_queue_name: str, exec_func_path: str):
     """A wrapper around the execution function to do some book-keeping on next job on the queue
 
     Args:
+        device_resources: what the job's device runs on, which the worker passes in first
+            and the execution function takes first too
         static_queue_name: the name of the static queue
         exec_func_path: the import path of the function that executes this job
     """
@@ -383,7 +385,7 @@ def _run_next_job(static_queue_name, exec_func_path: str):
     static_queue = StaticQueue(static_queue_name, connection=connection)
     job, args, kwargs = static_queue.next()
     exec_func = import_func(exec_func_path)
-    return exec_func(job, *args, **kwargs)
+    return exec_func(device_resources, job, *args, **kwargs)
 
 
 def _to_str(value: Union[str, bytes]) -> str:

@@ -10,7 +10,6 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Routes for the jobs: their upload, status, cancellation and removal"""
-import copy
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile
@@ -19,13 +18,13 @@ from typing_extensions import Annotated
 from app.services import scheduler
 from app.services.booking import MSSTokenClaims
 
-from ...libs.queues.dtos import Job, JobStatus, QueueContext
+from ...libs.queues.dtos import Job, JobStatus
 from ...utils.messages import GeneralMessage
 from ..dependencies import (
     DeviceResourcesDep,
     MSSAuthDetails,
+    check_device_is_online,
     get_mss_token_claims_dep,
-    get_queue_context_if_online,
     get_unverified_mss_is_admin,
     get_verified_mss_details,
     get_verified_mss_user_id,
@@ -36,10 +35,9 @@ from ..dtos import CancellationDetails, PaginatedListResponse
 router = APIRouter()
 
 
-@router.post("/jobs")
+@router.post("/jobs", dependencies=[Depends(check_device_is_online)])
 async def submit_job(
     device: DeviceResourcesDep,
-    context: QueueContext = Depends(get_queue_context_if_online),
     upload_file: Annotated[UploadFile, Depends(validate_job_file)] = File(...),
     token_claims: MSSTokenClaims = Depends(get_mss_token_claims_dep(job_exists=False)),
     force_normal_queue: bool = Query(default=False),
@@ -50,21 +48,20 @@ async def submit_job(
         device: what the device runs on
         upload_file: the quantum job file uploaded
         token_claims: the user_id and job_id associated with this request
-        context: the queue context for the job in the queue
         force_normal_queue: whether to force the job to run on the normal queue or not
 
     Returns:
         the submitted job
     """
-    context = copy.deepcopy(context)
-    context["force_normal_queue"] = force_normal_queue
-
     return scheduler.submit_job_file(
-        device, context, upload_file=upload_file, credentials=token_claims
+        device,
+        upload_file=upload_file,
+        credentials=token_claims,
+        should_force_normal_queue=force_normal_queue,
     )
 
 
-@router.get("/jobs/{job_id}", dependencies=[Depends(get_queue_context_if_online)])
+@router.get("/jobs/{job_id}", dependencies=[Depends(check_device_is_online)])
 async def view_job(
     device: DeviceResourcesDep,
     job_id: str,
@@ -87,9 +84,7 @@ async def view_job(
     )
 
 
-@router.post(
-    "/jobs/{job_id}/cancel", dependencies=[Depends(get_queue_context_if_online)]
-)
+@router.post("/jobs/{job_id}/cancel", dependencies=[Depends(check_device_is_online)])
 async def cancel_job(
     device: DeviceResourcesDep,
     job_id: str,
@@ -121,7 +116,7 @@ async def cancel_job(
     return {"status": "success", "detail": f"Job of id {job_id} cancelled"}
 
 
-@router.delete("/jobs/{job_id}", dependencies=[Depends(get_queue_context_if_online)])
+@router.delete("/jobs/{job_id}", dependencies=[Depends(check_device_is_online)])
 async def remove_job(
     device: DeviceResourcesDep,
     job_id: str,
@@ -148,7 +143,7 @@ async def remove_job(
     return {"status": "success", "detail": f"Job of id {job_id} deleted"}
 
 
-@router.get("/jobs", dependencies=[Depends(get_queue_context_if_online)])
+@router.get("/jobs", dependencies=[Depends(check_device_is_online)])
 async def view_jobs(
     device: DeviceResourcesDep,
     user_id: str = Depends(get_verified_mss_user_id),

@@ -24,11 +24,6 @@ from sqlalchemy import Engine
 
 import settings
 
-from ..libs.queues.dtos import (
-    QueueContext,
-    clear_queue_context,
-    get_queue_context,
-)
 from ..services.booking import (
     MSSTokenClaims,
     get_user_job_id_pair_from_token,
@@ -100,7 +95,6 @@ async def lifespan(app: FastAPI):
     app.state.device_resources.clear()
     clear_queue_pool(ignore_errors=True)
     clear_quantum_executor(ignore_errors=True)
-    clear_queue_context()
     disconnect_mss_client(ignore_errors=True)
     clear_redis_connections(ignore_errors=True)
     clear_jobs_stores_registry()
@@ -120,18 +114,14 @@ def get_booking_db(device: DeviceResourcesDep) -> Engine:
     return device.bookings_db
 
 
-def get_queue_context_if_online(
-    device: DeviceResourcesDep,
-    context: QueueContext = Depends(get_queue_context),
-) -> QueueContext:
-    """Dependency injector to retrieve the queue context only if online
+def check_device_is_online(device: DeviceResourcesDep) -> None:
+    """Refuses the request while the device is switched off
 
     Raises:
         IsOfflineError: {device name} is offline
     """
     if is_offline(device.redis, device.settings.default_prefix):
         raise IsOfflineError(f"{device.settings.default_prefix} is offline")
-    return context
 
 
 def get_job_id_dependency(job_id_field: str):
@@ -445,4 +435,4 @@ def _start_device(device: DeviceResources) -> None:
         backend_config=device.executor_options.backend_config,
         mss_client=device.mss_client,
     )
-    init_recalibration(device, get_queue_context())
+    init_recalibration(device)

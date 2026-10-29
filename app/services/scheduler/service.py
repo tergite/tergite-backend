@@ -28,7 +28,7 @@ from pydantic import ValidationError
 from rq import exceptions as rq_errors
 from sqlmodel import or_
 
-from ...libs.queues.dtos import Job, JobStatus, QueueContext, Stage, StorageID
+from ...libs.queues.dtos import Job, JobStatus, Stage, StorageID
 from ...utils.datetime import get_utc_now, to_utc, utc_now_str
 from ...utils.exc import (
     BookingAlreadyActiveError,
@@ -66,7 +66,6 @@ _TASKS_MODULE = f"{__package__}.tasks"
 
 def submit_booking(
     device: DeviceResources,
-    context: QueueContext,
     user_id: str,
     booking_info: NewBookingInfo,
 ) -> Booking:
@@ -91,7 +90,6 @@ def submit_booking(
 
     Args:
         device: what the device runs on
-        context: the queue context of the job
         booking_info: the details for the booking
         user_id: the ID of user submitting the booking
 
@@ -107,7 +105,6 @@ def submit_booking(
         f"{_TASKS_MODULE}.reset_idleness_timer",
         booking_id=booking.id,
         end_utc=booking.end_utc,
-        context=context,
         job_id=booking.start_event_id,
     )
 
@@ -117,7 +114,6 @@ def submit_booking(
         booking.end_utc,
         f"{_TASKS_MODULE}.post_booking_cleanup",
         booking_id=booking.id,
-        context=context,
         job_id=booking.end_event_id,
     )
 
@@ -176,16 +172,16 @@ def cancel_booking(
 
 def submit_job_file(
     device: DeviceResources,
-    context: QueueContext,
     upload_file: UploadFile,
     credentials: MSSTokenClaims,
+    should_force_normal_queue: bool = False,
 ) -> Job:
     """Submits the job for processing
 
     On submission, the job is processed to determine how long it will take to execute.
     Then:
     In case there is a booking that is active at the current time:
-        - if force_normal_queue is True:
+        - if should_force_normal_queue:
             - Push the job to the waitlist
         - else if the user is owner of the current booking:
             - reset the booked_execution queue idle time counter
@@ -204,9 +200,9 @@ def submit_job_file(
 
     Args:
         device: what the device runs on
-        context: the context of the queue for the job
         upload_file: the job file containing the job to submit for the next steps of processing
         credentials: MSS login details as got from the headers and the parameters or body
+        should_force_normal_queue: whether a booker's job is to wait for the normal queue
 
     Returns:
         the submitted job
@@ -248,9 +244,9 @@ def submit_job_file(
 
     device.queues.preprocessing.enqueue(
         job,
-        context,
         booking_id=booking_id,
         job_file=job_file_path,
+        should_force_normal_queue=should_force_normal_queue,
         job_id=get_rq_job_id(job_id, Stage.PRE_PROC_Q),
     )
 
@@ -402,9 +398,7 @@ def get_many_jobs(
     return job_store.find_by_index(filters, skip=skip, limit=limit)
 
 
-def delete_user_profile(
-    device: DeviceResources, context: QueueContext, user_id: str
-) -> None:
+def delete_user_profile(device: DeviceResources, user_id: str) -> None:
     """Deletes the user profile for the given user_id
 
     On top of deleting the user, the user's active and pending bookings
@@ -412,7 +406,6 @@ def delete_user_profile(
 
     Args:
         device: what the device runs on
-        context: the context of the queue for all jobs
         user_id: the ID of the user whose profile is to be deleted
 
     Raises:
@@ -454,7 +447,6 @@ def delete_user_profile(
             device.queues.general.enqueue(
                 f"{_TASKS_MODULE}.post_booking_cleanup",
                 booking_id=booking.id,
-                context=context,
             )
 
     # delete the bookings in the database
@@ -466,7 +458,6 @@ def delete_user_profile(
 
 def init_recalibration(
     device: DeviceResources,
-    context: QueueContext,
     start_timestamp: Optional[datetime] = None,
     interval: Optional[float] = None,
 ) -> GeneralMessage:
@@ -474,7 +465,6 @@ def init_recalibration(
 
     Args:
         device: what the device runs on
-        context: the context of the queue
         start_timestamp: the timestamp when recalibration should start; defaults to None meaning as soon as possible.
         interval: the interval in seconds between two recalibrations; defaults to None,
             meaning use the default recalibration interval.
@@ -496,13 +486,11 @@ def init_recalibration(
             # rq reads a naive datetime as the server's local time; the API means UTC
             datetime=to_utc(start_timestamp),
             f=f"{_TASKS_MODULE}.recalibrate",
-            context=context,
             interval=interval,
         )
     else:
         job = device.queues.recalibration.enqueue(
             f=f"{_TASKS_MODULE}.recalibrate",
-            context=context,
             interval=interval,
         )
 

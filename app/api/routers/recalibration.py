@@ -17,12 +17,11 @@ from fastapi import APIRouter, Depends, Query
 
 from app.services import scheduler
 
-from ...libs.queues.dtos import QueueContext
 from ...services.scheduler import RecalibrationInfo
 from ...utils.messages import GeneralMessage
 from ..dependencies import (
     DeviceResourcesDep,
-    get_queue_context_if_online,
+    check_device_is_online,
     get_verified_mss_admin_user_id,
 )
 
@@ -30,11 +29,14 @@ router = APIRouter()
 
 
 @router.post(
-    "/recalibration/init", dependencies=[Depends(get_verified_mss_admin_user_id)]
+    "/recalibration/init",
+    dependencies=[
+        Depends(get_verified_mss_admin_user_id),
+        Depends(check_device_is_online),
+    ],
 )
 async def initialize_recalibration(
     device: DeviceResourcesDep,
-    context: QueueContext = Depends(get_queue_context_if_online),
     start_timestamp: Optional[datetime] = Query(None),
     interval: Optional[float] = Query(None),
 ) -> GeneralMessage:
@@ -44,7 +46,6 @@ async def initialize_recalibration(
 
     Args:
         device: what the device runs on
-        context: the queue context for the recalibration
         start_timestamp: the start time of the recalibration; default = None i.e. straight away
         interval: the recalibration interval; default = None i.e. no repeat
 
@@ -52,7 +53,7 @@ async def initialize_recalibration(
         the status of the recalibration
     """
     return scheduler.init_recalibration(
-        device, context, start_timestamp=start_timestamp, interval=interval
+        device, start_timestamp=start_timestamp, interval=interval
     )
 
 
@@ -71,7 +72,7 @@ async def get_recalibration_info(device: DeviceResourcesDep) -> RecalibrationInf
     "/recalibration/cancel",
     dependencies=[
         Depends(get_verified_mss_admin_user_id),
-        Depends(get_queue_context_if_online),
+        Depends(check_device_is_online),
     ],
 )
 async def cancel_recalibration(

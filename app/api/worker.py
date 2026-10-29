@@ -13,6 +13,7 @@
 """A worker file that is preloaded with the heavy libraries etc"""
 import time
 from importlib import import_module
+from typing import Any, Optional
 
 from rq import Queue, Worker
 from rq.job import Job
@@ -20,13 +21,22 @@ from rq.worker import StopRequested
 
 import settings
 
-from ..libs.queues.dtos import get_queue_context
 from ..services.devices import is_offline, save_all_device_params
 from ..services.scheduler import (
     DeviceResources,
     get_executor_and_options,
 )
 from ..utils.config import create_device_folders
+
+
+class DeviceJob(Job):
+    """An RQ job whose function is passed, before its own arguments, the resources of the
+    device whose queue it is on, which the worker gives it"""
+
+    device_resources: Optional[DeviceResources] = None
+
+    def _execute(self) -> Any:
+        return self.func(self.device_resources, *self.args, **self.kwargs)
 
 
 class PreloadedRqWorker(Worker):
@@ -38,7 +48,7 @@ class PreloadedRqWorker(Worker):
     should_wait_while_offline = True
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__(*args, job_class=DeviceJob, **kwargs)
         self.device_resources: dict[str, DeviceResources] = {}
         for device in {_get_device_of_queue(queue.name) for queue in self.queues}:
             with settings.using_device(device):
@@ -46,7 +56,12 @@ class PreloadedRqWorker(Worker):
                     should_load_executor=self.should_preload_executor
                 )
 
-    def perform_job(self, job: Job, queue: Queue) -> bool:
+    def execute_job(self, job: DeviceJob, queue: Queue) -> None:
+        # before a forking worker forks, as the work horse's death runs the callbacks here
+        job.device_resources = self.device_resources[_get_device_of_queue(queue.name)]
+        super().execute_job(job, queue)
+
+    def perform_job(self, job: DeviceJob, queue: Queue) -> bool:
         with settings.using_device(_get_device_of_queue(queue.name)):
             return super().perform_job(job, queue)
 
@@ -93,7 +108,6 @@ def preload_worker_globals(should_load_executor: bool) -> DeviceResources:
             backend_config=executor_options.backend_config,
             mss_client=device.mss_client,
         )
-    get_queue_context()
     return device
 
 

@@ -22,7 +22,7 @@ import toml
 from redis import Redis
 from rq.job import Job as RqJob
 
-from app.libs.queues.dtos import get_queue_context
+import settings
 from app.tests.utils.api import (
     create_mss_headers,
 )
@@ -75,7 +75,7 @@ def test_init_recalibration_with_interval(
         users = create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
-        queue_prefix = get_queue_context()["queue_prefix"]
+        queue_prefix = settings.get_device_settings().default_prefix
         queue_name = f"{queue_prefix}_recalibration"
         queue = get_queue_by_name(worker, queue_name)
         initial_interval = TEST_DEFAULT_RECALIBRATION_INTERVAL
@@ -144,7 +144,7 @@ def test_init_recalibration_without_interval(
         users = create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
-        queue_prefix = get_queue_context()["queue_prefix"]
+        queue_prefix = settings.get_device_settings().default_prefix
         queue_name = f"{queue_prefix}_recalibration"
         queue = get_queue_by_name(worker, queue_name)
         initial_interval = TEST_DEFAULT_RECALIBRATION_INTERVAL
@@ -203,7 +203,7 @@ def test_init_recalibration_with_start_time(
         users = create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
-        queue_prefix = get_queue_context()["queue_prefix"]
+        queue_prefix = settings.get_device_settings().default_prefix
         queue_name = f"{queue_prefix}_recalibration"
         queue = get_queue_by_name(worker, queue_name)
         initial_interval = TEST_DEFAULT_RECALIBRATION_INTERVAL
@@ -250,7 +250,7 @@ def test_get_recalibration_info(client, redis_conn: Redis, worker, fake_clock):
         users = create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
-        queue_prefix = get_queue_context()["queue_prefix"]
+        queue_prefix = settings.get_device_settings().default_prefix
         queue_name = f"{queue_prefix}_recalibration"
         queue = get_queue_by_name(worker, queue_name)
         initial_interval = TEST_DEFAULT_RECALIBRATION_INTERVAL
@@ -366,7 +366,7 @@ def test_cancel_default_recalibration(client, redis_conn: Redis, worker):
         users = create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
-        queue_prefix = get_queue_context()["queue_prefix"]
+        queue_prefix = settings.get_device_settings().default_prefix
         queue_name = f"{queue_prefix}_recalibration"
         queue = get_queue_by_name(worker, queue_name)
 
@@ -392,7 +392,9 @@ def test_init_recalibration_reads_a_naive_start_time_as_utc(
     time.tzset()
     try:
         with client as client:
-            queue_name = f"{get_queue_context()['queue_prefix']}_recalibration"
+            queue_name = (
+                f"{settings.get_device_settings().default_prefix}_recalibration"
+            )
             registry = get_queue_by_name(worker, queue_name).scheduled_job_registry
             start_utc = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(
                 hours=1
@@ -414,7 +416,7 @@ def test_init_recalibration_reads_a_naive_start_time_as_utc(
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
 def test_failed_recalibration_schedules_the_next(client, redis_conn, worker, mocker):
     with client as client:
-        queue_name = f"{get_queue_context()['queue_prefix']}_recalibration"
+        queue_name = f"{settings.get_device_settings().default_prefix}_recalibration"
         queue = get_queue_by_name(worker, queue_name)
         failing_executor = Mock(recalibrate=Mock(side_effect=RuntimeError("no device")))
         mocker.patch(
@@ -433,7 +435,7 @@ def test_cancel_recalibration_while_one_runs(client, redis_conn, worker, mocker)
     """POST /recalibration/cancel during a recalibration leaves none to follow it"""
     with client as client:
         user_id = create_many_users(client, raw_users=USERS[:1])[0]["id"]
-        queue_name = f"{get_queue_context()['queue_prefix']}_recalibration"
+        queue_name = f"{settings.get_device_settings().default_prefix}_recalibration"
         queue = get_queue_by_name(worker, queue_name)
 
         def cancel_recalibration():
@@ -459,7 +461,7 @@ def test_cancel_restarted_recalibration(client, redis_conn: Redis, worker):
         users = create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
-        queue_prefix = get_queue_context()["queue_prefix"]
+        queue_prefix = settings.get_device_settings().default_prefix
         queue_name = f"{queue_prefix}_recalibration"
         queue = get_queue_by_name(worker, queue_name)
 
