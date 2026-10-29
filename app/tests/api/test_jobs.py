@@ -176,6 +176,8 @@ def test_submit_jobs_no_booking(
 ):
     """POST '/jobs' when there is no booking should run the jobs in FIFO (first in, first out)"""
     with client as client:
+        redis_connections_at_start = redis_conn_spy.call_count
+        sql_engines_at_start = sql_engine_spy.call_count
         # create many users and their tokens
         users = create_many_users(client)
 
@@ -251,14 +253,12 @@ def test_submit_jobs_no_booking(
             assert post_processing.finish_timestamp <= final.start_timestamp
             assert final.start_timestamp < final.finish_timestamp
 
-        # Connection-caching assertions: connections may be established during
-        # fixture setup (0 calls) or once fresh after the pre-test cache clear
-        # (1 call). Either way caching works — no per-job connection creation.
-        # MSS connects lazily on the first send.
-        assert redis_conn_spy.call_count <= 1
+        # no connection per job: the app's and the worker's are made at their start-up,
+        # MSS's lazily on the first send, and one by the tuner for the recalibration the
+        # start-up queued
+        assert redis_conn_spy.call_count <= redis_connections_at_start + 1
         assert mss_conn_spy.call_count <= 1
-        # SQL engine: created at most once per test (initial setup); never per-job.
-        assert sql_engine_spy.call_count <= 1
+        assert sql_engine_spy.call_count == sql_engines_at_start
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
@@ -865,6 +865,7 @@ def test_view_job(
     job_file_path = save_job_file(folder=jobs_folder, job=job)
 
     with client as client:
+        redis_connections_at_start = redis_conn_spy.call_count
         user_id, _ = create_user(client, user=user)
         other_user_id, _ = create_user(
             client, user={**user, "email": f"extra-{user["email"]}"}
@@ -906,7 +907,7 @@ def test_view_job(
             storage_id=f"{job_id}:::{complete_job.estimated_duration}",
         )
         assert complete_job == expected_completed_job
-        assert redis_conn_spy.call_count <= 1
+        assert redis_conn_spy.call_count <= redis_connections_at_start + 1
 
 
 @pytest.mark.parametrize("client, worker, job, device_name, user", VIEW_JOB_PARAMS)
@@ -1257,6 +1258,7 @@ def test_cancel_job_via_mss(
 ):
     """An MSS POST to '/jobs/{id}/cancel' cancels the job of the job_id if the job belongs to the current user"""
     with client as client:
+        redis_connections_at_start = redis_conn_spy.call_count
         cancellation_reason = "just testing"
 
         users = create_many_users(client, raw_users=USERS[:1])
@@ -1318,7 +1320,7 @@ def test_cancel_job_via_mss(
         )
         assert response.status_code == 200
         assert job_in_db == expected_job
-        assert redis_conn_spy.call_count <= 1
+        assert redis_conn_spy.call_count <= redis_connections_at_start + 1
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
@@ -1327,6 +1329,7 @@ def test_cancel_job_directly(
 ):
     """A POST to '/jobs/{id}/cancel' with JWT token cancels the job of the job_id if the job belongs to user"""
     with client as client:
+        redis_connections_at_start = redis_conn_spy.call_count
         cancellation_reason = "just testing"
 
         users = create_many_users(client, raw_users=USERS[:1])
@@ -1389,7 +1392,7 @@ def test_cancel_job_directly(
         )
         assert response.status_code == 200
         assert job_in_db == expected_job
-        assert redis_conn_spy.call_count <= 1
+        assert redis_conn_spy.call_count <= redis_connections_at_start + 1
 
 
 @pytest.mark.parametrize("patch_target, patch_kwargs", _FAILING_STAGE_PATCHES)

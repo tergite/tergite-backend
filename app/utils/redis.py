@@ -14,48 +14,11 @@
 import redis
 from pydantic import RedisDsn
 
-import settings
-from app.utils.logging import err_logger
 
-_REDIS_CONNECTIONS: dict[str, redis.Redis] = {}
-
-
-def get_redis_connection(url: RedisDsn | str | None = None) -> redis.Redis:
-    """Gets the redis connection
-
-    Args:
-        url: the URL to the redis server; default = settings.RQ_REDIS_URL
-
-    Returns:
-        the redis connection
-    """
-    url = f"{url or settings.RQ_REDIS_URL}"
-
-    connection = _REDIS_CONNECTIONS.get(url)
-
-    if connection is None:
-        kwargs = {}
-        if url.startswith("rediss:"):
-            kwargs["ssl"] = True
-
-        connection = redis.Redis.from_url(url, **kwargs)
-        _REDIS_CONNECTIONS[url] = connection
-    return connection
-
-
-def clear_redis_connections(ignore_errors: bool = False) -> None:
-    """Clears the redis connections
-
-    Args:
-        ignore_errors: If True, ignore any errors raised by redis connections
-    """
-    for connection in _REDIS_CONNECTIONS.values():
-        try:
-            connection.close()
-        except Exception as exp:
-            if ignore_errors:
-                err_logger.warning(f"Close redis connection error: {exp}")
-            else:
-                raise exp
-
-    _REDIS_CONNECTIONS.clear()
+def get_redis_connection(url: RedisDsn | str) -> redis.Redis:
+    """Gets a new connection to the redis server of the given URL"""
+    url = f"{url}"
+    kwargs = {}
+    if url.startswith("rediss:"):
+        kwargs["ssl"] = True
+    return redis.Redis.from_url(url, **kwargs)

@@ -351,6 +351,11 @@ the connections. This step makes the device explicit.
    `_EXECUTOR_OPTIONS` and `_QUANTUM_EXECUTORS_AND_OPTS` (`scheduler/utils.py:50-51`), `_MSS_CLIENTS`
    (`mss/service.py:30`). The key caches `_MSS_PUBLIC_KEYS` (`utils/api.py:49`) and `_BCC_PRIVATE_KEYS`
    (`mss/auth.py:24`) give way to the loaded keys.
+   *Done, in the reverse order:* each registry's getter fed on the Redis one, so that went last. The request log
+   store, an API concern, is kept per device on `app.state` beside the resources; the executor, built by the heavy
+   worker alone, is an optional field the worker sets. `close_device_resources` closes the connections, the engine
+   and the executor. The lifespan builds a device's resources inside its start-up lock, taken on a connection of
+   its own, as building them creates the bookings tables, which API workers starting together would race on.
 5. **No `param or settings.X`**, one package per commit: `utils/redis.py:32`, `utils/api.py:275`,
    `utils/compat.py:53, 67`, `base/executor.py:296`, `quantify/executor.py:100-107`, `booking/store.py:29`,
    `booking/service.py:349-354, 377, 461`, `scheduler/store.py:44-52`, `scheduler/utils.py:158, 271`.

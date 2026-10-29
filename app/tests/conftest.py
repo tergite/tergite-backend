@@ -42,16 +42,6 @@ def _run_in_the_test_root():
     os.chdir(project_root)
 
 
-@pytest.fixture(autouse=True)
-def _clear_connection_caches():
-    """Reset all module-level connection caches before every test."""
-    from app.utils.redis import clear_redis_connections
-
-    clear_redis_connections(ignore_errors=True)
-    yield
-    clear_redis_connections(ignore_errors=True)
-
-
 @pytest.fixture(autouse=True, scope="session")
 def _close_cached_instruments():
     """Closes the dummy clusters MockQuantifyExecutor keeps from test to test"""

@@ -52,7 +52,7 @@ from ..utils.exc import (
     UnauthorizedError,
 )
 from ..utils.logging import set_up_logging
-from ..utils.redis import clear_redis_connections, get_redis_connection
+from ..utils.redis import get_redis_connection
 from ..utils.strings import validate_uuid4_str
 from .middleware import get_request_logs_store
 
@@ -68,25 +68,29 @@ async def lifespan(app: FastAPI):
     app.state.device_resources = {}
     app.state.request_logs_stores = {}
     for device in settings.get_device_names():
-        create_device_folders(settings.get_device_settings(device))
-        # one API worker at a time, as starting a device restarts its recalibration
-        with (
-            settings.using_device(device),
-            # a start-up longer than the lock, as when MSS is down, outlives it unharmed
-            get_redis_connection().lock(
-                f"{device}:start-up",
-                timeout=_START_UP_LOCK_SECONDS,
-                raise_on_release_error=False,
-            ),
-        ):
-            app.state.device_resources[device] = DeviceResources.from_settings(
-                settings.get_device_settings(device)
-            )
-            app.state.request_logs_stores[device] = get_request_logs_store(
-                app.state.device_resources[device].redis,
-                settings.get_device_settings(device),
-            )
-            _start_device(app.state.device_resources[device])
+        device_settings = settings.get_device_settings(device)
+        create_device_folders(device_settings)
+        lock_connection = get_redis_connection(device_settings.rq_redis_url)
+        try:
+            # one API worker at a time, as starting a device creates its tables and
+            # restarts its recalibration
+            with (
+                settings.using_device(device),
+                # a start-up longer than the lock outlives it unharmed
+                lock_connection.lock(
+                    f"{device}:start-up",
+                    timeout=_START_UP_LOCK_SECONDS,
+                    raise_on_release_error=False,
+                ),
+            ):
+                resources = DeviceResources.from_settings(device_settings)
+                app.state.device_resources[device] = resources
+                app.state.request_logs_stores[device] = get_request_logs_store(
+                    resources.redis, device_settings
+                )
+                _start_device(resources)
+        finally:
+            lock_connection.close()
 
     logging.info(f"starting app at {get_utc_now()}")
     yield
@@ -98,7 +102,6 @@ async def lifespan(app: FastAPI):
         close_device_resources(device_resources)
     app.state.device_resources.clear()
     app.state.request_logs_stores.clear()
-    clear_redis_connections(ignore_errors=True)
 
 
 def get_device_resources(request: Request) -> DeviceResources:

@@ -42,7 +42,6 @@ boolean: app/utils/model.py::PartialMeta.model_dump(exclude_none)
 boolean: app/utils/model.py::PartialMeta.model_dump(exclude_unset)
 boolean: app/utils/model.py::PartialMeta.model_dump(round_trip)
 boolean: app/utils/model.py::PartialMeta.model_dump(serialize_as_any)
-boolean: app/utils/redis.py::clear_redis_connections(ignore_errors)
 boolean: app/utils/redis_store.py::Collection.get_all(desc)
 boolean: app/utils/redis_store.py::Schema.model_dump(by_alias)
 boolean: app/utils/redis_store.py::Schema.model_dump(exclude_defaults)
@@ -64,7 +63,6 @@ import-layering: app/services/booking/dtos.py::import settings
 import-layering: app/services/booking/service.py::import settings
 import-layering: app/services/scheduler/utils.py::import settings
 import-layering: app/utils/compat.py::import settings
-import-layering: app/utils/redis.py::import settings
 license-header: app/libs/__init__.py
 license-header: app/libs/qiskit/__init__.py
 license-header: app/libs/qiskit_providers/__init__.py

@@ -17,6 +17,7 @@ from typing import Tuple
 
 import numpy as np
 from qiskit.pulse import Acquire
+from rq import get_current_job
 
 import settings
 from app.libs.qiskit.qobj import PulseQobj
@@ -30,8 +31,6 @@ from app.libs.quantum_executor.qiskit.executor import (
 )
 from app.libs.quantum_executor.utils.logger import ExperimentLogger
 from app.services.scheduler.store import get_jobs_store
-from app.tests.utils.env import TEST_RQ_REDIS_URL
-from app.utils.redis import get_redis_connection
 
 
 class MockQiskitDynamicsExecutor(QiskitDynamicsExecutor):
@@ -56,7 +55,7 @@ class MockQiskitDynamicsExecutor(QiskitDynamicsExecutor):
         inputs_folder = PREPROCESSED_JOB_POOL
         start_timestamp = datetime.now()
         jobs_store = get_jobs_store(
-            get_redis_connection(TEST_RQ_REDIS_URL), settings.get_device_settings()
+            get_current_job().connection, settings.get_device_settings()
         )
         job = jobs_store.get_one(job_id)
         estimated_duration = 0

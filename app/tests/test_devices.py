@@ -57,7 +57,7 @@ def test_each_device_has_its_own_queues(tmp_path, monkeypatch):
     from app.utils.redis import get_redis_connection
 
     load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
-    connection = get_redis_connection()
+    connection = get_redis_connection(settings.get_device_settings().rq_redis_url)
 
     alpha_pool = QueuePool.from_settings(
         settings.get_device_settings("Alpha"), connection
@@ -220,13 +220,15 @@ def test_each_device_has_its_own_jobs(tmp_path, monkeypatch, redis_client):
     job = Job(device="Beta", calibration_date="")
     with settings.using_device("Beta"):
         beta_jobs = get_jobs_store(
-            get_redis_connection(), settings.get_device_settings()
+            get_redis_connection(settings.get_device_settings().rq_redis_url),
+            settings.get_device_settings(),
         )
         beta_jobs.insert(job)
 
     with settings.using_device("Alpha"):
         alpha_jobs = get_jobs_store(
-            get_redis_connection(), settings.get_device_settings()
+            get_redis_connection(settings.get_device_settings().rq_redis_url),
+            settings.get_device_settings(),
         )
         assert not alpha_jobs.exists(job.job_id)
 

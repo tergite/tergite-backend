@@ -83,6 +83,7 @@ def close_device_resources(device: DeviceResources) -> None:
     except Exception as exp:
         err_logger.warning(f"error closing the MSS client: {exp}")
     device.bookings_db.dispose()
+    device.redis.close()
     if device.executor is not None:
         try:
             device.executor.close()
