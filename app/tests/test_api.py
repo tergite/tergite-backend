@@ -48,6 +48,7 @@ from redis import Redis
 from rq import Queue as RqQueue
 from rq import SimpleWorker
 from rq.job import Job as RqJob
+from rq.timeouts import JobTimeoutException
 from starlette.requests import Request
 
 import app.services.scheduler.tasks as scheduler_tasks
@@ -240,6 +241,24 @@ _FAILING_STAGE_PATCHES = [
     (
         "app.services.scheduler.tasks.read_job_from_hdf5",
         {"side_effect": OSError("unreadable results")},
+    ),
+    # RQ kills a job past its queue's timeout by raising this inside it
+    (
+        "app.services.scheduler.tasks.decompress_qobj",
+        {"side_effect": JobTimeoutException("preprocessing timed out")},
+    ),
+    (
+        "app.services.scheduler.tasks.get_quantum_executor",
+        {
+            "return_value": Mock(
+                preprocess=Mock(return_value=(0.2, None)),
+                run=Mock(side_effect=JobTimeoutException("execution timed out")),
+            )
+        },
+    ),
+    (
+        "app.services.scheduler.tasks.read_job_from_hdf5",
+        {"side_effect": JobTimeoutException("postprocessing timed out")},
     ),
 ]
 
@@ -1875,6 +1894,109 @@ def test_admin_cancel_future_booking(client):
 
         assert response.status_code == 200
         assert got == expected
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_booking_may_start_as_another_ends(client):
+    with client as client:
+        user_id, _ = _create_user(client, user=USERS[0])
+        start_utc = datetime.now(timezone.utc) + timedelta(days=1)
+        end_utc = start_utc + timedelta(minutes=10)
+
+        first = _post_booking(client, user_id, start_utc=start_utc, end_utc=end_utc)
+        second = _post_booking(
+            client, user_id, start_utc=end_utc, end_utc=end_utc + timedelta(minutes=10)
+        )
+
+        assert (first.status_code, second.status_code) == (200, 200)
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_booking_across_midnight_counts_toward_both_days(client):
+    """MAX_SLOTS_PER_DAY counts the user's bookings that overlap the day a booking starts"""
+    with client as client:
+        user_id, _ = _create_user(client, user=USERS[0])
+        midnight = (datetime.now(timezone.utc) + timedelta(days=2)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        crossing = _post_booking(
+            client,
+            user_id,
+            start_utc=midnight - timedelta(minutes=5),
+            end_utc=midnight + timedelta(minutes=5),
+        )
+        second = _post_booking(
+            client,
+            user_id,
+            start_utc=midnight + timedelta(hours=1),
+            end_utc=midnight + timedelta(hours=1, minutes=10),
+        )
+        third = _post_booking(
+            client,
+            user_id,
+            start_utc=midnight + timedelta(hours=2),
+            end_utc=midnight + timedelta(hours=2, minutes=10),
+        )
+
+        assert TEST_MAX_SLOTS_PER_DAY == 2
+        assert crossing.status_code == 200
+        assert second.status_code == 200
+        assert third.status_code == 400
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_max_slots_per_day_is_per_user(client):
+    with client as client:
+        [first_user, second_user] = _create_many_users(client, raw_users=USERS[:2])
+        day = datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ) + timedelta(days=3)
+        first_user_codes = [
+            _post_booking(
+                client,
+                first_user["id"],
+                start_utc=day + timedelta(hours=hour),
+                end_utc=day + timedelta(hours=hour, minutes=10),
+            ).status_code
+            for hour in range(TEST_MAX_SLOTS_PER_DAY)
+        ]
+
+        second_user_response = _post_booking(
+            client,
+            second_user["id"],
+            start_utc=day + timedelta(hours=20),
+            end_utc=day + timedelta(hours=20, minutes=10),
+        )
+
+        assert first_user_codes == [200] * TEST_MAX_SLOTS_PER_DAY
+        assert second_user_response.status_code == 200
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_bookings_are_validated_against_bcc_current_date(client, monkeypatch):
+    """BCC_CURRENT_DATE stands in for now, so a time before it is in the past"""
+    import settings
+
+    current_date = datetime(2025, 10, 1, tzinfo=timezone.utc)
+    with client as client:
+        device_settings = settings.get_device_settings(os.environ["BCC_DEFAULT_PREFIX"])
+        monkeypatch.setattr(device_settings, "CURRENT_DATE", current_date)
+        user_id, _ = _create_user(client, user=USERS[0])
+
+        after = _post_booking(
+            client,
+            user_id,
+            start_utc=current_date + timedelta(hours=1),
+            end_utc=current_date + timedelta(hours=1, minutes=10),
+        )
+        before = _post_booking(
+            client,
+            user_id,
+            start_utc=current_date - timedelta(hours=1),
+            end_utc=current_date - timedelta(minutes=50),
+        )
+
+        assert (after.status_code, before.status_code) == (200, 422)
 
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
@@ -4044,6 +4166,17 @@ def _create_many_users(
         user_id, resp = _create_user(client, user=user)
         result.append(resp.json())
     return result
+
+
+def _post_booking(
+    client: "TestClient", user_id: str, start_utc: datetime, end_utc: datetime
+) -> "Response":
+    """Books the slot from start_utc to end_utc for the user"""
+    return client.post(
+        "/bookings",
+        headers=create_mss_headers(user_id),
+        json={"start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat()},
+    )
 
 
 def _create_booking(

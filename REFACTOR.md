@@ -176,6 +176,9 @@ Tests and tooling only. After this step, a refactor commit that changes behaviou
    `FAILED` and reach MSS (after step 0.7); a failing recalibration schedules the next (after 0.8); adjacent bookings
    (end equal to the next start); `MAX_SLOTS_PER_DAY` across midnight UTC and per user; the `BCC_CURRENT_DATE`
    override.
+   **Found:** a job token's `exp` is `BCC_CURRENT_DATE` plus `JWT_TTL` (`booking/service.py:360`), while PyJWT
+   checks it against the real clock, so on a device whose `BCC_CURRENT_DATE` is past every job token is born
+   expired. The test pins the override for bookings only.
 4. **The suite runs in parallel.** Workers of `pytest -n auto --dist=loadscope` share one Redis database, which every
    teardown empties with `flushall` (`app/tests/conftest.py:170, 351, 397`), one SQLite file (`test_booking.db`, from
    `app/tests/utils/env.py:21`), `/tmp/jobs`, and the working directory, where the qblox dummy writes `tmp.q1asm` and
