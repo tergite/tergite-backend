@@ -24,6 +24,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- Changed the settings to be read with pydantic-settings: the `BCC_` names are the same, but now match whatever their
+  case, and an empty value counts as unset rather than as an empty string
 - Changed the BCC to keep no password for a user: it hashed the one MSS sends and checked it nowhere, so
   `bcrypt` is no longer needed
 - Moved `start_bcc.sh` to `dev/start_bcc.sh`, with the other development tooling; it runs from any folder as before

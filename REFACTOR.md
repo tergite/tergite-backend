@@ -349,12 +349,18 @@ the connections. This step makes the device explicit.
    moves to the composition root. The booking validators that read `settings` and the clock
    (`booking/models.py:98-137, 220-235, 254-263`) become checks in the booking service, given `BookingsConfig` and
    `now`.
-7. **Settings without the indirection.** **Decide:** `DeviceSettings` (`settings.py:47`, its `__init__` 276 lines)
+7. **Settings without the indirection.** **Decided:** a `pydantic-settings` model, as below. `DeviceSettings` (`settings.py:47`, its `__init__` 276 lines)
    becomes a `pydantic-settings` `BaseSettings` with a source for the `BCC_<PREFIX>_` overrides
    (`settings.py:373-410`), or stays hand-written and split per rule 1. Either way it reads only: the folders it
    creates (`settings.py:95-104`) are created at start-up, `logging.basicConfig` (`:435`) runs in `main.py`, and
    `utils/logging.py:8`'s `print` monkeypatch in test mode goes to the tests' configuration. Then the module
    `__getattr__`, `using_device` and `_CURRENT_DEVICE` are deleted.
+   *The model first:* `DeviceResources` holds a device's settings, and services may not import `settings.py`, so
+   `DeviceSettings` moves to `app/utils/config.py` as a `pydantic-settings` model before 4.1, its fields snake_case
+   and its env names unchanged. `read_device_settings` passes the device's own `BCC_<PREFIX>_<NAME>` variables in as
+   init values, which rank over the environment and the file, rather than through `settings_customise_sources`, a
+   name the verb rule refuses. Until the rest of this step hands every function its settings, the module
+   `__getattr__` reads `settings.X` as the current device's `x`.
 
 ## Step 5: storage
 

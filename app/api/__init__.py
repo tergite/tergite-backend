@@ -42,7 +42,7 @@ cors_origins = sorted(
     {
         origin
         for device in settings.get_device_names()
-        for origin in settings.get_device_settings(device).CORS_ORIGINS
+        for origin in settings.get_device_settings(device).cors_origins
     }
 )
 if len(cors_origins) > 0:

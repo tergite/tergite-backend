@@ -479,7 +479,7 @@ def test_bookings_are_validated_against_bcc_current_date(client, monkeypatch):
     current_date = datetime(2025, 10, 1, tzinfo=timezone.utc)
     with client as client:
         device_settings = settings.get_device_settings(os.environ["BCC_DEFAULT_PREFIX"])
-        monkeypatch.setattr(device_settings, "CURRENT_DATE", current_date)
+        monkeypatch.setattr(device_settings, "current_date", current_date)
         user_id, _ = create_user(client, user=USERS[0])
 
         after = post_booking(

@@ -258,7 +258,7 @@ def _run_rq_worker(kind: str, env_files: list[str], device: str | None = None) -
         worker_class, queue_names = LightRqWorker, LIGHT_QUEUES
         devices = settings.get_device_names()
 
-    redis_urls = {settings.get_device_settings(name).RQ_REDIS_URL for name in devices}
+    redis_urls = {settings.get_device_settings(name).rq_redis_url for name in devices}
     if len(redis_urls) > 1:
         sys.exit(
             "bcc: a light worker runs every device's queues over one connection, "

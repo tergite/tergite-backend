@@ -117,10 +117,10 @@ def test_device_env_variables_override_the_shared_ones(tmp_path, monkeypatch):
     monkeypatch.setenv("MAX_SLOTS_PER_DAY", "3")
     load_test_devices(tmp_path, monkeypatch, ["sim", "sim_2q"])
 
-    assert settings.get_device_settings("sim").MAX_IDLE_TIME == 7
-    assert settings.get_device_settings("sim_2q").MAX_IDLE_TIME == 42
+    assert settings.get_device_settings("sim").max_idle_time == 7
+    assert settings.get_device_settings("sim_2q").max_idle_time == 42
     # the default, as MAX_SLOTS_PER_DAY is not BCC_ prefixed
-    assert settings.get_device_settings("sim_2q").MAX_SLOTS_PER_DAY == 1
+    assert settings.get_device_settings("sim_2q").max_slots_per_day == 1
 
 
 def test_env_file_keys_are_bcc_prefixed(tmp_path, monkeypatch):
@@ -129,7 +129,7 @@ def test_env_file_keys_are_bcc_prefixed(tmp_path, monkeypatch):
 
     monkeypatch.delenv("BCC_PORT", raising=False)
     load_test_devices(tmp_path, monkeypatch, ["sim"], {"BCC_PORT": "8123"})
-    assert settings.get_device_settings("sim").PORT == 8123
+    assert settings.get_device_settings("sim").port == 8123
 
     with pytest.raises(ValueError, match="PORT must be written BCC_<NAME>"):
         load_test_devices(tmp_path, monkeypatch, ["sim"], {"PORT": "8123"})

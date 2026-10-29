@@ -16,6 +16,8 @@ from pathlib import Path
 
 import settings
 
+from .config import HAS_QUANTIFY
+
 # Quantify
 try:
     from quantify_core.data.handling import (
@@ -31,7 +33,7 @@ try:
     from tergite_tuner.export import _CouplerInRedis
     from tergite_tuner.utils.types.enums import MeasurementMode, SPIMode
 except ImportError as e:
-    if settings.HAS_QUANTIFY:
+    if HAS_QUANTIFY:
         raise e
 
     logging.debug(f"import error: {e}. We will attempt to make a mock of that type")

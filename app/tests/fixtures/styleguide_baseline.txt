@@ -1,10 +1,6 @@
 # Code that broke a style rule when app/tests/test_styleguide.py was added (step 1.9).
 # This list only shrinks: delete a line when its violation is fixed, never add one.
 banner: app/libs/quantum_executor/quantify/executor.py:116
-banner: settings.py:208
-banner: settings.py:210
-banner: settings.py:239
-banner: settings.py:241
 boolean: app/api/dependencies.py::get_mss_token_claims_dep(job_exists)
 boolean: app/api/dtos.py::PaginatedListResponse.model_dump(by_alias)
 boolean: app/api/dtos.py::PaginatedListResponse.model_dump(exclude_data_none_fields)
@@ -382,5 +378,4 @@ verb: app/utils/model.py::_as_optional
 verb: app/utils/redis_store.py::Collection.exists
 verb: app/utils/redis_store.py::Schema.model_dump
 verb: app/utils/strings.py::uuid_str
-verb: settings.py::_existing_calibration_file
 verb: settings.py::using_device

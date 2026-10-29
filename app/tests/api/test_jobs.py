@@ -129,7 +129,7 @@ def test_job_token_is_valid_on_a_device_whose_current_date_is_past(client, monke
     with client as client:
         device_settings = settings.get_device_settings(os.environ["BCC_DEFAULT_PREFIX"])
         monkeypatch.setattr(
-            device_settings, "CURRENT_DATE", datetime(2025, 10, 1, tzinfo=timezone.utc)
+            device_settings, "current_date", datetime(2025, 10, 1, tzinfo=timezone.utc)
         )
         job_id = f"{uuid4()}"
         token, _ = get_token(client, data={"user_id": f"{uuid4()}", "job_id": job_id})
