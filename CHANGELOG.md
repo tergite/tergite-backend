@@ -45,6 +45,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- Fixed `BCC_ARE_CLUSTERS_RESETTABLE` being ignored: the quantify executor never reset its clusters, whatever it was set to
 - Fixed scheduled jobs never running: `bcc start` runs its workers with RQ's scheduler, so a booking's start and
   end jobs and recalibration's start and repeats now run, which no release's workers did
 - Fixed replayed MSS requests being accepted while the first was still running, or after it crashed: the nonce is

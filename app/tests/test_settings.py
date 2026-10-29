@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from pytest_lazy_fixtures import lf as lazy_fixture
 
 from app.api import app
+from app.libs.queues.dtos import ExecutorOptions
 from app.services.scheduler.utils import get_executor_and_options
 from app.tests.utils.env import (
     TEST_BACKEND_SETTINGS_FILE,
@@ -160,6 +161,16 @@ def test_quantify_config_is_broken(monkeypatch):
 
     with pytest.raises(ValidationError):
         get_executor_and_options()
+
+
+def test_executor_options_allow_resetting_the_clusters_when_set(monkeypatch):
+    monkeypatch.setenv("BCC_EXECUTOR_TYPE", "quantify")
+    monkeypatch.setenv("BCC_BACKEND_SETTINGS", TEST_BACKEND_SETTINGS_FILE)
+    monkeypatch.setenv("BCC_CALIBRATION_SEED", TEST_QUANTIFY_SEED_FILE)
+    monkeypatch.setenv("BCC_ARE_CLUSTERS_RESETTABLE", "true")
+    _reload_settings()
+
+    assert ExecutorOptions.from_settings().are_clusters_resettable
 
 
 def _reload_settings() -> None:

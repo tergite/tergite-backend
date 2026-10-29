@@ -464,7 +464,7 @@ class ExecutorOptions:
             quantify_config_file=settings.QUANTIFY_CONFIG_FILE,
             quantify_metadata_file=settings.QUANTIFY_METADATA_FILE,
             should_restore_currents=settings.SHOULD_RESTORE_CURRENTS,
-            are_clusters_resettable=False,
+            are_clusters_resettable=settings.IS_CLUSTER_RESET_ALLOWED,
             data_directory=settings.EXECUTOR_DATA_DIR,
             calibration_node_config=settings.CALIBRATION_NODE_CONFIG_FILE,
             calibration_device_config=settings.CALIBRATION_DEVICE_CONFIG_FILE,
