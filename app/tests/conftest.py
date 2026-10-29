@@ -46,15 +46,10 @@ def _run_in_the_test_root():
 def _clear_connection_caches():
     """Reset all module-level connection caches before every test."""
     from app.utils.redis import clear_redis_connections
-    from app.utils.sql_db import clear_sql_engine_cache
 
     clear_redis_connections(ignore_errors=True)
-    # Must also clear the SQL engine cache so that _clear_test_db's drop_all
-    # forces a fresh create_all on the next test (cache hit skips create_all).
-    clear_sql_engine_cache()
     yield
     clear_redis_connections(ignore_errors=True)
-    clear_sql_engine_cache()
 
 
 @pytest.fixture(autouse=True, scope="session")

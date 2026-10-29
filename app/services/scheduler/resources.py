@@ -77,11 +77,12 @@ class DeviceResources:
 
 def close_device_resources(device: DeviceResources) -> None:
     """Closes the connections and the executor the device's resources hold open, logging
-    any that fails"""
+    any MSS or executor failure"""
     try:
         device.mss_client.close()
     except Exception as exp:
         err_logger.warning(f"error closing the MSS client: {exp}")
+    device.bookings_db.dispose()
     if device.executor is not None:
         try:
             device.executor.close()

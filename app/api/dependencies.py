@@ -53,7 +53,6 @@ from ..utils.exc import (
 )
 from ..utils.logging import set_up_logging
 from ..utils.redis import clear_redis_connections, get_redis_connection
-from ..utils.sql_db import clear_sql_engine_cache
 from ..utils.strings import validate_uuid4_str
 from .middleware import get_request_logs_store
 
@@ -100,7 +99,6 @@ async def lifespan(app: FastAPI):
     app.state.device_resources.clear()
     app.state.request_logs_stores.clear()
     clear_redis_connections(ignore_errors=True)
-    clear_sql_engine_cache()
 
 
 def get_device_resources(request: Request) -> DeviceResources:
