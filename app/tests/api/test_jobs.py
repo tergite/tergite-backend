@@ -61,20 +61,20 @@ from app.tests.utils.params import (
     VIEW_JOBS_PARAMS,
 )
 from app.tests.utils.records import drop_microseconds, order_by, paginate
-from app.tests.utils.rq import wait_on_rq_worker
+from app.tests.utils.rq import set_worker_executor, wait_on_rq_worker
 from app.tests.utils.users import (
     create_many_users,
     create_user,
 )
 
-# (patch target, patch kwargs) making one stage of a job fail
+# (patch target, patch kwargs) making one stage of a job fail; "executor" is the worker's
 _FAILING_STAGE_PATCHES = [
     (
         "app.services.scheduler.tasks.decompress_qobj",
         {"side_effect": ValueError("unreadable qobj")},
     ),
     (
-        "app.services.scheduler.tasks.get_quantum_executor",
+        "executor",
         {
             "return_value": Mock(
                 preprocess=Mock(return_value=(0.2, None)),
@@ -92,7 +92,7 @@ _FAILING_STAGE_PATCHES = [
         {"side_effect": JobTimeoutException("preprocessing timed out")},
     ),
     (
-        "app.services.scheduler.tasks.get_quantum_executor",
+        "executor",
         {
             "return_value": Mock(
                 preprocess=Mock(return_value=(0.2, None)),
@@ -1412,7 +1412,10 @@ def test_failed_job_is_marked_failed_and_sent_to_mss(
         job_info = get_job_submission_metadata(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )[0]
-        mocker.patch(patch_target, **patch_kwargs)
+        if patch_target == "executor":
+            set_worker_executor(worker, patch_kwargs["return_value"])
+        else:
+            mocker.patch(patch_target, **patch_kwargs)
         mss_update_spy = mocker.spy(scheduler_tasks, "update_job_in_mss")
         with open(job_info["file_path"], "rb") as file:
             client.post(

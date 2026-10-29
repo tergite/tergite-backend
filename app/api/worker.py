@@ -11,6 +11,7 @@
 # that they have been altered from the originals.
 
 """A worker file that is preloaded with the heavy libraries etc"""
+import dataclasses
 import time
 from importlib import import_module
 from typing import Any, Optional
@@ -24,7 +25,7 @@ import settings
 from ..services.devices import is_offline, save_all_device_params
 from ..services.scheduler import (
     DeviceResources,
-    get_executor_and_options,
+    get_executor,
 )
 from ..utils.config import create_device_folders
 
@@ -100,9 +101,15 @@ def preload_worker_globals(should_load_executor: bool) -> DeviceResources:
 
     device = DeviceResources.from_settings(settings.get_device_settings())
     if should_load_executor:
-        _, executor_options = get_executor_and_options()
+        executor = get_executor(device.executor_options)
         # published here alone, as the executor may refine the backend config, e.g. the
         # simulators train their discriminators, which the API, building none, has not
+        executor_options = dataclasses.replace(
+            device.executor_options, backend_config=executor.backend_config
+        )
+        device = dataclasses.replace(
+            device, executor=executor, executor_options=executor_options
+        )
         save_all_device_params(
             redis=device.redis,
             backend_config=executor_options.backend_config,

@@ -11,6 +11,7 @@
 # that they have been altered from the originals.
 
 """Utilities for testing rq workers and queues"""
+import dataclasses
 from datetime import datetime, timedelta, timezone
 from typing import Any, Generator, List, Optional, Union
 
@@ -208,3 +209,13 @@ def _get_device_worker(redis_client: Redis, prefix: str) -> Union[Worker, Simple
 def _close_worker_resources(worker: PreloadedSimpleWorker) -> None:
     for device_resources in worker.device_resources.values():
         close_device_resources(device_resources)
+
+
+def set_worker_executor(worker: PreloadedSimpleWorker, executor: Any) -> None:
+    """Makes the worker's devices run their jobs on the given executor, closing theirs"""
+    for device, resources in worker.device_resources.items():
+        if resources.executor is not None:
+            resources.executor.close()
+        worker.device_resources[device] = dataclasses.replace(
+            resources, executor=executor
+        )

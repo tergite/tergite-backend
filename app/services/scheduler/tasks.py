@@ -60,7 +60,6 @@ from .resources import DeviceResources
 from .utils import (
     apply_linear_discriminator,
     decompress_qobj,
-    get_quantum_executor,
     get_rq_job_id,
     log_job_failure,
     move_file,
@@ -113,7 +112,7 @@ def preprocess(
         # [[a,b],[c,d],...] -> [a + ib,c + id,...]
         json_decoder.decode_pulse_qobj(qobj)
         with device.executor_lock:
-            executor = get_quantum_executor()
+            executor = device.executor
             duration, _ = executor.preprocess(
                 PulseQobj.from_dict(qobj),
                 job_id=job_id,
@@ -239,7 +238,7 @@ def execute(device: DeviceResources, job: Job) -> Tuple[str, str]:
 
         # Just a locking mechanism to ensure jobs don't interfere with each other
         with device.executor_lock:
-            executor = get_quantum_executor()
+            executor = device.executor
             results_file = executor.run(job_id, inputs_folder=preprocessing_dir)
 
         job: Job = jobs_store.get_one((job_id,))
@@ -385,7 +384,7 @@ def recalibrate(
 
     # ensure recalibration runs without interference
     with device.executor_lock:
-        executor = get_quantum_executor()
+        executor = device.executor
         results = executor.recalibrate()
 
         if isinstance(results, DeviceCalibration):

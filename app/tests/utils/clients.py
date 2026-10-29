@@ -79,9 +79,6 @@ def quantify_rest_client(
 
     import app
     import settings
-    from app.services.scheduler.utils import clear_quantum_executor
-
-    clear_quantum_executor(ignore_errors=True)
 
     importlib.reload(settings)
     importlib.reload(app)
@@ -89,7 +86,6 @@ def quantify_rest_client(
 
     yield get_test_client(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
-    clear_quantum_executor(ignore_errors=True)
 
 
 @pytest.fixture
@@ -125,9 +121,6 @@ def qiskit_1q_rest_client(
 
     import app
     import settings
-    from app.services.scheduler.utils import clear_quantum_executor
-
-    clear_quantum_executor(ignore_errors=True)
 
     importlib.reload(settings)
     importlib.reload(app)
@@ -135,7 +128,6 @@ def qiskit_1q_rest_client(
 
     yield get_test_client(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
-    clear_quantum_executor(ignore_errors=True)
 
 
 @pytest.fixture
@@ -171,9 +163,6 @@ def qiskit_2q_rest_client(
 
     import app
     import settings
-    from app.services.scheduler.utils import clear_quantum_executor
-
-    clear_quantum_executor(ignore_errors=True)
 
     importlib.reload(settings)
     importlib.reload(app)
@@ -181,7 +170,6 @@ def qiskit_2q_rest_client(
 
     yield get_test_client(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
-    clear_quantum_executor(ignore_errors=True)
 
 
 def _clear_test_db(url: str = TEST_BOOKING_DB_URL):

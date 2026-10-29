@@ -36,7 +36,6 @@ boolean: app/libs/queues/dtos.py::ExecutorOptions.are_clusters_resettable
 boolean: app/services/scheduler/service.py::_cancel_job_in_queues(ignore_errors)
 boolean: app/services/scheduler/service.py::stop_recalibration(ignore_errors)
 boolean: app/services/scheduler/utils.py::_init_executor(reset)
-boolean: app/services/scheduler/utils.py::clear_quantum_executor(ignore_errors)
 boolean: app/utils/model.py::PartialMeta.model_dump(by_alias)
 boolean: app/utils/model.py::PartialMeta.model_dump(exclude_defaults)
 boolean: app/utils/model.py::PartialMeta.model_dump(exclude_none)

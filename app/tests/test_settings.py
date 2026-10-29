@@ -16,7 +16,7 @@ from app.services.external.mss import (
     MssClient,
     get_private_key,
 )
-from app.services.scheduler.utils import get_executor_and_options
+from app.services.scheduler.utils import get_executor
 from app.tests.utils.env import (
     TEST_BACKEND_SETTINGS_FILE,
     TEST_BROKEN_QUANTIFY_CONFIG_FILE,
@@ -140,7 +140,7 @@ def test_quantify_metadata_is_broken(monkeypatch):
     _reload_settings()
 
     with pytest.raises(ValidationError):
-        get_executor_and_options()
+        get_executor(ExecutorOptions.from_settings())
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
@@ -154,7 +154,7 @@ def test_quantify_config_is_broken(monkeypatch):
     _reload_settings()
 
     with pytest.raises(ValidationError):
-        get_executor_and_options()
+        get_executor(ExecutorOptions.from_settings())
 
 
 def test_executor_options_allow_resetting_the_clusters_when_set(monkeypatch):

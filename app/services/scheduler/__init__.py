@@ -29,9 +29,7 @@ from .service import (
 )
 from .store import get_jobs_store
 from .utils import (
-    clear_quantum_executor,
-    get_executor_and_options,
-    get_executor_options,
+    get_executor,
 )
 
 __all__ = [
@@ -41,12 +39,10 @@ __all__ = [
     "RecalibrationInfo",
     "cancel_booking",
     "cancel_job",
-    "clear_quantum_executor",
     "close_device_resources",
     "delete_job",
     "delete_user_profile",
-    "get_executor_and_options",
-    "get_executor_options",
+    "get_executor",
     "get_job",
     "get_jobs_store",
     "get_many_jobs",

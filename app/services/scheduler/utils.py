@@ -13,7 +13,6 @@
 # that they have been altered from the originals.
 #
 """Utility functions for the scheduler service"""
-import dataclasses
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
@@ -46,9 +45,6 @@ from .dtos import LogLevel
 if TYPE_CHECKING:
     from ...libs.quantum_executor.base.executor import QuantumExecutor
 
-_EXECUTOR_OPTIONS: dict[str, ExecutorOptions] = {}
-_QUANTUM_EXECUTORS_AND_OPTS: dict[str, tuple["QuantumExecutor", ExecutorOptions]] = {}
-
 
 _STAGE_TIMESTAMPS_MAP: Dict[Stage, Tuple[Tuple[JobStage, JobEvent], ...]] = {
     Stage.REG_Q: (),
@@ -76,62 +72,13 @@ _STAGE_STATUS_MAP: Dict[Stage, JobStatus] = {
 }
 
 
-def get_executor_options() -> ExecutorOptions:
-    """Gets the current device's executor options from the settings, without building
-    the executor"""
-    executor_options = _EXECUTOR_OPTIONS.get(settings.DEFAULT_PREFIX)
-    if executor_options is None:
-        executor_options = ExecutorOptions.from_settings()
-        _EXECUTOR_OPTIONS[settings.DEFAULT_PREFIX] = executor_options
-    return executor_options
-
-
-def get_executor_and_options() -> Tuple["QuantumExecutor", ExecutorOptions]:
-    """Gets the executor and its options that will be passed around in the queue
-
-    Returns:
-        the current device's executor and executor options
-    """
-    executor_and_options = _QUANTUM_EXECUTORS_AND_OPTS.get(settings.DEFAULT_PREFIX)
-    if executor_and_options is None:
-        executor_options = get_executor_options()
-        executor = _init_executor(executor_options, reset=True)
-        err_logger.info(
-            f"QuantumExecutor initialised for backend '{executor_options.backend_name}'.'"
-        )
-
-        # update the backend_config with the updated version got from the executor
-        executor_options = dataclasses.replace(
-            executor_options, backend_config=executor.backend_config
-        )
-        executor_and_options = (executor, executor_options)
-        _QUANTUM_EXECUTORS_AND_OPTS[settings.DEFAULT_PREFIX] = executor_and_options
-    return executor_and_options
-
-
-def get_quantum_executor() -> "QuantumExecutor":
-    """Returns the process-level QuantumExecutor."""
-    executor, options = get_executor_and_options()
+def get_executor(executor_options: ExecutorOptions) -> "QuantumExecutor":
+    """Gets a new quantum executor of the given options, its instruments reset"""
+    executor = _init_executor(executor_options, reset=True)
+    err_logger.info(
+        f"QuantumExecutor initialised for backend '{executor_options.backend_name}'.'"
+    )
     return executor
-
-
-def clear_quantum_executor(ignore_errors: bool = False) -> None:
-    """Clears the quantum executors and their options of all devices.
-
-    Args:
-        ignore_errors: If True, ignores any errors raised by executor.
-    """
-    _EXECUTOR_OPTIONS.clear()
-    for executor, _ in _QUANTUM_EXECUTORS_AND_OPTS.values():
-        try:
-            executor.close()
-        except Exception as exp:
-            if ignore_errors:
-                err_logger.warning(f"QuantumExecutor closed error: {exp}")
-            else:
-                raise exp
-
-    _QUANTUM_EXECUTORS_AND_OPTS.clear()
 
 
 def log_job_msg(message: str, level: LogLevel = LogLevel.INFO) -> None:

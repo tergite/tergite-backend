@@ -37,7 +37,7 @@ from app.tests.utils.params import (
     HAS_QUANTIFY,
     USERS,
 )
-from app.tests.utils.rq import get_queue_by_name, wait_on_rq_worker
+from app.tests.utils.rq import get_queue_by_name, set_worker_executor, wait_on_rq_worker
 from app.tests.utils.users import (
     create_many_users,
 )
@@ -419,10 +419,7 @@ def test_failed_recalibration_schedules_the_next(client, redis_conn, worker, moc
         queue_name = f"{settings.get_device_settings().default_prefix}_recalibration"
         queue = get_queue_by_name(worker, queue_name)
         failing_executor = Mock(recalibrate=Mock(side_effect=RuntimeError("no device")))
-        mocker.patch(
-            "app.services.scheduler.tasks.get_quantum_executor",
-            return_value=failing_executor,
-        )
+        set_worker_executor(worker, failing_executor)
 
         worker.work(burst=True, max_jobs=1)
 
@@ -443,10 +440,7 @@ def test_cancel_recalibration_while_one_runs(client, redis_conn, worker, mocker)
             client.post("/recalibration/cancel", headers=headers)
 
         cancelling_executor = Mock(recalibrate=Mock(side_effect=cancel_recalibration))
-        mocker.patch(
-            "app.services.scheduler.tasks.get_quantum_executor",
-            return_value=cancelling_executor,
-        )
+        set_worker_executor(worker, cancelling_executor)
 
         worker.work(burst=True, max_jobs=1)
 
