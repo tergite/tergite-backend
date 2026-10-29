@@ -39,6 +39,7 @@ from ...libs.queues.dtos import (
     Timestamps,
 )
 from ...utils.datetime import utc_now_str
+from ...utils.exc import MssRejectedError
 from ...utils.logging import err_logger
 from ...utils.redis_store import Collection
 from ..external.mss.dtos import DeviceEvent, DeviceEventName, EventResponse
@@ -292,7 +293,7 @@ def update_job_in_mss(mss_client: MssClient, payload: Job) -> EventResponse:
         resp = mss_client.send_event(
             job_update_event, error_prefix="error sending job to MSS: "
         )
-    except ValueError as exp:
+    except MssRejectedError as exp:
         log_job_msg(f"{exp}", level=LogLevel.ERROR)
         raise RuntimeError(f"Public API returned an error: {exp}")
 

@@ -52,6 +52,7 @@ import app.services.scheduler.tasks as scheduler_tasks
 from app.api.worker import preload_worker_globals
 from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps, get_queue_context
 from app.services.booking.models import Booking
+from app.services.external.mss.service import MssClient
 from app.services.scheduler.utils import get_rq_job_id
 from app.tests.conftest import (
     CLIENT_AND_RQ_WORKER_TUPLES,
@@ -2549,7 +2550,7 @@ def test_download_logfile(
 def test_logfile_for_non_existing_job(
     logfile_download_folder, client, redis_conn, worker, job, mocker
 ):
-    """GET '/logfiles/{logfile_id}' for non-existing jobs fails with a 403"""
+    """GET '/logfiles/{logfile_id}' for non-existing jobs fails with a 404"""
     # using context manager to ensure on_startup runs
     with client as client:
         job_id = job["job_id"]
@@ -2562,7 +2563,7 @@ def test_logfile_for_non_existing_job(
         headers = _get_headers(token)
 
         response = client.get(f"/logfiles/{job_id}", headers=headers)
-        assert response.status_code == 403
+        assert response.status_code == 404
         assert response.json() == {"detail": f"job {job_id} does not exist"}
 
 
@@ -3138,7 +3139,7 @@ def test_switch_off(client, redis_conn, jobs_folder, worker, job, mocker, fake_c
             )
 
         name = os.environ.get("BCC_DEFAULT_PREFIX")
-        assert response.status_code == 404
+        assert response.status_code == 503
         assert response.json() == {"detail": f"{name} is offline"}
 
         worker.work(burst=True)
@@ -3186,6 +3187,30 @@ def test_switch_on(client, redis_conn, jobs_folder, worker, job, mocker, fake_cl
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
         assert len(jobs_in_redis) == 1
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_switch_answers_502_when_mss_refuses_the_event(client, mocker):
+    with client as client:
+        mocker.patch.object(MssClient, "send")
+        mocker.patch.object(
+            MssClient,
+            "recv",
+            return_value={"status": "failed", "detail": "no such device"},
+        )
+        response = client.post("/switch/off", headers=create_mss_headers(is_admin=True))
+
+        assert response.status_code == 502
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_switch_answers_504_when_mss_does_not_answer(client, mocker):
+    with client as client:
+        mocker.patch.object(MssClient, "send")
+        mocker.patch.object(MssClient, "recv", side_effect=TimeoutError("no response"))
+        response = client.post("/switch/off", headers=create_mss_headers(is_admin=True))
+
+        assert response.status_code == 504
 
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)

@@ -321,6 +321,7 @@ def get_mss_token_claims_dep(
             NotAuthenticatedError: job {job_id} does not exist for current user
             ConflictError: job {job_id} is already {auth_log.status}
             UnauthorizedError: unexpected job id {job_id}
+            ItemNotFoundError: job {job_id} does not exist
             InvalidJobIdInUploadedFileError: The job does not have a valid UUID4 {job_id_field}
         """
         user_id, token_job_id = get_user_job_id_pair_from_token(token)
@@ -335,7 +336,7 @@ def get_mss_token_claims_dep(
             raise NotAuthenticatedError(f"job {job_id} does not exist for current user")
         except ItemNotFoundError:
             if job_exists:
-                raise UnauthorizedError(f"job {job_id} does not exist")
+                raise ItemNotFoundError(f"job {job_id} does not exist")
 
         return MSSTokenClaims(user_id=user_id, job_id=job_id)
 

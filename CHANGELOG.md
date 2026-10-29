@@ -75,6 +75,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   whose booking ended during its preprocessing waiting on the waitlist for ever; it now goes to the normal queue
 - Fixed recalibration with several clusters in the quantify metadata recalibrating the whole device once per
   cluster and keeping the last; as tergite_tuner works through one cluster, recalibration now refuses several
+- Fixed misleading status codes: an offline device now answers 503, not 404; a job that does not exist 404, not
+  403; and MSS refusing or not answering a request 502 or 504, not 500
 
 ### Removed
 

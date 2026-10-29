@@ -60,7 +60,7 @@ def test_load_quantify_config_files():
 @pytest.mark.parametrize("executor, settings_file, seed_file", _EXECUTOR_AND_SETTINGS)
 async def test_mss_reconnection(executor, settings_file, seed_file, mocker):
     """MSS_CONNECTION_MAX_ATTEMPTS is respected: connect is retried exactly that
-    many times before a TimeoutError is raised.
+    many times before an MssTimeoutError is raised.
     """
     remove_modules(["os", "app", "settings"])
 
@@ -84,9 +84,12 @@ async def test_mss_reconnection(executor, settings_file, seed_file, mocker):
 
     from sqlmodel import SQLModel
 
+    # imported after remove_modules, so it is the class the fresh app raises
+    from app.utils.exc import MssTimeoutError
+
     SQLModel.metadata.clear()
 
-    with pytest.raises(TimeoutError, match=r"maximum connection attempts"):
+    with pytest.raises(MssTimeoutError, match=r"maximum connection attempts"):
         from app.api import app
 
         async with app.router.lifespan_context(app):

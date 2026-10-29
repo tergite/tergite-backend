@@ -604,8 +604,8 @@ def switch_off(
         context: the context of the queues
 
     Raises:
-        ValueError – error sending switch off data: {error message}
-        TimeoutError – error sending switch off data: response took longer than timeout
+        MssRejectedError – error sending switch off data: {error message}
+        MssTimeoutError – error sending switch off data: response took longer than timeout
     """
     get_redis_connection().set(_get_offline_flag_key(context), 1)
 
@@ -629,8 +629,8 @@ def switch_on(
         context: the context of the queues
 
     Raises:
-        ValueError – error sending switch on data: {error message}
-        TimeoutError – error sending switch on data: response took longer than timeout
+        MssRejectedError – error sending switch on data: {error message}
+        MssTimeoutError – error sending switch on data: response took longer than timeout
     """
     get_redis_connection().delete(_get_offline_flag_key(context))
 

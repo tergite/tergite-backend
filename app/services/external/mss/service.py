@@ -22,6 +22,7 @@ from websockets import ConnectionClosed, WebSocketException
 from websockets.sync.client import ClientConnection, connect
 
 import settings
+from app.utils.exc import MssRejectedError, MssTimeoutError
 from app.utils.logging import err_logger
 
 from .auth import create_headers
@@ -232,16 +233,19 @@ class MssClient:
             the event response
 
         Raises:
-            ValueError: {error_prefix}{error message}
-            TimeoutError: {error_prefix}response took longer than timeout
+            MssRejectedError: {error_prefix}{error message}
+            MssTimeoutError: {error_prefix}response took longer than timeout
             RuntimeError: {error_prefix}no connection yet
         """
         event_id = payload.id
         event_json = payload.model_dump_json()
-        self.send(event_json)
-        resp = self.recv(filters={"id": event_id}, error_prefix=error_prefix)
+        try:
+            self.send(event_json)
+            resp = self.recv(filters={"id": event_id}, error_prefix=error_prefix)
+        except TimeoutError as exp:
+            raise MssTimeoutError(f"{error_prefix}{exp}")
         if resp.get("status") != "success":
-            raise ValueError(f"{error_prefix}{resp.get('detail')}")
+            raise MssRejectedError(f"{error_prefix}{resp.get('detail')}")
         return cast(EventResponse, resp)
 
     def __enter__(self):

@@ -145,7 +145,7 @@ changelog entry.
       each pass of `recalibrate`'s loop recalibrated everything: it now refuses more than one cluster instead.
 16. **Status codes.** `IsOfflineError` is 404 (`api/__init__.py:119`), a missing job 403
     (`dependencies.py:330-332`), and MSS rejecting or timing out a request a 500 (`api/__init__.py:112-116`).
-    **Decide**, after checking how MSS's `BccClient` handles each: 503, 404, and 502/504.
+    **Decided:** 503, 404, and 502/504; MSS's `BccClient` passes the BCC's code on to its caller and checks none.
 17. **What the signature covers.** The signed message is `user_id-nonce-timestamp` (`dependencies.py:197, 217, 251`):
     `x-mss-is-admin`, the method and the path are not signed, so on a plain-HTTP link anyone in between can turn on
     admin or move a signature to another route. **Decide:** sign `is_admin|method|path` too, together with MSS's

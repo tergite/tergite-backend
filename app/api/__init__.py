@@ -49,6 +49,8 @@ from app.utils.exc import (
     JobAlreadyCancelled,
     JobAlreadyCompleteError,
     MaxBookingsError,
+    MssRejectedError,
+    MssTimeoutError,
     NotAllowedError,
     NotAuthenticatedError,
     UnauthorizedError,
@@ -114,7 +116,9 @@ app.add_exception_handler(RuntimeError, to_http_error(500, "Unexpected server er
 app.add_exception_handler(TimeoutError, to_http_error(500, "Unexpected server error"))
 app.add_exception_handler(InvalidJobIdInUploadedFileError, to_http_error(400))
 app.add_exception_handler(JobAlreadyCancelled, to_http_error(406))
-app.add_exception_handler(IsOfflineError, to_http_error(404))
+app.add_exception_handler(IsOfflineError, to_http_error(503))
+app.add_exception_handler(MssRejectedError, to_http_error(502))
+app.add_exception_handler(MssTimeoutError, to_http_error(504))
 
 # setup CORS if any device's CORS_ORIGINS are set
 cors_origins = sorted(

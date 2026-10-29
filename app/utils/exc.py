@@ -90,3 +90,11 @@ class InvalidRequestError(BaseBccException):
 
 class IsOfflineError(BaseBccException):
     """Exception when a device is offline"""
+
+
+class MssRejectedError(BaseBccException):
+    """Error when MSS answers a request of ours with an error"""
+
+
+class MssTimeoutError(BaseBccException):
+    """Error when MSS does not answer a request of ours in time"""
