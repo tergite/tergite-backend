@@ -103,17 +103,11 @@ def get_next_job_on_queue(queue: RqQueue) -> Optional[RqJob]:
     Returns:
         the next job for the queue or None if there is none
     """
-    last_scheduled_job = _get_last_job_from_registry(queue.scheduled_job_registry)
+    # a queued job runs as soon as a worker is free, so before any scheduled one
     last_queued_job = _get_latest_queued_job(queue)
-
-    next_jobs = [v for v in (last_scheduled_job, last_queued_job) if v is not None]
-    next_jobs.sort(key=lambda x: x.started_at)
-
-    try:
-        # get the latest previous job
-        return next_jobs[-1]
-    except IndexError:
-        return None
+    if last_queued_job is not None:
+        return last_queued_job
+    return _get_last_job_from_registry(queue.scheduled_job_registry)
 
 
 def _get_latest_queued_job(queue: RqQueue) -> Optional[RqJob]:

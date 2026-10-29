@@ -10,14 +10,17 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests for the queue types"""
+from datetime import timedelta
+
 import pytest
 import time_machine
 from pydantic import ValidationError
-from rq import SimpleWorker, get_current_job
+from rq import Queue, SimpleWorker, get_current_job
 from rq.job import Job as RqJob
 
 from app.libs.queues.dtos import Job
 from app.libs.queues.types import RunnerQueue, StaticQueue
+from app.utils.rq import get_next_job_on_queue
 
 
 def test_pop_job_not_in_queue_keeps_total_duration(redis_client):
@@ -84,6 +87,16 @@ def test_total_duration_stops_counting_a_job_past_its_estimate(redis_client):
         assert queue.total_duration == 6
         clock.shift(20)
         assert queue.total_duration == 0
+
+
+def test_next_job_on_queue_is_a_queued_one_before_a_scheduled_one(redis_client):
+    queue = Queue("test_queue", connection=redis_client)
+    queue.enqueue_in(
+        timedelta(minutes=5), "app.libs.queues.utils.noop", job_id="scheduled"
+    )
+    queue.enqueue("app.libs.queues.utils.noop", job_id="queued")
+
+    assert get_next_job_on_queue(queue).id == "queued"
 
 
 def _get_test_queue_total_duration(job: Job) -> float:
