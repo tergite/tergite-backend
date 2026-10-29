@@ -356,10 +356,24 @@ TTLs, pagination and a Lua script, used by three stores of which only one needs 
    `model_dump` override go.
 4. **Schema changes by migration.** `get_sql_engine` stops calling `create_all` on first use (`sql_db.py:52`);
    Alembic owns the bookings and users tables, as it does MSS's.
-5. **Queues on RQ's own storage.** `RunnerQueue` subclasses `rq.Queue` and overrides `enqueue` with another signature
-   (`types.py:251`, with an unused `_current_job` at `:308`), and keeps the job and its arguments in hashes of its
-   own (`types.py:444-478`) beside RQ's. RQ stores both; `import_func` and `get_function_import_path`
-   (`app/libs/queues/utils.py`) give way to `rq.utils.import_attribute`. `StaticQueue` stays a Redis list per device.
+5. **Queues: RQ, or a dispatcher over the jobs.** Both are built, behind the few operations the scheduler needs (claim
+   a device's next job, mark its stage, schedule a timed event, cancel), each in commits of its own, and compared;
+   the better one stays.
+   - **A, RQ used as RQ.** `RunnerQueue` subclasses `rq.Queue` and overrides `enqueue` with another signature
+     (`types.py:251`, with an unused `_current_job` at `:308`), and keeps the job and its arguments in hashes of
+     its own (`types.py:444-478`) beside RQ's. RQ stores both; `import_func` and `get_function_import_path`
+     (`app/libs/queues/utils.py`) give way to `rq.utils.import_attribute`. `StaticQueue` stays a Redis list per
+     device, and bookings stay start and end events, idle timers and the waitlist.
+   - **B, a dispatcher over the jobs store**, as qpi-ui's (`internal/scheduler/scheduler.go`): a job is a row with a
+     status, and each device's dispatcher claims the next by the booking policy, in one function: the booked
+     user's oldest job, else the oldest of anyone's once the booker is idle. A booking's start and end are times
+     it compares with now, recalibration a row with a due time, a cancel a status it skips, and a recovery loop
+     fails a job running past its timeout. Claiming is atomic in each store: Redis (Lua), SQLite (`BEGIN
+     IMMEDIATE`), Postgres (`SKIP LOCKED`), chosen by `BCC_QUEUE_URL`'s scheme, as MSS's `Database` is by its URL.
+   Measured on the same machine: step 1's tests, which both must pass unchanged; `dev/perf/`'s p95 latency, stage
+   times and peak memory; lines of code; and the workarounds each needs against its library (rule 9).
+   **Decide**, from the comparison, which stays; whether B is built at all is decided first. With 5.3's jobs in SQL,
+   B's SQLite store comes nearly free.
 
 ## Step 6: classes, long functions and DTOs
 
