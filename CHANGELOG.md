@@ -44,6 +44,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   end jobs and recalibration's start and repeats now run, which no release's workers did
 - Fixed replayed MSS requests being accepted while the first was still running, or after it crashed: the nonce is
   now claimed before the route runs, instead of recorded after it
+- Fixed cancelling a job leaving its rq job queued: cancellation looked for an rq job id that was never used, so the
+  rq job still ran and took whatever job was next in its queue
 
 ### Removed
 

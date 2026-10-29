@@ -51,6 +51,7 @@ from rq.suspension import is_suspended
 from app.api.worker import preload_worker_globals
 from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps, get_queue_context
 from app.services.booking.models import Booking
+from app.services.scheduler.utils import get_rq_job_id
 from app.tests.conftest import (
     CLIENT_AND_RQ_WORKER_TUPLES,
     FASTAPI_CLIENTS,
@@ -2067,6 +2068,30 @@ def test_cancel_job_directly(
         assert response.status_code == 200
         assert job_in_db == expected_job
         assert redis_conn_spy.call_count <= 1
+
+
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_cancel_job_cancels_its_rq_job(
+    client, redis_conn, jobs_folder, worker, job, mocker, fake_clock
+):
+    """Cancelling a queued job cancels the rq job that would run it"""
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = _get_raw_jobs(job, durations=[0.2])
+        job_info = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )[0]
+        job_id = job_info["job_id"]
+        with open(job_info["file_path"], "rb") as file:
+            client.post(
+                "/jobs", files={"upload_file": file}, headers=job_info["headers"]
+            )
+        worker.work(burst=True, max_jobs=1)
+
+        _cancel_job_via_mss(client, user_id=job_info["user_id"], job_id=job_id)
+
+        rq_job = RqJob.fetch(get_rq_job_id(job_id, Stage.EXEC_Q), connection=redis_conn)
+        assert rq_job.get_status() == "canceled"
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)

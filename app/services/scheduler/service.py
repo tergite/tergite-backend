@@ -659,29 +659,27 @@ def _cancel_job_in_queues(queues: QueuePool, job: Job, ignore_errors: bool = Fal
 
     with suppress(ValidationError):
         queues.waitlist.pop_job(execution_storage_id)
-    with suppress(rq_errors.NoSuchJobError):
-        queues.preprocessing.cancel_job(
-            job_id=job.job_id,
-            storage_id=preprocessing_storage_id,
-            ignore_errors=ignore_errors,
-        )
-    with suppress(rq_errors.NoSuchJobError):
-        queues.normal_execution.cancel_job(
-            job_id=job.job_id,
-            storage_id=execution_storage_id,
-            ignore_errors=ignore_errors,
-        )
-    with suppress(rq_errors.NoSuchJobError):
-        queues.booked_execution.cancel_job(
-            job_id=job.job_id,
-            storage_id=execution_storage_id,
-            ignore_errors=ignore_errors,
-        )
+    queues.preprocessing.remove_job(preprocessing_storage_id)
+    queues.normal_execution.remove_job(execution_storage_id)
+    queues.booked_execution.remove_job(execution_storage_id)
+    queues.postprocessing.remove_job(execution_storage_id)
 
+    # rq job ids are global, so the normal and booked execution queues share the EXEC_Q one
+    connection = queues.preprocessing.connection
     with suppress(rq_errors.NoSuchJobError):
-        queues.postprocessing.cancel_job(
-            job_id=job.job_id,
-            storage_id=execution_storage_id,
+        cancel_rq_job(
+            connection,
+            get_rq_job_id(job_id, Stage.PRE_PROC_Q),
+            ignore_errors=ignore_errors,
+        )
+    with suppress(rq_errors.NoSuchJobError):
+        cancel_rq_job(
+            connection, get_rq_job_id(job_id, Stage.EXEC_Q), ignore_errors=ignore_errors
+        )
+    with suppress(rq_errors.NoSuchJobError):
+        cancel_rq_job(
+            connection,
+            get_rq_job_id(job_id, Stage.PST_PROC_Q),
             ignore_errors=ignore_errors,
         )
 

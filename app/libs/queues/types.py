@@ -26,7 +26,6 @@ from rq.results import Result as RqResult
 from rq.serializers import DefaultSerializer, Serializer
 from rq.timeouts import BaseDeathPenalty, UnixSignalDeathPenalty
 
-from ...utils.rq import cancel_rq_job
 from .dtos import Job, StorageID
 from .utils import get_function_import_path, import_func, noop
 
@@ -318,13 +317,14 @@ class RunnerQueue(Queue):
         except (AttributeError, TypeError):
             return self._static_queue.total_duration
 
-    def enqueue(self, job: Job, *args, **kwargs) -> RqJob:
+    def enqueue(self, job: Job, *args, job_id: str, **kwargs) -> RqJob:
         """Creates a rq job to represent the delayed function call and enqueues it.
         Receives the same parameters accepted by the `enqueue_call` method except for 'f'.
 
         Args:
             job: The job to pass to this queue
             args: function args
+            job_id: the id of the rq job
             kwargs: function kwargs
 
         Returns:
@@ -345,7 +345,7 @@ class RunnerQueue(Queue):
             "on_success": kwargs.pop("on_success", self._success_callback),
             "on_failure": kwargs.pop("on_failure", self._failure_callback),
             "on_stopped": kwargs.pop("on_stopped", self._stopped_callback),
-            "job_id": kwargs.pop("job_id", self.get_rq_job_id(job.job_id)),
+            "job_id": job_id,
         }
 
         self._static_queue.add(job, *args, **kwargs)
@@ -357,45 +357,14 @@ class RunnerQueue(Queue):
             **queue_kwargs,
         )
 
-    def get_rq_job_id(self, job_id: str) -> str:
-        """Generates the rq job id for the job of given job_id
+    def remove_job(self, storage_id: StorageID) -> None:
+        """Removes the job of the given storage id from those waiting to run, if it is there
 
         Args:
-            job_id: the unique identifier of the job (not rq job)
-
-        Returns:
-            the id of the rq job for the given job_id
-        """
-        return f"{self.name}_{job_id}"
-
-    def cancel_job(
-        self,
-        job_id: str,
-        storage_id: Optional[StorageID] = None,
-        ignore_errors: bool = False,
-    ):
-        """Cancels the job of the given job_id
-
-        Args:
-            job_id: the unique identifier of the job (not rq job)
             storage_id: the identifier of the job in the static queue storage
-            ignore_errors: whether to ignore errors; default = False
-
-        Raises:
-            rq.exceptions.NoSuchJobError: if the job does not exist
-            rq.exceptions.InvalidJobOperationError: if the job has already been cancelled
-            rq.exceptions.InvalidJobOperation: if the job has already been cancelled
         """
-        if storage_id:
-            with suppress(ValidationError):
-                # delete the job from the static queue.
-                # ignore error if storage id does not exist
-                self._static_queue.pop_job(storage_id)
-
-        # cancel the job if it is pending or running
-        # or raise an appropriate error
-        rq_job_id = self.get_rq_job_id(job_id)
-        cancel_rq_job(self.connection, rq_job_id, ignore_errors=ignore_errors)
+        with suppress(ValidationError):
+            self._static_queue.pop_job(storage_id)
 
 
 def _run_next_job(static_queue_name, exec_func_path: str):
