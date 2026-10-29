@@ -12,7 +12,6 @@
 """Fixtures of the REST API's test clients, one per executor"""
 import importlib
 import importlib.util
-import os
 from typing import (
     Any,
     Generator,
@@ -58,13 +57,13 @@ def quantify_seed_file(tmp_path) -> Generator[str, Any, None]:
 
 @pytest.fixture
 def quantify_rest_client(
-    mocker, mock_mss, redis_client, quantify_seed_file
+    mocker, mock_mss, redis_client, quantify_seed_file, monkeypatch
 ) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
-    os.environ["BCC_EXECUTOR_TYPE"] = "quantify"
-    os.environ["BCC_DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX
-    os.environ["BCC_BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
-    os.environ["BCC_CALIBRATION_SEED"] = quantify_seed_file
+    monkeypatch.setenv("BCC_EXECUTOR_TYPE", "quantify")
+    monkeypatch.setenv("BCC_DEFAULT_PREFIX", TEST_DEFAULT_PREFIX)
+    monkeypatch.setenv("BCC_BACKEND_SETTINGS", TEST_BACKEND_SETTINGS_FILE)
+    monkeypatch.setenv("BCC_CALIBRATION_SEED", quantify_seed_file)
 
     from app.tests.utils.executors.quantify import MockQuantifyExecutor
     from app.tests.utils.tuner import mock_run_node
@@ -95,13 +94,13 @@ def quantify_rest_client(
 
 @pytest.fixture
 def qiskit_1q_rest_client(
-    request, mocker, mock_mss, redis_client
+    request, mocker, mock_mss, redis_client, monkeypatch
 ) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
-    os.environ["BCC_EXECUTOR_TYPE"] = "qiskit_pulse_1q"
-    os.environ["BCC_DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_1Q
-    os.environ["BCC_BACKEND_SETTINGS"] = TEST_SIMQ1_BACKEND_SETTINGS_FILE
-    os.environ["BCC_CALIBRATION_SEED"] = TEST_QISKIT_1Q_SEED_FILE
+    monkeypatch.setenv("BCC_EXECUTOR_TYPE", "qiskit_pulse_1q")
+    monkeypatch.setenv("BCC_DEFAULT_PREFIX", TEST_DEFAULT_PREFIX_SIM_1Q)
+    monkeypatch.setenv("BCC_BACKEND_SETTINGS", TEST_SIMQ1_BACKEND_SETTINGS_FILE)
+    monkeypatch.setenv("BCC_CALIBRATION_SEED", TEST_QISKIT_1Q_SEED_FILE)
 
     from app.tests.utils.executors.qiskit import (
         MockQiskitDynamicsExecutor,
@@ -141,13 +140,13 @@ def qiskit_1q_rest_client(
 
 @pytest.fixture
 def qiskit_2q_rest_client(
-    request, mocker, mock_mss, redis_client
+    request, mocker, mock_mss, redis_client, monkeypatch
 ) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
-    os.environ["BCC_EXECUTOR_TYPE"] = "qiskit_pulse_2q"
-    os.environ["BCC_DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_2Q
-    os.environ["BCC_BACKEND_SETTINGS"] = TEST_SIMQ2_BACKEND_SETTINGS_FILE
-    os.environ["BCC_CALIBRATION_SEED"] = TEST_QISKIT_2Q_SEED_FILE
+    monkeypatch.setenv("BCC_EXECUTOR_TYPE", "qiskit_pulse_2q")
+    monkeypatch.setenv("BCC_DEFAULT_PREFIX", TEST_DEFAULT_PREFIX_SIM_2Q)
+    monkeypatch.setenv("BCC_BACKEND_SETTINGS", TEST_SIMQ2_BACKEND_SETTINGS_FILE)
+    monkeypatch.setenv("BCC_CALIBRATION_SEED", TEST_QISKIT_2Q_SEED_FILE)
 
     from app.tests.utils.executors.qiskit import (
         MockQiskitDynamicsExecutor,
