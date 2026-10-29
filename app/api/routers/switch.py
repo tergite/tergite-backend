@@ -12,7 +12,7 @@
 """Routes that switch the device on and off"""
 from fastapi import APIRouter, Depends
 
-from app.services import scheduler
+from app.services import devices
 
 from ...libs.queues.dtos import QueueContext, get_queue_context
 from ...utils.api import GeneralMessage
@@ -40,7 +40,7 @@ def switch_off(
     Returns:
         general information on the status of the request
     """
-    scheduler.switch_off(context)
+    devices.switch_off(context)
     return {"status": "success"}
 
 
@@ -58,7 +58,7 @@ def switch_on(
     Returns:
         general information on the status of the request
     """
-    scheduler.switch_on(context)
+    devices.switch_on(context)
     return {"status": "success"}
 
 
@@ -74,5 +74,5 @@ async def get_switch_status(
     Returns:
         general information on the status of the request
     """
-    status = "OFF" if scheduler.is_offline(context) else "ON"
+    status = "OFF" if devices.is_offline(context) else "ON"
     return {"status": status}

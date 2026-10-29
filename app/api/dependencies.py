@@ -24,7 +24,6 @@ from sqlalchemy import Engine
 
 import settings
 
-from ..libs.device_parameters import save_all_device_params
 from ..libs.queues.dtos import (
     JobFile,
     QueueContext,
@@ -34,11 +33,11 @@ from ..libs.queues.dtos import (
 from ..services.booking.models import MSSTokenClaims
 from ..services.booking.service import get_user_job_id_pair_from_token
 from ..services.booking.store import get_bookings_sql_engine
+from ..services.devices import is_offline, save_all_device_params
 from ..services.external.mss.service import disconnect_mss_client, get_mss_client
 from ..services.scheduler import (
     get_job,
     init_recalibration,
-    is_offline,
     stop_recalibration,
 )
 from ..services.scheduler.queues import clear_queue_pool, get_queue_pool

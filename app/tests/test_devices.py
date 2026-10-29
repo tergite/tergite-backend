@@ -143,7 +143,7 @@ def test_switching_a_device_off_leaves_the_others_on(
     from app.libs.queues.dtos import clear_queue_context
 
     load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
-    mocker.patch("app.services.scheduler.service.get_mss_client")
+    mocker.patch("app.services.devices.service.get_mss_client")
     client = get_test_client(app)
     try:
         response = client.post(
@@ -170,7 +170,7 @@ def test_heavy_worker_waits_while_its_device_is_off(
     from app.libs.queues.dtos import clear_queue_context
 
     load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
-    mocker.patch("app.services.scheduler.service.get_mss_client")
+    mocker.patch("app.services.devices.service.get_mss_client")
     mocker.patch("app.api.worker.preload_worker_globals")
     alpha_worker = PreloadedRqWorker(
         [Queue("Alpha_preprocessing", connection=redis_client)],

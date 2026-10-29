@@ -13,7 +13,7 @@
 from fastapi import APIRouter, Depends
 from redis import Redis
 
-from ...libs import device_parameters as props_lib
+from ...services import devices
 from ...utils.redis import get_redis_connection
 from ..dependencies import get_backend_name, get_verified_mss_user_id
 
@@ -26,7 +26,7 @@ async def get_static_properties(
     backend_name: str = Depends(get_backend_name),
 ):
     """Retrieves the device properties that are not changing"""
-    return props_lib.get_device_info(redis, backend_name)
+    return devices.get_device_info(redis, backend_name)
 
 
 @router.get("/dynamic-properties", dependencies=[Depends(get_verified_mss_user_id)])
@@ -35,4 +35,4 @@ async def get_dynamic_properties(
     backend_name: str = Depends(get_backend_name),
 ):
     """Retrieves the device properties that are changing with time i.e. calibration data"""
-    return props_lib.get_device_calibration_info(redis, backend_name)
+    return devices.get_device_calibration_info(redis, backend_name)

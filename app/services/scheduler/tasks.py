@@ -31,10 +31,7 @@ from rq import Repeat, get_current_job
 
 from app.libs.qiskit.qobj import PulseQobj
 
-from ...libs.device_parameters import (
-    DeviceCalibration,
-    get_device_calibration_info,
-)
+from ...libs.device_parameters import DeviceCalibration
 from ...libs.qiskit_providers.utils import json_decoder
 from ...libs.quantum_executor.base.quantum_job import (
     MeasLvl,
@@ -59,6 +56,7 @@ from ..booking import get_active_booking
 from ..booking.models import Booking
 from ..booking.service import get_booking, get_next_booking
 from ..booking.store import get_bookings_sql_engine
+from ..devices import get_device_calibration_info
 from ..external.mss.dtos import DeviceEvent, DeviceEventName
 from ..external.mss.service import get_mss_client
 from .store import get_jobs_store

@@ -28,7 +28,6 @@ from rq import exceptions as rq_errors
 from sqlalchemy import Engine
 from sqlmodel import or_
 
-from ...libs.device_parameters import get_device_calibration_info
 from ...libs.queues.dtos import Job, JobStatus, QueueContext, Stage, StorageID
 from ...utils.api import GeneralMessage, save_uploaded_file
 from ...utils.datetime import get_utc_now, to_utc, utc_now_str
@@ -53,8 +52,7 @@ from ..booking.service import (
     get_booking,
     get_user,
 )
-from ..external.mss.dtos import DeviceEvent, DeviceEventName, DeviceSwitchData
-from ..external.mss.service import get_mss_client
+from ..devices import get_device_calibration_info
 from .dtos import RecalibrationInfo
 from .queues import QueuePool
 from .store import get_jobs_store
@@ -595,61 +593,6 @@ def get_recalibration_info(queues: QueuePool) -> RecalibrationInfo:
     return RecalibrationInfo.from_queue(queues.recalibration)
 
 
-def switch_off(
-    context: QueueContext,
-):
-    """Switches off the scheduler
-
-    Args:
-        context: the context of the queues
-
-    Raises:
-        MssRejectedError – error sending switch off data: {error message}
-        MssTimeoutError – error sending switch off data: response took longer than timeout
-    """
-    get_redis_connection().set(_get_offline_flag_key(context), 1)
-
-    # update MSS
-    mss_client = get_mss_client()
-    mss_client.send_event(
-        DeviceEvent(
-            name=DeviceEventName.SWITCHED_OFF,
-            data=DeviceSwitchData(date=get_utc_now()),
-        ),
-        error_prefix="error sending switch off data: ",
-    )
-
-
-def switch_on(
-    context: QueueContext,
-):
-    """Switches on the scheduler
-
-    Args:
-        context: the context of the queues
-
-    Raises:
-        MssRejectedError – error sending switch on data: {error message}
-        MssTimeoutError – error sending switch on data: response took longer than timeout
-    """
-    get_redis_connection().delete(_get_offline_flag_key(context))
-
-    # update MSS
-    mss_client = get_mss_client()
-    mss_client.send_event(
-        DeviceEvent(
-            name=DeviceEventName.SWITCHED_ON,
-            data=DeviceSwitchData(date=get_utc_now()),
-        ),
-        error_prefix="error sending switch on data: ",
-    )
-
-
-def is_offline(context: QueueContext) -> bool:
-    """Checks if the device of the given queue context is switched off"""
-    return get_redis_connection().exists(_get_offline_flag_key(context)) == 1
-
-
 def _cancel_job_in_queues(queues: QueuePool, job: Job, ignore_errors: bool = False):
     """Cancels the given job in the queues
 
@@ -711,8 +654,3 @@ def _cancel_booking_from_queues(queues: QueuePool, booking: Booking):
 
     # cancel and remove any end_event jobs
     cancel_rq_job(queue_connection, booking.end_event_id, ignore_errors=True)
-
-
-def _get_offline_flag_key(context: QueueContext) -> str:
-    """Gets the key of the flag set while the device is switched off, one per device"""
-    return f"{context['queue_prefix']}:offline"
