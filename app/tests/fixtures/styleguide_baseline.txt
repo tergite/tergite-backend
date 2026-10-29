@@ -1,10 +1,10 @@
 # Code that broke a style rule when app/tests/test_styleguide.py was added (step 1.9).
 # This list only shrinks: delete a line when its violation is fixed, never add one.
 banner: app/libs/quantum_executor/quantify/executor.py:116
-banner: settings.py:211
-banner: settings.py:213
-banner: settings.py:242
-banner: settings.py:244
+banner: settings.py:208
+banner: settings.py:210
+banner: settings.py:239
+banner: settings.py:241
 boolean: app/api/__init__.py::cancel_recalibration(ignore_errors)
 boolean: app/api/__init__.py::submit_job(force_normal_queue)
 boolean: app/api/dependencies.py::get_mss_token_claims_dep(job_exists)

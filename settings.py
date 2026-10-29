@@ -39,9 +39,6 @@ HAS_QUANTIFY = importlib.util.find_spec("quantify_scheduler") is not None
 
 _ROOT_PATH = Path(__file__).parent
 
-# Automatic root directory settings
-APP_ROOT_DIR = _ROOT_PATH / "app"
-
 
 class DeviceSettings:
     """The settings of one device, from its env file and the env variables
