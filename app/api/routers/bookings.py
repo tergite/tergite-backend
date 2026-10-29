@@ -1,0 +1,146 @@
+# This code is part of Tergite
+#
+# (C) Copyright Chalmers Next Labs 2026
+#
+# This code is licensed under the Apache License, Version 2.0. You may
+# obtain a copy of this license in the LICENSE.txt file in the root directory
+# of this source tree or at http://www.apache.org/licenses/LICENSE-2.0.
+#
+# Any modifications or derivative works of this code must retain this
+# copyright notice, and modified files need to carry a notice indicating
+# that they have been altered from the originals.
+"""Routes for the bookings of the device"""
+from datetime import datetime
+from typing import Optional, Tuple
+
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import Engine
+
+from app.services import booking, scheduler
+from app.services.booking.models import Booking, BookingsConfig, NewBookingInfo
+
+from ...libs.queues.dtos import QueueContext
+from ...services.scheduler.queues import QueuePool, get_queue_pool
+from ...utils.api import GeneralMessage, PaginatedListResponse
+from ...utils.sql_db import convert_http_sort_to_db_sort
+from ..dependencies import (
+    get_booking_db,
+    get_queue_context_if_online,
+    get_unverified_mss_is_admin,
+    get_verified_mss_user_id,
+)
+
+router = APIRouter()
+
+
+@router.post("/bookings")
+async def create_booking(
+    data: NewBookingInfo,
+    context: QueueContext = Depends(get_queue_context_if_online),
+    user_id: str = Depends(get_verified_mss_user_id),
+    queue_pool: QueuePool = Depends(get_queue_pool),
+    db_engine: Engine = Depends(get_booking_db),
+) -> Booking:
+    """Creates a booking for the user of the given token
+
+    Args:
+        user_id: the MSS user_id as sent by MSS
+        context: the queue context for the queues
+        data: the information about the new booking
+        queue_pool: the pool of queues to user
+        db_engine: the SQL database to submit data to
+
+    Returns:
+        the newly created booking
+    """
+    booking.get_or_create_user(db_engine, user_id)
+
+    return scheduler.submit_booking(
+        context,
+        queues=queue_pool,
+        user_id=user_id,
+        booking_info=data,
+        db_engine=db_engine,
+    )
+
+
+@router.post("/bookings/{booking_id}/cancel")
+async def cancel_booking(
+    booking_id: str,
+    context: QueueContext = Depends(get_queue_context_if_online),
+    user_id: str = Depends(get_verified_mss_user_id),
+    queue_pool: QueuePool = Depends(get_queue_pool),
+    is_mss_admin: bool = Depends(get_unverified_mss_is_admin),
+    db_engine: Engine = Depends(get_booking_db),
+) -> GeneralMessage:
+    """Cancels a booking of given id for the user of the given token
+
+    Args:
+        context: the queue context for the queues
+        booking_id: the unique identifier of the booking to cancel
+        user_id: the MSS user_id as sent by MSS
+        queue_pool: the collection of queues to run the jobs on
+        is_mss_admin: whether the user is an admin in MSS or not
+        db_engine: the SQL database to submit data to
+
+    Returns:
+        the general message object with the status
+    """
+    scheduler.cancel_booking(
+        context,
+        queues=queue_pool,
+        user_id=user_id,
+        booking_id=booking_id,
+        is_mss_admin=is_mss_admin,
+        db_engine=db_engine,
+    )
+    return {"status": "success", "detail": f"Booking of id {booking_id} cancelled"}
+
+
+@router.get("/bookings", dependencies=[Depends(get_verified_mss_user_id)])
+async def view_bookings(
+    skip: int = Query(default=0),
+    limit: Optional[int] = Query(default=None),
+    sort: Tuple[str, ...] = Query(default=()),
+    min_start_utc: Optional[datetime] = Query(default=None),
+    max_start_utc: Optional[datetime] = Query(default=None),
+    user_id: Optional[str] = Query(default=None),
+    db_engine: Engine = Depends(get_booking_db),
+) -> PaginatedListResponse[Booking]:
+    """Views all available bookings
+
+    Args:
+        skip: number of records to ignore at the top of the returned results; default is 0
+        limit: maximum number of records to return; default is None.
+        sort: fields to sort by; prepending "-" returns the records in descending order
+        db_engine: the SQL database engine to query
+        user_id: the unique identifier of the owner of the given bookings
+        min_start_utc: the minimum start time in UTC
+        max_start_utc: the maximum start time in UTC
+
+    Returns:
+        the paginated list of the available bookings
+    """
+    filters = []
+    if min_start_utc is not None:
+        filters.append(Booking.start_utc >= min_start_utc)
+    if max_start_utc is not None:
+        filters.append(Booking.start_utc <= max_start_utc)
+    if user_id is not None:
+        filters.append(Booking.user_id == user_id)
+
+    sort = convert_http_sort_to_db_sort(Booking, http_sort=sort)
+    data = booking.get_many_bookings(
+        db_engine, *filters, skip=skip, limit=limit, sort=sort
+    )
+    return PaginatedListResponse(skip=skip, limit=limit, data=data)
+
+
+@router.get("/bookings/config", dependencies=[Depends(get_verified_mss_user_id)])
+async def view_bookings_config() -> BookingsConfig:
+    """Views the configurations for the bookings service
+
+    Returns:
+        the instance of the bookings configurations
+    """
+    return BookingsConfig.from_settings()
