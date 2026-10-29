@@ -49,6 +49,7 @@ from typing import (
     Union,
 )
 
+import bcrypt
 import numpy as np
 import pytest
 import redis
@@ -445,6 +446,13 @@ def _run_in_the_test_root():
     os.chdir(TEST_ROOT)
     yield
     os.chdir(project_root)
+
+
+@pytest.fixture(autouse=True)
+def _hash_passwords_cheaply(mocker):
+    """Hashes at bcrypt's lowest cost: its default takes a quarter of a second a user"""
+    lowest_cost_salt = bcrypt.gensalt(rounds=4)
+    mocker.patch("bcrypt.gensalt", return_value=lowest_cost_salt)
 
 
 @pytest.fixture(autouse=True)

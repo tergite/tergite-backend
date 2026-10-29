@@ -192,6 +192,13 @@ Tests and tooling only. After this step, a refactor commit that changes behaviou
    `app` and running the lifespan for each of about 120 tests; preload the executor once per session, not in every
    `PreloadedSimpleWorker.__init__`; replace `test_store.py`'s real sleeps (about 21 s) with `time-machine`, which then
    replaces `freezegun` and `pytest-freezegun` too.
+   **Done otherwise, by measurement.** Reloading the app and running its lifespan cost about 0.04 s a test, and
+   the worker fixtures 4.6 s in all, while creating a user cost 0.25 s, bcrypt hashing at its default cost: the
+   tests now hash at its lowest, which took the serial suite from 142 s to 80 s. One app for the session would
+   need one app serving the three devices and a session-long lifespan whose per-test effects (start-up events,
+   the recalibration it enqueues) many tests rely on; step 4 rebuilds the app's construction, so it is left to
+   it. `test_store.py`'s sleeps stay: Redis expires the fields itself, which no Python clock moves, and step 5.3
+   replaces the store. `freezegun` and `pytest-freezegun` go: `test_store.py`'s `freezer` is a time-machine fixture.
 6. **Test helpers by job**, in `app/tests/utils/`: from `conftest.py` (568 lines), the parameter lists to `params.py`,
    the LDA mocks to `analysis.py`, `redis_client` and the three `rq_worker*` fixtures, which differ only in a prefix,
    to `redis.py` and `rq.py`, the three REST-client fixtures to `clients.py` (made consistent: today only the qiskit

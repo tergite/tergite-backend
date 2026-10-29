@@ -13,10 +13,11 @@
 """Module containing tests for the store library"""
 import time
 from datetime import datetime, timezone
-from typing import Dict, List, Tuple, Type, Union
+from typing import Any, Dict, Generator, List, Tuple, Type, Union
 from uuid import uuid4
 
 import pytest
+import time_machine
 from pydantic import Field, ValidationError
 from redis import Redis
 
@@ -70,8 +71,15 @@ _INDEX_PREFIXES = {
 }
 
 
+@pytest.fixture
+def frozen_clock() -> Generator[time_machine.Traveller, Any, None]:
+    """Stops the clock, so that the timestamps a test expects are those the store writes"""
+    with time_machine.travel(datetime.now(timezone.utc), tick=False) as traveller:
+        yield traveller
+
+
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_update_by_single_key(redis_client, payload, freezer):
+def test_update_by_single_key(redis_client, payload, frozen_clock):
     """Calling update() with a raw redis key updates the item if it exists already"""
     auth_logs = Collection(redis_client, schema=AuthLog, partial_schema=PartialAuthLog)
     payload = with_current_timestamps([payload], fields=["updated_at", "created_at"])[0]
@@ -205,7 +213,7 @@ def test_update_ttl_with_default_ttl(redis_client, payload):
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_dict_update_by_single_key(redis_client, payload, freezer):
+def test_dict_update_by_single_key(redis_client, payload, frozen_clock):
     """Calling update() with a raw redis key, and dict updates, changes the item if it exists already"""
     auth_logs = Collection(redis_client, schema=AuthLog)
     payload = with_current_timestamps([payload], fields=["updated_at", "created_at"])[0]
@@ -232,7 +240,7 @@ def test_dict_update_by_single_key(redis_client, payload, freezer):
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_update_by_tuple_key(redis_client, payload, freezer):
+def test_update_by_tuple_key(redis_client, payload, frozen_clock):
     """Calling update() with a tuple of keys updates the item if it exists already"""
     auth_logs = Collection(redis_client, schema=AuthLog, partial_schema=PartialAuthLog)
     payload = with_current_timestamps([payload], fields=["updated_at", "created_at"])[0]
@@ -259,7 +267,7 @@ def test_update_by_tuple_key(redis_client, payload, freezer):
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_dict_update_by_tuple_key(redis_client, payload, freezer):
+def test_dict_update_by_tuple_key(redis_client, payload, frozen_clock):
     """Calling update() with a tuple of keys, and dict updates, changes the item if it exists already"""
     auth_logs = Collection(redis_client, schema=AuthLog)
     payload = with_current_timestamps([payload], fields=["updated_at", "created_at"])[0]
@@ -286,7 +294,7 @@ def test_dict_update_by_tuple_key(redis_client, payload, freezer):
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_update_by_dict_key(redis_client, payload, freezer):
+def test_update_by_dict_key(redis_client, payload, frozen_clock):
     """Calling update() with a primary key in dict form updates the item if it exists already"""
     auth_logs = Collection(redis_client, schema=AuthLog, partial_schema=PartialAuthLog)
     payload = with_current_timestamps([payload], fields=["updated_at", "created_at"])[0]
@@ -312,7 +320,7 @@ def test_update_by_dict_key(redis_client, payload, freezer):
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_dict_update_by_dict_key(redis_client, payload, freezer):
+def test_dict_update_by_dict_key(redis_client, payload, frozen_clock):
     """Calling update() with a primary key in dict form, and update dict, changes the item if it exists already"""
     auth_logs = Collection(redis_client, schema=AuthLog)
     payload = with_current_timestamps([payload], fields=["updated_at", "created_at"])[0]
@@ -338,7 +346,7 @@ def test_dict_update_by_dict_key(redis_client, payload, freezer):
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_update_not_found(redis_client, payload, freezer):
+def test_update_not_found(redis_client, payload, frozen_clock):
     """Calling update() fails if the item does not exist"""
     auth_logs = Collection(redis_client, schema=AuthLog, partial_schema=PartialAuthLog)
 
@@ -371,7 +379,7 @@ def test_update_not_found(redis_client, payload, freezer):
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_update_invalid_model(redis_client, payload, freezer):
+def test_update_invalid_model(redis_client, payload, frozen_clock):
     """update() fails if the update payload does not satisfy the model"""
     auth_logs = Collection(redis_client, schema=AuthLog)
 
@@ -581,7 +589,7 @@ def test_insert_index(redis_client):
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_insert_invalid_model(redis_client, payload, freezer):
+def test_insert_invalid_model(redis_client, payload, frozen_clock):
     """insert() fails if the payload passed does not satisfy the model"""
     auth_logs = Collection(redis_client, schema=AuthLog)
 
@@ -598,7 +606,7 @@ def test_insert_invalid_model(redis_client, payload, freezer):
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_get_one(redis_client, payload, freezer):
+def test_get_one(redis_client, payload, frozen_clock):
     """Calling get_one() gets the item identified by the given key"""
     auth_logs = Collection(redis_client, schema=AuthLog)
 
@@ -621,7 +629,7 @@ def test_get_one(redis_client, payload, freezer):
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_get_one_not_found(redis_client, payload, freezer):
+def test_get_one_not_found(redis_client, payload, frozen_clock):
     """Calling get_one() raises ItemNotFoundError if item is nonexistent"""
     auth_logs = Collection(redis_client, schema=AuthLog)
 
@@ -642,7 +650,7 @@ def test_get_one_not_found(redis_client, payload, freezer):
 
 
 @pytest.mark.parametrize("desc", [True, False])
-def test_get_all(redis_client, desc, freezer):
+def test_get_all(redis_client, desc, frozen_clock):
     """Calling get_all() gets the items in the collection sorted by key"""
     items = [AuthLog(**{"status": "pending", **payload}) for payload in _AUTH_LOG_LIST]
     auth_logs = Collection(redis_client, schema=AuthLog)
@@ -658,7 +666,7 @@ def test_get_all(redis_client, desc, freezer):
     assert hmap == expected_hmap
 
 
-def test_find_by_keys(redis_client, freezer):
+def test_find_by_keys(redis_client, frozen_clock):
     """Calling find_by_keys() gets the items with the given keys"""
     items = [AuthLog(**{"status": "pending", **payload}) for payload in _AUTH_LOG_LIST]
     auth_logs = Collection(redis_client, schema=AuthLog)
@@ -679,7 +687,7 @@ def test_find_by_keys(redis_client, freezer):
     assert items_by_key_dict == items[:-1]
 
 
-def test_find_by_index(redis_client, freezer):
+def test_find_by_index(redis_client, frozen_clock):
     """Calling find_by_index() gets the items by searching in its index"""
     items = [AuthLog(**{"status": "pending", **payload}) for payload in _AUTH_LOG_LIST]
     _Partial = PartialAuthLog
@@ -738,7 +746,9 @@ def test_find_by_index(redis_client, freezer):
 
 
 @pytest.mark.parametrize("bounds", _DELETE_SLICES)
-def test_delete_many_by_single_keys(redis_client, bounds: Tuple[int, int], freezer):
+def test_delete_many_by_single_keys(
+    redis_client, bounds: Tuple[int, int], frozen_clock
+):
     """Calling delete_many() removes items with matching single key strings in the collection"""
     items = [AuthLog(**{"status": "pending", **payload}) for payload in _AUTH_LOG_LIST]
     auth_logs = Collection(redis_client, schema=AuthLog)
@@ -755,7 +765,7 @@ def test_delete_many_by_single_keys(redis_client, bounds: Tuple[int, int], freez
 
 
 @pytest.mark.parametrize("bounds", _DELETE_SLICES)
-def test_delete_many_by_key_tuples(redis_client, bounds: Tuple[int, int], freezer):
+def test_delete_many_by_key_tuples(redis_client, bounds: Tuple[int, int], frozen_clock):
     """Calling delete_many() removes items with matching key tuples in the collection"""
     items = [AuthLog(**{"status": "pending", **payload}) for payload in _AUTH_LOG_LIST]
     auth_logs = Collection(redis_client, schema=AuthLog)
@@ -774,7 +784,7 @@ def test_delete_many_by_key_tuples(redis_client, bounds: Tuple[int, int], freeze
 
 
 @pytest.mark.parametrize("bounds", _DELETE_SLICES)
-def test_delete_many_by_key_dicts(redis_client, bounds: Tuple[int, int], freezer):
+def test_delete_many_by_key_dicts(redis_client, bounds: Tuple[int, int], frozen_clock):
     """Calling delete_many() removes items with matching key dictionaries in the collection"""
     items = [AuthLog(**{"status": "pending", **payload}) for payload in _AUTH_LOG_LIST]
     auth_logs = Collection(redis_client, schema=AuthLog)
@@ -837,7 +847,7 @@ def test_delete_indexes(redis_client, payload):
     assert redis_client.zrange(app_token_idx_key, 0, -1) == [second_key_bytes]
 
 
-def test_clear(redis_client, freezer):
+def test_clear(redis_client, frozen_clock):
     """Calling clear() removes all items in hashmap"""
     items = [AuthLog(**{"status": "pending", **payload}) for payload in _AUTH_LOG_LIST]
     auth_logs = Collection(redis_client, schema=AuthLog)
@@ -892,7 +902,7 @@ def test_clear_indexes(redis_client, payload):
 
 
 @pytest.mark.parametrize("payload", _AUTH_LOG_LIST)
-def test_exists(redis_client, payload, freezer):
+def test_exists(redis_client, payload, frozen_clock):
     """Calling exists() checks that key exists"""
     auth_logs = Collection(redis_client, schema=AuthLog)
 
