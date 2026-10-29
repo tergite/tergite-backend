@@ -328,6 +328,9 @@ the connections. This step makes the device explicit.
    jobs store, queues, MSS client, executor options, loaded keys and executor lock. The lifespan builds one per device
    from `get_device_settings(name)` and closes them on shutdown, replacing the seven `clear_*` calls
    (`dependencies.py:88-97`); the RQ worker builds its device's at start-up (`app/api/worker.py`).
+   *Done in steps:* `DeviceResources` lives in the scheduler, whose tasks take it; until 4.4 its `from_settings` gets
+   each piece from its registry, so the routes, the tasks and the registries share one of each, and the `clear_*`
+   calls go with their registries.
 2. **The API passes it.** `DeviceRoutingMiddleware` (`app/api/device_routing.py:38`) puts the device's name on
    `request.state`; `DeviceResourcesDep` gives a route its device's resources; routes call services with them.
 3. **The tasks are passed it.** RQ tasks take the job's own data; the worker's `perform_job` supplies the device's

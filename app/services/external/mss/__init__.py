@@ -10,7 +10,12 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """The Main Service Server (MSS): the client to it, its events and the signatures it trusts"""
-from .auth import encrypt_mss_jwt_token, verify_mss_signature
+from .auth import (
+    encrypt_mss_jwt_token,
+    get_mss_public_key,
+    get_private_key,
+    verify_mss_signature,
+)
 from .dtos import DeviceEvent, DeviceEventName, DeviceSwitchData, EventResponse
 from .service import MssClient, disconnect_mss_client, get_mss_client
 
@@ -23,5 +28,7 @@ __all__ = [
     "disconnect_mss_client",
     "encrypt_mss_jwt_token",
     "get_mss_client",
+    "get_mss_public_key",
+    "get_private_key",
     "verify_mss_signature",
 ]

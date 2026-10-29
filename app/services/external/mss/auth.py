@@ -110,7 +110,7 @@ def encrypt_mss_jwt_token(token: str, key_path: Optional[Path] = None) -> str:
     Returns:
         the encrypted token
     """
-    mss_pub_key = _get_mss_public_key(key_path=key_path)
+    mss_pub_key = get_mss_public_key(key_path=key_path)
     cipher_bytes = mss_pub_key.encrypt(
         token.encode(),
         padding.OAEP(
@@ -135,7 +135,7 @@ def verify_mss_signature(
     Raises:
         InvalidSignature: if signature does not match with what would be expected from MSS
     """
-    mss_pub_key = _get_mss_public_key(key_path=key_path)
+    mss_pub_key = get_mss_public_key(key_path=key_path)
     mss_pub_key.verify(
         base64.b64decode(signature),
         message.encode(),
@@ -146,7 +146,7 @@ def verify_mss_signature(
     )
 
 
-def _get_mss_public_key(key_path: Optional[Path] = None) -> RSAPublicKey:
+def get_mss_public_key(key_path: Optional[Path] = None) -> RSAPublicKey:
     """Loads the public key for MSS given the path to the key file
 
     Args:

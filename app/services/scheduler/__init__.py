@@ -13,6 +13,7 @@
 """Runs the jobs on the device: their queues, the bookings' hold on them, and recalibration"""
 from .dtos import JobFile, RecalibrationInfo
 from .queues import QueuePool, clear_queue_pool, get_queue_pool
+from .resources import DeviceResources
 from .service import (
     cancel_booking,
     cancel_job,
@@ -34,6 +35,7 @@ from .utils import (
 )
 
 __all__ = [
+    "DeviceResources",
     "JobFile",
     "QueuePool",
     "RecalibrationInfo",

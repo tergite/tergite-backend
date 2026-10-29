@@ -21,13 +21,11 @@ from rq.worker import StopRequested
 import settings
 
 from ..libs.queues.dtos import get_queue_context
-from ..services.booking import get_bookings_sql_engine
 from ..services.devices import is_offline, save_all_device_params
 from ..services.external.mss import get_mss_client
 from ..services.scheduler import (
+    DeviceResources,
     get_executor_and_options,
-    get_jobs_store,
-    get_queue_pool,
 )
 from ..utils.config import create_device_folders
 from ..utils.redis import get_redis_connection
@@ -43,9 +41,10 @@ class PreloadedRqWorker(Worker):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.device_resources: dict[str, DeviceResources] = {}
         for device in {_get_device_of_queue(queue.name) for queue in self.queues}:
             with settings.using_device(device):
-                preload_worker_globals(
+                self.device_resources[device] = preload_worker_globals(
                     should_load_executor=self.should_preload_executor
                 )
 
@@ -75,9 +74,13 @@ class LightRqWorker(PreloadedRqWorker):
     should_wait_while_offline = False
 
 
-def preload_worker_globals(should_load_executor: bool) -> None:
-    """Initializes connections and other globals, so that the jobs, forked or run in
-    process, find them cached"""
+def preload_worker_globals(should_load_executor: bool) -> DeviceResources:
+    """Initializes the current device's resources and other globals, so that the jobs,
+    forked or run in process, find them cached
+
+    Returns:
+        the current device's resources
+    """
     create_device_folders(settings.get_device_settings())
     # so that the jobs need not import it
     import_module("app.services.scheduler.tasks")
@@ -94,9 +97,7 @@ def preload_worker_globals(should_load_executor: bool) -> None:
             mss_client=mss_client,
         )
     get_queue_context()
-    get_queue_pool()
-    get_jobs_store()
-    get_bookings_sql_engine()
+    return DeviceResources.from_settings(settings.get_device_settings())
 
 
 def _get_device_of_queue(queue_name: str) -> str:

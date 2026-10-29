@@ -71,6 +71,24 @@ def test_each_device_has_its_own_queues(tmp_path, monkeypatch):
         clear_queue_context()
 
 
+def test_app_keeps_each_device_resources_while_it_runs(
+    tmp_path, monkeypatch, patched_mss_websockets
+):
+    load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
+    from app.api import app
+
+    with get_test_client(app):
+        device_resources = app.state.device_resources
+
+        assert {
+            name: resources.settings.default_prefix
+            for name, resources in device_resources.items()
+        } == {"Alpha": "Alpha", "Beta": "Beta"}
+        assert (
+            device_resources["Beta"].bookings_db.url.database == f"{tmp_path}/Beta.db"
+        )
+
+
 def test_each_device_path_reaches_that_device(tmp_path, monkeypatch):
     """/<device>/... is that device's API, and a path naming no device the default one's"""
     load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])

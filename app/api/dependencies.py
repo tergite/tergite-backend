@@ -41,6 +41,7 @@ from ..services.external.mss import (
     verify_mss_signature,
 )
 from ..services.scheduler import (
+    DeviceResources,
     JobFile,
     clear_jobs_stores_registry,
     clear_quantum_executor,
@@ -76,6 +77,7 @@ async def lifespan(app: FastAPI):
     """Starts each device this process serves before the application, and stops them after"""
     # each API worker, which uvicorn may start apart from main.py, sets up its own
     set_up_logging(settings.get_device_settings().log_level)
+    app.state.device_resources = {}
     for device in settings.get_device_names():
         create_device_folders(settings.get_device_settings(device))
         # one API worker at a time, as starting a device restarts its recalibration
@@ -88,6 +90,9 @@ async def lifespan(app: FastAPI):
                 raise_on_release_error=False,
             ),
         ):
+            app.state.device_resources[device] = DeviceResources.from_settings(
+                settings.get_device_settings(device)
+            )
             _start_device()
 
     logging.info(f"starting app at {get_utc_now()}")
