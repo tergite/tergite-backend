@@ -102,13 +102,11 @@ class MssClient:
         self._private_key_password: bytes = key_password
         self._open_timeout = open_timeout
         self._max_reconnection_delay = max_reconnection_delay
-        self._device = device
         self._kwargs = kwargs
         self._client: Optional[ClientConnection] = None
         self._max_reconnections = (
             math.inf if max_reconnections is None else max_reconnections
         )
-        self.__current_delay: float = 1
 
     def __connect(self, **kwargs: Any) -> ClientConnection:
         """Connects to MSS returning a new connection
@@ -247,14 +245,6 @@ class MssClient:
         if resp.get("status") != "success":
             raise MssRejectedError(f"{error_prefix}{resp.get('detail')}")
         return cast(EventResponse, resp)
-
-    def __enter__(self):
-        """Creates a context manager that yields MSSClient instance"""
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Exits from the context manager"""
-        self._client.close()
 
     def close(self) -> None:
         """Closes client to MSS"""

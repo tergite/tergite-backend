@@ -713,27 +713,6 @@ def _cancel_booking_from_queues(queues: QueuePool, booking: Booking):
     cancel_rq_job(queue_connection, booking.end_event_id, ignore_errors=True)
 
 
-def _get_current_recalibration_job_id(queues: QueuePool) -> Optional[str]:
-    """Gets the rq job id for the recalibration job
-
-    Args:
-        queues: the pool of queues that jobs run on
-
-    Returns:
-        the rq job id for the recalibration job or None if non-existent
-    """
-    enqueued_jobs = queues.recalibration.get_job_ids(offset=-1, length=-1)
-    scheduled_jobs = queues.recalibration.scheduled_job_registry.get_job_ids(
-        start=-1, end=-1
-    )
-    if scheduled_jobs:
-        return scheduled_jobs[0]
-    elif enqueued_jobs:
-        return enqueued_jobs[0]
-
-    return None
-
-
 def _get_offline_flag_key(context: QueueContext) -> str:
     """Gets the key of the flag set while the device is switched off, one per device"""
     return f"{context['queue_prefix']}:offline"

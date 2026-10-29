@@ -279,7 +279,6 @@ def execute(
 
     except Exception as exp:
         logging.error(f"Job failed\nJob execution failed. exp: {exp}")
-        print(f"Job failed\nJob execution failed. exp: {exp}")
         _fail_job(jobs_store, job_id=job_id, reason="unexpected error during execution")
         raise exp
 
@@ -358,9 +357,6 @@ def postprocessing_success_callback(
     mss_client = get_mss_client()
     if job.status == JobStatus.SUCCESSFUL:
         job = update_job_stage(jobs_store, job_id=job_id, stage=Stage.FINAL_W)
-        print(f"Job with ID {job_id} has finished")
-    else:
-        print(f"Job {job_id}, has failed: aborting. Status: {job.status}")
 
     update_job_in_mss(mss_client, payload=job)
 
@@ -444,18 +440,6 @@ def _is_job_shorter(storage_id: StorageID, duration: float) -> bool:
     return storage_id.duration < duration
 
 
-def _get_idle_timer_id(booking_id: str) -> str:
-    """Gets the rq job id for the idle timer job for the booking of given booking_id
-
-    Args:
-        booking_id: the unique identifier of the booking
-
-    Returns:
-        the rq job id for the idle timer job
-    """
-    return f"{booking_id}_idle_timer"
-
-
 def _try_enqueue_on_normal_queue(
     job: Job,
     context: QueueContext,
@@ -509,18 +493,16 @@ def _try_enqueue_on_booked_queue(
 
     if the booking has ended, or been deleted, since the job was submitted:
         - Try the normal queue instead
-    if force_normal_queue is True:
-        - Push the job to the waitlist
     else if the user is owner of the current booking:
-        - reset the booked_execution queue idle time counter
+        - If force_normal_queue is True:
+            - Push the job to the waitlist
         - If the job's execution duration is greater than the total time left on the booked_execution queue:
             - raise error "job too long for the time left in the booking"
         - Otherwise:
+            - reset the booked_execution queue idle time counter
             - Push the job to the booked_execution queue
-    Otherwise if not from waitlist:
+    Otherwise:
         - Push the job to the waitlist
-    else:
-        push it to the booked_execution queue
 
     Args:
         job: the job that is to be run
@@ -573,10 +555,7 @@ def _try_enqueue_on_booked_queue(
             queue.enqueue(job, context, job_id=get_rq_job_id(job_id, Stage.EXEC_Q))
         return job_id, context
 
-    if not is_booker:
-        _push_to_waitlist(job_id=job_id, context=context)
-        return job_id, context
-
+    _push_to_waitlist(job_id=job_id, context=context)
     return job_id, context
 
 

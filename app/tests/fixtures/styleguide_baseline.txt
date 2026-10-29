@@ -316,8 +316,6 @@ type-hints: app/services/booking/service.py::_validate_max_slots
 type-hints: app/services/booking/service.py::_validate_no_overlap
 type-hints: app/services/booking/service.py::delete_bookings
 type-hints: app/services/booking/service.py::delete_users
-type-hints: app/services/external/mss/service.py::MssClient.__enter__
-type-hints: app/services/external/mss/service.py::MssClient.__exit__
 type-hints: app/services/external/mss/service.py::MssClient.send
 type-hints: app/services/external/mss/service.py::disconnect_mss_client
 type-hints: app/services/scheduler/queues.py::QueuePool.empty

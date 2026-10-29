@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
 import numpy as np
 from numpy import typing as npt
-from redis import Redis
 
 import settings
 
@@ -449,34 +448,3 @@ def _get_next_timestamps(job: Job, next_stage: Stage, current_time: str) -> Time
     }
 
     return timestamps.with_updates(new_timestamps)
-
-
-def _get_redis_url(redis: Redis) -> str:
-    """Gets the redis URL from the redis connection
-
-    Args:
-        redis: the redis connection
-
-    Returns:
-        the redis URL  "redis(s)://username:password@host:port/dbname"
-
-    Raises:
-        ValueError: unix connection is not supported
-    """
-    conn_kwargs = redis.connection_pool.connection_kwargs
-    auth_str = ""
-    scheme = "redis"
-    db = conn_kwargs["db"]
-    host = conn_kwargs["host"]
-    port = conn_kwargs["port"]
-    if "username" in conn_kwargs:
-        auth_str = f"{conn_kwargs['username']}"
-    if "password" in conn_kwargs:
-        auth_str = f":{conn_kwargs['password']}"
-    if auth_str != "":
-        auth_str = f"{auth_str}@"
-
-    if conn_kwargs.get("ssl"):
-        scheme = "rediss"
-
-    return f"{scheme}://{auth_str}{host}:{port}/{db}"

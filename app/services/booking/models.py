@@ -34,8 +34,6 @@ from app.utils.strings import uuid_str
 class MSSTokenClaims(BaseModel):
     """The model of the claims stored in special MSS JWT token given to users"""
 
-    __primary_key_fields__ = ("job_id", "user_id")
-
     job_id: str
     user_id: str
 
