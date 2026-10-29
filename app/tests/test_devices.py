@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import pytest
 
+from app.services.external.mss import MssClient
 from app.tests.utils.api import create_mss_headers, get_test_client
 from app.tests.utils.devices import load_test_devices
 from app.tests.utils.params import USERS
@@ -89,29 +90,30 @@ def test_app_keeps_each_device_resources_while_it_runs(
         )
 
 
-def test_each_device_path_reaches_that_device(tmp_path, monkeypatch):
+def test_each_device_path_reaches_that_device(tmp_path, monkeypatch, mocker):
     """/<device>/... is that device's API, and a path naming no device the default one's"""
     load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
     from app.api import app
 
-    client = get_test_client(app)
-    user_id = f"{uuid4()}"
+    mocker.patch.object(MssClient, "send_event")
+    with get_test_client(app) as client:
+        user_id = f"{uuid4()}"
 
-    response = client.post(
-        "/Beta/users",
-        json={**USERS[0], "id": user_id},
-        headers=create_mss_headers(is_admin=True),
-    )
-    assert response.status_code == 200
+        response = client.post(
+            "/Beta/users",
+            json={**USERS[0], "id": user_id},
+            headers=create_mss_headers(is_admin=True),
+        )
+        assert response.status_code == 200
 
-    def get_user_ids(path: str) -> list[str]:
-        # each request takes a fresh nonce
-        response = client.get(path, headers=create_mss_headers(is_admin=True))
-        return [user["id"] for user in response.json()["data"]]
+        def get_user_ids(path: str) -> list[str]:
+            # each request takes a fresh nonce
+            response = client.get(path, headers=create_mss_headers(is_admin=True))
+            return [user["id"] for user in response.json()["data"]]
 
-    assert user_id in get_user_ids("/Beta/users")
-    assert user_id not in get_user_ids("/Alpha/users")
-    assert user_id not in get_user_ids("/users")
+        assert user_id in get_user_ids("/Beta/users")
+        assert user_id not in get_user_ids("/Alpha/users")
+        assert user_id not in get_user_ids("/users")
 
 
 def test_worker_runs_each_job_as_its_queue_device(tmp_path, monkeypatch):
@@ -161,18 +163,22 @@ def test_switching_a_device_off_leaves_the_others_on(
     from app.libs.queues.dtos import clear_queue_context
 
     load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
-    mocker.patch("app.services.devices.service.get_mss_client")
-    client = get_test_client(app)
+    mocker.patch.object(MssClient, "send_event")
     try:
-        response = client.post(
-            "/Alpha/switch/off", headers=create_mss_headers(is_admin=True)
-        )
-        assert response.status_code == 200
+        with get_test_client(app) as client:
+            response = client.post(
+                "/Alpha/switch/off", headers=create_mss_headers(is_admin=True)
+            )
+            assert response.status_code == 200
 
-        alpha_status = client.get("/Alpha/switch/status", headers=create_mss_headers())
-        beta_status = client.get("/Beta/switch/status", headers=create_mss_headers())
-        assert alpha_status.json() == {"status": "OFF"}
-        assert beta_status.json() == {"status": "ON"}
+            alpha_status = client.get(
+                "/Alpha/switch/status", headers=create_mss_headers()
+            )
+            beta_status = client.get(
+                "/Beta/switch/status", headers=create_mss_headers()
+            )
+            assert alpha_status.json() == {"status": "OFF"}
+            assert beta_status.json() == {"status": "ON"}
     finally:
         clear_queue_context()
 
@@ -183,13 +189,21 @@ def test_heavy_worker_waits_while_its_device_is_off(
     from rq import Queue
     from rq.worker import StopRequested
 
+    import settings
     from app.api import app
     from app.api.worker import PreloadedRqWorker
     from app.libs.queues.dtos import clear_queue_context
+    from app.services.scheduler import DeviceResources
 
     load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
-    mocker.patch("app.services.devices.service.get_mss_client")
-    mocker.patch("app.api.worker.preload_worker_globals")
+    mocker.patch.object(MssClient, "send_event")
+    # the worker's start-up, but for building the executor and publishing the device
+    mocker.patch(
+        "app.api.worker.preload_worker_globals",
+        side_effect=lambda should_load_executor: DeviceResources.from_settings(
+            settings.get_device_settings()
+        ),
+    )
     alpha_worker = PreloadedRqWorker(
         [Queue("Alpha_preprocessing", connection=redis_client)],
         connection=redis_client,
@@ -199,9 +213,8 @@ def test_heavy_worker_waits_while_its_device_is_off(
         connection=redis_client,
     )
     try:
-        get_test_client(app).post(
-            "/Alpha/switch/off", headers=create_mss_headers(is_admin=True)
-        )
+        with get_test_client(app) as client:
+            client.post("/Alpha/switch/off", headers=create_mss_headers(is_admin=True))
 
         with pytest.raises(StopRequested):
             alpha_worker.check_for_suspension(True)
@@ -255,7 +268,7 @@ def test_each_device_has_its_own_executor_lock(tmp_path, monkeypatch):
     ],
 )
 def test_each_route_group_reaches_the_device_its_path_names(
-    tmp_path, monkeypatch, redis_client, path
+    tmp_path, monkeypatch, mocker, redis_client, path
 ):
     import settings
     from app.api import app
@@ -281,8 +294,10 @@ def test_each_route_group_reaches_the_device_its_path_names(
         app.dependency_overrides, get_verified_mss_admin_user_id, record_device
     )
     monkeypatch.setitem(app.dependency_overrides, get_bearer_token, record_device)
+    mocker.patch.object(MssClient, "send_event")
     try:
-        get_test_client(app).get(f"/Beta{path}")
+        with get_test_client(app) as client:
+            client.get(f"/Beta{path}")
 
         assert reached_devices == ["Beta"]
     finally:

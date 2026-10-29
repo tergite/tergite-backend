@@ -26,16 +26,13 @@
 from redis import Redis
 
 from ...libs.device_parameters import BackendConfig, Device, DeviceCalibration
-from ...libs.queues.dtos import QueueContext
 from ...utils.datetime import get_utc_now
-from ...utils.redis import get_redis_connection
 from ...utils.redis_store import Collection
 from ..external.mss import (
     DeviceEvent,
     DeviceEventName,
     DeviceSwitchData,
     MssClient,
-    get_mss_client,
 )
 
 
@@ -104,22 +101,14 @@ def save_all_device_params(
     )
 
 
-def switch_off(
-    context: QueueContext,
-) -> None:
-    """Switches off the scheduler
-
-    Args:
-        context: the context of the queues
+def switch_off(redis: Redis, mss_client: MssClient, device_name: str) -> None:
+    """Switches off the device, and tells MSS
 
     Raises:
-        MssRejectedError – error sending switch off data: {error message}
-        MssTimeoutError – error sending switch off data: response took longer than timeout
+        MssRejectedError: error sending switch off data: {error message}
+        MssTimeoutError: error sending switch off data: response took longer than timeout
     """
-    get_redis_connection().set(_get_offline_flag_key(context), 1)
-
-    # update MSS
-    mss_client = get_mss_client()
+    redis.set(_get_offline_flag_key(device_name), 1)
     mss_client.send_event(
         DeviceEvent(
             name=DeviceEventName.SWITCHED_OFF,
@@ -129,22 +118,14 @@ def switch_off(
     )
 
 
-def switch_on(
-    context: QueueContext,
-) -> None:
-    """Switches on the scheduler
-
-    Args:
-        context: the context of the queues
+def switch_on(redis: Redis, mss_client: MssClient, device_name: str) -> None:
+    """Switches on the device, and tells MSS
 
     Raises:
-        MssRejectedError – error sending switch on data: {error message}
-        MssTimeoutError – error sending switch on data: response took longer than timeout
+        MssRejectedError: error sending switch on data: {error message}
+        MssTimeoutError: error sending switch on data: response took longer than timeout
     """
-    get_redis_connection().delete(_get_offline_flag_key(context))
-
-    # update MSS
-    mss_client = get_mss_client()
+    redis.delete(_get_offline_flag_key(device_name))
     mss_client.send_event(
         DeviceEvent(
             name=DeviceEventName.SWITCHED_ON,
@@ -154,14 +135,14 @@ def switch_on(
     )
 
 
-def is_offline(context: QueueContext) -> bool:
-    """Checks if the device of the given queue context is switched off"""
-    return get_redis_connection().exists(_get_offline_flag_key(context)) == 1
+def is_offline(redis: Redis, device_name: str) -> bool:
+    """Checks if the named device is switched off"""
+    return redis.exists(_get_offline_flag_key(device_name)) == 1
 
 
-def _get_offline_flag_key(context: QueueContext) -> str:
+def _get_offline_flag_key(device_name: str) -> str:
     """Gets the key of the flag set while the device is switched off, one per device"""
-    return f"{context['queue_prefix']}:offline"
+    return f"{device_name}:offline"
 
 
 def _save_device_info(redis: Redis, data: Device) -> None:

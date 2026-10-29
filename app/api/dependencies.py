@@ -14,7 +14,7 @@ import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Annotated, Optional
 
 from cryptography.exceptions import InvalidSignature
 from fastapi import Depends, FastAPI, UploadFile
@@ -31,13 +31,11 @@ from ..libs.queues.dtos import (
 )
 from ..services.booking import (
     MSSTokenClaims,
-    get_bookings_sql_engine,
     get_user_job_id_pair_from_token,
 )
 from ..services.devices import is_offline, save_all_device_params
 from ..services.external.mss import (
     disconnect_mss_client,
-    get_mss_client,
     verify_mss_signature,
 )
 from ..services.scheduler import (
@@ -46,9 +44,7 @@ from ..services.scheduler import (
     clear_jobs_stores_registry,
     clear_quantum_executor,
     clear_queue_pool,
-    get_executor_options,
     get_job,
-    get_queue_pool,
     init_recalibration,
     stop_recalibration,
 )
@@ -93,16 +89,15 @@ async def lifespan(app: FastAPI):
             app.state.device_resources[device] = DeviceResources.from_settings(
                 settings.get_device_settings(device)
             )
-            _start_device()
+            _start_device(app.state.device_resources[device])
 
     logging.info(f"starting app at {get_utc_now()}")
     yield
 
     for device in settings.get_device_names():
         with settings.using_device(device):
-            stop_recalibration(
-                get_queue_context(), queues=get_queue_pool(), ignore_errors=True
-            )
+            stop_recalibration(app.state.device_resources[device], ignore_errors=True)
+    app.state.device_resources.clear()
     clear_queue_pool(ignore_errors=True)
     clear_quantum_executor(ignore_errors=True)
     clear_queue_context()
@@ -112,26 +107,30 @@ async def lifespan(app: FastAPI):
     clear_sql_engine_cache()
 
 
-def get_booking_db() -> Engine:
+def get_device_resources(request: Request) -> DeviceResources:
+    """Dependency injector of the resources of the device the request's path names"""
+    return request.app.state.device_resources[request.state.device_name]
+
+
+DeviceResourcesDep = Annotated[DeviceResources, Depends(get_device_resources)]
+
+
+def get_booking_db(device: DeviceResourcesDep) -> Engine:
     """Gets the SQLAlchemy engine for the bookings service"""
-    return get_bookings_sql_engine(settings.BOOKING_DB_URL)
-
-
-def get_backend_name() -> str:
-    """Dependency injector to get the backend name"""
-    return get_executor_options().backend_name
+    return device.bookings_db
 
 
 def get_queue_context_if_online(
+    device: DeviceResourcesDep,
     context: QueueContext = Depends(get_queue_context),
 ) -> QueueContext:
     """Dependency injector to retrieve the queue context only if online
 
     Raises:
-        IsOfflineError: {context["queue_prefix"]} is offline
+        IsOfflineError: {device name} is offline
     """
-    if is_offline(context):
-        raise IsOfflineError(f"{context["queue_prefix"]} is offline")
+    if is_offline(device.redis, device.settings.default_prefix):
+        raise IsOfflineError(f"{device.settings.default_prefix} is offline")
     return context
 
 
@@ -266,24 +265,30 @@ def get_verified_mss_user_id(request: Request) -> str:
 
         is_admin = request.headers.get("x-mss-is-admin", "")
         message = f"{user_id}|{nonce}|{timestamp}|{is_admin}|{request.method}|{request.url.path}"
-        verify_mss_signature(signature=signature, message=message)
+        device = get_device_resources(request)
+        verify_mss_signature(
+            signature=signature,
+            message=message,
+            key_path=device.settings.mss_public_key_path,
+        )
 
+        nonce_ttl = device.settings.mss_nonce_ttl
         current_timestamp = datetime.now().timestamp()
         timestamp_float = float(timestamp)
         time_difference = current_timestamp - timestamp_float
-        if time_difference > settings.MSS_NONCE_TTL:
+        if time_difference > nonce_ttl:
             raise ValueError(
-                f"nonce of timestamp {timestamp} is {time_difference}s older than {settings.MSS_NONCE_TTL} seconds"
+                f"nonce of timestamp {timestamp} is {time_difference}s older than {nonce_ttl} seconds"
             )
         elif time_difference < 0:
             raise ValueError(f"timestamp {timestamp} is in the future")
 
         # claimed before the route runs, so it cannot be replayed while in flight or after a crash
-        is_nonce_new = get_redis_connection().set(
-            f"{settings.DEFAULT_PREFIX}:mss-nonce:{nonce}",
+        is_nonce_new = device.redis.set(
+            f"{device.settings.default_prefix}:mss-nonce:{nonce}",
             timestamp,
             nx=True,
-            px=timedelta(seconds=settings.MSS_NONCE_TTL),
+            px=timedelta(seconds=nonce_ttl),
         )
         if not is_nonce_new:
             raise ValueError(f"duplicate request nonce: '{nonce}'")
@@ -318,18 +323,16 @@ def get_mss_token_claims_dep(
     """
 
     def dependency_injector(
-        context: QueueContext = Depends(get_queue_context),
+        device: DeviceResourcesDep,
         job_id: str = Depends(get_job_id_dependency(job_id_field=job_id_field)),
         token: Optional[str] = Depends(get_bearer_token),
-        db_engine: Engine = Depends(get_booking_db),
     ) -> MSSTokenClaims:
         """Gets a valid user_id-job_id pair.
 
         Args:
-            context: the of the queues running the jobs
+            device: what the device runs on
             job_id: the job_id as got from the parameters or from the uploaded file
             token: the bearer token in the authorization header
-            db_engine: the database engine to use
 
         Returns:
             the MSSTokenClaims of the user_id and the job_id
@@ -346,7 +349,7 @@ def get_mss_token_claims_dep(
             raise UnauthorizedError(f"unexpected job id {job_id}")
 
         try:
-            get_job(context, job_id=job_id, user_id=user_id, db_engine=db_engine)
+            get_job(device, job_id=job_id, user_id=user_id)
             if not job_exists:
                 raise ConflictError(f"job {job_id} already exists")
         except NotAuthenticatedError:
@@ -435,15 +438,11 @@ def get_verified_mss_details(request: Request) -> MSSAuthDetails:
         return MSSAuthDetails(user_id=user_id, job_id=job_id)
 
 
-def _start_device():
-    """Publishes the current device's parameters and starts its recalibration"""
-    get_bookings_sql_engine()
-    executor_options = get_executor_options()
-    queue_context = get_queue_context()
-    queue_pool = get_queue_pool()
+def _start_device(device: DeviceResources) -> None:
+    """Publishes the device's parameters and starts its recalibration"""
     save_all_device_params(
-        redis=get_redis_connection(),
-        backend_config=executor_options.backend_config,
-        mss_client=get_mss_client(),
+        redis=device.redis,
+        backend_config=device.executor_options.backend_config,
+        mss_client=device.mss_client,
     )
-    init_recalibration(queue_context, queues=queue_pool)
+    init_recalibration(device, get_queue_context())

@@ -16,8 +16,8 @@ import settings
 
 
 class DeviceRoutingMiddleware:
-    """Makes the device that a request's first path segment names the current one; a
-    request that names none is the default device's
+    """Makes the device that a request's first path segment names the current one, and
+    puts its name on request.state; a request that names none is the default device's
 
     The segment moves into the root path, as Starlette's Mount does, so that the routes
     match the rest of the path and the URLs built from the request keep the segment.
@@ -35,10 +35,23 @@ class DeviceRoutingMiddleware:
         route_path = scope["path"].removeprefix(root_path)
         device = route_path.split("/")[1] if route_path.startswith("/") else ""
         if device not in settings.get_device_names():
-            await self.app(scope, receive, send)
+            default_device = settings.get_device_names()[0]
+            await self.app(
+                _get_scope_with_device_name(scope, default_device), receive, send
+            )
             return
 
         with settings.using_device(device):
             await self.app(
-                {**scope, "root_path": f"{root_path}/{device}"}, receive, send
+                {
+                    **_get_scope_with_device_name(scope, device),
+                    "root_path": f"{root_path}/{device}",
+                },
+                receive,
+                send,
             )
+
+
+def _get_scope_with_device_name(scope: Scope, device: str) -> Scope:
+    """Gets the scope with the device's name in its state, where request.state reads it"""
+    return {**scope, "state": {**scope.get("state", {}), "device_name": device}}

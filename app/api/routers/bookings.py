@@ -20,10 +20,10 @@ from app.services import booking, scheduler
 from app.services.booking import Booking, BookingsConfig, NewBookingInfo
 
 from ...libs.queues.dtos import QueueContext
-from ...services.scheduler import QueuePool, get_queue_pool
 from ...utils.messages import GeneralMessage
 from ...utils.sql_db import convert_http_sort_to_db_sort
 from ..dependencies import (
+    DeviceResourcesDep,
     get_booking_db,
     get_queue_context_if_online,
     get_unverified_mss_is_admin,
@@ -36,64 +36,50 @@ router = APIRouter()
 
 @router.post("/bookings")
 async def create_booking(
+    device: DeviceResourcesDep,
     data: NewBookingInfo,
     context: QueueContext = Depends(get_queue_context_if_online),
     user_id: str = Depends(get_verified_mss_user_id),
-    queue_pool: QueuePool = Depends(get_queue_pool),
-    db_engine: Engine = Depends(get_booking_db),
 ) -> Booking:
     """Creates a booking for the user of the given token
 
     Args:
+        device: what the device runs on
         user_id: the MSS user_id as sent by MSS
         context: the queue context for the queues
         data: the information about the new booking
-        queue_pool: the pool of queues to user
-        db_engine: the SQL database to submit data to
 
     Returns:
         the newly created booking
     """
-    booking.get_or_create_user(db_engine, user_id)
+    booking.get_or_create_user(device.bookings_db, user_id)
 
-    return scheduler.submit_booking(
-        context,
-        queues=queue_pool,
-        user_id=user_id,
-        booking_info=data,
-        db_engine=db_engine,
-    )
+    return scheduler.submit_booking(device, context, user_id=user_id, booking_info=data)
 
 
-@router.post("/bookings/{booking_id}/cancel")
+@router.post(
+    "/bookings/{booking_id}/cancel",
+    dependencies=[Depends(get_queue_context_if_online)],
+)
 async def cancel_booking(
+    device: DeviceResourcesDep,
     booking_id: str,
-    context: QueueContext = Depends(get_queue_context_if_online),
     user_id: str = Depends(get_verified_mss_user_id),
-    queue_pool: QueuePool = Depends(get_queue_pool),
     is_mss_admin: bool = Depends(get_unverified_mss_is_admin),
-    db_engine: Engine = Depends(get_booking_db),
 ) -> GeneralMessage:
     """Cancels a booking of given id for the user of the given token
 
     Args:
-        context: the queue context for the queues
+        device: what the device runs on
         booking_id: the unique identifier of the booking to cancel
         user_id: the MSS user_id as sent by MSS
-        queue_pool: the collection of queues to run the jobs on
         is_mss_admin: whether the user is an admin in MSS or not
-        db_engine: the SQL database to submit data to
 
     Returns:
         the general message object with the status
     """
     scheduler.cancel_booking(
-        context,
-        queues=queue_pool,
-        user_id=user_id,
-        booking_id=booking_id,
-        is_mss_admin=is_mss_admin,
-        db_engine=db_engine,
+        device, user_id=user_id, booking_id=booking_id, is_mss_admin=is_mss_admin
     )
     return {"status": "success", "detail": f"Booking of id {booking_id} cancelled"}
 

@@ -11,28 +11,22 @@
 # that they have been altered from the originals.
 """Routes for the device's static and dynamic properties"""
 from fastapi import APIRouter, Depends
-from redis import Redis
 
 from ...services import devices
-from ...utils.redis import get_redis_connection
-from ..dependencies import get_backend_name, get_verified_mss_user_id
+from ..dependencies import DeviceResourcesDep, get_verified_mss_user_id
 
 router = APIRouter()
 
 
 @router.get("/static-properties", dependencies=[Depends(get_verified_mss_user_id)])
-async def get_static_properties(
-    redis: Redis = Depends(get_redis_connection),
-    backend_name: str = Depends(get_backend_name),
-):
+async def get_static_properties(device: DeviceResourcesDep):
     """Retrieves the device properties that are not changing"""
-    return devices.get_device_info(redis, backend_name)
+    return devices.get_device_info(device.redis, device.executor_options.backend_name)
 
 
 @router.get("/dynamic-properties", dependencies=[Depends(get_verified_mss_user_id)])
-async def get_dynamic_properties(
-    redis: Redis = Depends(get_redis_connection),
-    backend_name: str = Depends(get_backend_name),
-):
+async def get_dynamic_properties(device: DeviceResourcesDep):
     """Retrieves the device properties that are changing with time i.e. calibration data"""
-    return devices.get_device_calibration_info(redis, backend_name)
+    return devices.get_device_calibration_info(
+        device.redis, device.executor_options.backend_name
+    )

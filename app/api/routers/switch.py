@@ -14,9 +14,9 @@ from fastapi import APIRouter, Depends
 
 from app.services import devices
 
-from ...libs.queues.dtos import QueueContext, get_queue_context
 from ...utils.messages import GeneralMessage
 from ..dependencies import (
+    DeviceResourcesDep,
     get_queue_context_if_online,
     get_verified_mss_admin_user_id,
     get_verified_mss_user_id,
@@ -26,53 +26,35 @@ router = APIRouter()
 
 
 # plain def, so FastAPI runs them in a thread: telling MSS blocks, for up to minutes
-@router.post("/switch/off", dependencies=[Depends(get_verified_mss_admin_user_id)])
-def switch_off(
-    context: QueueContext = Depends(get_queue_context_if_online),
-) -> GeneralMessage:
+@router.post(
+    "/switch/off",
+    dependencies=[
+        Depends(get_verified_mss_admin_user_id),
+        Depends(get_queue_context_if_online),
+    ],
+)
+def switch_off(device: DeviceResourcesDep) -> GeneralMessage:
     """Switches off this device
 
     Only MSS admin users can switch on and off this device
-
-    Args:
-        context: the queue context for the recalibration
-
-    Returns:
-        general information on the status of the request
     """
-    devices.switch_off(context)
+    devices.switch_off(device.redis, device.mss_client, device.settings.default_prefix)
     return {"status": "success"}
 
 
 @router.post("/switch/on", dependencies=[Depends(get_verified_mss_admin_user_id)])
-def switch_on(
-    context: QueueContext = Depends(get_queue_context),
-) -> GeneralMessage:
+def switch_on(device: DeviceResourcesDep) -> GeneralMessage:
     """Switches on this device
 
     Only MSS admin users can switch on and off this device
-
-    Args:
-        context: the queue context for the recalibration
-
-    Returns:
-        general information on the status of the request
     """
-    devices.switch_on(context)
+    devices.switch_on(device.redis, device.mss_client, device.settings.default_prefix)
     return {"status": "success"}
 
 
 @router.get("/switch/status", dependencies=[Depends(get_verified_mss_user_id)])
-async def get_switch_status(
-    context: QueueContext = Depends(get_queue_context),
-):
-    """Gets the status of this device
-
-    Args:
-        context: the queue context for the recalibration
-
-    Returns:
-        general information on the status of the request
-    """
-    status = "OFF" if devices.is_offline(context) else "ON"
+async def get_switch_status(device: DeviceResourcesDep):
+    """Gets the status of this device"""
+    is_offline = devices.is_offline(device.redis, device.settings.default_prefix)
+    status = "OFF" if is_offline else "ON"
     return {"status": status}

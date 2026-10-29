@@ -26,7 +26,6 @@ from typing import List, Optional
 from fastapi import UploadFile
 from pydantic import ValidationError
 from rq import exceptions as rq_errors
-from sqlalchemy import Engine
 from sqlmodel import or_
 
 from ...libs.queues.dtos import Job, JobStatus, QueueContext, Stage, StorageID
@@ -41,7 +40,6 @@ from ...utils.exc import (
     NotAuthenticatedError,
 )
 from ...utils.messages import GeneralMessage
-from ...utils.redis import get_redis_connection
 from ...utils.rq import cancel_rq_job
 from ..booking import (
     Booking,
@@ -59,7 +57,7 @@ from ..booking import (
 from ..devices import get_device_calibration_info
 from .dtos import RecalibrationInfo
 from .queues import QueuePool
-from .store import get_jobs_store
+from .resources import DeviceResources
 from .utils import get_rq_job_id
 
 # the tasks go by import path, as importing them loads the executor's heavy libraries
@@ -67,11 +65,10 @@ _TASKS_MODULE = f"{__package__}.tasks"
 
 
 def submit_booking(
+    device: DeviceResources,
     context: QueueContext,
-    queues: QueuePool,
     user_id: str,
     booking_info: NewBookingInfo,
-    db_engine: Engine,
 ) -> Booking:
     """Submits a booking for registration
 
@@ -93,20 +90,19 @@ def submit_booking(
     and the other at the `end_utc` of this booking to enforce the above conditions.
 
     Args:
+        device: what the device runs on
         context: the queue context of the job
-        queues: the collection of queues on which jobs run.
         booking_info: the details for the booking
         user_id: the ID of user submitting the booking
-        db_engine: the SQLAlchemy engine to use
 
     Returns:
         the submitted booking
     """
     # create the new booking
-    booking = create_booking(db_engine, user_id=user_id, data=booking_info)
+    booking = create_booking(device.bookings_db, user_id=user_id, data=booking_info)
 
     # at the start_utc, reset the idle time tracker
-    queues.general.enqueue_at(
+    device.queues.general.enqueue_at(
         booking.start_utc,
         f"{_TASKS_MODULE}.reset_idleness_timer",
         booking_id=booking.id,
@@ -117,7 +113,7 @@ def submit_booking(
 
     # at the end_utc of the booking, do proper cleanup of idleness timer,
     # waitlist and booked execution queues
-    queues.general.enqueue_at(
+    device.queues.general.enqueue_at(
         booking.end_utc,
         f"{_TASKS_MODULE}.post_booking_cleanup",
         booking_id=booking.id,
@@ -129,11 +125,9 @@ def submit_booking(
 
 
 def cancel_booking(
-    context: QueueContext,
-    queues: QueuePool,
+    device: DeviceResources,
     user_id: str,
     booking_id: str,
-    db_engine: Engine,
     is_mss_admin: bool = False,
 ):
     """Cancels the given booking as long as the user is the owner or is admin
@@ -141,11 +135,9 @@ def cancel_booking(
     If the booking has already started, canceling fails.
 
     Args:
-        context: the queue context of the job
-        queues: the collection of queues on which jobs run.
+        device: what the device runs on
         booking_id: the unique identifier of the booking to cancel
         user_id: the ID of the user cancelling the booking
-        db_engine: the SQLAlchemy engine to use
         is_mss_admin: whether the user is an MSS admin
 
     Raises:
@@ -154,14 +146,14 @@ def cancel_booking(
         BookingAlreadyActive: the booking of id {booking_id} is already active
         BookingAlreadyComplete: the booking of id {booking_id} is already completed.
     """
-    user = get_user(db_engine, User.id == user_id)
+    user = get_user(device.bookings_db, User.id == user_id)
     if user is None and not is_mss_admin:
         raise ItemNotFoundError(f"the user of id {user_id} was not found")
 
     # MSS knows its admins before they have used this device
     is_admin = is_mss_admin or user.is_admin
     booking = get_booking(
-        db_engine,
+        device.bookings_db,
         Booking.id == booking_id,
         or_(Booking.user_id == user_id, is_admin == True),
     )
@@ -178,17 +170,15 @@ def cancel_booking(
             f"the booking of id {booking_id} is already complete"
         )
 
-    _cancel_booking_from_queues(queues, booking=booking)
-    delete_bookings(db_engine, Booking.id == booking_id)
+    _cancel_booking_from_queues(device.queues, booking=booking)
+    delete_bookings(device.bookings_db, Booking.id == booking_id)
 
 
 def submit_job_file(
+    device: DeviceResources,
     context: QueueContext,
-    queues: QueuePool,
     upload_file: UploadFile,
     credentials: MSSTokenClaims,
-    backend_name: str,
-    db_engine: Engine,
 ) -> Job:
     """Submits the job for processing
 
@@ -213,24 +203,22 @@ def submit_job_file(
             - the job is pushed to the execution queue
 
     Args:
+        device: what the device runs on
         context: the context of the queue for the job
-        queues: the collection of queues that are to run the job.
         upload_file: the job file containing the job to submit for the next steps of processing
         credentials: MSS login details as got from the headers and the parameters or body
-        backend_name: the name of the backend to use for the job
-        db_engine: the database engine for the booking
 
     Returns:
         the submitted job
     """
-    upload_folder = Path(context["job_upload_folder"])
-    redis_conn = get_redis_connection()
+    upload_folder = device.settings.job_upload_pool
+    backend_name = device.executor_options.backend_name
 
     # We save the job first in the jobs store before we put it on the queue
     # because it will be picked from the jobs store when the worker is running.
     # It would be harder to pass the job payload itself across each worker because it would have
     # to be pickled.
-    jobs_store = get_jobs_store()
+    jobs_store = device.jobs_store
 
     job_id = credentials.job_id
     user_id = credentials.user_id
@@ -242,7 +230,7 @@ def submit_job_file(
     job_file_path = _save_uploaded_file(upload_file, target=new_file_path)
 
     # save job in database
-    calibration_info = get_device_calibration_info(redis_conn, backend_name)
+    calibration_info = get_device_calibration_info(device.redis, backend_name)
     job = Job(
         job_id=job_id,
         device=backend_name,
@@ -253,12 +241,12 @@ def submit_job_file(
 
     jobs_store.insert(job)
 
-    active_booking = get_active_booking(db_engine=db_engine)
+    active_booking = get_active_booking(db_engine=device.bookings_db)
     booking_id = None
     if active_booking:
         booking_id = active_booking.id
 
-    queues.preprocessing.enqueue(
+    device.queues.preprocessing.enqueue(
         job,
         context,
         booking_id=booking_id,
@@ -270,22 +258,18 @@ def submit_job_file(
 
 
 def cancel_job(
-    context: QueueContext,
-    queues: QueuePool,
+    device: DeviceResources,
     job_id: str,
     user_id: str,
-    db_engine: Engine,
     is_mss_admin: bool = False,
     reason: Optional[str] = None,
 ) -> Job:
     """Cancels the job of a given job_id if it belongs to the user or the user is admin
 
     Args:
-        context: the context of the queue for the job
-        queues: the collection of queues on which jobs run.
+        device: what the device runs on
         job_id: the unique identifier of the job
         user_id: the user_id of the user requesting the job
-        db_engine: the database engine for the job
         is_mss_admin: whether the user is an MSS admin
         reason: the justification for the cancellation
 
@@ -297,21 +281,15 @@ def cancel_job(
         ItemNotFoundError: Job {job_id} not found
         JobAlreadyCompleteError: job {job_id} is already {status}
     """
-    job = get_job(
-        context,
-        job_id=job_id,
-        user_id=user_id,
-        db_engine=db_engine,
-        is_mss_admin=is_mss_admin,
-    )
+    job = get_job(device, job_id=job_id, user_id=user_id, is_mss_admin=is_mss_admin)
     if job.status.is_terminal():
         raise JobAlreadyCompleteError(f"job {job_id} is already {job.status.value}")
 
-    _cancel_job_in_queues(queues, job)
+    _cancel_job_in_queues(device.queues, job)
     if reason is None:
         reason = "Cancelled by a user"
 
-    return get_jobs_store().update(
+    return device.jobs_store.update(
         job_id,
         {
             "status": JobStatus.CANCELLED,
@@ -322,21 +300,17 @@ def cancel_job(
 
 
 def delete_job(
-    context: QueueContext,
-    queues: QueuePool,
+    device: DeviceResources,
     job_id: str,
     user_id: str,
-    db_engine: Engine,
     is_mss_admin: bool = False,
 ) -> Job:
     """Deletes the job of a given job_id if it belongs to the user or the user is admin
 
     Args:
-        context: the context of the queue for the job
-        queues: the collection of queues on which jobs run.
+        device: what the device runs on
         job_id: the unique identifier of the job
         user_id: the user_id of the user requesting the job
-        db_engine: the database engine for the job
         is_mss_admin: whether the user is an MSS admin
 
     Returns:
@@ -346,24 +320,13 @@ def delete_job(
         NotAuthenticatedError: user not found
         ItemNotFoundError: Job {job_id} not found
     """
-    job = get_job(
-        context,
-        job_id=job_id,
-        user_id=user_id,
-        db_engine=db_engine,
-        is_mss_admin=is_mss_admin,
-    )
+    job = get_job(device, job_id=job_id, user_id=user_id, is_mss_admin=is_mss_admin)
     if not job.status.is_terminal():
         job = cancel_job(
-            context,
-            queues=queues,
-            job_id=job_id,
-            user_id=user_id,
-            is_mss_admin=is_mss_admin,
-            db_engine=db_engine,
+            device, job_id=job_id, user_id=user_id, is_mss_admin=is_mss_admin
         )
 
-    job_store = get_jobs_store()
+    job_store = device.jobs_store
 
     try:
         job_store.delete_many((job_id,))
@@ -375,19 +338,17 @@ def delete_job(
 
 
 def get_job(
-    context: QueueContext,
+    device: DeviceResources,
     job_id: str,
     user_id: str,
-    db_engine: Engine,
     is_mss_admin: bool = False,
 ) -> Job:
     """Get the job of a given job_id if it belongs to the user or the user is admin
 
     Args:
-        context: the context of the queue for the job
+        device: what the device runs on
         job_id: the unique identifier of the job
         user_id: the user_id of the user requesting the job
-        db_engine: the database engine for the job
         is_mss_admin: whether the user is an MSS admin
 
     Returns:
@@ -397,11 +358,11 @@ def get_job(
         NotAuthenticatedError: user not found
         ItemNotFoundError: Job {job_id} not found
     """
-    user = get_user(db_engine, User.id == user_id)
+    user = get_user(device.bookings_db, User.id == user_id)
     if user is None and not is_mss_admin:
         raise NotAuthenticatedError("user not found")
 
-    job: Job = get_jobs_store().get_one(job_id)
+    job: Job = device.jobs_store.get_one(job_id)
 
     # MSS knows its admins before they have used this device
     is_admin = is_mss_admin or user.is_admin
@@ -413,7 +374,7 @@ def get_job(
 
 
 def get_many_jobs(
-    context: QueueContext,
+    device: DeviceResources,
     user_id: Optional[str] = None,
     status: Optional[JobStatus] = None,
     skip: int = 0,
@@ -422,7 +383,7 @@ def get_many_jobs(
     """Get the job of a given job_id if it belongs to the user or the user is admin
 
     Args:
-        context: the context of the queue for the jobs
+        device: what the device runs on
         user_id: the user_id associated with the jobs; defaults to None i.e. all jobs are returned
         status: the status of the jobs; defaults to None i.e. all jobs are returned
         skip: number of records to ignore at the top of the returned results; default is 0
@@ -431,7 +392,7 @@ def get_many_jobs(
     Returns:
         the list of job
     """
-    job_store = get_jobs_store()
+    job_store = device.jobs_store
     filters = {}
     if status:
         filters["status"] = status
@@ -442,7 +403,7 @@ def get_many_jobs(
 
 
 def delete_user_profile(
-    context: QueueContext, queues: QueuePool, user_id: str, db_engine: Engine
+    device: DeviceResources, context: QueueContext, user_id: str
 ) -> None:
     """Deletes the user profile for the given user_id
 
@@ -450,20 +411,19 @@ def delete_user_profile(
     and active and pending jobs are canceled
 
     Args:
+        device: what the device runs on
         context: the context of the queue for all jobs
-        queues: the collection of queues on which jobs run.
         user_id: the ID of the user whose profile is to be deleted
-        db_engine: the database engine for the jobs
 
     Raises:
         ItemNotFoundError: the user of id {user_id} was not found
     """
-    user = get_user(db_engine, User.id == user_id)
+    user = get_user(device.bookings_db, User.id == user_id)
     if user is None:
         raise ItemNotFoundError(f"the user of id {user_id} was not found")
 
     # cancel the user's jobs that have not finished, queued or running
-    job_store = get_jobs_store()
+    job_store = device.jobs_store
     user_jobs: List[Job] = job_store.find_by_index({"user_id": user_id})
     for job in user_jobs:
         if job.status.is_terminal():
@@ -471,7 +431,7 @@ def delete_user_profile(
         with suppress(
             rq_errors.InvalidJobOperation, rq_errors.InvalidJobOperationError
         ):
-            _cancel_job_in_queues(queues, job)
+            _cancel_job_in_queues(device.queues, job)
         job_store.update(
             job.job_id,
             {
@@ -483,38 +443,38 @@ def delete_user_profile(
 
     # cancel bookings of the user
     user_incomplete_bookings = get_many_bookings(
-        db_engine, Booking.end_utc > get_utc_now(), Booking.user_id == user_id
+        device.bookings_db, Booking.end_utc > get_utc_now(), Booking.user_id == user_id
     )
     booking_ids = []
     for booking in user_incomplete_bookings:
         booking_ids.append(booking.id)
-        _cancel_booking_from_queues(queues, booking=booking)
+        _cancel_booking_from_queues(device.queues, booking=booking)
         if booking.is_active:
             # its end, now cancelled, would have released the waitlist
-            queues.general.enqueue(
+            device.queues.general.enqueue(
                 f"{_TASKS_MODULE}.post_booking_cleanup",
                 booking_id=booking.id,
                 context=context,
             )
 
     # delete the bookings in the database
-    delete_bookings(db_engine, Booking.id.in_(booking_ids))
+    delete_bookings(device.bookings_db, Booking.id.in_(booking_ids))
 
     # delete the user
-    delete_users(db_engine, User.id == user_id)
+    delete_users(device.bookings_db, User.id == user_id)
 
 
 def init_recalibration(
+    device: DeviceResources,
     context: QueueContext,
-    queues: QueuePool,
     start_timestamp: Optional[datetime] = None,
     interval: Optional[float] = None,
 ) -> GeneralMessage:
     """Initializes recalibration of the device at the given time
 
     Args:
+        device: what the device runs on
         context: the context of the queue
-        queues: the collection of queues on which jobs run.
         start_timestamp: the timestamp when recalibration should start; defaults to None meaning as soon as possible.
         interval: the interval in seconds between two recalibrations; defaults to None,
             meaning use the default recalibration interval.
@@ -526,14 +486,13 @@ def init_recalibration(
         IsOfflineError: the scheduler is offline
     """
     # just make sure no other recalibration is running or scheduled before starting again
-    stop_recalibration(context, queues=queues, ignore_errors=True)
+    stop_recalibration(device, ignore_errors=True)
 
-    # set the interval to the default value
     if interval is None:
-        interval = context["default_recalibration_interval"]
+        interval = device.settings.default_recalibration_interval
 
     if isinstance(start_timestamp, datetime):
-        job = queues.recalibration.enqueue_at(
+        job = device.queues.recalibration.enqueue_at(
             # rq reads a naive datetime as the server's local time; the API means UTC
             datetime=to_utc(start_timestamp),
             f=f"{_TASKS_MODULE}.recalibrate",
@@ -541,7 +500,7 @@ def init_recalibration(
             interval=interval,
         )
     else:
-        job = queues.recalibration.enqueue(
+        job = device.queues.recalibration.enqueue(
             f=f"{_TASKS_MODULE}.recalibrate",
             context=context,
             interval=interval,
@@ -554,14 +513,11 @@ def init_recalibration(
     return {"status": "success"}
 
 
-def stop_recalibration(
-    context: QueueContext, queues: QueuePool, ignore_errors: bool = False
-):
+def stop_recalibration(device: DeviceResources, ignore_errors: bool = False):
     """Cancels recalibration if scheduled or queued
 
     Args:
-        context: the context required when running a job on a queue
-        queues: the collection of queues on which jobs run.
+        device: what the device runs on
         ignore_errors: whether to ignore errors during cancellation of recalibration; defaults to False
 
     Raises:
@@ -569,24 +525,23 @@ def stop_recalibration(
         JobAlreadyCancelled: if the job is already cancelled
         IsOfflineError: the scheduler is offline
     """
-    pending_job_ids = queues.recalibration.get_job_ids()
-    pending_job_ids += queues.recalibration.scheduled_job_registry.get_job_ids()
-    redis_conn = get_redis_connection()
+    pending_job_ids = device.queues.recalibration.get_job_ids()
+    pending_job_ids += device.queues.recalibration.scheduled_job_registry.get_job_ids()
 
     for job_id in pending_job_ids:
         try:
-            cancel_rq_job(redis_conn, job_id=job_id, ignore_errors=ignore_errors)
+            cancel_rq_job(device.redis, job_id=job_id, ignore_errors=ignore_errors)
         except rq_errors.NoSuchJobError:
             raise ItemNotFoundError("recalibration job does not exist")
         except (rq_errors.InvalidJobOperationError, rq_errors.InvalidJobOperation):
             raise JobAlreadyCancelled("recalibration job is already cancelled")
 
 
-def get_recalibration_info(queues: QueuePool) -> RecalibrationInfo:
+def get_recalibration_info(device: DeviceResources) -> RecalibrationInfo:
     """Gets the basic information about recalibration
 
     Args:
-        queues: the collection of queues on which jobs run.
+        device: what the device runs on
 
     Returns:
         the basic information about the recalibration
@@ -594,7 +549,7 @@ def get_recalibration_info(queues: QueuePool) -> RecalibrationInfo:
     Raises:
         RuntimeError: multiple current jobs found: [...]
     """
-    return RecalibrationInfo.from_queue(queues.recalibration)
+    return RecalibrationInfo.from_queue(device.queues.recalibration)
 
 
 def _cancel_job_in_queues(queues: QueuePool, job: Job, ignore_errors: bool = False):

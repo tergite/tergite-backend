@@ -18,9 +18,13 @@ from fastapi import APIRouter, Depends, Query
 from app.services import scheduler
 
 from ...libs.queues.dtos import QueueContext
-from ...services.scheduler import QueuePool, RecalibrationInfo, get_queue_pool
+from ...services.scheduler import RecalibrationInfo
 from ...utils.messages import GeneralMessage
-from ..dependencies import get_queue_context_if_online, get_verified_mss_admin_user_id
+from ..dependencies import (
+    DeviceResourcesDep,
+    get_queue_context_if_online,
+    get_verified_mss_admin_user_id,
+)
 
 router = APIRouter()
 
@@ -29,8 +33,8 @@ router = APIRouter()
     "/recalibration/init", dependencies=[Depends(get_verified_mss_admin_user_id)]
 )
 async def initialize_recalibration(
+    device: DeviceResourcesDep,
     context: QueueContext = Depends(get_queue_context_if_online),
-    queue_pool: QueuePool = Depends(get_queue_pool),
     start_timestamp: Optional[datetime] = Query(None),
     interval: Optional[float] = Query(None),
 ) -> GeneralMessage:
@@ -39,8 +43,8 @@ async def initialize_recalibration(
     Only MSS admin users can initialize recalibration
 
     Args:
+        device: what the device runs on
         context: the queue context for the recalibration
-        queue_pool: the collection of queues to run the recalibration on
         start_timestamp: the start time of the recalibration; default = None i.e. straight away
         interval: the recalibration interval; default = None i.e. no repeat
 
@@ -48,50 +52,41 @@ async def initialize_recalibration(
         the status of the recalibration
     """
     return scheduler.init_recalibration(
-        context, queues=queue_pool, start_timestamp=start_timestamp, interval=interval
+        device, context, start_timestamp=start_timestamp, interval=interval
     )
 
 
 @router.get(
     "/recalibration/info", dependencies=[Depends(get_verified_mss_admin_user_id)]
 )
-async def get_recalibration_info(
-    queue_pool: QueuePool = Depends(get_queue_pool),
-) -> RecalibrationInfo:
+async def get_recalibration_info(device: DeviceResourcesDep) -> RecalibrationInfo:
     """Gets the current information about the recalibration
 
     Only MSS admin users can get recalibration info
-
-    Args:
-        queue_pool: the collection of queues to run the recalibration on
-
-    Returns:
-        the information about the recalibration
     """
-    return scheduler.get_recalibration_info(queues=queue_pool)
+    return scheduler.get_recalibration_info(device)
 
 
 @router.post(
-    "/recalibration/cancel", dependencies=[Depends(get_verified_mss_admin_user_id)]
+    "/recalibration/cancel",
+    dependencies=[
+        Depends(get_verified_mss_admin_user_id),
+        Depends(get_queue_context_if_online),
+    ],
 )
 async def cancel_recalibration(
-    context: QueueContext = Depends(get_queue_context_if_online),
-    queue_pool: QueuePool = Depends(get_queue_pool),
-    ignore_errors: bool = Query(False),
+    device: DeviceResourcesDep, ignore_errors: bool = Query(False)
 ) -> GeneralMessage:
     """Cancels recalibration on this device
 
     Only MSS admin users can initialize recalibration
 
     Args:
-        context: the queue context for the recalibration
-        queue_pool: the collection of queues to run the recalibration on
+        device: what the device runs on
         ignore_errors: whether to ignore errors during recalibration
 
     Returns:
         general information on the status of the request
     """
-    scheduler.stop_recalibration(
-        context, queues=queue_pool, ignore_errors=ignore_errors
-    )
+    scheduler.stop_recalibration(device, ignore_errors=ignore_errors)
     return {"status": "success"}

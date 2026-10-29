@@ -333,6 +333,9 @@ the connections. This step makes the device explicit.
    calls go with their registries.
 2. **The API passes it.** `DeviceRoutingMiddleware` (`app/api/device_routing.py:38`) puts the device's name on
    `request.state`; `DeviceResourcesDep` gives a route its device's resources; routes call services with them.
+   *Done:* the scheduler service takes `DeviceResources`, and keeps `QueueContext` only where it queues a task, till
+   4.3; the devices service, which the scheduler imports, takes the connection, client and device name it uses. The
+   device-property routes lose a stray `url` query parameter, which `Depends(get_redis_connection)` exposed.
 3. **The tasks are passed it.** RQ tasks take the job's own data; the worker's `perform_job` supplies the device's
    resources. `QueueContext` (`app/libs/queues/dtos.py:569`), a dict of URLs, folders and timeouts handed to every
    task so that each rebuilds engines from URLs (`tasks.py:200`), and copied per request to set `force_normal_queue`

@@ -267,7 +267,7 @@ def test_api_workers_start_a_device_one_at_a_time(client, mocker):
 
     starting, overlaps = [], []
 
-    def start_device():
+    def start_device(device):
         starting.append(None)
         overlaps.append(len(starting))
         time.sleep(0.2)

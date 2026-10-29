@@ -22,13 +22,11 @@ import settings
 
 from ..libs.queues.dtos import get_queue_context
 from ..services.devices import is_offline, save_all_device_params
-from ..services.external.mss import get_mss_client
 from ..services.scheduler import (
     DeviceResources,
     get_executor_and_options,
 )
 from ..utils.config import create_device_folders
-from ..utils.redis import get_redis_connection
 
 
 class PreloadedRqWorker(Worker):
@@ -59,7 +57,7 @@ class PreloadedRqWorker(Worker):
         while (
             self.should_wait_while_offline
             and not self._stop_requested
-            and _is_device_offline(device)
+            and is_offline(self.device_resources[device].redis, device)
         ):
             if is_burst:
                 raise StopRequested
@@ -85,19 +83,18 @@ def preload_worker_globals(should_load_executor: bool) -> DeviceResources:
     # so that the jobs need not import it
     import_module("app.services.scheduler.tasks")
 
-    redis_connection = get_redis_connection()
-    mss_client = get_mss_client()
+    device = DeviceResources.from_settings(settings.get_device_settings())
     if should_load_executor:
         _, executor_options = get_executor_and_options()
         # the executor may refine the backend config, e.g. the simulators train their
         # discriminators, which the API, building no executor, cannot publish
         save_all_device_params(
-            redis=redis_connection,
+            redis=device.redis,
             backend_config=executor_options.backend_config,
-            mss_client=mss_client,
+            mss_client=device.mss_client,
         )
     get_queue_context()
-    return DeviceResources.from_settings(settings.get_device_settings())
+    return device
 
 
 def _get_device_of_queue(queue_name: str) -> str:
@@ -109,8 +106,3 @@ def _get_device_of_queue(queue_name: str) -> str:
     ]
     # the longest, as one device's name may prefix another's, e.g. sim and sim_2q
     return max(devices, key=len, default=settings.get_device_names()[0])
-
-
-def _is_device_offline(device: str) -> bool:
-    with settings.using_device(device):
-        return is_offline(get_queue_context())

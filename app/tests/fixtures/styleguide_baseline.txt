@@ -109,7 +109,6 @@ private-helper-position: app/libs/quantum_executor/base/quantum_job/__init__.py:
 private-helper-position: app/libs/quantum_executor/base/quantum_job/__init__.py::xarray_to_list
 private-helper-position: app/libs/quantum_executor/quantify/experiment.py::QuantifyExperiment
 type-hints: app/api/__init__.py::root
-type-hints: app/api/dependencies.py::_start_device
 type-hints: app/api/dependencies.py::get_job_id_dependency
 type-hints: app/api/dependencies.py::get_mss_token_claims_dep
 type-hints: app/api/dependencies.py::lifespan

@@ -163,9 +163,9 @@ def test_switch_answers_other_requests_while_it_tells_mss(client, mocker):
         is_sending.set()
         answered_while_sending.append(is_other_request_answered.wait(timeout=2))
 
-    mss_client = mocker.patch("app.services.devices.service.get_mss_client")
-    mss_client.return_value.send_event.side_effect = send_event_slowly
     with client as client:
+        # once started, as the start-up tells MSS too
+        mocker.patch.object(MssClient, "send_event", side_effect=send_event_slowly)
         headers = create_mss_headers(is_admin=True)
         switch_off = threading.Thread(
             target=client.post, args=("/switch/off",), kwargs={"headers": headers}
