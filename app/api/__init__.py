@@ -35,8 +35,6 @@ from app.services.booking.models import (
     BookingsConfig,
     MSSTokenClaims,
     NewBookingInfo,
-    NewUserInfo,
-    UserProfile,
 )
 from app.utils.exc import (
     BookingAlreadyActiveError,
@@ -62,8 +60,6 @@ from ..utils.api import (
     GeneralMessage,
     PaginatedListResponse,
     RequestLog,
-    TokenResponse,
-    encrypt_mss_jwt_token,
     get_request_logs_store,
     to_http_error,
 )
@@ -84,7 +80,7 @@ from .dependencies import (
     validate_job_file,
 )
 from .device_routing import DeviceRoutingMiddleware
-from .routers import devices
+from .routers import devices, users
 
 # application
 app = FastAPI(
@@ -171,6 +167,7 @@ async def root():
 
 
 app.include_router(devices.router)
+app.include_router(users.router)
 
 
 @app.get(
@@ -190,164 +187,6 @@ async def download_logfile(logfile_id: UUID):
     if file.exists():
         return FileResponse(file)
     raise ItemNotFoundError(f"logfile {logfile_id} not found")
-
-
-@app.get("/me")
-async def view_profile(
-    db_engine: Engine = Depends(get_booking_db),
-    user_id: str = Depends(get_verified_mss_user_id),
-) -> UserProfile:
-    """Views the profile of the current user
-
-    Args:
-        db_engine: the SQL database to query
-        user_id: the user_id as submitted by MSS
-
-    Raises:
-        ItemNotFoundError (404): user not found
-
-    Returns:
-        the user profile of the current user
-    """
-    return booking.get_user_profile(db_engine, user_id)
-
-
-@app.delete("/me")
-async def delete_profile(
-    user_id: str = Depends(get_verified_mss_user_id),
-    context: QueueContext = Depends(get_queue_context_if_online),
-    queue_pool: QueuePool = Depends(get_queue_pool),
-    db_engine: Engine = Depends(get_booking_db),
-) -> GeneralMessage:
-    """Deletes the profile of the current user
-
-    Args:
-        user_id: the user_id as submitted by MSS
-        context: the queue context of the queues for all jobs
-        queue_pool: the collection of queues where the jobs run
-        db_engine: the SQL database to query
-
-    Raises:
-        ItemNotFoundError (404): user not found
-
-    Returns:
-        A general message object with status
-    """
-    scheduler.delete_user_profile(
-        context, queues=queue_pool, user_id=user_id, db_engine=db_engine
-    )
-    return GeneralMessage(status="success", detail="Profile deleted")
-
-
-@app.post("/token")
-async def get_mss_token(
-    body: MSSTokenClaims,
-    mss_user_id: str = Depends(get_verified_mss_user_id),
-    db_engine: Engine = Depends(get_booking_db),
-) -> TokenResponse:
-    """Get a token specific to the associated MSS instance for the provided token claims.
-
-    This is a special route as it can only be used through the associated MSS instance.
-    On top of that MSS being whitelisted, the public key of that MSS will be used to encrypt
-    the access token that will be sent over to the user.
-
-    Take note that the JWT must also contain the `user_id` as well as the `job_id`
-    as these will be used to ensure a JWT is not used for another job.
-
-    Take note also that if the given user does not exist, the user is created with
-    a random email.
-
-    Args:
-        db_engine: the SQL database to query
-        body: the http request body sent
-        mss_user_id: the user_id as specified by MSS
-
-    Returns:
-        the user token response
-    """
-    user_id = body.user_id
-    job_id = body.job_id
-
-    if user_id != mss_user_id:
-        # just some house-keeping to ensure the two user ids are the same
-        raise UnauthorizedError("Forbidden")
-
-    user = booking.get_or_create_user(db_engine, user_id)
-
-    # create encrypted token
-    token = booking.create_mss_jwt_token(user, job_id=job_id)
-    encrypted_token = encrypt_mss_jwt_token(token)
-    return {"access_token": encrypted_token, "token_type": "bearer"}
-
-
-@app.post("/users", dependencies=[Depends(get_verified_mss_admin_user_id)])
-async def create_user(
-    data: NewUserInfo, db_engine: Engine = Depends(get_booking_db)
-) -> UserProfile:
-    """Creates a user given the name and email
-
-    Only MSS admin users can create users here
-
-    Args:
-        data: the information about the new user
-        db_engine: the SQL database to query
-
-    Returns:
-        the created user
-    """
-    user = booking.create_user(db_engine, data=data)
-    return UserProfile.from_user(user)
-
-
-@app.delete("/users/{user_id}", dependencies=[Depends(get_verified_mss_admin_user_id)])
-async def remove_user(
-    user_id: str,
-    context: QueueContext = Depends(get_queue_context_if_online),
-    queue_pool: QueuePool = Depends(get_queue_pool),
-    db_engine: Engine = Depends(get_booking_db),
-) -> GeneralMessage:
-    """Deletes the user of the given user_id
-
-    Only admins are allowed to remove users
-
-    Args:
-        user_id: the unique identifier of the user
-        context: the context of the queues for all jobs
-        queue_pool: the collection of queues to run the jobs on
-        db_engine: the SQL database to query
-
-    Raises:
-        ItemNotFoundError: user not found
-
-    Returns:
-        A general message object with status
-    """
-    scheduler.delete_user_profile(
-        context, queues=queue_pool, user_id=user_id, db_engine=db_engine
-    )
-    return GeneralMessage(status="success", detail="User deleted")
-
-
-@app.get("/users", dependencies=[Depends(get_verified_mss_admin_user_id)])
-async def view_users(
-    skip: int = Query(default=0),
-    limit: Optional[int] = Query(default=None),
-    db_engine: Engine = Depends(get_booking_db),
-) -> PaginatedListResponse[UserProfile]:
-    """Views all users
-
-    Only MSS admin users can view this
-
-    Args:
-        skip: number of records to ignore at the top of the returned results; default is 0
-        limit: maximum number of records to return; default is None.
-        db_engine: the SQL database to query
-
-    Returns:
-        the paginated list of the available users
-    """
-    data = booking.get_many_user_profiles(db_engine, skip=skip, limit=limit)
-    return PaginatedListResponse(skip=skip, limit=limit, data=data)
 
 
 @app.post("/bookings")
