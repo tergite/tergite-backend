@@ -52,6 +52,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   before a booking, or in what was left of one, when it did not
 - Fixed switching one device off taking every device served from the same Redis offline; a device switched off
   before upgrading leaves every worker suspended until `rq resume` is run
+- Fixed devices on one Redis sharing their jobs, so one device listed, and could cancel, another's, and sharing one
+  executor lock in the working folder; jobs stored before upgrading are no longer listed
 
 ### Removed
 

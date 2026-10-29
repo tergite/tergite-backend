@@ -25,6 +25,7 @@ from typing import Any, Optional, Tuple, Type
 
 import redis
 import rq.job
+from filelock import FileLock
 from pydantic import ValidationError
 from rq import Repeat, get_current_job
 
@@ -41,7 +42,6 @@ from ...libs.quantum_executor.base.quantum_job import (
     read_job_from_hdf5,
     xarray_to_list,
 )
-from ...libs.quantum_executor.utils.connections import get_executor_lock
 from ...libs.queues.dtos import (
     Job,
     JobFile,
@@ -115,7 +115,7 @@ def preprocess(
         # --- In-place decode complex values
         # [[a,b],[c,d],...] -> [a + ib,c + id,...]
         json_decoder.decode_pulse_qobj(qobj)
-        with get_executor_lock():
+        with FileLock(context["executor_lock_file"]):
             executor = get_quantum_executor()
             duration, _ = executor.preprocess(
                 PulseQobj.from_dict(qobj),
@@ -254,7 +254,7 @@ def execute(
         update_job_stage(jobs_store, job_id=job_id, stage=Stage.EXEC_W)
 
         # Just a locking mechanism to ensure jobs don't interfere with each other
-        with get_executor_lock():
+        with FileLock(context["executor_lock_file"]):
             executor = get_quantum_executor()
             results_file = executor.run(job_id, inputs_folder=preprocessing_dir)
 
@@ -415,7 +415,7 @@ def recalibrate(
     from .queues import get_queue_pool
 
     # ensure recalibration runs without interference
-    with get_executor_lock():
+    with FileLock(context["executor_lock_file"]):
         executor = get_quantum_executor()
         results = executor.recalibrate()
 

@@ -60,7 +60,6 @@ from rq import SimpleWorker, Worker
 from sqlalchemy import create_engine
 from sqlmodel import SQLModel
 
-from ..libs.queues.dtos import Job
 from ..services.scheduler.queues import QueuePool
 from .utils.analysis import MockLinearDiscriminantAnalysis
 from .utils.fixtures import load_fixture
@@ -149,7 +148,6 @@ RECALIBRATION_MOCKS: Dict[Literal["qubit", "coupler"], Dict[str, Any]] = load_fi
     "recalibration-mocks.json"
 )
 
-JOBS_HASH_NAME = f"{Job.__module__}.{Job.__qualname__}".lower()
 
 VALID_CREATE_BOOKINGS_PARAMS = [
     (USERS[0], booking, client)

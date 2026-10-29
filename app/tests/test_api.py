@@ -58,7 +58,6 @@ from app.tests.conftest import (
     HAS_QUANTIFY,
     INVALID_CREATE_BOOKINGS_PARAMS,
     JOBS,
-    JOBS_HASH_NAME,
     PAGINATION,
     USERS,
     VALID_BOOKINGS,
@@ -3158,7 +3157,8 @@ def _get_jobs_in_redis(redis_client: Redis) -> List[Job]:
     Returns:
         the list of jobs in redis
     """
-    raw_jobs_in_redis = redis_client.hgetall(JOBS_HASH_NAME)
+    jobs_hash_name = f"{os.environ['BCC_DEFAULT_PREFIX']}:jobs"
+    raw_jobs_in_redis = redis_client.hgetall(jobs_hash_name)
     return [Job.model_validate_json(item) for item in raw_jobs_in_redis.values()]
 
 

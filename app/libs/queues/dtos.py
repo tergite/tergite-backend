@@ -90,6 +90,7 @@ def get_queue_context() -> "QueueContext":
             "postprocessing_folder": f"{settings.LOG_FILE_POOL}",
             "preprocessing_folder": f"{settings.PREPROCESSED_JOB_POOL}",
             "job_upload_folder": f"{settings.JOB_UPLOAD_POOL}",
+            "executor_lock_file": f"{settings.EXECUTOR_DATA_DIR}/.quantum-executor.lock",
             "preprocessing_timeout": settings.MAX_PREPROCESSING_TIME,
             "execution_timeout": settings.MAX_EXECUTION_TIME,
             "postprocessing_timeout": settings.MAX_POSTPROCESSING_TIME,
@@ -542,6 +543,7 @@ class QueueContext(TypedDict):
         general_queue_timeout: the maximum time tasks should run on the general queue
         recalibration_queue_timeout: the maximum time tasks should run on the recalibration queue
         default_recalibration_interval: the default recalibration interval in seconds
+        executor_lock_file: the file locked while the device's quantum executor is in use
     """
 
     queue_prefix: str
@@ -559,6 +561,7 @@ class QueueContext(TypedDict):
     general_queue_timeout: int
     recalibration_queue_timeout: int
     default_recalibration_interval: float
+    executor_lock_file: str
 
 
 _STAGE_VERBOSE_NAME_MAP: Dict[Stage, str] = {

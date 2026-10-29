@@ -195,3 +195,34 @@ def test_heavy_worker_waits_while_its_device_is_off(
         beta_worker.check_for_suspension(True)
     finally:
         clear_queue_context()
+
+
+def test_each_device_has_its_own_jobs(tmp_path, monkeypatch, redis_client):
+    """A job stored for one device is not another's, though they share a Redis"""
+    import settings
+    from app.libs.queues.dtos import Job
+    from app.services.scheduler.store import get_jobs_store
+
+    load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
+    job = Job(device="Beta", calibration_date="")
+    with settings.using_device("Beta"):
+        get_jobs_store().insert(job)
+
+    with settings.using_device("Alpha"):
+        assert not get_jobs_store().exists(job.job_id)
+
+
+def test_each_device_has_its_own_executor_lock(tmp_path, monkeypatch):
+    import settings
+    from app.libs.queues.dtos import clear_queue_context, get_queue_context
+
+    load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
+    try:
+        with settings.using_device("Alpha"):
+            alpha_lock_file = get_queue_context()["executor_lock_file"]
+        with settings.using_device("Beta"):
+            beta_lock_file = get_queue_context()["executor_lock_file"]
+
+        assert alpha_lock_file != beta_lock_file
+    finally:
+        clear_queue_context()

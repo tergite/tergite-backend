@@ -161,6 +161,7 @@ class Collection(Generic[T]):
         partial_schema: Optional[Type[T]] = None,
         cleanup_interval: float = 3600,
         default_ttl: _TTL_Type = _UNDEFINED,
+        name: Optional[str] = None,
     ):
         """
         Args:
@@ -169,7 +170,10 @@ class Collection(Generic[T]):
             partial_schema: the schema for partial updates; default: None
             cleanup_interval: the interval between cleaning up indexes; default: 3600 (seconds)
             default_ttl: the default TTL for this collection; default: _UNDEFINED (never expires)
+            name: the name of the hash holding the items; default: the schema's import path
         """
+        if name is None:
+            name = f"{schema.__module__}.{schema.__qualname__}".lower()
         if partial_schema is None:
             partial_schema = create_partial_schema(
                 f"Partial{schema.__qualname__}", original=schema
@@ -179,7 +183,7 @@ class Collection(Generic[T]):
         self._schema = schema
         self._default_ttl = default_ttl
         self._partial_schema = partial_schema
-        self._hashmap_name = f"{schema.__module__}.{schema.__qualname__}".lower()
+        self._hashmap_name = name
         self._index_prefix = f"__index__{self._hashmap_name}_"
         self._zset_move = connection.register_script(_SORTED_SET_MOVE_LUA)
         self.__last_cleanup_timestamp = get_utc_now().timestamp()
