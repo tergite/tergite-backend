@@ -29,6 +29,19 @@ from rq.timeouts import BaseDeathPenalty, UnixSignalDeathPenalty
 from .dtos import Job, StorageID
 from .utils import get_function_import_path, import_func, noop
 
+# KEYS: the queue's list, jobs hash, args-kwargs hash and metadata hash
+# ARGV: the storage id, the metadata's duration field and the job's negated duration
+_POP_JOB_SCRIPT = """
+if redis.call("LREM", KEYS[1], 1, ARGV[1]) == 1 then
+    redis.call("HINCRBYFLOAT", KEYS[4], ARGV[2], ARGV[3])
+end
+local job_json = redis.call("HGET", KEYS[2], ARGV[1])
+local args_kwargs = redis.call("HGET", KEYS[3], ARGV[1])
+redis.call("HDEL", KEYS[2], ARGV[1])
+redis.call("HDEL", KEYS[3], ARGV[1])
+return {job_json, args_kwargs}
+"""
+
 
 class StaticQueue:
     """A Queue that is not associated with any runner
@@ -53,6 +66,7 @@ class StaticQueue:
         self._current_job = "current_job"
         self._connection = connection
         self._serializer = serializer
+        self._pop_job_script = connection.register_script(_POP_JOB_SCRIPT)
 
     @property
     def total_duration(self) -> float:
@@ -133,8 +147,9 @@ class StaticQueue:
 
     def clear(self):
         """Removes all items on the queue"""
-        # network request 1
-        self._connection.delete(self._database, self.name, self._metadata)
+        self._connection.delete(
+            self._database, self._args_kwargs_db, self.name, self._metadata
+        )
 
     def pop_job(
         self, storage_id: StorageID
@@ -150,21 +165,12 @@ class StaticQueue:
         Raises:
             ValidationError: job is of invalid format or does not exist
         """
-        job_duration = storage_id.duration
-        pipe = self._connection.pipeline()
-
-        pipe.lrem(self.name, 1, storage_id)
-        pipe.hget(self._database, storage_id)
-        pipe.hget(self._args_kwargs_db, storage_id)
-        pipe.hdel(self._database, storage_id)
-        pipe.hdel(self._args_kwargs_db, storage_id)
-        pipe.hincrbyfloat(self._metadata, self._duration_key, -job_duration)
-
-        pipeline_results = pipe.execute()
-        job_json = pipeline_results[1]
+        # one script, so two pops of the same job cannot both subtract its duration
+        job_json, args_kwargs_data = self._pop_job_script(
+            keys=[self.name, self._database, self._args_kwargs_db, self._metadata],
+            args=[storage_id, self._duration_key, -storage_id.duration],
+        )
         job = Job.model_validate_json(job_json)
-
-        args_kwargs_data = pipeline_results[2]
         args, kwargs = _deserialize_args_kwargs(self._serializer, args_kwargs_data)
 
         return job, args, kwargs

@@ -46,6 +46,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   now claimed before the route runs, instead of recorded after it
 - Fixed cancelling a job leaving its rq job queued: cancellation looked for an rq job id that was never used, so the
   rq job still ran and took whatever job was next in its queue
+- Fixed queue durations going negative: cancelling a job lowered the total duration of every queue it was not in,
+  so the scheduler thought more time was free before a booking than there was
 
 ### Removed
 
