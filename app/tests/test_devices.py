@@ -221,3 +221,51 @@ def test_each_device_has_its_own_executor_lock(tmp_path, monkeypatch):
         assert alpha_lock_file != beta_lock_file
     finally:
         clear_queue_context()
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/",
+        "/static-properties",
+        "/users",
+        "/bookings",
+        "/jobs",
+        f"/logfiles/{uuid4()}",
+        "/recalibration/info",
+        "/switch/status",
+    ],
+)
+def test_each_route_group_reaches_the_device_its_path_names(
+    tmp_path, monkeypatch, redis_client, path
+):
+    import settings
+    from app.api import app
+    from app.api.dependencies import (
+        get_bearer_token,
+        get_verified_mss_admin_user_id,
+        get_verified_mss_user_id,
+    )
+    from app.libs.queues.dtos import clear_queue_context
+    from app.utils.exc import NotAuthenticatedError
+
+    load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
+    reached_devices = []
+
+    def record_device():
+        reached_devices.append(settings.DEFAULT_PREFIX)
+        raise NotAuthenticatedError("only recording the device")
+
+    monkeypatch.setitem(
+        app.dependency_overrides, get_verified_mss_user_id, record_device
+    )
+    monkeypatch.setitem(
+        app.dependency_overrides, get_verified_mss_admin_user_id, record_device
+    )
+    monkeypatch.setitem(app.dependency_overrides, get_bearer_token, record_device)
+    try:
+        get_test_client(app).get(f"/Beta{path}")
+
+        assert reached_devices == ["Beta"]
+    finally:
+        clear_queue_context()

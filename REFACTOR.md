@@ -163,7 +163,7 @@ Tests and tooling only. After this step, a refactor commit that changes behaviou
 | `POST /token` | body `user_id` other than the header's → 403; an unknown user is created; the `access_token` is the job JWT encrypted with MSS's public key (today's test reads the raw JWT from a `jwt.encode` spy, `app/tests/test_api.py:3355`) |
 | Job JWT | expires after `JWT_TTL`; `/jobs/{id}/cancel` accepts MSS headers or the bearer token, and a token for another job → 403 |
 | Device routing | `/<prefix>/…` reaches that device for every route group, not only `/users` (`app/tests/test_devices.py:74`) |
-| Offline device | every route but `/switch/*` answers as step 0.16 decided |
+| Offline device | the routes that change or list its work, through `get_queue_context_if_online`, answer 503 as step 0.16 decided; the read routes, `/token`, `POST /users` and `/switch/on` answer as usual. Refusing every route would change behaviour, so step 1 pins this |
 | `X-Request-ID` | echoed on every response, and the request logged once |
 | Error mapping | each domain error's status code, and 500 for an unexpected exception |
 | `GET /bookings/config` | its field set |

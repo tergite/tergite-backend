@@ -30,9 +30,11 @@ _SHOULD_SIGN_HEADER = "x-test-should-sign-mss"
 _MSS_PRIVATE_KEY: Optional[RSAPrivateKey] = None
 
 
-def get_test_client(app: FastAPI) -> TestClient:
+def get_test_client(
+    app: FastAPI, should_raise_server_exceptions: bool = True
+) -> TestClient:
     """Gets a test client of the app that signs the MSS headers create_mss_headers makes"""
-    client = TestClient(app)
+    client = TestClient(app, raise_server_exceptions=should_raise_server_exceptions)
     client.event_hooks = {"request": [sign_mss_request]}
     return client
 
@@ -89,7 +91,9 @@ def create_invalid_mss_headers(user_id: str = "") -> List[Dict[str, str]]:
 
 
 def create_mss_headers(
-    user_id: str = "", is_admin: Optional[bool] = None
+    user_id: str = "",
+    is_admin: Optional[bool] = None,
+    timestamp: Optional[float] = None,
 ) -> Dict[str, str]:
     """Creates headers to show that the request is a valid one from MSS
 
@@ -99,13 +103,16 @@ def create_mss_headers(
     Args:
         user_id: the unique identifier of the user
         is_admin: whether the request should show that the user is an admin
+        timestamp: when MSS signed them; default = now
 
     Returns:
         The dictionary of headers that show a given request is from MSS
     """
+    if timestamp is None:
+        timestamp = time.time()
     headers = {
         "x-mss-request-id": f"{uuid4()}",
-        "x-mss-timestamp": f"{time.time()}",
+        "x-mss-timestamp": f"{timestamp}",
         "x-mss-user-id": user_id,
         _SHOULD_SIGN_HEADER: "true",
     }
@@ -127,6 +134,27 @@ def sign_mss_request(request: httpx.Request) -> None:
         f"|{request.method}|{request.url.path}"
     )
     request.headers["x-mss-signature"] = create_mss_signature(message)
+
+
+def decrypt_access_token(access_token: str) -> str:
+    """Decrypts the access token the BCC encrypted for MSS, as MSS does
+
+    Args:
+        access_token: the access_token of a /token response
+
+    Returns:
+        the job JWT
+    """
+    cipher_bytes = base64.b64decode(access_token)
+    token_bytes = _get_mss_private_key().decrypt(
+        cipher_bytes,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None,
+        ),
+    )
+    return token_bytes.decode()
 
 
 def create_mss_signature(message: str) -> str:

@@ -36,6 +36,7 @@ from typing import (
 from unittest.mock import Mock
 from uuid import uuid4
 
+import jwt
 import pytest
 import time_machine
 import toml
@@ -47,6 +48,7 @@ from redis import Redis
 from rq import Queue as RqQueue
 from rq import SimpleWorker
 from rq.job import Job as RqJob
+from starlette.requests import Request
 
 import app.services.scheduler.tasks as scheduler_tasks
 from app.api.worker import preload_worker_globals
@@ -72,19 +74,43 @@ from app.tests.utils.api import (
     create_invalid_mss_headers,
     create_mss_headers,
     create_mss_signature,
+    decrypt_access_token,
+    get_test_client,
 )
 from app.tests.utils.datetime import get_timestamp_str
 from app.tests.utils.env import (
     TEST_DEFAULT_RECALIBRATION_INTERVAL,
+    TEST_JWT_SECRET,
+    TEST_JWT_TTL,
     TEST_MAX_IDLE_TIME,
     TEST_MAX_RECALIBRATION_QUEUE_TIME,
     TEST_MAX_SLOTS_PER_DAY,
     TEST_MAX_TIME_SLOT_LENGTH,
     TEST_MIN_TIME_SLOT_LENGTH,
+    TEST_MSS_NONCE_TTL,
     TEST_RQ_MAX_QUEUE_WAIT_TIME,
 )
 from app.tests.utils.fixtures import load_fixture
 from app.tests.utils.records import order_by
+from app.utils.api import get_request_logs_store
+from app.utils.exc import (
+    BookingAlreadyActiveError,
+    BookingAlreadyCompleteError,
+    ConflictError,
+    InvalidJobIdInUploadedFileError,
+    InvalidRequestError,
+    IsOfflineError,
+    ItemNotFoundError,
+    JobAlreadyCancelled,
+    JobAlreadyCompleteError,
+    MaxBookingsError,
+    MssRejectedError,
+    MssTimeoutError,
+    NotAllowedError,
+    NotAuthenticatedError,
+    UnauthorizedError,
+)
+from app.utils.strings import validate_uuid4_str
 
 if TYPE_CHECKING:
     from httpx import Response
@@ -217,6 +243,61 @@ _FAILING_STAGE_PATCHES = [
     ),
 ]
 
+_OFFLINE_REFUSED_ROUTES = [
+    ("DELETE", "/me"),
+    ("DELETE", f"/users/{uuid4()}"),
+    ("POST", "/bookings"),
+    ("POST", f"/bookings/{uuid4()}/cancel"),
+    ("POST", "/jobs"),
+    ("GET", "/jobs"),
+    ("GET", f"/jobs/{uuid4()}"),
+    ("POST", f"/jobs/{uuid4()}/cancel"),
+    ("DELETE", f"/jobs/{uuid4()}"),
+    ("POST", "/recalibration/init"),
+    ("POST", "/recalibration/cancel"),
+    ("POST", "/switch/off"),
+]
+# these read, or touch only the bookings database, so they answer an offline device
+_OFFLINE_ANSWERED_ROUTES = [
+    ("GET", "/"),
+    ("GET", "/me"),
+    ("POST", "/token"),
+    ("POST", "/users"),
+    ("GET", "/users"),
+    ("GET", "/bookings"),
+    ("GET", "/bookings/config"),
+    ("GET", "/static-properties"),
+    ("GET", "/dynamic-properties"),
+    ("GET", f"/logfiles/{uuid4()}"),
+    ("GET", "/recalibration/info"),
+    ("POST", "/switch/on"),
+    ("GET", "/switch/status"),
+]
+
+_ERROR_STATUS_CODES = [
+    (NotAllowedError(), 405),
+    (NotAuthenticatedError(), 401),
+    (UnauthorizedError(), 403),
+    (ItemNotFoundError(), 404),
+    (JobAlreadyCompleteError(), 406),
+    (ConflictError(), 409),
+    (MaxBookingsError(), 400),
+    (InvalidRequestError(), 400),
+    (BookingAlreadyCompleteError(), 400),
+    (BookingAlreadyActiveError(), 400),
+    (ValidationError.from_exception_data("Job", []), 422),
+    (ValueError(), 500),
+    (IndexError(), 500),
+    (TypeError(), 500),
+    (RuntimeError(), 500),
+    (TimeoutError(), 500),
+    (InvalidJobIdInUploadedFileError(), 400),
+    (JobAlreadyCancelled(), 406),
+    (IsOfflineError(), 503),
+    (MssRejectedError(), 502),
+    (MssTimeoutError(), 504),
+]
+
 _ROOT_PARAMS = [
     (client, headers)
     for client in FASTAPI_CLIENTS
@@ -297,6 +378,161 @@ def test_replayed_mss_headers_of_a_failed_request(client, mocker):
         response = client.get("/me", headers=headers)
         assert response.status_code == 401
         assert response.json() == {"detail": "user not authenticated"}
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_reused_mss_nonce_is_refused(client):
+    with client as client:
+        headers = create_mss_headers()
+        client.get("/", headers=headers)
+
+        response = client.get("/", headers=headers)
+
+        assert response.status_code == 401
+
+
+@pytest.mark.parametrize(
+    "timestamp",
+    [
+        time.time() - TEST_MSS_NONCE_TTL - 10,
+        time.time() + 60,
+    ],
+    ids=["older than MSS_NONCE_TTL", "in the future"],
+)
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_mss_timestamp_out_of_range_is_refused(client, timestamp):
+    with client as client:
+        response = client.get("/", headers=create_mss_headers(timestamp=timestamp))
+
+        assert response.status_code == 401
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_token_for_another_user_is_refused(client):
+    """POST '/token' with a body user_id other than MSS's x-mss-user-id answers 403"""
+    with client as client:
+        user_id, _ = _create_user(client, user=USERS[0])
+        response = client.post(
+            "/token",
+            json={"user_id": f"{uuid4()}", "job_id": f"{uuid4()}"},
+            headers=create_mss_headers(user_id),
+        )
+
+        assert response.status_code == 403
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_token_creates_an_unknown_user(client):
+    with client as client:
+        user_id = f"{uuid4()}"
+        _get_token(client, data={"user_id": user_id, "job_id": f"{uuid4()}"})
+
+        response = _view_own_profile(client, user_id=user_id)
+
+        assert response.status_code == 200
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_token_is_the_job_jwt_encrypted_for_mss(client):
+    with client as client:
+        user_id, job_id = f"{uuid4()}", f"{uuid4()}"
+        response = client.post(
+            "/token",
+            json={"user_id": user_id, "job_id": job_id},
+            headers=create_mss_headers(user_id),
+        )
+
+        token = decrypt_access_token(response.json()["access_token"])
+        claims = jwt.decode(token, TEST_JWT_SECRET, algorithms=["HS256"])
+        assert response.json()["token_type"] == "bearer"
+        assert (claims["sub"], claims["job"]) == (user_id, job_id)
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_job_token_expires_after_jwt_ttl(client):
+    with client as client:
+        job_id = f"{uuid4()}"
+        token, _ = _get_token(client, data={"user_id": f"{uuid4()}", "job_id": job_id})
+
+        with time_machine.travel(timedelta(seconds=TEST_JWT_TTL + 1)):
+            response = client.post(
+                f"/jobs/{job_id}/cancel", json={}, headers=_get_headers(token)
+            )
+
+        assert response.status_code == 401
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_job_token_for_another_job_is_refused(client):
+    with client as client:
+        token, _ = _get_token(
+            client, data={"user_id": f"{uuid4()}", "job_id": f"{uuid4()}"}
+        )
+
+        response = client.post(
+            f"/jobs/{uuid4()}/cancel", json={}, headers=_get_headers(token)
+        )
+
+        assert response.status_code == 403
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_offline_device_refuses_the_routes_that_change_or_list_its_work(client):
+    """An offline device answers 503 on the routes that check it, and the rest as usual"""
+    with client as client:
+        client.post("/switch/off", headers=create_mss_headers(is_admin=True))
+
+        refused_codes = _get_status_codes_as_mss_admin(client, _OFFLINE_REFUSED_ROUTES)
+        answered_codes = _get_status_codes_as_mss_admin(
+            client, _OFFLINE_ANSWERED_ROUTES
+        )
+
+        assert refused_codes == {route: 503 for route in refused_codes}
+        assert [route for route, code in answered_codes.items() if code == 503] == []
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_every_response_carries_its_request_id(client):
+    """X-Request-ID is MSS's x-mss-request-id, or a new one, and the request is logged once"""
+    with client as client:
+        headers = create_mss_headers()
+        answered = client.get("/", headers=headers)
+        refused = client.get("/")
+        missing = client.get("/no-such-route")
+
+        nonce = headers["x-mss-request-id"]
+        logged_ids = [log.request_id for log in get_request_logs_store().get_all()]
+        assert answered.headers["X-Request-ID"] == nonce
+        assert validate_uuid4_str(refused.headers["X-Request-ID"])
+        assert validate_uuid4_str(missing.headers["X-Request-ID"])
+        assert logged_ids.count(nonce) == 1
+
+
+@pytest.mark.parametrize("error, status_code", _ERROR_STATUS_CODES)
+def test_errors_map_to_their_status_codes(error, status_code):
+    from app.api import app
+
+    handler = app.exception_handlers[type(error)]
+    request = Request({"type": "http", "method": "GET", "path": "/", "headers": []})
+
+    response = asyncio.run(handler(request, error))
+
+    assert response.status_code == status_code
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_unexpected_error_answers_500(client, mocker):
+    mocker.patch(
+        "app.services.booking.get_user_profile", side_effect=Exception("unexpected")
+    )
+    with client:
+        server_error_client = get_test_client(
+            client.app, should_raise_server_exceptions=False
+        )
+
+        response = server_error_client.get("/me", headers=create_mss_headers())
+
+        assert response.status_code == 500
 
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
@@ -1346,7 +1582,7 @@ def test_duplicate_job_upload(
                 "user_id": job_info["user_id"],
                 "job_id": job_info["job_id"],
             }
-            token, _ = _get_token(client, mocker, data=login_details)
+            token, _ = _get_token(client, data=login_details)
             fresh_headers = _get_headers(token)
             third_response = client.post(
                 "/jobs", files={"upload_file": file}, headers=fresh_headers
@@ -1736,9 +1972,7 @@ def test_view_job(
             client, user={**user, "email": f"extra-{user["email"]}"}
         )
         job_id = job["job_id"]
-        token, _ = _get_token(
-            client, mocker, data={"user_id": user_id, "job_id": job_id}
-        )
+        token, _ = _get_token(client, data={"user_id": user_id, "job_id": job_id})
 
         # submit job
         headers = _get_headers(token)
@@ -1787,9 +2021,7 @@ def test_unauthenticated_view_job(
     with client as client:
         user_id, _ = _create_user(client, user=user)
         job_id = job["job_id"]
-        token, _ = _get_token(
-            client, mocker, data={"user_id": user_id, "job_id": job_id}
-        )
+        token, _ = _get_token(client, data={"user_id": user_id, "job_id": job_id})
 
         # submit job
         headers = _get_headers(token)
@@ -1820,9 +2052,7 @@ def test_unauthorized_view_job(
             client, user={**user, "email": f"extra-{user["email"]}"}
         )
         job_id = job["job_id"]
-        token, _ = _get_token(
-            client, mocker, data={"user_id": user_id, "job_id": job_id}
-        )
+        token, _ = _get_token(client, data={"user_id": user_id, "job_id": job_id})
 
         # submit job
         headers = _get_headers(token)
@@ -1850,9 +2080,7 @@ def test_admin_view_job(
             client, user={**user, "email": f"extra-{user["email"]}"}
         )
         job_id = job["job_id"]
-        token, _ = _get_token(
-            client, mocker, data={"user_id": user_id, "job_id": job_id}
-        )
+        token, _ = _get_token(client, data={"user_id": user_id, "job_id": job_id})
 
         # submit job
         headers = _get_headers(token)
@@ -2120,9 +2348,7 @@ def test_unauthenticated_view_jobs(
         assert response.json() == {"detail": "user not authenticated"}
 
         # use a token used only for submitting jobs directly to the backend
-        token, _ = _get_token(
-            client, mocker, data={"user_id": user_id, "job_id": job_ids[0]}
-        )
+        token, _ = _get_token(client, data={"user_id": user_id, "job_id": job_ids[0]})
         headers = _get_headers(token)
         response = client.get("/jobs", headers=headers)
         assert response.status_code == 401
@@ -2594,7 +2820,7 @@ def test_logfile_for_non_existing_job(
 
         user_id, _ = _create_user(client, USERS[0])
         login_data = {"user_id": user_id, "job_id": job_id}
-        token, _ = _get_token(client, mocker=mocker, data=login_data)
+        token, _ = _get_token(client, data=login_data)
 
         headers = _get_headers(token)
 
@@ -3576,6 +3802,18 @@ def _drop_microsec(timestamp: datetime) -> datetime:
     return timestamp.replace(microsecond=0)
 
 
+def _get_status_codes_as_mss_admin(
+    client: "TestClient", routes: List[Tuple[str, str]]
+) -> Dict[str, int]:
+    """Gets the status code of each route, as "<method> <path>", requested as an MSS admin"""
+    return {
+        f"{method} {path}": client.request(
+            method, path, headers=create_mss_headers(is_admin=True)
+        ).status_code
+        for method, path in routes
+    }
+
+
 def _get_jobs_sent_to_mss(mss_update_spy: Mock) -> List[Job]:
     """Gets the jobs, in order, that a spy on update_job_in_mss saw sent to MSS"""
     return [call.kwargs["payload"] for call in mss_update_spy.call_args_list]
@@ -3654,9 +3892,7 @@ def _get_job_submission_metadata(
         user_id = curr_user["id"]
         job_id = job_info["job_id"]
 
-        token, _ = _get_token(
-            client, mocker, data={"user_id": user_id, "job_id": job_id}
-        )
+        token, _ = _get_token(client, data={"user_id": user_id, "job_id": job_id})
 
         results.append(
             {
@@ -3720,30 +3956,6 @@ def _submit_multiple_jobs(
             assert actual_job["job_id"] == job_info["job_id"]
 
     return job_ids_in_fifo
-
-
-def _create_user_token_map(
-    client: "TestClient",
-    mocker: MockerFixture,
-    raw_users: List[Dict[str, Any]] = tuple(USERS),
-) -> Dict[str, str]:
-    """Creates a map of <user id>:<token>
-
-    Args:
-        client: the fastapi test client
-        mocker: the MockerFixture for mocking JWT calls etc
-        raw_users: the list of raw user data
-
-    Returns:
-        dictionary of user_id: token
-    """
-    user_id_token_map: Dict[str, str] = {}
-    for user in raw_users:
-        user_id, _ = _create_user(client, user=user)
-        # FIXME: this is wrong
-        token, _ = _get_token(client, mocker=mocker, data=user)
-        user_id_token_map[user_id] = token
-    return user_id_token_map
 
 
 def _create_many_users(
@@ -3827,29 +4039,20 @@ def _create_user(client: "TestClient", user: dict) -> Tuple[str, "Response"]:
     return user_id, response
 
 
-def _get_token(
-    client: "TestClient", mocker: MockerFixture, data: "_LoginDetails"
-) -> Tuple[str, "Response"]:
+def _get_token(client: "TestClient", data: "_LoginDetails") -> Tuple[str, "Response"]:
     """Mimics logging in via MSS and returns the user's JWT token and the httpx.Response
 
     Args:
         client: the fastapi TestClient for testing the app
-        mocker: the pytest mocker fixture for spying on functions
         data: the info for signing in
 
     Returns:
         the tuple of the JWT of the user and the httpx.Response
     """
-    import jwt
-
-    jwt_encode_spy = mocker.spy(jwt, "encode")
-
     headers = create_mss_headers(user_id=data["user_id"])
     response = client.post("/token", json=data, headers=headers)
-    expected_token = jwt_encode_spy.spy_return
-    mocker.stop(jwt_encode_spy)
-
-    return expected_token, response
+    token = decrypt_access_token(response.json()["access_token"])
+    return token, response
 
 
 def _save_job_file(folder: Path, job: Dict[str, Any], ext: str = ".json") -> Path:
