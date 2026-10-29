@@ -3103,6 +3103,35 @@ def test_switch_on(client, redis_conn, jobs_folder, worker, job, mocker, fake_cl
         assert len(jobs_in_redis) == 1
 
 
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_switch_answers_other_requests_while_it_tells_mss(client, mocker):
+    """POST '/switch/off' waiting on MSS leaves the API free to answer other requests"""
+    is_sending = threading.Event()
+    is_other_request_answered = threading.Event()
+    answered_while_sending = []
+
+    def send_event_slowly(*args, **kwargs):
+        is_sending.set()
+        answered_while_sending.append(is_other_request_answered.wait(timeout=2))
+
+    mss_client = mocker.patch("app.services.scheduler.service.get_mss_client")
+    mss_client.return_value.send_event.side_effect = send_event_slowly
+    with client as client:
+        headers = create_mss_headers(is_admin=True)
+        switch_off = threading.Thread(
+            target=client.post, args=("/switch/off",), kwargs={"headers": headers}
+        )
+        switch_off.start()
+        is_sending.wait(timeout=2)
+
+        response = client.get("/switch/status", headers=create_mss_headers())
+        is_other_request_answered.set()
+        switch_off.join()
+
+        assert response.status_code == 200
+        assert answered_while_sending == [True]
+
+
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_switch_status(client, redis_conn, jobs_folder, worker, job, mocker):
     """GET '/switch/status' shows the status of the device if ON or OFF"""

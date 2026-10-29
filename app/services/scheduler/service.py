@@ -594,7 +594,7 @@ def get_recalibration_info(queues: QueuePool) -> RecalibrationInfo:
     return RecalibrationInfo.from_queue(queues.recalibration)
 
 
-async def switch_off(
+def switch_off(
     context: QueueContext,
 ):
     """Switches off the scheduler
@@ -619,7 +619,7 @@ async def switch_off(
     )
 
 
-async def switch_on(
+def switch_on(
     context: QueueContext,
 ):
     """Switches on the scheduler

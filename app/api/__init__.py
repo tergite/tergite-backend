@@ -735,8 +735,9 @@ async def cancel_recalibration(
     return {"status": "success"}
 
 
+# plain def, so FastAPI runs them in a thread: telling MSS blocks, for up to minutes
 @app.post("/switch/off", dependencies=[Depends(get_verified_mss_admin_user_id)])
-async def switch_off(
+def switch_off(
     context: QueueContext = Depends(get_queue_context_if_online),
 ) -> GeneralMessage:
     """Switches off this device
@@ -749,12 +750,12 @@ async def switch_off(
     Returns:
         general information on the status of the request
     """
-    await scheduler.switch_off(context)
+    scheduler.switch_off(context)
     return {"status": "success"}
 
 
 @app.post("/switch/on", dependencies=[Depends(get_verified_mss_admin_user_id)])
-async def switch_on(
+def switch_on(
     context: QueueContext = Depends(get_queue_context),
 ) -> GeneralMessage:
     """Switches on this device
@@ -767,7 +768,7 @@ async def switch_on(
     Returns:
         general information on the status of the request
     """
-    await scheduler.switch_on(context)
+    scheduler.switch_on(context)
     return {"status": "success"}
 
 

@@ -66,6 +66,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   waitlist until a later booking ended, when the user's booking was under way
 - Fixed two API workers being able to book the same slot, and a first request for a new user, or a duplicate
   `POST /users`, failing with 500 when it raced another; a duplicate user now answers 409
+- Fixed `/switch/on` and `/switch/off` freezing every other request on their API worker, for up to 120 s, while
+  they waited on MSS
 
 ### Removed
 
