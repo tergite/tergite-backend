@@ -191,15 +191,13 @@ def test_reused_mss_nonce_is_refused(client):
 
 
 @pytest.mark.parametrize(
-    "timestamp",
-    [
-        time.time() - TEST_MSS_NONCE_TTL - 10,
-        time.time() + 60,
-    ],
+    "seconds_from_now",
+    [-TEST_MSS_NONCE_TTL - 10, 60],
     ids=["older than MSS_NONCE_TTL", "in the future"],
 )
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
-def test_mss_timestamp_out_of_range_is_refused(client, timestamp):
+def test_mss_timestamp_out_of_range_is_refused(client, seconds_from_now):
+    timestamp = time.time() + seconds_from_now
     with client as client:
         response = client.get("/", headers=create_mss_headers(timestamp=timestamp))
 
