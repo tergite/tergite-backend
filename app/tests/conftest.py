@@ -46,13 +46,11 @@ def _run_in_the_test_root():
 def _clear_connection_caches():
     """Reset all module-level connection caches before every test."""
     from app.services.external.mss.service import disconnect_mss_client
-    from app.services.scheduler.store import clear_jobs_stores_registry
     from app.services.scheduler.utils import clear_quantum_executor
     from app.utils.redis import clear_redis_connections
     from app.utils.sql_db import clear_sql_engine_cache
 
     clear_redis_connections(ignore_errors=True)
-    clear_jobs_stores_registry()
     disconnect_mss_client(ignore_errors=True)
     clear_quantum_executor(ignore_errors=True)
     # Must also clear the SQL engine cache so that _clear_test_db's drop_all
@@ -60,7 +58,6 @@ def _clear_connection_caches():
     clear_sql_engine_cache()
     yield
     clear_redis_connections(ignore_errors=True)
-    clear_jobs_stores_registry()
     disconnect_mss_client(ignore_errors=True)
     clear_quantum_executor(ignore_errors=True)
     clear_sql_engine_cache()

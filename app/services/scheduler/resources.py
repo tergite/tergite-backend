@@ -55,11 +55,12 @@ class DeviceResources:
     def from_settings(cls, device_settings: DeviceSettings) -> Self:
         """Gets the resources of the device of these settings, which must be the current
         device's, as the getters cache them by the current device"""
+        redis = get_redis_connection(device_settings.rq_redis_url)
         return cls(
             settings=device_settings,
-            redis=get_redis_connection(device_settings.rq_redis_url),
+            redis=redis,
             bookings_db=get_bookings_sql_engine(device_settings.booking_db_url),
-            jobs_store=get_jobs_store(device_settings.rq_redis_url),
+            jobs_store=get_jobs_store(redis, device_settings),
             queues=get_queue_pool(),
             mss_client=get_mss_client(),
             executor_options=get_executor_options(),

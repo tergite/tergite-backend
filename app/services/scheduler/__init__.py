@@ -27,7 +27,7 @@ from .service import (
     submit_booking,
     submit_job_file,
 )
-from .store import clear_jobs_stores_registry, get_jobs_store
+from .store import get_jobs_store
 from .utils import (
     clear_quantum_executor,
     get_executor_and_options,
@@ -41,7 +41,6 @@ __all__ = [
     "RecalibrationInfo",
     "cancel_booking",
     "cancel_job",
-    "clear_jobs_stores_registry",
     "clear_quantum_executor",
     "clear_queue_pool",
     "delete_job",

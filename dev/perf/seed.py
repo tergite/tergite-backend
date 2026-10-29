@@ -22,6 +22,7 @@ from app.libs.queues.dtos import Job, JobStatus, Stage
 from app.services.booking import Booking, User, get_bookings_sql_engine
 from app.services.scheduler import get_jobs_store
 from app.utils.datetime import get_utc_now, utc_now_str
+from app.utils.redis import get_redis_connection
 from app.utils.strings import uuid_str
 
 JOB_COUNT = 500
@@ -35,7 +36,9 @@ def main() -> None:
 
 
 def store_jobs(user_id: str) -> None:
-    jobs_store = get_jobs_store()
+    jobs_store = get_jobs_store(
+        get_redis_connection(settings.RQ_REDIS_URL), settings.get_device_settings()
+    )
     for _ in range(JOB_COUNT):
         jobs_store.insert(
             Job(

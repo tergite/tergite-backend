@@ -212,14 +212,21 @@ def test_each_device_has_its_own_jobs(tmp_path, monkeypatch, redis_client):
     import settings
     from app.libs.queues.dtos import Job
     from app.services.scheduler.store import get_jobs_store
+    from app.utils.redis import get_redis_connection
 
     load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
     job = Job(device="Beta", calibration_date="")
     with settings.using_device("Beta"):
-        get_jobs_store().insert(job)
+        beta_jobs = get_jobs_store(
+            get_redis_connection(), settings.get_device_settings()
+        )
+        beta_jobs.insert(job)
 
     with settings.using_device("Alpha"):
-        assert not get_jobs_store().exists(job.job_id)
+        alpha_jobs = get_jobs_store(
+            get_redis_connection(), settings.get_device_settings()
+        )
+        assert not alpha_jobs.exists(job.job_id)
 
 
 def test_each_device_has_its_own_executor_lock(tmp_path, monkeypatch):

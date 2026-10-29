@@ -15,10 +15,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Tuple
 
+import settings
 from app.libs.qiskit.qobj import PulseQobj
 from app.libs.quantum_executor.quantify.executor import QuantifyExecutor
 from app.services.scheduler.store import get_jobs_store
 from app.tests.utils.env import TEST_RQ_REDIS_URL
+from app.utils.redis import get_redis_connection
 
 
 class MockQuantifyExecutor(QuantifyExecutor):
@@ -42,7 +44,9 @@ class MockQuantifyExecutor(QuantifyExecutor):
 
         inputs_folder = PREPROCESSED_JOB_POOL
         start_timestamp = datetime.now()
-        jobs_store = get_jobs_store(TEST_RQ_REDIS_URL)
+        jobs_store = get_jobs_store(
+            get_redis_connection(TEST_RQ_REDIS_URL), settings.get_device_settings()
+        )
         job = jobs_store.get_one(job_id)
         estimated_duration = 0
         if job.estimated_duration:

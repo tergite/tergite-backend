@@ -18,8 +18,10 @@ import time
 from datetime import datetime
 from typing import List, Optional
 
+import settings
 from app.libs.queues.dtos import Job, TimestampPair
 from app.services.scheduler import get_jobs_store
+from app.utils.redis import get_redis_connection
 
 DRAIN_TIMEOUT_SECONDS = 300
 POLL_INTERVAL_SECONDS = 2
@@ -38,7 +40,9 @@ def wait_for_jobs(user_id: str) -> List[Job]:
     """Gets the user's jobs once none is pending or executing, or once the wait times out"""
     deadline = time.time() + DRAIN_TIMEOUT_SECONDS
     while True:
-        jobs = get_jobs_store().find_by_index({"user_id": user_id})
+        jobs = get_jobs_store(
+            get_redis_connection(settings.RQ_REDIS_URL), settings.get_device_settings()
+        ).find_by_index({"user_id": user_id})
         is_drained = all(job.status.is_terminal() for job in jobs)
         if is_drained or time.time() > deadline:
             return jobs

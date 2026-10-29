@@ -36,7 +36,6 @@ from ..services.external.mss import (
 from ..services.scheduler import (
     DeviceResources,
     JobFile,
-    clear_jobs_stores_registry,
     clear_quantum_executor,
     clear_queue_pool,
     get_job,
@@ -104,7 +103,6 @@ async def lifespan(app: FastAPI):
     clear_quantum_executor(ignore_errors=True)
     disconnect_mss_client(ignore_errors=True)
     clear_redis_connections(ignore_errors=True)
-    clear_jobs_stores_registry()
     clear_sql_engine_cache()
 
 
