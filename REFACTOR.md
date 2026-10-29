@@ -210,6 +210,9 @@ Tests and tooling only. After this step, a refactor commit that changes behaviou
    `utils/redis.py`'s two functions, `records.with_incremental_timestamps` and `mss.mock_mss_websocket_handler`.
 7. **Split `test_api.py`** (3,573 lines, 127 tests) by route group, into `app/tests/api/test_{devices,users,bookings,
    jobs,recalibration,switch,logfiles}.py`, so that step 3.1's routers map onto them one to one.
+   **Done** with an eighth, `test_app.py`, for what every route does: MSS's signed headers and nonces, request ids,
+   error mapping, an offline device and start-up locking. The parameter lists several modules share moved to
+   `utils/params.py`.
 8. **CI.** The GitLab cache key names `$EXTRA_NAME`, which is never set (`.gitlab-ci.yml:50`): `$DEPS_GROUP`. The
    qiskit job skips 12 booking, queue and recalibration tests on `skipif(not HAS_QUANTIFY)`; those that need quantify
    only for a mock executor run on the simulator's instead, so both jobs cover the scheduler.
