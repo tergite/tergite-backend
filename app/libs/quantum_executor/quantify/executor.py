@@ -209,35 +209,44 @@ class QuantifyExecutor(QuantumExecutor):
         reverse_phase_qubits = backend_config.device_config.reverse_phase_qubits
         cluster_config = self.quantify_config
 
-        results = None
-        for name, conf in self.quantify_metadata.root.items():
-            if conf.instrument_type == "Cluster":
-                cluster_mode = (
-                    MeasurementMode.dummy if conf.is_dummy else MeasurementMode.real
-                )
-                logging.info(f"recalibrating {name} in {cluster_mode} mode...")
+        clusters = [
+            (name, conf)
+            for name, conf in self.quantify_metadata.root.items()
+            if conf.instrument_type == "Cluster"
+        ]
+        if len(clusters) > 1:
+            raise ValueError(
+                "recalibration runs through one cluster, as tergite_tuner does, "
+                f"but the quantify metadata lists {len(clusters)}"
+            )
+        if not clusters:
+            return None
 
-                results = recalibrate(
-                    backend_config=self.backend_config,
-                    cluster_mode=cluster_mode,
-                    stdout_log_level=25,
-                    file_log_level=25,
-                    cluster_ip=conf.ip_address,
-                    redis_url=self._redis_url,
-                    data_dir=data_dir,
-                    spi_mode=SPIMode.dummy,
-                    qubits=qubits,
-                    couplers=couplers,
-                    is_recalibration=True,
-                    ignore_spec=True,
-                    save_plot=False,
-                    fixed_duration_couplers=fixed_duration_couplers,
-                    reverse_phase_qubits=reverse_phase_qubits,
-                    cluster_config=cluster_config,
-                    spi_config=calib_spi_conf,
-                    device_config=calib_device_conf,
-                    node_config=calib_node_conf,
-                )
+        [(name, conf)] = clusters
+        cluster_mode = MeasurementMode.dummy if conf.is_dummy else MeasurementMode.real
+        logging.info(f"recalibrating {name} in {cluster_mode} mode...")
+
+        results = recalibrate(
+            backend_config=self.backend_config,
+            cluster_mode=cluster_mode,
+            stdout_log_level=25,
+            file_log_level=25,
+            cluster_ip=conf.ip_address,
+            redis_url=self._redis_url,
+            data_dir=data_dir,
+            spi_mode=SPIMode.dummy,
+            qubits=qubits,
+            couplers=couplers,
+            is_recalibration=True,
+            ignore_spec=True,
+            save_plot=False,
+            fixed_duration_couplers=fixed_duration_couplers,
+            reverse_phase_qubits=reverse_phase_qubits,
+            cluster_config=cluster_config,
+            spi_config=calib_spi_conf,
+            device_config=calib_device_conf,
+            node_config=calib_node_conf,
+        )
 
         if isinstance(results, DeviceCalibration):
             calib_seed_file = self.calib_seed_file

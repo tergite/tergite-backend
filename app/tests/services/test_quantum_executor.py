@@ -40,3 +40,31 @@ def test_attempts_to_connect_to_real_hardware():
             quantify_metadata_file=_REAL_HARDWARE_QUANTIFY_METADATA_FILE,
             backend_config=backend_conf,
         )
+
+
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
+def test_recalibrate_refuses_more_than_one_cluster(tmp_path, mocker):
+    """tergite_tuner calibrates the whole device through one cluster"""
+    from ...libs.quantum_executor.quantify.executor import QuantifyExecutor
+    from ...libs.quantum_executor.quantify.utils.config import QuantifyMetadata
+    from ..utils.env import TEST_QUANTIFY_CONFIG_FILE, TEST_QUANTIFY_METADATA_FILE
+
+    calibrate = mocker.patch(
+        "app.libs.quantum_executor.quantify.executor.recalibrate", return_value=None
+    )
+    executor = QuantifyExecutor(
+        quantify_config_file=TEST_QUANTIFY_CONFIG_FILE,
+        quantify_metadata_file=TEST_QUANTIFY_METADATA_FILE,
+        backend_config=BackendConfig.from_toml(
+            _BACKEND_CONFIG_PATH, seed_file=_CALIBRATION_SEED_FILE
+        ),
+        data_dir=tmp_path,
+    )
+    cluster = executor.quantify_metadata.root["clusterA"]
+    executor.quantify_metadata = QuantifyMetadata(
+        {"clusterA": cluster, "clusterB": cluster}
+    )
+
+    with pytest.raises(ValueError, match="one cluster"):
+        executor.recalibrate()
+    calibrate.assert_not_called()

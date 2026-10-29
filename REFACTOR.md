@@ -139,7 +139,10 @@ changelog entry.
     - `train_discriminator`'s loop overwrites the same keys, keeping only the last row
       (`app/libs/quantum_executor/qiskit/backends/two_qubit.py:342-346`, `one_qubit.py:276-280`), and
       `QuantifyExecutor.recalibrate` keeps only the last cluster's results
-      (`app/libs/quantum_executor/quantify/executor.py:192`); confirm the intent of each before fixing
+      (`app/libs/quantum_executor/quantify/executor.py:192`); confirm the intent of each before fixing.
+      **Found:** a two-class LDA has one row of coefficients, so the discriminator loop runs once and loses
+      nothing; 6.5's `_fit_lda` removes it. tergite_tuner calibrates the whole device through one cluster, so
+      each pass of `recalibrate`'s loop recalibrated everything: it now refuses more than one cluster instead.
 16. **Status codes.** `IsOfflineError` is 404 (`api/__init__.py:119`), a missing job 403
     (`dependencies.py:330-332`), and MSS rejecting or timing out a request a 500 (`api/__init__.py:112-116`).
     **Decide**, after checking how MSS's `BccClient` handles each: 503, 404, and 502/504.
