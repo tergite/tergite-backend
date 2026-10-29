@@ -69,6 +69,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Fixed `/switch/on` and `/switch/off` freezing every other request on their API worker, for up to 120 s, while
   they waited on MSS
 - Fixed `GET /recalibration/info` failing with 500 when one recalibration was queued and another scheduled
+- Fixed `/recalibration/init` scheduling a `start_timestamp` without a timezone in the server's local time, not UTC
 
 ### Removed
 

@@ -2939,6 +2939,35 @@ def test_cancel_default_recalibration(client, redis_conn: Redis, worker):
 
 
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
+def test_init_recalibration_reads_a_naive_start_time_as_utc(
+    client, redis_conn, worker, monkeypatch
+):
+    """POST /recalibration/init schedules a start time without a timezone in UTC,
+    whatever the server's own timezone"""
+    monkeypatch.setenv("TZ", "Asia/Tokyo")
+    time.tzset()
+    try:
+        with client as client:
+            queue_name = f"{get_queue_context()['queue_prefix']}_recalibration"
+            registry = _get_queue_by_name(worker, queue_name).scheduled_job_registry
+            start_utc = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(
+                hours=1
+            )
+
+            client.post(
+                "/recalibration/init",
+                headers=create_mss_headers(is_admin=True),
+                params={"start_timestamp": start_utc.replace(tzinfo=None).isoformat()},
+            )
+
+            [rq_job_id] = registry.get_job_ids()
+            assert registry.get_scheduled_time(rq_job_id) == start_utc
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+
+
+@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
 def test_failed_recalibration_schedules_the_next(client, redis_conn, worker, mocker):
     with client as client:
         queue_name = f"{get_queue_context()['queue_prefix']}_recalibration"

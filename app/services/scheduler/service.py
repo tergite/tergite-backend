@@ -31,7 +31,7 @@ from sqlmodel import or_
 from ...libs.device_parameters import get_device_calibration_info
 from ...libs.queues.dtos import Job, JobStatus, QueueContext, Stage, StorageID
 from ...utils.api import GeneralMessage, save_uploaded_file
-from ...utils.datetime import get_utc_now, utc_now_str
+from ...utils.datetime import get_utc_now, to_utc, utc_now_str
 from ...utils.exc import (
     BookingAlreadyActiveError,
     BookingAlreadyCompleteError,
@@ -532,7 +532,8 @@ def init_recalibration(
 
     if isinstance(start_timestamp, datetime):
         job = queues.recalibration.enqueue_at(
-            datetime=start_timestamp,
+            # rq reads a naive datetime as the server's local time; the API means UTC
+            datetime=to_utc(start_timestamp),
             f=f"{_TASKS_MODULE}.recalibrate",
             context=context,
             interval=interval,
