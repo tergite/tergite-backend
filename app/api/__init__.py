@@ -598,8 +598,7 @@ async def cancel_job(
     Raises:
         NotAuthenticatedError: user not found
         ItemNotFoundError: Job {job_id} not found
-        rq.exceptions.InvalidJobOperationError: if the job has already been cancelled
-        rq.exceptions.InvalidJobOperation: if the job has already been cancelled
+        JobAlreadyCompleteError (406): job {job_id} is already {status}
     """
     scheduler.cancel_job(
         context,

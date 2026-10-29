@@ -2155,6 +2155,50 @@ def test_cancel_job_cancels_its_rq_job(
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_cancel_finished_job(
+    client, redis_conn, jobs_folder, worker, job, mocker, fake_clock
+):
+    """POST '/jobs/{id}/cancel' leaves a job that has finished as it is"""
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = _get_raw_jobs(job, durations=[0.2])
+        job_info = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )[0]
+        _submit_multiple_jobs_v2(client, data=[job_info])
+        worker.work(burst=True)
+
+        response = _cancel_job_via_mss(
+            client, user_id=job_info["user_id"], job_id=job_info["job_id"]
+        )
+
+        assert response.status_code == 406
+        assert _get_jobs_in_redis(redis_conn)[0].status == JobStatus.SUCCESSFUL
+
+
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_remove_cancelled_job(
+    client, redis_conn, jobs_folder, worker, job, mocker, fake_clock
+):
+    """DELETE '/jobs/{id}' deletes a job that was cancelled"""
+    with client as client:
+        users = _create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = _get_raw_jobs(job, durations=[0.2])
+        job_info = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )[0]
+        user_id, job_id = job_info["user_id"], job_info["job_id"]
+        _submit_multiple_jobs_v2(client, data=[job_info])
+        worker.work(burst=True, max_jobs=1)
+        _cancel_job_via_mss(client, user_id=user_id, job_id=job_id)
+
+        response = client.delete(f"/jobs/{job_id}", headers=create_mss_headers(user_id))
+
+        assert response.status_code == 200
+        assert _get_jobs_in_redis(redis_conn) == []
+
+
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_cancel_another_users_job(
     client, redis_conn, jobs_folder, worker, job, mocker, fake_clock
 ):

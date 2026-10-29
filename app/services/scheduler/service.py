@@ -38,6 +38,7 @@ from ...utils.exc import (
     ConflictError,
     ItemNotFoundError,
     JobAlreadyCancelled,
+    JobAlreadyCompleteError,
     NotAuthenticatedError,
 )
 from ...utils.redis import get_redis_connection
@@ -290,26 +291,23 @@ def cancel_job(
     Raises:
         NotAuthenticatedError: user not found
         ItemNotFoundError: Job {job_id} not found
-        rq.exceptions.InvalidJobOperationError: if the job has already been cancelled
-        rq.exceptions.InvalidJobOperation: if the job has already been cancelled
+        JobAlreadyCompleteError: job {job_id} is already {status}
     """
-    user = get_user(db_engine, User.id == user_id)
-
-    if user is None:
-        raise NotAuthenticatedError("user not found")
-
-    job_store = get_jobs_store()
-    job: Job = job_store.get_one(job_id)
-
-    is_owner = job.user_id == user_id
-    if not user.is_admin and not is_mss_admin and not is_owner:
-        raise ItemNotFoundError(f"Job {job_id} not found")
+    job = get_job(
+        context,
+        job_id=job_id,
+        user_id=user_id,
+        db_engine=db_engine,
+        is_mss_admin=is_mss_admin,
+    )
+    if job.status.is_terminal():
+        raise JobAlreadyCompleteError(f"job {job_id} is already {job.status.value}")
 
     _cancel_job_in_queues(queues, job)
     if reason is None:
         reason = "Cancelled by a user"
 
-    job = job_store.update(
+    return get_jobs_store().update(
         job_id,
         {
             "status": JobStatus.CANCELLED,
@@ -317,7 +315,6 @@ def cancel_job(
             "updated_at": utc_now_str(),
         },
     )
-    return job
 
 
 def delete_job(
@@ -345,7 +342,14 @@ def delete_job(
         NotAuthenticatedError: user not found
         ItemNotFoundError: Job {job_id} not found
     """
-    with suppress(rq_errors.InvalidJobOperation, rq_errors.InvalidJobOperationError):
+    job = get_job(
+        context,
+        job_id=job_id,
+        user_id=user_id,
+        db_engine=db_engine,
+        is_mss_admin=is_mss_admin,
+    )
+    if not job.status.is_terminal():
         job = cancel_job(
             context,
             queues=queues,

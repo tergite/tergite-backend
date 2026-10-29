@@ -58,6 +58,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   postprocessing, or too long for its booking, is now marked failed and sent to MSS
 - Fixed one failed recalibration ending recalibration for good, and `/recalibration/cancel` not stopping a
   recalibration that was running; the interval now runs from one recalibration's start to the next's
+- Fixed finished jobs being cancellable, which turned a successful or failed job `cancelled`, and deleting a
+  cancelled job failing with a 500; cancelling a finished job now answers 406
 
 ### Removed
 
