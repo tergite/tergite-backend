@@ -147,7 +147,8 @@ def post_booking_cleanup(booking_id: str, context: QueueContext):
     """Cleans up after the booking of the given booking_id
 
     It should cancel the idle time interval job and allow for all the jobs on the booked_execution queues to clear out.
-    It should also move all jobs that are short enough on the waitlist to the execution queue.
+    It should also move all jobs that are short enough on the waitlist to the execution queue,
+    even when the booking has been deleted, as with its user.
 
     Args:
         booking_id: the unique identifier of the booking
@@ -158,12 +159,9 @@ def post_booking_cleanup(booking_id: str, context: QueueContext):
     booking = get_booking(bookings_sql_engine, Booking.id == booking_id)
     redis_connection = get_current_job().connection
 
-    if booking is None:
-        logging.error(f"no booking found with id {booking_id}")
-        return
-
-    # clear the idleness timer
-    cancel_rq_job(redis_connection, job_id=booking.idle_timer_id)
+    # a deleted booking's idleness timer was cancelled when it was deleted
+    if booking is not None:
+        cancel_rq_job(redis_connection, job_id=booking.idle_timer_id)
 
     # push to normal execution queue all jobs that have duration
     # small enough to run before next booking

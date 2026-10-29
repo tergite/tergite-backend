@@ -62,6 +62,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   cancelled job failing with a 500; cancelling a finished job now answers 406
 - Fixed MSS admins being refused, with 401 or 404, the jobs and bookings of a device they had not yet fetched a
   job token from
+- Fixed deleting a user leaving their running jobs to finish, and leaving other users' jobs waiting on the
+  waitlist until a later booking ended, when the user's booking was under way
 
 ### Removed
 

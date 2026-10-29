@@ -460,23 +460,24 @@ def delete_user_profile(
     if user is None:
         raise ItemNotFoundError(f"the user of id {user_id} was not found")
 
-    # cancel and delete jobs of the user
+    # cancel the user's jobs that have not finished, queued or running
     job_store = get_jobs_store()
-    user_pending_jobs: List[Job] = job_store.find_by_index(
-        {"user_id": user_id, "status": JobStatus.PENDING}
-    )
-
-    job_update = {
-        "status": JobStatus.CANCELLED,
-        "failure_reason": "Cancelled on user deletion",
-    }
-    for job in user_pending_jobs:
+    user_jobs: List[Job] = job_store.find_by_index({"user_id": user_id})
+    for job in user_jobs:
+        if job.status.is_terminal():
+            continue
         with suppress(
             rq_errors.InvalidJobOperation, rq_errors.InvalidJobOperationError
         ):
             _cancel_job_in_queues(queues, job)
-        # update cancelled status of the job
-        job_store.update(job.job_id, job_update)
+        job_store.update(
+            job.job_id,
+            {
+                "status": JobStatus.CANCELLED,
+                "cancellation_reason": "Cancelled on user deletion",
+                "updated_at": utc_now_str(),
+            },
+        )
 
     # cancel bookings of the user
     user_incomplete_bookings = get_many_bookings(
@@ -486,6 +487,13 @@ def delete_user_profile(
     for booking in user_incomplete_bookings:
         booking_ids.append(booking.id)
         _cancel_booking_from_queues(queues, booking=booking)
+        if booking.is_active:
+            # its end, now cancelled, would have released the waitlist
+            queues.general.enqueue(
+                f"{_TASKS_MODULE}.post_booking_cleanup",
+                booking_id=booking.id,
+                context=context,
+            )
 
     # delete the bookings in the database
     delete_bookings(db_engine, Booking.id.in_(booking_ids))

@@ -376,11 +376,60 @@ def test_delete_profile(
             job for job in jobs_in_redis if job.user_id == curr_user_id
         ]
         other_user_jobs = [job for job in jobs_in_redis if job.user_id != curr_user_id]
-        failure_reason = "Cancelled on user deletion"
+        cancellation_reason = "Cancelled on user deletion"
 
         assert all([v.status == JobStatus.CANCELLED for v in deleted_user_jobs])
-        assert all([v.failure_reason == failure_reason for v in deleted_user_jobs])
+        assert all(
+            [v.cancellation_reason == cancellation_reason for v in deleted_user_jobs]
+        )
         assert all([v.status == JobStatus.SUCCESSFUL for v in other_user_jobs])
+
+
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_delete_profile_cancels_executing_jobs(
+    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture, fake_clock
+):
+    with client as client:
+        users = _create_many_users(client, USERS[:1])
+        raw_jobs = _get_raw_jobs(job, durations=[0.2])
+        job_info = _get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )[0]
+        _submit_multiple_jobs_v2(client, data=[job_info])
+        # preprocessed and executed, waiting for postprocessing
+        worker.work(burst=True, max_jobs=2)
+        assert _get_jobs_in_redis(redis_conn)[0].status == JobStatus.EXECUTING
+
+        _delete_own_profile(client, user_id=job_info["user_id"])
+
+        assert _get_jobs_in_redis(redis_conn)[0].status == JobStatus.CANCELLED
+
+
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_delete_profile_during_booking_releases_the_waitlist(
+    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture, fake_clock
+):
+    """Other users' jobs waiting on a booking run once its owner is deleted"""
+    with client as client:
+        [booker, other_user] = _create_many_users(client, USERS[:2])
+        _create_booking(
+            client, user_id=booker["id"], booking={"duration": 60, "starts_in": 0}
+        )
+        raw_jobs = _get_raw_jobs(job, durations=[0.2])
+        job_info = _get_job_submission_metadata(
+            client,
+            jobs=raw_jobs,
+            users=[other_user],
+            mocker=mocker,
+            jobs_folder=jobs_folder,
+        )[0]
+        _submit_multiple_jobs_v2(client, data=[job_info])
+        worker.work(burst=True)
+
+        _delete_own_profile(client, user_id=booker["id"])
+        worker.work(burst=True)
+
+        assert _get_jobs_in_redis(redis_conn)[0].status == JobStatus.SUCCESSFUL
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
@@ -433,10 +482,12 @@ def test_admin_remove_user(
             job for job in jobs_in_redis if job.user_id == curr_user_id
         ]
         other_user_jobs = [job for job in jobs_in_redis if job.user_id != curr_user_id]
-        failure_reason = "Cancelled on user deletion"
+        cancellation_reason = "Cancelled on user deletion"
 
         assert all([v.status == JobStatus.CANCELLED for v in deleted_user_jobs])
-        assert all([v.failure_reason == failure_reason for v in deleted_user_jobs])
+        assert all(
+            [v.cancellation_reason == cancellation_reason for v in deleted_user_jobs]
+        )
         assert all([v.status == JobStatus.SUCCESSFUL for v in other_user_jobs])
 
 
