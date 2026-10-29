@@ -73,7 +73,6 @@ import-layering: app/services/scheduler/queues.py::import settings
 import-layering: app/services/scheduler/store.py::import settings
 import-layering: app/services/scheduler/utils.py::import settings
 import-layering: app/utils/compat.py::import settings
-import-layering: app/utils/logging.py::import settings
 import-layering: app/utils/redis.py::import settings
 license-header: app/libs/__init__.py
 license-header: app/libs/qiskit/__init__.py

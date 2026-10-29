@@ -29,6 +29,7 @@ from ..services.scheduler import (
     get_jobs_store,
     get_queue_pool,
 )
+from ..utils.config import create_device_folders
 from ..utils.redis import get_redis_connection
 
 
@@ -77,6 +78,7 @@ class LightRqWorker(PreloadedRqWorker):
 def preload_worker_globals(should_load_executor: bool) -> None:
     """Initializes connections and other globals, so that the jobs, forked or run in
     process, find them cached"""
+    create_device_folders(settings.get_device_settings())
     # so that the jobs need not import it
     import_module("app.services.scheduler.tasks")
 

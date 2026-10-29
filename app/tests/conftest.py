@@ -6,7 +6,6 @@ from .utils.env import (
 # set up the environment before any other import
 setup_test_env()
 
-
 import logging
 import os
 import sys
@@ -14,7 +13,13 @@ from pathlib import Path
 
 import pytest
 
+import settings
+from app.utils.config import create_device_folders
+from app.utils.logging import err_logger
+
 from .utils.params import HAS_QUANTIFY
+
+create_device_folders(settings.get_device_settings())
 
 pytest_plugins = [
     "app.tests.utils.clients",
@@ -74,6 +79,11 @@ def _close_cached_instruments():
 @pytest.fixture(autouse=True, scope="session")
 def _configure_logging_for_tests():
     """Configure logging for tests"""
+    # so that the errors are seen in the terminal
+    err_logger.error = print
+    err_logger.info = print
+    err_logger.warning = print
+    err_logger.debug = print
     is_debug = os.getenv("DEBUG", "").strip().lower() == "true"
     if not is_debug:
         # silence rq logs

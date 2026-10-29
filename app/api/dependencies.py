@@ -51,6 +51,7 @@ from ..services.scheduler import (
     init_recalibration,
     stop_recalibration,
 )
+from ..utils.config import create_device_folders
 from ..utils.datetime import get_utc_now
 from ..utils.exc import (
     ConflictError,
@@ -61,6 +62,7 @@ from ..utils.exc import (
     NotAuthenticatedError,
     UnauthorizedError,
 )
+from ..utils.logging import set_up_logging
 from ..utils.redis import clear_redis_connections, get_redis_connection
 from ..utils.sql_db import clear_sql_engine_cache
 from ..utils.strings import validate_uuid4_str
@@ -72,7 +74,10 @@ _START_UP_LOCK_SECONDS = 300
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Starts each device this process serves before the application, and stops them after"""
+    # each API worker, which uvicorn may start apart from main.py, sets up its own
+    set_up_logging(settings.get_device_settings().log_level)
     for device in settings.get_device_names():
+        create_device_folders(settings.get_device_settings(device))
         # one API worker at a time, as starting a device restarts its recalibration
         with (
             settings.using_device(device),

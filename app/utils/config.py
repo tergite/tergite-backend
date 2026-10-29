@@ -216,15 +216,6 @@ class DeviceSettings(BaseSettings):
             self.current_date = None
         return self
 
-    @model_validator(mode="after")
-    def create_folders(self) -> Self:
-        """Creates the folders the device keeps its jobs' files in"""
-        self.executor_data_dir.mkdir(exist_ok=True, parents=True)
-        self.preprocessed_job_pool.mkdir(exist_ok=True, parents=True)
-        self.job_upload_pool.mkdir(exist_ok=True, parents=True)
-        self.log_file_pool.mkdir(exist_ok=True, parents=True)
-        return self
-
     @property
     def executor_data_dir(self) -> Path:
         return self.storage_root / self.default_prefix / self.executor_data_dirname
@@ -274,6 +265,14 @@ def read_device_settings(env_file: Path) -> DeviceSettings:
     # init values, which pydantic-settings reads over the environment and the env file
     device_values = _get_device_env_values(default_prefix)
     return DeviceSettings(_env_file=env_file, **device_values)
+
+
+def create_device_folders(device_settings: DeviceSettings) -> None:
+    """Creates the folders the device keeps its jobs' files in"""
+    device_settings.executor_data_dir.mkdir(exist_ok=True, parents=True)
+    device_settings.preprocessed_job_pool.mkdir(exist_ok=True, parents=True)
+    device_settings.job_upload_pool.mkdir(exist_ok=True, parents=True)
+    device_settings.log_file_pool.mkdir(exist_ok=True, parents=True)
 
 
 def _check_keys_are_prefixed(

@@ -249,6 +249,7 @@ def _run_rq_worker(kind: str, env_files: list[str], device: str | None = None) -
     import settings
     from app.api.worker import LightRqWorker, PreloadedRqWorker
     from app.services.scheduler import get_queue_pool
+    from app.utils.logging import set_up_logging
     from app.utils.redis import get_redis_connection
 
     if kind == "heavy":
@@ -258,6 +259,7 @@ def _run_rq_worker(kind: str, env_files: list[str], device: str | None = None) -
         worker_class, queue_names = LightRqWorker, LIGHT_QUEUES
         devices = settings.get_device_names()
 
+    set_up_logging(settings.get_device_settings().log_level)
     redis_urls = {settings.get_device_settings(name).rq_redis_url for name in devices}
     if len(redis_urls) > 1:
         sys.exit(

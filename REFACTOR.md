@@ -361,6 +361,8 @@ the connections. This step makes the device explicit.
    init values, which rank over the environment and the file, rather than through `settings_customise_sources`, a
    name the verb rule refuses. Until the rest of this step hands every function its settings, the module
    `__getattr__` reads `settings.X` as the current device's `x`.
+   The folders are created by the lifespan and the worker, per device; `set_up_logging` runs in `main.py`'s workers
+   and in the lifespan too, as uvicorn's `--workers` import the app without running `main.py`'s commands.
 
 ## Step 5: storage
 

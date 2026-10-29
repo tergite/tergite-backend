@@ -20,9 +20,7 @@ job at hand, or else the default device, the first loaded. One process serves se
 devices when load_devices is given several env files.
 """
 import importlib.util
-import logging
 import os
-import sys
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
@@ -87,10 +85,3 @@ _DEFAULT_DEVICE, _DEVICES = _read_devices(
     [_ROOT_PATH / v for v in os.environ.get("BCC_ENV_FILE", ".env").split(os.pathsep)]
 )
 _CURRENT_DEVICE: ContextVar[Optional[str]] = ContextVar("current_device", default=None)
-
-# setup logger for the app
-logging.basicConfig(
-    level=getattr(logging, _DEFAULT_DEVICE.log_level, logging.ERROR),
-    format="%(asctime)s [%(levelname)-8s] %(name)s: %(message)s",
-    stream=sys.stdout,
-)

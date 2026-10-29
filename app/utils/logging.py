@@ -1,12 +1,15 @@
+"""The application's error logger, and the set-up of its logging"""
+
 import logging
+import sys
 
-import settings
-
-# error logger
 err_logger = logging.getLogger("uvicorn.error")
-# work around for testing to allow errors to be seen in terminal
-if settings.APP_SETTINGS == "test":
-    err_logger.error = print
-    err_logger.info = print
-    err_logger.warning = print
-    err_logger.debug = print
+
+
+def set_up_logging(level: str) -> None:
+    """Logs at the given level, e.g. ERROR, to stdout, unless the process logs somewhere already"""
+    logging.basicConfig(
+        level=getattr(logging, level, logging.ERROR),
+        format="%(asctime)s [%(levelname)-8s] %(name)s: %(message)s",
+        stream=sys.stdout,
+    )
