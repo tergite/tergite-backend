@@ -2789,6 +2789,47 @@ def test_cancel_default_recalibration(client, redis_conn: Redis, worker):
 
 
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
+def test_failed_recalibration_schedules_the_next(client, redis_conn, worker, mocker):
+    with client as client:
+        queue_name = f"{get_queue_context()['queue_prefix']}_recalibration"
+        queue = _get_queue_by_name(worker, queue_name)
+        failing_executor = Mock(recalibrate=Mock(side_effect=RuntimeError("no device")))
+        mocker.patch(
+            "app.services.scheduler.tasks.get_quantum_executor",
+            return_value=failing_executor,
+        )
+
+        worker.work(burst=True, max_jobs=1)
+
+        assert queue.failed_job_registry.count == 1
+        assert queue.scheduled_job_registry.count == 1
+
+
+@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
+def test_cancel_recalibration_while_one_runs(client, redis_conn, worker, mocker):
+    """POST /recalibration/cancel during a recalibration leaves none to follow it"""
+    with client as client:
+        user_id = _create_many_users(client, raw_users=USERS[:1])[0]["id"]
+        queue_name = f"{get_queue_context()['queue_prefix']}_recalibration"
+        queue = _get_queue_by_name(worker, queue_name)
+
+        def cancel_recalibration():
+            headers = create_mss_headers(user_id, is_admin=True)
+            client.post("/recalibration/cancel", headers=headers)
+
+        cancelling_executor = Mock(recalibrate=Mock(side_effect=cancel_recalibration))
+        mocker.patch(
+            "app.services.scheduler.tasks.get_quantum_executor",
+            return_value=cancelling_executor,
+        )
+
+        worker.work(burst=True, max_jobs=1)
+
+        assert queue.jobs == []
+        assert queue.scheduled_job_registry.count == 0
+
+
+@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
 def test_cancel_restarted_recalibration(client, redis_conn: Redis, worker):
     """POST /recalibration/cancel cancels any recalibration restarted even after cancellation"""
     with client as client:

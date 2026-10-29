@@ -396,7 +396,10 @@ def postprocessing_failure_callback(
 def recalibrate(
     context: QueueContext, interval: Optional[float] = None
 ) -> Optional[rq.job.Job]:
-    """Recalibrates the device
+    """Recalibrates the device, having first scheduled the next recalibration
+
+    The next is scheduled first so that a failure here does not end the repeats, and a
+    cancellation while this one runs cancels the next.
 
     Args:
         context: the context required when running a job on a queue
@@ -405,7 +408,7 @@ def recalibrate(
     Returns:
         the rq.job.Job that is constructed and enqueued to schedule next recalibration, or None if interval was not set
     """
-    from .queues import get_queue_pool
+    next_job = _schedule_next_recalibration(context, interval=interval)
 
     # ensure recalibration runs without interference
     with FileLock(context["executor_lock_file"]):
@@ -427,27 +430,7 @@ def recalibrate(
                 f"calibration data updated in MSS with response: {response["status"]}"
             )
 
-    # schedule next run
-    if isinstance(interval, float):
-        # enqueue next run
-        queue_pool = get_queue_pool()
-        recalibration_queue = queue_pool.recalibration
-
-        func_name = f"{__name__}.{recalibrate.__qualname__}"
-
-        job = recalibration_queue.enqueue_in(
-            timedelta(seconds=interval),
-            func_name,
-            context=context,
-            interval=interval,
-        )
-
-        # save some metadata on the job for later retrieval
-        job.meta["interval"] = interval
-        job.save_meta()
-
-        return job
-    return None
+    return next_job
 
 
 def _is_job_shorter(storage_id: StorageID, duration: float) -> bool:
@@ -716,4 +699,27 @@ def _fail_job(jobs_store: Collection[Job], job_id: str, reason: str) -> Job:
     """Marks the job as failed for the given reason, and tells MSS"""
     job = log_job_failure(jobs_store, job_id=job_id, reason=reason)
     update_job_in_mss(get_mss_client(), payload=job)
+    return job
+
+
+def _schedule_next_recalibration(
+    context: QueueContext, interval: Optional[float]
+) -> Optional[rq.job.Job]:
+    """Schedules a recalibration interval seconds from now, if interval is set"""
+    from .queues import get_queue_pool
+
+    if not isinstance(interval, float):
+        return None
+
+    func_name = f"{__name__}.{recalibrate.__qualname__}"
+    job = get_queue_pool().recalibration.enqueue_in(
+        timedelta(seconds=interval),
+        func_name,
+        context=context,
+        interval=interval,
+    )
+
+    # save some metadata on the job for later retrieval
+    job.meta["interval"] = interval
+    job.save_meta()
     return job

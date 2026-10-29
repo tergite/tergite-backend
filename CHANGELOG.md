@@ -56,6 +56,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   executor lock in the working folder; jobs stored before upgrading are no longer listed
 - Fixed failed jobs not reaching MSS, and some staying `executing`: a job failing in preprocessing, execution or
   postprocessing, or too long for its booking, is now marked failed and sent to MSS
+- Fixed one failed recalibration ending recalibration for good, and `/recalibration/cancel` not stopping a
+  recalibration that was running; the interval now runs from one recalibration's start to the next's
 
 ### Removed
 
