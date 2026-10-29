@@ -248,7 +248,7 @@ def _run_rq_worker(kind: str, env_files: list[str], device: str | None = None) -
     _load_devices(env_files)
     import settings
     from app.api.worker import LightRqWorker, PreloadedRqWorker
-    from app.services.scheduler.queues import get_queue_pool
+    from app.services.scheduler import get_queue_pool
     from app.utils.redis import get_redis_connection
 
     if kind == "heavy":

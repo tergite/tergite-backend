@@ -66,9 +66,9 @@ constant-position: settings.py::_CURRENT_DEVICE
 import-layering: app/libs/quantum_executor/base/executor.py::import settings
 import-layering: app/libs/quantum_executor/quantify/executor.py::import settings
 import-layering: app/libs/queues/dtos.py::import settings
-import-layering: app/services/booking/models.py::import settings
-import-layering: app/services/booking/models.py::import settings
-import-layering: app/services/booking/models.py::import settings
+import-layering: app/services/booking/dtos.py::import settings
+import-layering: app/services/booking/dtos.py::import settings
+import-layering: app/services/booking/dtos.py::import settings
 import-layering: app/services/booking/service.py::import settings
 import-layering: app/services/booking/store.py::import settings
 import-layering: app/services/external/mss/auth.py::import settings
@@ -93,7 +93,6 @@ license-header: app/libs/quantum_executor/utils/__init__.py
 license-header: app/libs/queues/__init__.py
 license-header: app/services/__init__.py
 license-header: app/services/external/__init__.py
-license-header: app/services/external/mss/__init__.py
 license-header: app/tests/__init__.py
 license-header: app/tests/conftest.py
 license-header: app/tests/services/__init__.py
@@ -291,15 +290,15 @@ type-hints: app/libs/queues/types.py::StaticQueue.empty
 type-hints: app/libs/queues/types.py::StaticQueue.pop_first
 type-hints: app/libs/queues/types.py::_run_next_job
 type-hints: app/libs/queues/utils.py::noop
-type-hints: app/services/booking/models.py::Booking.generate_end_event_id
-type-hints: app/services/booking/models.py::Booking.generate_idle_timer_id
-type-hints: app/services/booking/models.py::Booking.generate_start_event_id
-type-hints: app/services/booking/models.py::Booking.validate_end_utc
-type-hints: app/services/booking/models.py::Booking.validate_start_utc
-type-hints: app/services/booking/models.py::Booking.validate_total_duration
-type-hints: app/services/booking/models.py::NewBookingInfo.validate_end_utc
-type-hints: app/services/booking/models.py::NewBookingInfo.validate_start_utc
-type-hints: app/services/booking/models.py::NewBookingInfo.validate_total_duration
+type-hints: app/services/booking/dtos.py::Booking.generate_end_event_id
+type-hints: app/services/booking/dtos.py::Booking.generate_idle_timer_id
+type-hints: app/services/booking/dtos.py::Booking.generate_start_event_id
+type-hints: app/services/booking/dtos.py::Booking.validate_end_utc
+type-hints: app/services/booking/dtos.py::Booking.validate_start_utc
+type-hints: app/services/booking/dtos.py::Booking.validate_total_duration
+type-hints: app/services/booking/dtos.py::NewBookingInfo.validate_end_utc
+type-hints: app/services/booking/dtos.py::NewBookingInfo.validate_start_utc
+type-hints: app/services/booking/dtos.py::NewBookingInfo.validate_total_duration
 type-hints: app/services/booking/service.py::_validate_max_slots
 type-hints: app/services/booking/service.py::_validate_no_overlap
 type-hints: app/services/booking/service.py::delete_bookings

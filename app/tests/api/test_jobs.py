@@ -26,7 +26,7 @@ from rq.timeouts import JobTimeoutException
 
 import app.services.scheduler.tasks as scheduler_tasks
 from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps
-from app.services.booking.models import Booking
+from app.services.booking import Booking
 from app.services.scheduler.utils import get_rq_job_id
 from app.tests.utils.api import (
     create_mss_headers,

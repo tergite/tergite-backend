@@ -19,9 +19,8 @@ from sqlmodel import Session
 
 import settings
 from app.libs.queues.dtos import Job, JobStatus, Stage
-from app.services.booking.models import Booking, User
-from app.services.booking.store import get_bookings_sql_engine
-from app.services.scheduler.store import get_jobs_store
+from app.services.booking import Booking, User, get_bookings_sql_engine
+from app.services.scheduler import get_jobs_store
 from app.utils.datetime import get_utc_now, utc_now_str
 from app.utils.strings import uuid_str
 

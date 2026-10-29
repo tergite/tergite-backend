@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from app.libs.queues.dtos import Job, TimestampPair
-from app.services.scheduler.store import get_jobs_store
+from app.services.scheduler import get_jobs_store
 
 DRAIN_TIMEOUT_SECONDS = 300
 POLL_INTERVAL_SECONDS = 2

@@ -36,7 +36,7 @@ from ...utils.exc import (
 )
 from ...utils.sql_db import open_immediate_session
 from ...utils.strings import get_random_name
-from .models import (
+from .dtos import (
     Booking,
     NewBookingInfo,
     NewUserInfo,

@@ -20,7 +20,7 @@ import pytest
 from pytest_mock import MockerFixture
 
 from app.libs.queues.dtos import JobStatus
-from app.services.booking.models import Booking
+from app.services.booking import Booking
 from app.tests.utils.api import (
     create_mss_headers,
     get_bearer_headers,

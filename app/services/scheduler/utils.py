@@ -40,8 +40,7 @@ from ...utils.datetime import utc_now_str
 from ...utils.exc import MssRejectedError
 from ...utils.logging import err_logger
 from ...utils.redis_store import Collection
-from ..external.mss.dtos import DeviceEvent, DeviceEventName, EventResponse
-from ..external.mss.service import MssClient
+from ..external.mss import DeviceEvent, DeviceEventName, EventResponse, MssClient
 from .dtos import LogLevel
 
 if TYPE_CHECKING:

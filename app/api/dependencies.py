@@ -29,21 +29,28 @@ from ..libs.queues.dtos import (
     clear_queue_context,
     get_queue_context,
 )
-from ..services.booking.models import MSSTokenClaims
-from ..services.booking.service import get_user_job_id_pair_from_token
-from ..services.booking.store import get_bookings_sql_engine
+from ..services.booking import (
+    MSSTokenClaims,
+    get_bookings_sql_engine,
+    get_user_job_id_pair_from_token,
+)
 from ..services.devices import is_offline, save_all_device_params
-from ..services.external.mss.auth import verify_mss_signature
-from ..services.external.mss.service import disconnect_mss_client, get_mss_client
+from ..services.external.mss import (
+    disconnect_mss_client,
+    get_mss_client,
+    verify_mss_signature,
+)
 from ..services.scheduler import (
+    JobFile,
+    clear_jobs_stores_registry,
+    clear_quantum_executor,
+    clear_queue_pool,
+    get_executor_options,
     get_job,
+    get_queue_pool,
     init_recalibration,
     stop_recalibration,
 )
-from ..services.scheduler.dtos import JobFile
-from ..services.scheduler.queues import clear_queue_pool, get_queue_pool
-from ..services.scheduler.store import clear_jobs_stores_registry
-from ..services.scheduler.utils import clear_quantum_executor, get_executor_options
 from ..utils.datetime import get_utc_now
 from ..utils.exc import (
     ConflictError,

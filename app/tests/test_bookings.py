@@ -14,8 +14,8 @@ import threading
 import time
 from datetime import timedelta
 
+from app.services.booking import Booking, NewBookingInfo, User
 from app.services.booking import service as booking_service
-from app.services.booking.models import Booking, NewBookingInfo, User
 from app.utils.datetime import get_utc_now
 from app.utils.exc import ConflictError
 from app.utils.sql_db import get_sql_engine

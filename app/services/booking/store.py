@@ -17,7 +17,7 @@ from sqlalchemy import Engine
 import settings
 
 from ...utils.sql_db import get_sql_engine
-from .models import Booking, User
+from .dtos import Booking, User
 
 
 def get_bookings_sql_engine(url: str | None = None) -> Engine:

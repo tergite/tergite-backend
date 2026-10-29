@@ -70,12 +70,14 @@ def preload_worker_globals(should_load_executor: bool) -> None:
     """Initializes connections and other globals, so that the jobs, forked or run in
     process, find them cached"""
     from app.libs.queues.dtos import get_queue_context
-    from app.services.booking.store import get_bookings_sql_engine
+    from app.services.booking import get_bookings_sql_engine
     from app.services.devices import save_all_device_params
-    from app.services.external.mss.service import get_mss_client
-    from app.services.scheduler.queues import get_queue_pool
-    from app.services.scheduler.store import get_jobs_store
-    from app.services.scheduler.utils import get_executor_and_options
+    from app.services.external.mss import get_mss_client
+    from app.services.scheduler import (
+        get_executor_and_options,
+        get_jobs_store,
+        get_queue_pool,
+    )
     from app.utils.redis import get_redis_connection
 
     # so that the jobs need not import it

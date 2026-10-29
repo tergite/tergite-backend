@@ -17,10 +17,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import Engine
 
 from app.services import booking, scheduler
-from app.services.booking.models import Booking, BookingsConfig, NewBookingInfo
+from app.services.booking import Booking, BookingsConfig, NewBookingInfo
 
 from ...libs.queues.dtos import QueueContext
-from ...services.scheduler.queues import QueuePool, get_queue_pool
+from ...services.scheduler import QueuePool, get_queue_pool
 from ...utils.messages import GeneralMessage
 from ...utils.sql_db import convert_http_sort_to_db_sort
 from ..dependencies import (

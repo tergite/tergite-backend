@@ -30,8 +30,13 @@ from ...libs.queues.dtos import QueueContext
 from ...utils.datetime import get_utc_now
 from ...utils.redis import get_redis_connection
 from ...utils.redis_store import Collection
-from ..external.mss.dtos import DeviceEvent, DeviceEventName, DeviceSwitchData
-from ..external.mss.service import MssClient, get_mss_client
+from ..external.mss import (
+    DeviceEvent,
+    DeviceEventName,
+    DeviceSwitchData,
+    MssClient,
+    get_mss_client,
+)
 
 
 def get_device_info(

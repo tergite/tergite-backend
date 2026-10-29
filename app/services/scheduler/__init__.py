@@ -10,7 +10,9 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 #
-
+"""Runs the jobs on the device: their queues, the bookings' hold on them, and recalibration"""
+from .dtos import JobFile, RecalibrationInfo
+from .queues import QueuePool, clear_queue_pool, get_queue_pool
 from .service import (
     cancel_booking,
     cancel_job,
@@ -24,14 +26,30 @@ from .service import (
     submit_booking,
     submit_job_file,
 )
+from .store import clear_jobs_stores_registry, get_jobs_store
+from .utils import (
+    clear_quantum_executor,
+    get_executor_and_options,
+    get_executor_options,
+)
 
 __all__ = [
+    "JobFile",
+    "QueuePool",
+    "RecalibrationInfo",
     "cancel_booking",
     "cancel_job",
+    "clear_jobs_stores_registry",
+    "clear_quantum_executor",
+    "clear_queue_pool",
     "delete_job",
     "delete_user_profile",
+    "get_executor_and_options",
+    "get_executor_options",
     "get_job",
+    "get_jobs_store",
     "get_many_jobs",
+    "get_queue_pool",
     "get_recalibration_info",
     "init_recalibration",
     "stop_recalibration",

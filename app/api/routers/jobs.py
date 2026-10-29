@@ -18,10 +18,10 @@ from sqlalchemy import Engine
 from typing_extensions import Annotated
 
 from app.services import scheduler
-from app.services.booking.models import MSSTokenClaims
+from app.services.booking import MSSTokenClaims
 
 from ...libs.queues.dtos import Job, JobStatus, QueueContext
-from ...services.scheduler.queues import QueuePool, get_queue_pool
+from ...services.scheduler import QueuePool, get_queue_pool
 from ...utils.messages import GeneralMessage
 from ..dependencies import (
     MSSAuthDetails,

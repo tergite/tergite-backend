@@ -311,6 +311,9 @@ Each item greps for its names once more before deleting.
    (`scheduler/service.py:34`, `mss/dtos.py:21`).
 7. **Facades.** `app/services/external/mss/__init__.py`, empty today, re-exports with `__all__`;
    `booking/models.py` becomes `booking/dtos.py`.
+   *Done, and further:* the API, the worker, `main.py`, `dev/perf` and the services import the booking, scheduler and
+   MSS services through their facades too, each of which exports what is imported through it; tests keep importing the
+   internals they patch or prepare.
 8. **Imports at the top.** The eight `from .queues import get_queue_pool` inside `tasks.py` (195, 247, 415, 503, 557,
    624, 655, 703) guard no cycle; the local imports in `app/api/worker.py:72-79` and `booking/models.py:124, 256`
    neither. `main.py`'s stay: `BCC_ENV_FILE` must be set before `settings` is imported.

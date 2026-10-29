@@ -43,14 +43,17 @@ from ...utils.exc import (
 from ...utils.messages import GeneralMessage
 from ...utils.redis import get_redis_connection
 from ...utils.rq import cancel_rq_job
-from ..booking import get_many_bookings
-from ..booking.models import Booking, MSSTokenClaims, NewBookingInfo, User
-from ..booking.service import (
+from ..booking import (
+    Booking,
+    MSSTokenClaims,
+    NewBookingInfo,
+    User,
     create_booking,
     delete_bookings,
     delete_users,
     get_active_booking,
     get_booking,
+    get_many_bookings,
     get_user,
 )
 from ..devices import get_device_calibration_info

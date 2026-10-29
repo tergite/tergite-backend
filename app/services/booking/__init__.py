@@ -10,6 +10,16 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 #
+"""Bookings of the device and its users, as MSS knows them"""
+from .dtos import (
+    Booking,
+    BookingsConfig,
+    MSSTokenClaims,
+    NewBookingInfo,
+    NewUserInfo,
+    User,
+    UserProfile,
+)
 from .service import (
     create_booking,
     create_mss_jwt_token,
@@ -23,10 +33,19 @@ from .service import (
     get_next_booking,
     get_or_create_user,
     get_user,
+    get_user_job_id_pair_from_token,
     get_user_profile,
 )
+from .store import get_bookings_sql_engine
 
 __all__ = [
+    "Booking",
+    "BookingsConfig",
+    "MSSTokenClaims",
+    "NewBookingInfo",
+    "NewUserInfo",
+    "User",
+    "UserProfile",
     "create_booking",
     "create_mss_jwt_token",
     "create_user",
@@ -34,10 +53,12 @@ __all__ = [
     "delete_users",
     "get_active_booking",
     "get_booking",
+    "get_bookings_sql_engine",
     "get_many_bookings",
     "get_many_user_profiles",
     "get_next_booking",
     "get_or_create_user",
     "get_user",
+    "get_user_job_id_pair_from_token",
     "get_user_profile",
 ]
