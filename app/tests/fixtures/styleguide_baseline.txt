@@ -64,7 +64,6 @@ import-layering: app/services/booking/dtos.py::import settings
 import-layering: app/services/booking/dtos.py::import settings
 import-layering: app/services/booking/service.py::import settings
 import-layering: app/services/booking/store.py::import settings
-import-layering: app/services/external/mss/auth.py::import settings
 import-layering: app/services/scheduler/utils.py::import settings
 import-layering: app/utils/compat.py::import settings
 import-layering: app/utils/redis.py::import settings

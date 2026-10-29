@@ -15,9 +15,9 @@ import json
 import math
 import time
 from contextlib import suppress
-from pathlib import Path
 from typing import Any, Optional, Self, cast
 
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from websockets import ConnectionClosed, WebSocketException
 from websockets.sync.client import ClientConnection, connect
 
@@ -36,8 +36,7 @@ class MssClient:
         self,
         uri: str,
         device: str,
-        private_key_file: Path,
-        key_password: Optional[bytes] = None,
+        private_key: RSAPrivateKey,
         open_timeout: float = 5,
         response_timeout: float = 120,
         max_reconnection_delay: float = 60,
@@ -48,8 +47,7 @@ class MssClient:
         Args:
             uri: the URI to connect to
             device: the name of the device
-            private_key_file: the path to the private key file
-            key_password: the password for the private key file; default = None
+            private_key: the private key of this BCC, which signs its connection
             open_timeout: the timeout for opening the websocket in seconds; default = 5
             response_timeout: The timeout for receiving a response from MSS; default = 120
             max_reconnection_delay: the maximum number of seconds between reconnections; default = 60
@@ -59,8 +57,7 @@ class MssClient:
         self._uri = uri
         self._response_timeout = response_timeout
         self._device = device
-        self._private_key_file: Path = private_key_file
-        self._private_key_password: bytes = key_password
+        self._private_key = private_key
         self._open_timeout = open_timeout
         self._max_reconnection_delay = max_reconnection_delay
         self._kwargs = kwargs
@@ -70,13 +67,15 @@ class MssClient:
         )
 
     @classmethod
-    def from_settings(cls, device_settings: DeviceSettings) -> Self:
-        """Constructs the client of the device of the given settings"""
+    def from_settings(
+        cls, device_settings: DeviceSettings, private_key: RSAPrivateKey
+    ) -> Self:
+        """Constructs the client of the device of the given settings, which signs its
+        connection with the given private key"""
         return cls(
             uri=f"{device_settings.mss_device_events_endpoint}",
             device=device_settings.default_prefix,
-            private_key_file=device_settings.private_key_file,
-            key_password=device_settings.private_key_password,
+            private_key=private_key,
             open_timeout=device_settings.mss_connection_timeout,
             response_timeout=device_settings.mss_response_timeout,
             max_reconnection_delay=device_settings.mss_max_reconnection_delay,
@@ -93,9 +92,7 @@ class MssClient:
             The new connection
         """
         auth_headers = create_headers(
-            private_key_file=self._private_key_file,
-            device=self._device,
-            key_password=self._private_key_password,
+            private_key=self._private_key, device=self._device
         )
         options = {**self._kwargs, **kwargs}
         return connect(

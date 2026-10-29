@@ -263,7 +263,7 @@ def get_verified_mss_user_id(request: Request) -> str:
         verify_mss_signature(
             signature=signature,
             message=message,
-            key_path=device.settings.mss_public_key_path,
+            mss_public_key=device.mss_public_key,
         )
 
         nonce_ttl = device.settings.mss_nonce_ttl

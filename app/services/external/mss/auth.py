@@ -17,29 +17,19 @@ import base64
 import time
 import uuid
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
 
-import settings
 
-_BCC_PRIVATE_KEYS: Dict[str, RSAPrivateKey] = {}
-_MSS_PUBLIC_KEYS: dict[Path, RSAPublicKey] = {}
-
-
-def create_headers(
-    private_key_file: Path,
-    device: str = "",
-    key_password: Optional[bytes] = None,
-) -> dict[str, str]:
+def create_headers(private_key: RSAPrivateKey, device: str = "") -> dict[str, str]:
     """Creates headers to show that the request is a valid one from BCC
 
     Args:
-        private_key_file: the path to the private key file
+        private_key: the private key of this BCC
         device: the name of this device
-        key_password: the password used to encrypt the key PEM file
 
     Returns:
         The dict of headers that show a given request is from BCC
@@ -47,7 +37,7 @@ def create_headers(
     request_id = str(uuid.uuid4())
     timestamp = time.time()
     message = f"{device}-{request_id}-{timestamp}"
-    signature = sign_message(private_key_file, message=message, password=key_password)
+    signature = sign_message(private_key, message=message)
     return {
         "x-request-id": request_id,
         "x-timestamp": f"{timestamp}",
@@ -56,19 +46,17 @@ def create_headers(
     }
 
 
-def sign_message(key_file: Path, message: str, password: Optional[bytes]) -> str:
+def sign_message(private_key: RSAPrivateKey, message: str) -> str:
     """Creates an BCC-signed signature given a message
 
     Args:
-        key_file: the path to the private RSA key
+        private_key: the private key of this BCC
         message: the message
-        password: the password used to encrypt the key PEM file
 
     Returns:
         the string form of the signature
     """
-    mss_private_key = get_private_key(key_file, password=password)
-    signature = mss_private_key.sign(
+    signature = private_key.sign(
         message.encode(),
         padding.PSS(
             mgf=padding.MGF1(hashes.SHA256()), salt_length=padding.PSS.MAX_LENGTH
@@ -88,30 +76,21 @@ def get_private_key(key_file: Path, password: Optional[bytes]) -> RSAPrivateKey:
     Returns:
         the private key of the BCC
     """
-    key_file_str = str(key_file)
-
-    try:
-        return _BCC_PRIVATE_KEYS[key_file_str]
-    except KeyError:
-        with open(key_file, "rb") as file:
-            key = _BCC_PRIVATE_KEYS[key_file_str] = serialization.load_pem_private_key(
-                file.read(), password=password
-            )
-        return key
+    with open(key_file, "rb") as file:
+        return serialization.load_pem_private_key(file.read(), password=password)
 
 
-def encrypt_mss_jwt_token(token: str, key_path: Optional[Path] = None) -> str:
+def encrypt_mss_jwt_token(token: str, mss_public_key: RSAPublicKey) -> str:
     """Encrypts the token passed so that it is only readable by the right MSS instance
 
     Args:
         token: the raw token to encrypt
-        key_path: the file path to the RSA public key PEM file; default = settings.MSS_PUBLIC_KEY_PATH
+        mss_public_key: the public key of that MSS
 
     Returns:
         the encrypted token
     """
-    mss_pub_key = get_mss_public_key(key_path=key_path)
-    cipher_bytes = mss_pub_key.encrypt(
+    cipher_bytes = mss_public_key.encrypt(
         token.encode(),
         padding.OAEP(
             mgf=padding.MGF1(algorithm=hashes.SHA256()),
@@ -123,20 +102,19 @@ def encrypt_mss_jwt_token(token: str, key_path: Optional[Path] = None) -> str:
 
 
 def verify_mss_signature(
-    signature: str, message: str, key_path: Optional[Path] = None
+    signature: str, message: str, mss_public_key: RSAPublicKey
 ) -> None:
     """Verifies that the given message is from MSS, given the signature
 
     Args:
         signature: the signature of the message signed by MSS
         message: the message from MSS
-        key_path: the file path to the RSA public key PEM file; default = settings.MSS_PUBLIC_KEY_PATH
+        mss_public_key: the public key of that MSS
 
     Raises:
         InvalidSignature: if signature does not match with what would be expected from MSS
     """
-    mss_pub_key = get_mss_public_key(key_path=key_path)
-    mss_pub_key.verify(
+    mss_public_key.verify(
         base64.b64decode(signature),
         message.encode(),
         padding.PSS(
@@ -146,20 +124,7 @@ def verify_mss_signature(
     )
 
 
-def get_mss_public_key(key_path: Optional[Path] = None) -> RSAPublicKey:
-    """Loads the public key for MSS given the path to the key file
-
-    Args:
-        key_path: the file path to the RSA public key PEM file; default = settings.MSS_PUBLIC_KEY_PATH
-
-    Returns:
-        the public key of the MSS
-    """
-    key_path = key_path or settings.MSS_PUBLIC_KEY_PATH
-    mss_public_key = _MSS_PUBLIC_KEYS.get(key_path)
-    if mss_public_key is None:
-        with open(key_path, "rb") as key_file:
-            mss_public_key = serialization.load_pem_public_key(key_file.read())
-        _MSS_PUBLIC_KEYS[key_path] = mss_public_key
-
-    return mss_public_key
+def get_mss_public_key(key_path: Path) -> RSAPublicKey:
+    """Loads the public key for MSS given the path to the key file"""
+    with open(key_path, "rb") as key_file:
+        return serialization.load_pem_public_key(key_file.read())

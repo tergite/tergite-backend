@@ -52,18 +52,19 @@ class DeviceResources:
         """Gets the resources of the device of these settings, which must be the current
         device's, as the getters cache them by the current device"""
         redis = get_redis_connection(device_settings.rq_redis_url)
+        private_key = get_private_key(
+            device_settings.private_key_file, device_settings.private_key_password
+        )
         return cls(
             settings=device_settings,
             redis=redis,
             bookings_db=get_bookings_sql_engine(device_settings.booking_db_url),
             jobs_store=get_jobs_store(redis, device_settings),
             queues=QueuePool.from_settings(device_settings, redis),
-            mss_client=MssClient.from_settings(device_settings),
+            mss_client=MssClient.from_settings(device_settings, private_key),
             executor_options=get_executor_options(),
             mss_public_key=get_mss_public_key(device_settings.mss_public_key_path),
-            private_key=get_private_key(
-                device_settings.private_key_file, device_settings.private_key_password
-            ),
+            private_key=private_key,
             executor_lock=FileLock(
                 device_settings.executor_data_dir / ".quantum-executor.lock"
             ),

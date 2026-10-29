@@ -76,9 +76,9 @@ async def delete_profile(
 
 @router.post("/token")
 async def get_mss_token(
+    device: DeviceResourcesDep,
     body: MSSTokenClaims,
     mss_user_id: str = Depends(get_verified_mss_user_id),
-    db_engine: Engine = Depends(get_booking_db),
 ) -> TokenResponse:
     """Get a token specific to the associated MSS instance for the provided token claims.
 
@@ -93,7 +93,7 @@ async def get_mss_token(
     a random email.
 
     Args:
-        db_engine: the SQL database to query
+        device: what the device runs on
         body: the http request body sent
         mss_user_id: the user_id as specified by MSS
 
@@ -107,11 +107,11 @@ async def get_mss_token(
         # just some house-keeping to ensure the two user ids are the same
         raise UnauthorizedError("Forbidden")
 
-    user = booking.get_or_create_user(db_engine, user_id)
+    user = booking.get_or_create_user(device.bookings_db, user_id)
 
     # create encrypted token
     token = booking.create_mss_jwt_token(user, job_id=job_id)
-    encrypted_token = encrypt_mss_jwt_token(token)
+    encrypted_token = encrypt_mss_jwt_token(token, device.mss_public_key)
     return {"access_token": encrypted_token, "token_type": "bearer"}
 
 

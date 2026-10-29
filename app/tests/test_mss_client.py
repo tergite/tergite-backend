@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from app.services.external.mss.auth import get_private_key
 from app.services.external.mss.dtos import (
     DeviceEvent,
     DeviceEventName,
@@ -75,7 +76,7 @@ def _get_mss_client(private_key_file: Path = TEST_PRIVATE_KEY_FILE) -> MssClient
     return MssClient(
         uri="ws://mss.test/devices/ws/loke",
         device="loke",
-        private_key_file=private_key_file,
+        private_key=get_private_key(private_key_file, password=None),
         response_timeout=1,
         max_reconnections=2,
     )
