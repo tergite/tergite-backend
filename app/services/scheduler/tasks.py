@@ -503,10 +503,12 @@ def _try_enqueue_on_normal_queue(
 def _try_enqueue_on_booked_queue(
     job: Job,
     context: QueueContext,
-    booking_id: Optional[str] = None,
+    booking_id: str,
 ) -> Tuple[str, QueueContext]:
     """Attempts to push the job to the booked execution queue, failing it or waitlisting it if too long
 
+    if the booking has ended, or been deleted, since the job was submitted:
+        - Try the normal queue instead
     if force_normal_queue is True:
         - Push the job to the waitlist
     else if the user is owner of the current booking:
@@ -523,7 +525,7 @@ def _try_enqueue_on_booked_queue(
     Args:
         job: the job that is to be run
         context: the context required when running a job on a queue
-        booking_id: the unique identifier of the current booking if any
+        booking_id: the unique identifier of the booking under way when the job was submitted
 
     Returns:
         the pair of the updated job's job ID and the context
@@ -537,18 +539,17 @@ def _try_enqueue_on_booked_queue(
     job_store = get_jobs_store()
     bookings_sql_engine = get_bookings_sql_engine(context["booking_db_url"])
 
-    active_booking = None
-    if booking_id:
-        active_booking = get_booking(bookings_sql_engine, Booking.id == booking_id)
+    active_booking = get_booking(bookings_sql_engine, Booking.id == booking_id)
+    # its end has drained the waitlist already, so nothing would release the job from it
+    if active_booking is None or active_booking.is_complete:
+        return _try_enqueue_on_normal_queue(job, context)
 
     queue_pool = get_queue_pool()
     queue = queue_pool.booked_execution
 
-    usable_time = 0
-    is_booker = False
-    if isinstance(active_booking, Booking):
-        usable_time = active_booking.total_duration - queue.total_duration
-        is_booker = user_id == active_booking.user_id
+    time_left = (active_booking.end_utc - get_utc_now()).total_seconds()
+    usable_time = time_left - queue.total_duration
+    is_booker = user_id == active_booking.user_id
 
     if is_booker:
         if force_normal_queue:

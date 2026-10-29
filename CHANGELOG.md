@@ -71,6 +71,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Fixed `GET /recalibration/info` failing with 500 when one recalibration was queued and another scheduled
 - Fixed `/recalibration/init` scheduling a `start_timestamp` without a timezone in the server's local time, not UTC
 - Fixed a backend config without `online_date` getting the time the backend was started, not when it was read
+- Fixed a booker's job being queued when it fit the booking's whole length but not the time left in it, and a job
+  whose booking ended during its preprocessing waiting on the waitlist for ever; it now goes to the normal queue
 
 ### Removed
 

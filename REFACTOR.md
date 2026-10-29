@@ -119,7 +119,7 @@ changelog entry.
 11. **Jobs overrun a booking.** `usable_time` uses the booking's whole `total_duration`, not the time left in it
     (`tasks.py:576`). And a job whose booking ended or was deleted before preprocessing finished goes to a waitlist
     that only a booking's end drains (`service.py:252`, `tasks.py:567-605`), so with no later booking it waits for
-    ever. **Decide:** whether such a job falls back to the normal queue.
+    ever. **Decided:** such a job falls back to the normal queue.
 12. **Deleting a user leaves work behind.** Only `PENDING` jobs are cancelled, the reason is written to
     `failure_reason`, and an active booking's end event is cancelled so `post_booking_cleanup` never runs
     (`service.py:460-486`).

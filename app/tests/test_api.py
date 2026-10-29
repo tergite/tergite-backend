@@ -1112,6 +1112,62 @@ def test_submit_jobs_in_idle_booking_before_another(
         )
 
 
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_booker_job_longer_than_the_time_left_fails(
+    client, worker, redis_conn, job, jobs_folder, mocker, fake_clock
+):
+    """A booker's job fits the time left in the booking, not the booking's whole length"""
+    with client as client:
+        [booker] = _create_many_users(client, USERS[:1])
+        _create_booking(
+            client, user_id=booker["id"], booking={"duration": 3, "starts_in": 0}
+        )
+        job_info = _get_job_submission_metadata(
+            client,
+            jobs=_get_raw_jobs(job, durations=[1]),
+            users=[booker],
+            mocker=mocker,
+            jobs_folder=jobs_folder,
+        )[0]
+        _submit_multiple_jobs_v2(client, data=[job_info])
+
+        fake_clock.shift(2.5)
+        worker.work(burst=True, max_jobs=1)
+
+        job_in_db = _get_jobs_in_redis(redis_conn)[0]
+        assert job_in_db.status == JobStatus.FAILED
+        assert (
+            job_in_db.failure_reason == "job too long for the time left in the booking"
+        )
+
+
+@pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
+def test_job_whose_booking_ended_in_preprocessing_runs(
+    client, worker, redis_conn, job, jobs_folder, mocker, fake_clock
+):
+    """A job submitted during a booking that ends before it is preprocessed is not
+    left on a waitlist that nothing will release"""
+    with client as client:
+        [booker, other_user] = _create_many_users(client, USERS[:2])
+        _create_booking(
+            client, user_id=booker["id"], booking={"duration": 2, "starts_in": 0}
+        )
+        job_info = _get_job_submission_metadata(
+            client,
+            jobs=_get_raw_jobs(job, durations=[0.2]),
+            users=[other_user],
+            mocker=mocker,
+            jobs_folder=jobs_folder,
+        )[0]
+        _submit_multiple_jobs_v2(client, data=[job_info])
+
+        fake_clock.shift(3)
+        # the booking's end runs before the preprocessing, as the general queue is first
+        worker.work(burst=True, with_scheduler=True)
+
+        assert _get_jobs_in_redis(redis_conn)[0].status == JobStatus.SUCCESSFUL
+
+
 @pytest.mark.skipif(
     not HAS_QUANTIFY, reason="real simulator execution is hard to estimate precisely"
 )
