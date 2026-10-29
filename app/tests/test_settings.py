@@ -3,6 +3,7 @@
 import importlib
 
 import pytest
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from pytest_lazy_fixtures import lf as lazy_fixture
 
@@ -65,12 +66,9 @@ def _restore_settings(monkeypatch):
     _reload_settings()
 
 
-@pytest.mark.asyncio
 @pytest.mark.timeout(30)
 @pytest.mark.parametrize("executor, settings_file, seed_file", _EXECUTOR_AND_SETTINGS)
-async def test_mss_reconnection(
-    executor, settings_file, seed_file, mocker, monkeypatch
-):
+def test_mss_reconnection(executor, settings_file, seed_file, mocker, monkeypatch):
     """MSS_CONNECTION_MAX_ATTEMPTS is respected: connect is retried exactly that
     many times before an MssTimeoutError is raised.
     """
@@ -91,19 +89,18 @@ async def test_mss_reconnection(
     # Suppress actual sleeping so the test is instant.
     mock_sleep = mocker.patch("time.sleep")
 
-    with pytest.raises(MssTimeoutError, match=r"maximum connection attempts"):
-        async with app.router.lifespan_context(app):
-            pass
+    with (
+        pytest.raises(MssTimeoutError, match=r"maximum connection attempts"),
+        TestClient(app),
+    ):
+        pass
 
     expected_connect_calls = connection_attempts + 1
     assert mock_connect.call_count == expected_connect_calls
     assert mock_sleep.call_count == expected_connect_calls
 
 
-@pytest.mark.asyncio
-async def test_calibration_seed_required_for_simulator(
-    patched_mss_websockets, monkeypatch
-):
+def test_calibration_seed_required_for_simulator(patched_mss_websockets, monkeypatch):
     """Raises validation errors if calibration seed is not set for simulator."""
     monkeypatch.setenv("BCC_EXECUTOR_TYPE", "qiskit_pulse_1q")
     monkeypatch.setenv("BCC_DEFAULT_PREFIX", TEST_DEFAULT_PREFIX_SIM_1Q)
@@ -111,18 +108,16 @@ async def test_calibration_seed_required_for_simulator(
     monkeypatch.setenv("BCC_CALIBRATION_SEED", get_fixture_path("non-existent.toml"))
     _reload_settings()
 
-    with pytest.raises(
-        ValidationError, match="Calibration config is required for simulators."
+    with (
+        pytest.raises(
+            ValidationError, match="Calibration config is required for simulators."
+        ),
+        TestClient(app),
     ):
-        # just to run the startup events
-        async with app.router.lifespan_context(app):
-            pass
+        pass
 
 
-@pytest.mark.asyncio
-async def test_calibration_seed_broken_for_simulator(
-    patched_mss_websockets, monkeypatch
-):
+def test_calibration_seed_broken_for_simulator(patched_mss_websockets, monkeypatch):
     """Raises validation errors if calibration seed provided is broken for simulator only."""
     monkeypatch.setenv("BCC_EXECUTOR_TYPE", "qiskit_pulse_1q")
     monkeypatch.setenv("BCC_DEFAULT_PREFIX", TEST_DEFAULT_PREFIX_SIM_1Q)
@@ -130,12 +125,13 @@ async def test_calibration_seed_broken_for_simulator(
     monkeypatch.setenv("BCC_CALIBRATION_SEED", get_fixture_path("broken.seed.toml"))
     _reload_settings()
 
-    with pytest.raises(
-        ValidationError, match="Calibration config is required for simulators."
+    with (
+        pytest.raises(
+            ValidationError, match="Calibration config is required for simulators."
+        ),
+        TestClient(app),
     ):
-        # just to run the startup events
-        async with app.router.lifespan_context(app):
-            pass
+        pass
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")

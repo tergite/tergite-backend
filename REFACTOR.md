@@ -273,7 +273,10 @@ Each item greps for its names once more before deleting.
 3. **Dependencies.** Remove `requests`, `requests-mock`, `qiskit-ibm-provider`, `pytest-asyncio` (the three async tests
    in `test_settings.py` await nothing), the second and third `numpy`, and `httpx` from `dev`, which
    `fastapi[standard]` brings. `networkx` moves to the quantify extra, whose resolution it pins. Declare what is
-   imported but not listed: `redis`, `websockets`, `uvicorn`, `starlette`, `pandas`. `psutil` stays for step 1.10.
+   imported but not listed: `redis`, `websockets`, `uvicorn`, `starlette`, `pandas`.
+   *Done, with departures:* the three tests await the app's lifespan since step 1, so they enter it through
+   `TestClient` instead; `psutil` goes too, as `dev/perf/record.sh` brings its own; `xarray`, which the base executor
+   code imports, is declared in the quantify extra as in qiskit's; the lock keeps quantify on numpy 2.
 
 ## Step 3: one shape for the API and the services
 
