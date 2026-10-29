@@ -303,12 +303,30 @@ def postprocess(device: DeviceResources, job: Job, results_file: str) -> str:
                 discriminator=discriminator,
                 calibration=calibration,
             )
-            job = update_job_results(jobs_store, job_id=job_id, data=memory)
-            update_job_in_mss(device.mss_client, payload=job)
+            job = update_job_results(
+                jobs_store,
+                job_id=job_id,
+                data=memory,
+                machine_root_url=device.settings.machine_root_url,
+            )
+            update_job_in_mss(
+                device.mss_client,
+                payload=job,
+                job_supervisor_log=device.settings.job_supervisor_log,
+            )
         elif quantum_job.meas_level == MeasLvl.INTEGRATED:
             memory = xarray_to_list(quantum_job)
-            job = update_job_results(jobs_store, job_id=job_id, data=memory)
-            update_job_in_mss(device.mss_client, payload=job)
+            job = update_job_results(
+                jobs_store,
+                job_id=job_id,
+                data=memory,
+                machine_root_url=device.settings.machine_root_url,
+            )
+            update_job_in_mss(
+                device.mss_client,
+                payload=job,
+                job_supervisor_log=device.settings.job_supervisor_log,
+            )
         else:
             raise NotImplementedError(
                 f"meas_level {quantum_job.meas_level} is not supported"
@@ -336,7 +354,11 @@ def postprocessing_success_callback(
     if job.status == JobStatus.SUCCESSFUL:
         job = update_job_stage(jobs_store, job_id=job_id, stage=Stage.FINAL_W)
 
-    update_job_in_mss(device.mss_client, payload=job)
+    update_job_in_mss(
+        device.mss_client,
+        payload=job,
+        job_supervisor_log=device.settings.job_supervisor_log,
+    )
 
 
 def postprocessing_failure_callback(
@@ -599,8 +621,17 @@ def _pop_waitlist_to_normal_queue(device: DeviceResources):
 
 def _fail_job(device: DeviceResources, job_id: str, reason: str) -> Job:
     """Marks the job as failed for the given reason, and tells MSS"""
-    job = log_job_failure(device.jobs_store, job_id=job_id, reason=reason)
-    update_job_in_mss(device.mss_client, payload=job)
+    job = log_job_failure(
+        device.jobs_store,
+        job_id=job_id,
+        reason=reason,
+        job_supervisor_log=device.settings.job_supervisor_log,
+    )
+    update_job_in_mss(
+        device.mss_client,
+        payload=job,
+        job_supervisor_log=device.settings.job_supervisor_log,
+    )
     return job
 
 

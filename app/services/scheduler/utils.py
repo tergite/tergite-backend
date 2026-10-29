@@ -19,8 +19,6 @@ from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 import numpy as np
 from numpy import typing as npt
 
-import settings
-
 from ...libs.device_parameters import (
     DeviceCalibration,
 )
@@ -81,10 +79,13 @@ def get_executor(executor_options: ExecutorOptions) -> "QuantumExecutor":
     return executor
 
 
-def log_job_msg(message: str, level: LogLevel = LogLevel.INFO) -> None:
+def log_job_msg(
+    job_supervisor_log: Path, message: str, level: LogLevel = LogLevel.INFO
+) -> None:
     """Save message to job supervisor log file.
 
     Args:
+        job_supervisor_log: the device's job supervisor log file
         message (str): message to log
         level (LogLevel, optional): log level of the message. Defaults to LogLevel.INFO.
     """
@@ -101,7 +102,7 @@ def log_job_msg(message: str, level: LogLevel = LogLevel.INFO) -> None:
         f"{color[level.value]}[{formatted_time}] {level.name}: {message}{color[0]}\n"
     )
 
-    with settings.JOB_SUPERVISOR_LOG.open("a") as destination:
+    with job_supervisor_log.open("a") as destination:
         destination.write(logstring)
 
 
@@ -168,13 +169,16 @@ def update_job_stage(jobs_db: Collection[Job], job_id: str, stage: Stage) -> Job
     )
 
 
-def log_job_failure(jobs_db: Collection[Job], job_id: str, reason: str) -> Job:
+def log_job_failure(
+    jobs_db: Collection[Job], job_id: str, reason: str, job_supervisor_log: Path
+) -> Job:
     """Logs the job in the db as failed
 
     Args:
         jobs_db: the collection containing job items
         job_id: the unique identifier of the job
         reason: the failure reason
+        job_supervisor_log: the device's job supervisor log file
 
     Returns:
         the updated job with its failure status
@@ -189,6 +193,7 @@ def log_job_failure(jobs_db: Collection[Job], job_id: str, reason: str) -> Job:
     )
 
     log_job_msg(
+        job_supervisor_log,
         f"Job {job_id} failed at {job.stage.verbose_name} due to {reason}",
         level=LogLevel.ERROR,
     )
@@ -197,7 +202,10 @@ def log_job_failure(jobs_db: Collection[Job], job_id: str, reason: str) -> Job:
 
 
 def update_job_results(
-    jobs_db: Collection[Job], job_id: str, data: List[List[str]]
+    jobs_db: Collection[Job],
+    job_id: str,
+    data: List[List[str]],
+    machine_root_url: str,
 ) -> Job:
     """Updates the results of the job and returns the updated job
 
@@ -205,6 +213,7 @@ def update_job_results(
         jobs_db: the collection containing job items
         job_id: the unique identifier of the job
         data: the discriminated results from the quantum job
+        machine_root_url: the URL this device's API is reached at
 
     Returns:
         the updated job
@@ -214,18 +223,21 @@ def update_job_results(
         {
             "status": JobStatus.SUCCESSFUL,
             "result": JobResult(memory=data),
-            "download_url": f"{settings.MACHINE_ROOT_URL}/logfiles/{job_id}",
+            "download_url": f"{machine_root_url}/logfiles/{job_id}",
             "updated_at": utc_now_str(),
         },
     )
 
 
-def update_job_in_mss(mss_client: MssClient, payload: Job) -> EventResponse:
+def update_job_in_mss(
+    mss_client: MssClient, payload: Job, job_supervisor_log: Path
+) -> EventResponse:
     """Updates the job in MSS with the given payload
 
     Args:
         mss_client: the MSS client
         payload: the new updates to apply to the given job in MSS
+        job_supervisor_log: the device's job supervisor log file, where a rejection is logged
 
     Returns:
         the response received after request to MSS
@@ -239,7 +251,7 @@ def update_job_in_mss(mss_client: MssClient, payload: Job) -> EventResponse:
             job_update_event, error_prefix="error sending job to MSS: "
         )
     except MssRejectedError as exp:
-        log_job_msg(f"{exp}", level=LogLevel.ERROR)
+        log_job_msg(job_supervisor_log, f"{exp}", level=LogLevel.ERROR)
         raise RuntimeError(f"Public API returned an error: {exp}")
 
     return resp
