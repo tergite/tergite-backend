@@ -165,7 +165,15 @@ def get_cpu_seconds(process):
 
 def get_memory_mib(process):
     tree = [process] + process.children(recursive=True)
-    return sum(member.memory_info().rss for member in tree if member.is_running()) / 2**20
+    return sum(get_rss(member) for member in tree) / 2**20
+
+
+def get_rss(process):
+    # a work horse can exit between being listed and being read
+    try:
+        return process.memory_info().rss
+    except psutil.NoSuchProcess:
+        return 0
 
 
 cpu_seconds = {name: get_cpu_seconds(process) for name, process in processes.items()}
