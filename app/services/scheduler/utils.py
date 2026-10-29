@@ -337,7 +337,9 @@ def _init_executor(options: ExecutorOptions, reset: bool = False) -> "QuantumExe
         from ...libs.quantum_executor.qiskit.executor import QiskitDynamicsExecutor
 
         return QiskitDynamicsExecutor.new_one_qubit(
-            backend_config=backend_config, reset=reset
+            backend_config=backend_config,
+            data_dir=options.data_directory,
+            reset=reset,
         )
 
     elif executor_type == "qiskit_pulse_2q":
@@ -346,7 +348,9 @@ def _init_executor(options: ExecutorOptions, reset: bool = False) -> "QuantumExe
         from ...libs.quantum_executor.qiskit.executor import QiskitDynamicsExecutor
 
         return QiskitDynamicsExecutor.new_two_qubit(
-            backend_config=backend_config, reset=reset
+            backend_config=backend_config,
+            data_dir=options.data_directory,
+            reset=reset,
         )
 
     # only import this if the executor is of the quantify so

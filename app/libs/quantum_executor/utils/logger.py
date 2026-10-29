@@ -50,12 +50,14 @@ class ExperimentLogger:
         tuid: Union[str, "TUID"],
         /,
         *,
+        datadir: Path,
         formatter=logging.Formatter("%(asctime)s ▪ %(levelname)s ▪ %(message)s"),
     ):
-        """Initialize the ExperimentLogger for the ongoing experiment."""
+        """Initialize the ExperimentLogger for the ongoing experiment, in the experiment's
+        folder in datadir"""
         self.tuid = tuid
         self.formatter = formatter
-        self.folder = abspath(locate_experiment_container(self.tuid))
+        self.folder = abspath(locate_experiment_container(self.tuid, datadir=datadir))
         self.logger = self.make_logger(__name__, self.folder, self.formatter)
         self.logger.propagate = False
 

@@ -34,7 +34,6 @@ from quantify_scheduler.device_under_test.quantum_device import QuantumDevice
 from quantify_scheduler.instrument_coordinator import InstrumentCoordinator
 from quantify_scheduler.instrument_coordinator.components.qblox import ClusterComponent
 
-import settings
 from app.libs.device_parameters.dtos import BackendConfig
 from app.libs.qiskit.qobj import PulseQobj
 from app.libs.quantum_executor.base.executor import QuantumExecutor
@@ -68,12 +67,12 @@ class QuantifyExecutor(QuantumExecutor):
         *,
         reset: bool = False,
         are_clusters_resettable: bool = False,
-        data_dir: Path | os.PathLike[str] | None = None,
-        calib_node_conf: Path | os.PathLike[str] | None = None,
-        calib_device_conf: Path | os.PathLike[str] | None = None,
-        calib_spi_conf: Path | os.PathLike[str] | None = None,
-        calib_seed_file: Path | os.PathLike[str] | None = None,
-        redis_url: RedisDsn | str | None = None,
+        data_dir: Path | os.PathLike[str],
+        calib_node_conf: Path | os.PathLike[str],
+        calib_device_conf: Path | os.PathLike[str],
+        calib_spi_conf: Path | os.PathLike[str],
+        calib_seed_file: Path | os.PathLike[str],
+        redis_url: RedisDsn | str,
         **kwargs,
     ):
         """
@@ -83,25 +82,17 @@ class QuantifyExecutor(QuantumExecutor):
             backend_config: the general backend configuration regardless of executor type
             reset: whether to reset the whole executor; default = False
             are_clusters_resettable: whether the clusters can be reset for this executor; default = False
-            data_dir: the directory where to save experiment data; default = settings.EXECUTOR_DATA_DIR
-            calib_node_conf: the configuration file for the nodes during calibration;
-                default = settings.CALIBRATION_NODE_CONFIG_FILE
-            calib_device_conf: the configuration file for the entire devices during calibration;
-                default = settings.CALIBRATION_DEVICE_CONFIG_FILE
-            calib_spi_conf: the configuration file for the spi during calibration;
-                default = settings.CALIBRATION_SPI_CONFIG_FILE
-            calib_seed_file: the calibration seed file; default = settings.CALIBRATION_SEED
-            redis_url: the redis url where data, e.g. recalibration data, is temporarily stored;
-                default = settings.RQ_REDIS_URL
+            data_dir: the directory where to save experiment data
+            calib_node_conf: the configuration file for the nodes during calibration
+            calib_device_conf: the configuration file for the entire devices during calibration
+            calib_spi_conf: the configuration file for the spi during calibration
+            calib_seed_file: the calibration seed file
+            redis_url: the redis url where data, e.g. recalibration data, is temporarily stored
         """
-        data_dir = data_dir or settings.EXECUTOR_DATA_DIR
-        redis_url = redis_url or settings.RQ_REDIS_URL
-        self.calib_seed_file = calib_seed_file or settings.CALIBRATION_SEED
-        self.calib_spi_conf = calib_spi_conf or settings.CALIBRATION_SPI_CONFIG_FILE
-        self.calib_device_conf = (
-            calib_device_conf or settings.CALIBRATION_DEVICE_CONFIG_FILE
-        )
-        self.calib_node_conf = calib_node_conf or settings.CALIBRATION_NODE_CONFIG_FILE
+        self.calib_seed_file = calib_seed_file
+        self.calib_spi_conf = calib_spi_conf
+        self.calib_device_conf = calib_device_conf
+        self.calib_node_conf = calib_node_conf
         self.quantify_config = load_quantify_config(quantify_config_file)
         self.quantify_metadata = QuantifyMetadata.from_yaml(quantify_metadata_file)
         self.device_name = backend_config.general_config.name
@@ -113,16 +104,15 @@ class QuantifyExecutor(QuantumExecutor):
         qubit_ids = backend_config.device_config.qubit_ids
         coupling_dict = backend_config.device_config.coupling_dict
 
-        # --- Initialize executor and hardware ---
         self.hardware_map = generate_hardware_map(
             qubit_ids=qubit_ids,
             coupling_dict=coupling_dict,
             quantify_config=self.quantify_config,
         )
 
-        self.data_dir = data_dir
         set_datadir(data_dir)
         super().__init__(
+            data_dir=data_dir,
             hardware_map=self.hardware_map,
             backend_config=backend_config,
         )

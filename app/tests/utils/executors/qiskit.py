@@ -38,21 +38,14 @@ class MockQiskitDynamicsExecutor(QiskitDynamicsExecutor):
     wait = staticmethod(time.sleep)
 
     def preprocess(
-        self, qobj: PulseQobj, job_id: str, results_folder: Path = None
+        self, qobj: PulseQobj, job_id: str, results_folder: Path
     ) -> Tuple[float, str]:
-        from settings import PREPROCESSED_JOB_POOL
-
-        results_folder = PREPROCESSED_JOB_POOL
-
         results = super().preprocess(qobj, job_id, results_folder=results_folder)
         qobj_header = qobj.header.to_dict()
         duration = qobj_header.get("test_duration")
         return duration, results[1]
 
-    def run(self, job_id: str, inputs_folder: Path = None) -> str:
-        from settings import PREPROCESSED_JOB_POOL
-
-        inputs_folder = PREPROCESSED_JOB_POOL
+    def run(self, job_id: str, inputs_folder: Path) -> str:
         start_timestamp = datetime.now()
         jobs_store = get_jobs_store(
             get_current_job().connection, settings.get_device_settings()

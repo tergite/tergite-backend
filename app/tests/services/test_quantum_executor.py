@@ -13,6 +13,7 @@
 """Tests specific to the quantum executor service"""
 import shutil
 import socket
+from pathlib import Path
 
 import pytest
 
@@ -27,7 +28,7 @@ _CALIBRATION_SEED_FILE = get_fixture_path("quantify.seed.toml")
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
-def test_attempts_to_connect_to_real_hardware():
+def test_attempts_to_connect_to_real_hardware(tmp_path):
     """Loads the config for the real hardware in the appropriate way"""
     with pytest.raises(socket.timeout):
         backend_conf = BackendConfig.from_toml(
@@ -40,6 +41,7 @@ def test_attempts_to_connect_to_real_hardware():
             quantify_config_file=_REAL_HARDWARE_QUANTIFY_CONFIG_FILE,
             quantify_metadata_file=_REAL_HARDWARE_QUANTIFY_METADATA_FILE,
             backend_config=backend_conf,
+            **_get_calibration_kwargs(tmp_path),
         )
 
 
@@ -59,7 +61,7 @@ def test_recalibrate_refuses_more_than_one_cluster(tmp_path, mocker):
         backend_config=BackendConfig.from_toml(
             _BACKEND_CONFIG_PATH, seed_file=_CALIBRATION_SEED_FILE
         ),
-        data_dir=tmp_path,
+        **_get_calibration_kwargs(tmp_path),
     )
     cluster = executor.quantify_metadata.root["clusterA"]
     executor.quantify_metadata = QuantifyMetadata(
@@ -85,14 +87,34 @@ def test_executors_of_two_quantify_configs_are_built_one_after_another(tmp_path)
         quantify_config_file=TEST_QUANTIFY_CONFIG_FILE,
         quantify_metadata_file=TEST_QUANTIFY_METADATA_FILE,
         backend_config=backend_config,
-        data_dir=tmp_path,
+        **_get_calibration_kwargs(tmp_path),
     )
 
     other_executor = QuantifyExecutor(
         quantify_config_file=TEST_QUANTIFY_CONFIG_FILE,
         quantify_metadata_file=other_metadata_file,
         backend_config=backend_config,
-        data_dir=tmp_path,
+        **_get_calibration_kwargs(tmp_path),
     )
 
     assert other_executor.quantify_metadata.root
+
+
+def _get_calibration_kwargs(data_dir: Path) -> dict:
+    """Gets the data directory, calibration files and Redis URL a QuantifyExecutor needs"""
+    from ..utils.env import (
+        TEST_CALIBRATION_DEVICE_CONFIG_FILE,
+        TEST_CALIBRATION_NODE_CONFIG_FILE,
+        TEST_CALIBRATION_SPI_CONFIG_FILE,
+        TEST_QUANTIFY_SEED_FILE,
+        TEST_RQ_REDIS_URL,
+    )
+
+    return dict(
+        data_dir=data_dir,
+        calib_node_conf=TEST_CALIBRATION_NODE_CONFIG_FILE,
+        calib_device_conf=TEST_CALIBRATION_DEVICE_CONFIG_FILE,
+        calib_spi_conf=TEST_CALIBRATION_SPI_CONFIG_FILE,
+        calib_seed_file=TEST_QUANTIFY_SEED_FILE,
+        redis_url=TEST_RQ_REDIS_URL,
+    )

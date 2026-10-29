@@ -14,8 +14,6 @@ import logging
 import uuid
 from pathlib import Path
 
-import settings
-
 from .config import HAS_QUANTIFY
 
 # Quantify
@@ -49,24 +47,22 @@ except ImportError as e:
     CompiledSchedule = Schedule
     TUID = str
 
-    def locate_experiment_container(
-        tuid: TUID, datadir: Path | str | None = None, **kwargs
-    ):
-        dir_path = Path(datadir or settings.EXECUTOR_DATA_DIR) / str(tuid)
+    def locate_experiment_container(tuid: TUID, datadir: Path | str, **kwargs):
+        dir_path = Path(datadir) / str(tuid)
         dir_path.mkdir(parents=True, exist_ok=True)
         return dir_path
 
     def create_exp_folder(
         tuid: TUID,
+        datadir: Path | str,
         name: str | None = None,
-        datadir: Path | str | None = None,
         **kwargs,
     ) -> str:
         folder_name = str(tuid)
         if name:
             folder_name += "-" + name
 
-        folder_path = Path(datadir or settings.EXECUTOR_DATA_DIR) / folder_name
+        folder_path = Path(datadir) / folder_name
         folder_path.mkdir(parents=True, exist_ok=True)
 
         return str(folder_path)

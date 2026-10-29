@@ -21,7 +21,6 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-import settings
 from app.libs.device_parameters import BackendConfig, DeviceCalibration
 from app.libs.qiskit.qobj import PulseQobj
 from app.libs.quantum_executor.base.experiment import NativeExperiment
@@ -38,10 +37,13 @@ from app.utils.compat import TUID, create_exp_folder, gen_tuid
 class QuantumExecutor(abc.ABC):
     def __init__(
         self,
+        data_dir: Path,
         hardware_map: Optional[Dict[str, Tuple[str, str]]] = None,
         backend_config: Optional[BackendConfig] = None,
         **kwargs,
     ):
+        # where each experiment's folder and log go
+        self.data_dir = Path(data_dir)
         self.hardware_map = hardware_map
         self.backend_config = backend_config
 
@@ -106,7 +108,7 @@ class QuantumExecutor(abc.ABC):
         pass
 
     def preprocess(
-        self, qobj: PulseQobj, job_id: str, results_folder: Optional[Path] = None
+        self, qobj: PulseQobj, job_id: str, results_folder: Path
     ) -> Tuple[float, str]:
         """Prepares a given qobj for execution but does not execute it yet
 
@@ -122,8 +124,8 @@ class QuantumExecutor(abc.ABC):
         qobj_header = qobj.header.to_dict()
         qobj_tag = qobj_header.get("tag", "")
         # create the logger folder where to log messages etc.
-        create_exp_folder(tuid=tuid, name=qobj_tag)
-        logger = ExperimentLogger(tuid)
+        create_exp_folder(tuid=tuid, name=qobj_tag, datadir=self.data_dir)
+        logger = ExperimentLogger(tuid, datadir=self.data_dir)
         logger.info(f"Preprocessing job for tuid: {tuid} (not the same as job_id)")
 
         try:
@@ -162,7 +164,7 @@ class QuantumExecutor(abc.ABC):
     def recalibrate(self, **kwargs) -> DeviceCalibration | None:
         """Recalibrates the executor"""
 
-    def run(self, job_id: str, inputs_folder: Optional[Path] = None) -> str:
+    def run(self, job_id: str, inputs_folder: Path) -> str:
         """Runs the experiments and returns the results file path
 
         Args:
@@ -186,8 +188,10 @@ class QuantumExecutor(abc.ABC):
             native_config = expt_metadata.native_config
             qobj_tag = expt_metadata.qobj_tag
 
-            experiment_folder = Path(create_exp_folder(tuid=tuid, name=qobj_tag))
-            logger = ExperimentLogger(tuid)
+            experiment_folder = Path(
+                create_exp_folder(tuid=tuid, name=qobj_tag, datadir=self.data_dir)
+            )
+            logger = ExperimentLogger(tuid, datadir=self.data_dir)
             logger.info(f"Starting job: {tuid}")
 
             logger.info(f"Running experiments for job id: {job_id}")
@@ -282,15 +286,14 @@ class NativeExptMetadata:
         return cls(**kwargs)
 
 
-def _get_preprocessed_expt_file(job_id: str, folder: Optional[Path] = None) -> Path:
+def _get_preprocessed_expt_file(job_id: str, folder: Path) -> Path:
     """Gets the path to the file containing the preprocessed experiments
 
     Args:
         job_id: the unique identifier of the job
-        folder: the folder containing the preprocessed experiment files;
-            default = settings.PREPROCESSED_JOB_POOL
+        folder: the folder containing the preprocessed experiment files
 
     Returns:
         the path to the file
     """
-    return (folder or settings.PREPROCESSED_JOB_POOL) / f"{job_id}-expt-metadata.json"
+    return folder / f"{job_id}-expt-metadata.json"

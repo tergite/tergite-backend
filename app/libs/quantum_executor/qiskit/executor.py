@@ -12,6 +12,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 import enum
+from pathlib import Path
 from typing import List, Type
 
 import numpy as np
@@ -37,6 +38,7 @@ class QiskitDynamicsExecutor(QuantumExecutor):
     def __init__(
         self,
         backend_config: BackendConfig,
+        data_dir: Path,
         backend_cls: Type[QiskitPulseBackend] = QiskitPulse1Q,
         **kwargs,
     ):
@@ -44,10 +46,11 @@ class QiskitDynamicsExecutor(QuantumExecutor):
 
         Args:
             backend_config: the configuration of the backend
+            data_dir: the directory where to save experiment data
             backend_cls: the class of the backend
             kwargs: extra key-word args to pass to the backend on initialisation
         """
-        super().__init__(backend_config=backend_config, **kwargs)
+        super().__init__(data_dir=data_dir, backend_config=backend_config, **kwargs)
         self.backend = backend_cls(backend_config=backend_config, **kwargs)
 
     def recalibrate(self, **kwargs) -> None:
@@ -97,11 +100,14 @@ class QiskitDynamicsExecutor(QuantumExecutor):
         pass
 
     @classmethod
-    def new_one_qubit(cls, backend_config: BackendConfig, reset: bool = False):
+    def new_one_qubit(
+        cls, backend_config: BackendConfig, data_dir: Path, reset: bool = False
+    ):
         """Generates a new one-qubit qiskit-dynamics executor
 
         Args:
             backend_config: the backend configuration
+            data_dir: the directory where to save experiment data
             reset: whether to reset the backend
 
         Returns:
@@ -110,6 +116,7 @@ class QiskitDynamicsExecutor(QuantumExecutor):
         # TODO: Use measurement level provided by the client request if discriminator is not provided
         instance = cls(
             backend_config=backend_config,
+            data_dir=data_dir,
             backend_cls=QiskitPulse1Q,
             meas_level=1,
             meas_return="single",
@@ -124,11 +131,14 @@ class QiskitDynamicsExecutor(QuantumExecutor):
         return instance
 
     @classmethod
-    def new_two_qubit(cls, backend_config: BackendConfig, reset: bool = False):
+    def new_two_qubit(
+        cls, backend_config: BackendConfig, data_dir: Path, reset: bool = False
+    ):
         """Generates a new two-qubit qiskit-dynamics executor
 
         Args:
             backend_config: the backend configuration
+            data_dir: the directory where to save experiment data
             reset: whether to reset the backend
 
         Returns:
@@ -136,6 +146,7 @@ class QiskitDynamicsExecutor(QuantumExecutor):
         """
         instance = cls(
             backend_config=backend_config,
+            data_dir=data_dir,
             backend_cls=QiskitPulse2Q,
             meas_level=1,
             meas_return="single",
