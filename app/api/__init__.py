@@ -25,7 +25,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.requests import Request
 from fastapi.responses import FileResponse
 from pydantic import ValidationError
-from redis import Redis
 from sqlalchemy import Engine
 from typing_extensions import Annotated
 
@@ -55,7 +54,6 @@ from app.utils.exc import (
     UnauthorizedError,
 )
 
-from ..libs import device_parameters as props_lib
 from ..libs.queues.dtos import Job, JobStatus, QueueContext, get_queue_context
 from ..services.scheduler.dtos import RecalibrationInfo
 from ..services.scheduler.queues import QueuePool, get_queue_pool
@@ -69,7 +67,6 @@ from ..utils.api import (
     get_request_logs_store,
     to_http_error,
 )
-from ..utils.redis import get_redis_connection
 from ..utils.redis_store import ItemNotFoundError
 from ..utils.sql_db import convert_http_sort_to_db_sort
 from ..utils.strings import uuid_str
@@ -87,6 +84,7 @@ from .dependencies import (
     validate_job_file,
 )
 from .device_routing import DeviceRoutingMiddleware
+from .routers import devices
 
 # application
 app = FastAPI(
@@ -172,6 +170,9 @@ async def root():
     return {"message": "Welcome to BCC machine"}
 
 
+app.include_router(devices.router)
+
+
 @app.get(
     "/logfiles/{logfile_id}",
     dependencies=[Depends(get_mss_token_claims_dep(job_id_field="logfile_id"))],
@@ -189,24 +190,6 @@ async def download_logfile(logfile_id: UUID):
     if file.exists():
         return FileResponse(file)
     raise ItemNotFoundError(f"logfile {logfile_id} not found")
-
-
-@app.get("/static-properties", dependencies=[Depends(get_verified_mss_user_id)])
-async def get_static_properties(
-    redis: Redis = Depends(get_redis_connection),
-    backend_name: str = Depends(get_backend_name),
-):
-    """Retrieves the device properties that are not changing"""
-    return props_lib.get_device_info(redis, backend_name)
-
-
-@app.get("/dynamic-properties", dependencies=[Depends(get_verified_mss_user_id)])
-async def get_dynamic_properties(
-    redis: Redis = Depends(get_redis_connection),
-    backend_name: str = Depends(get_backend_name),
-):
-    """Retrieves the device properties that are changing with time i.e. calibration data"""
-    return props_lib.get_device_calibration_info(redis, backend_name)
 
 
 @app.get("/me")
