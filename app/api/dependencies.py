@@ -28,7 +28,7 @@ from ..services.booking import (
     MSSTokenClaims,
     get_user_job_id_pair_from_token,
 )
-from ..services.devices import is_offline, save_all_device_params
+from ..services.devices import is_offline
 from ..services.external.mss import (
     verify_mss_signature,
 )
@@ -433,10 +433,5 @@ def get_verified_mss_details(request: Request) -> MSSAuthDetails:
 
 
 def _start_device(device: DeviceResources) -> None:
-    """Publishes the device's parameters and starts its recalibration"""
-    save_all_device_params(
-        redis=device.redis,
-        backend_config=device.executor_options.backend_config,
-        mss_client=device.mss_client,
-    )
+    """Starts the device's recalibration; its parameters are the heavy worker's to publish"""
     init_recalibration(device)

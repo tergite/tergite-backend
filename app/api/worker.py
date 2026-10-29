@@ -101,8 +101,8 @@ def preload_worker_globals(should_load_executor: bool) -> DeviceResources:
     device = DeviceResources.from_settings(settings.get_device_settings())
     if should_load_executor:
         _, executor_options = get_executor_and_options()
-        # the executor may refine the backend config, e.g. the simulators train their
-        # discriminators, which the API, building no executor, cannot publish
+        # published here alone, as the executor may refine the backend config, e.g. the
+        # simulators train their discriminators, which the API, building none, has not
         save_all_device_params(
             redis=device.redis,
             backend_config=executor_options.backend_config,

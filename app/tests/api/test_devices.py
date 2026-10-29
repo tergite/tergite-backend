@@ -15,6 +15,7 @@
 import pytest
 
 from app.api.worker import preload_worker_globals
+from app.services.scheduler import close_device_resources
 from app.tests.utils.api import (
     create_mss_headers,
 )
@@ -31,13 +32,26 @@ from app.tests.utils.users import (
 
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
-def test_start_up_sends_the_device_and_its_calibration_to_mss(client, mock_mss):
+def test_only_the_heavy_worker_publishes_the_device_and_its_calibration(
+    client, mock_mss
+):
+    """The API's start-up publishes neither, so that it never overwrites what the heavy
+    worker, which alone has the executor's calibration, has published"""
     with client as client:
-        headers = create_mss_headers()
-        static_properties = client.get("/static-properties", headers=headers).json()
-        dynamic_properties = client.get(
-            "/dynamic-properties", headers=create_mss_headers()
-        ).json()
+        response = client.get("/static-properties", headers=create_mss_headers())
+        assert response.status_code == 404
+        assert mock_mss.sent_events == []
+
+        device = preload_worker_globals(should_load_executor=True)
+        try:
+            static_properties = client.get(
+                "/static-properties", headers=create_mss_headers()
+            ).json()
+            dynamic_properties = client.get(
+                "/dynamic-properties", headers=create_mss_headers()
+            ).json()
+        finally:
+            close_device_resources(device)
 
         [initialized, recalibrated] = mock_mss.sent_events[:2]
         assert initialized["name"] == "initialized"
@@ -51,6 +65,8 @@ def test_get_static_properties(client, expected):
     """Get to '/static-properties' retrieves the current static properties of the backend"""
     # using context manager to ensure on_startup runs
     with client as client:
+        # the heavy worker publishes the device's properties once the API has started
+        close_device_resources(preload_worker_globals(should_load_executor=True))
         user_id, _ = create_user(client, USERS[0])
         headers = create_mss_headers(user_id)
 
@@ -78,7 +94,7 @@ def test_get_dynamic_properties(client, expected):
     with client as client:
         # the heavy worker publishes its executor's calibration, e.g. the simulators'
         # trained discriminators, once the API has started
-        preload_worker_globals(should_load_executor=True)
+        close_device_resources(preload_worker_globals(should_load_executor=True))
         user_id, _ = create_user(client, USERS[0])
         headers = create_mss_headers(user_id)
 

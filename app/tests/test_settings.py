@@ -5,42 +5,35 @@ import importlib
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from pytest_lazy_fixtures import lf as lazy_fixture
 
+import settings
 from app.api import app
 from app.libs.queues.dtos import ExecutorOptions
+from app.services.external.mss import (
+    DeviceEvent,
+    DeviceEventName,
+    DeviceSwitchData,
+    MssClient,
+    get_private_key,
+)
 from app.services.scheduler.utils import get_executor_and_options
 from app.tests.utils.env import (
     TEST_BACKEND_SETTINGS_FILE,
     TEST_BROKEN_QUANTIFY_CONFIG_FILE,
     TEST_BROKEN_QUANTIFY_METADATA_FILE,
     TEST_DEFAULT_PREFIX_SIM_1Q,
-    TEST_QISKIT_1Q_SEED_FILE,
     TEST_QUANTIFY_CONFIG_FILE,
     TEST_QUANTIFY_METADATA_FILE,
     TEST_QUANTIFY_SEED_FILE,
     TEST_SIMQ1_BACKEND_SETTINGS_FILE,
 )
 from app.tests.utils.fixtures import get_fixture_path
-from app.tests.utils.params import HAS_QISKIT_DYNAMICS, HAS_QUANTIFY
+from app.tests.utils.params import HAS_QUANTIFY
+from app.utils.datetime import get_utc_now
 from app.utils.exc import MssTimeoutError
 
 _QUANTIFY_CONFIG_FILE = get_fixture_path("generic-quantify-config.json")
 _QUANTIFY_METADATA_FILE = get_fixture_path("generic-quantify-config.yml")
-_EXECUTOR_AND_SETTINGS = []
-if HAS_QUANTIFY:
-    _EXECUTOR_AND_SETTINGS += [
-        (
-            "quantify",
-            TEST_BACKEND_SETTINGS_FILE,
-            lazy_fixture("quantify_seed_file"),
-        )
-    ]
-
-if HAS_QISKIT_DYNAMICS:
-    _EXECUTOR_AND_SETTINGS += [
-        ("qiskit_pulse_1q", TEST_SIMQ1_BACKEND_SETTINGS_FILE, TEST_QISKIT_1Q_SEED_FILE),
-    ]
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
@@ -68,20 +61,16 @@ def _restore_settings(monkeypatch):
 
 
 @pytest.mark.timeout(30)
-@pytest.mark.parametrize("executor, settings_file, seed_file", _EXECUTOR_AND_SETTINGS)
-def test_mss_reconnection(executor, settings_file, seed_file, mocker, monkeypatch):
+def test_mss_client_reconnects_as_often_as_the_settings_say(mocker, monkeypatch):
     """MSS_CONNECTION_MAX_ATTEMPTS is respected: connect is retried exactly that
     many times before an MssTimeoutError is raised.
     """
     connection_attempts = 2  # MSS_CONNECTION_MAX_ATTEMPTS
-    monkeypatch.setenv("BCC_EXECUTOR_TYPE", executor)
-    monkeypatch.setenv("BCC_BACKEND_SETTINGS", settings_file)
     monkeypatch.setenv("BCC_MSS_MACHINE_ROOT_URL", "http://localhost:19999")
     monkeypatch.setenv("BCC_MSS_CONNECTION_TIMEOUT", "0.05")
     monkeypatch.setenv("BCC_MSS_CONNECTION_MAX_ATTEMPTS", f"{connection_attempts}")
     # Large enough that the response-timeout path is never hit first.
     monkeypatch.setenv("BCC_MSS_RESPONSE_TIMEOUT", "3600")
-    monkeypatch.setenv("BCC_CALIBRATION_SEED", f"{seed_file}")
     _reload_settings()
     mock_connect = mocker.patch(
         "app.services.external.mss.service.connect",
@@ -89,12 +78,17 @@ def test_mss_reconnection(executor, settings_file, seed_file, mocker, monkeypatc
     )
     # Suppress actual sleeping so the test is instant.
     mock_sleep = mocker.patch("time.sleep")
+    device_settings = settings.get_device_settings()
+    private_key = get_private_key(
+        device_settings.private_key_file, device_settings.private_key_password
+    )
+    mss_client = MssClient.from_settings(device_settings, private_key)
+    switched_on = DeviceEvent(
+        name=DeviceEventName.SWITCHED_ON, data=DeviceSwitchData(date=get_utc_now())
+    )
 
-    with (
-        pytest.raises(MssTimeoutError, match=r"maximum connection attempts"),
-        TestClient(app),
-    ):
-        pass
+    with pytest.raises(MssTimeoutError, match=r"maximum connection attempts"):
+        mss_client.send_event(switched_on)
 
     expected_connect_calls = connection_attempts + 1
     assert mock_connect.call_count == expected_connect_calls

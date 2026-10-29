@@ -47,6 +47,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- Fixed a restart of the API alone overwriting, in Redis and MSS, the calibration the heavy worker published, e.g. the
+  simulators' trained discriminators, so that jobs were discriminated wrongly until the worker restarted; the heavy
+  worker alone publishes the device's properties and calibration now
 - Fixed `BCC_ARE_CLUSTERS_RESETTABLE` being ignored: the quantify executor never reset its clusters, whatever it was set to
 - Fixed scheduled jobs never running: `bcc start` runs its workers with RQ's scheduler, so a booking's start and
   end jobs and recalibration's start and repeats now run, which no release's workers did
