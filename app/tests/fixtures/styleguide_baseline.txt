@@ -5,9 +5,9 @@ banner: settings.py:208
 banner: settings.py:210
 banner: settings.py:239
 banner: settings.py:241
-boolean: app/api/__init__.py::cancel_recalibration(ignore_errors)
 boolean: app/api/dependencies.py::get_mss_token_claims_dep(job_exists)
 boolean: app/api/routers/jobs.py::submit_job(force_normal_queue)
+boolean: app/api/routers/recalibration.py::cancel_recalibration(ignore_errors)
 boolean: app/libs/device_parameters/dtos.py::CalibrationValueSet.model_dump_scalar(exclude_none)
 boolean: app/libs/device_parameters/dtos.py::CalibrationValueSet.model_dump_unit(exclude_none)
 boolean: app/libs/device_parameters/dtos.py::Device.characterized

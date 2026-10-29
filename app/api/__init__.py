@@ -15,11 +15,9 @@
 # Modified:
 #
 # - Martin Ahindura 2023
-from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, Query
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.requests import Request
 from fastapi.responses import FileResponse
@@ -44,8 +42,6 @@ from app.utils.exc import (
 )
 
 from ..libs.queues.dtos import QueueContext, get_queue_context
-from ..services.scheduler.dtos import RecalibrationInfo
-from ..services.scheduler.queues import QueuePool, get_queue_pool
 from ..utils.api import (
     GeneralMessage,
     RequestLog,
@@ -62,7 +58,7 @@ from .dependencies import (
     lifespan,
 )
 from .device_routing import DeviceRoutingMiddleware
-from .routers import bookings, devices, jobs, users
+from .routers import bookings, devices, jobs, recalibration, users
 
 # application
 app = FastAPI(
@@ -152,6 +148,7 @@ app.include_router(devices.router)
 app.include_router(users.router)
 app.include_router(bookings.router)
 app.include_router(jobs.router)
+app.include_router(recalibration.router)
 
 
 @app.get(
@@ -171,74 +168,6 @@ async def download_logfile(logfile_id: UUID):
     if file.exists():
         return FileResponse(file)
     raise ItemNotFoundError(f"logfile {logfile_id} not found")
-
-
-@app.post("/recalibration/init", dependencies=[Depends(get_verified_mss_admin_user_id)])
-async def initialize_recalibration(
-    context: QueueContext = Depends(get_queue_context_if_online),
-    queue_pool: QueuePool = Depends(get_queue_pool),
-    start_timestamp: Optional[datetime] = Query(None),
-    interval: Optional[float] = Query(None),
-) -> GeneralMessage:
-    """Initializes recalibration
-
-    Only MSS admin users can initialize recalibration
-
-    Args:
-        context: the queue context for the recalibration
-        queue_pool: the collection of queues to run the recalibration on
-        start_timestamp: the start time of the recalibration; default = None i.e. straight away
-        interval: the recalibration interval; default = None i.e. no repeat
-
-    Returns:
-        the status of the recalibration
-    """
-    return scheduler.init_recalibration(
-        context, queues=queue_pool, start_timestamp=start_timestamp, interval=interval
-    )
-
-
-@app.get("/recalibration/info", dependencies=[Depends(get_verified_mss_admin_user_id)])
-async def get_recalibration_info(
-    queue_pool: QueuePool = Depends(get_queue_pool),
-) -> RecalibrationInfo:
-    """Gets the current information about the recalibration
-
-    Only MSS admin users can get recalibration info
-
-    Args:
-        queue_pool: the collection of queues to run the recalibration on
-
-    Returns:
-        the information about the recalibration
-    """
-    return scheduler.get_recalibration_info(queues=queue_pool)
-
-
-@app.post(
-    "/recalibration/cancel", dependencies=[Depends(get_verified_mss_admin_user_id)]
-)
-async def cancel_recalibration(
-    context: QueueContext = Depends(get_queue_context_if_online),
-    queue_pool: QueuePool = Depends(get_queue_pool),
-    ignore_errors: bool = Query(False),
-) -> GeneralMessage:
-    """Cancels recalibration on this device
-
-    Only MSS admin users can initialize recalibration
-
-    Args:
-        context: the queue context for the recalibration
-        queue_pool: the collection of queues to run the recalibration on
-        ignore_errors: whether to ignore errors during recalibration
-
-    Returns:
-        general information on the status of the request
-    """
-    scheduler.stop_recalibration(
-        context, queues=queue_pool, ignore_errors=ignore_errors
-    )
-    return {"status": "success"}
 
 
 # plain def, so FastAPI runs them in a thread: telling MSS blocks, for up to minutes
