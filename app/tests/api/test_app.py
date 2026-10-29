@@ -21,6 +21,7 @@ import pytest
 from pydantic import ValidationError
 from starlette.requests import Request
 
+from app.api.middleware import get_request_logs_store
 from app.tests.utils.api import (
     create_invalid_mss_headers,
     create_mss_headers,
@@ -34,7 +35,6 @@ from app.tests.utils.env import (
 from app.tests.utils.params import (
     FASTAPI_CLIENTS,
 )
-from app.utils.api import get_request_logs_store
 from app.utils.exc import (
     BookingAlreadyActiveError,
     BookingAlreadyCompleteError,

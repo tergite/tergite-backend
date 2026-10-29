@@ -29,61 +29,22 @@ from typing import (
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
-from fastapi import Request, UploadFile
-from pydantic import BaseModel, ConfigDict, Field
+from fastapi import UploadFile
+from pydantic import BaseModel
 
 import settings
 
-from .datetime import utc_now_str
 from .model import IncEx
-from .redis import get_redis_connection
-from .redis_store import Collection, Schema
 
 ITEM = TypeVar("ITEM", bound=BaseModel)
 
 _MSS_PUBLIC_KEYS: dict[Path, RSAPublicKey] = {}
-_REQUEST_LOGS_STORES: dict[str, Collection["RequestLog"]] = {}
 
 
 class CancellationDetails(BaseModel):
     """Details to do with a given cancellation request"""
 
     reason: Optional[str] = None
-
-
-class RequestLog(Schema):
-    """Schema for tracking requests"""
-
-    __primary_key_fields__ = ("request_id",)
-    __index_fields__ = (
-        "user_id",
-        "ip_address",
-    )
-    model_config = ConfigDict(extra="allow")
-
-    request_id: str
-    user_id: Optional[str] = None
-    ip_address: Optional[str] = None
-    created_at: Optional[str] = Field(default_factory=utc_now_str)
-    updated_at: Optional[str] = Field(default_factory=utc_now_str)
-
-    @classmethod
-    def from_request(cls, request: Request) -> "RequestLog":
-        """Generates a request log object from the request
-
-        Args:
-            request: the received HTTP request
-
-        Returns:
-            the request log object
-        """
-        user_id = request.headers.get("x-mss-user-id")
-        request_id = request.state.request_id
-        return cls(
-            request_id=request_id,
-            user_id=user_id,
-            ip_address=f"{request.client.host}",
-        )
 
 
 class GeneralMessage(TypedDict):
@@ -163,25 +124,6 @@ def save_uploaded_file(file: UploadFile, target: Path) -> Path:
     file.file.close()
 
     return target
-
-
-def get_request_logs_store() -> Collection[RequestLog]:
-    """Gets the current device's store for the request logs
-
-    Returns:
-        the RedisCollection containing the request logs
-    """
-    request_logs_store = _REQUEST_LOGS_STORES.get(settings.DEFAULT_PREFIX)
-    if request_logs_store is None:
-        request_logs_store = Collection(
-            connection=get_redis_connection(url=settings.RQ_REDIS_URL),
-            schema=RequestLog,
-            default_ttl=settings.REQUEST_LOG_TTL,
-            cleanup_interval=settings.REQUEST_LOG_CLEAN_INTERVAL,
-        )
-        _REQUEST_LOGS_STORES[settings.DEFAULT_PREFIX] = request_logs_store
-
-    return request_logs_store
 
 
 def encrypt_mss_jwt_token(token: str, key_path: Optional[Path] = None) -> str:

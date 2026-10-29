@@ -18,15 +18,13 @@
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.requests import Request
 
 import settings
 
-from ..utils.api import RequestLog, get_request_logs_store
-from ..utils.strings import uuid_str
 from .dependencies import get_verified_mss_user_id, lifespan
 from .device_routing import DeviceRoutingMiddleware
 from .errors import add_error_handlers
+from .middleware import log_requests
 from .routers import bookings, devices, jobs, logfiles, recalibration, switch, users
 
 # application
@@ -56,32 +54,7 @@ if len(cors_origins) > 0:
         allow_headers=["*"],
     )
 
-
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    """Adds an `x-request-id` header and logs requests received
-
-    It will get it from `x-mss-request-id` if that is present or generate a new one
-
-    Args:
-        request: the current FastAPI request object
-        call_next: the callback that calls the next middleware or route handler
-    """
-    request_id = request.headers.get("x-mss-request-id")
-    if request_id is None:
-        request_id = uuid_str()
-
-    request.state.request_id = request_id
-
-    response = await call_next(request)
-
-    requests_store = get_request_logs_store()
-    if not requests_store.exists(request_id):
-        requests_store.insert(RequestLog.from_request(request))
-
-    response.headers["X-Request-ID"] = request_id
-    return response
-
+app.middleware("http")(log_requests)
 
 # routing
 # added last, so outermost: the other middlewares and the routes run as the path's device
