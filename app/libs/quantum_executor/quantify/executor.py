@@ -149,11 +149,12 @@ class QuantifyExecutor(QuantumExecutor):
         try:
             self._coordinator = no_gc_instruments_cache[self.coordinator_name]
         except KeyError:
-            # make sure all previous connections are closed, which leaves no cached instrument usable
+            # make sure all previous connections are closed, which leaves no cached instrument usable;
+            # the cached components first, as closing one reads its cluster
             # FIXME: This global is unnatural but QCoDeS' delegation force us to make
             #   all instruments globals
-            qblox_instruments.Cluster.close_all()
             self.__class__._close_cached_instruments()
+            qblox_instruments.Cluster.close_all()
 
             # FIXME: Saving to the class variable just to escape the garbage collector
             #   since QCoDeS already keeps these instruments as globals

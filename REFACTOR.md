@@ -181,7 +181,7 @@ Tests and tooling only. After this step, a refactor commit that changes behaviou
    expired. The test pins the override for bookings only. **Fixed** after step 1: a token's expiry is from the real now.
    **Found too:** `QuantifyExecutor.__init__`, building for hardware it has not cached, calls `Cluster.close_all()`
    before closing the cached `ClusterComponent`s, which then fail on their closed clusters
-   (`quantify/executor.py:155-156`); a process building two quantify configs crashes. The tests close the cache.
+   (`quantify/executor.py:155-156`); a process building two quantify configs crashes. **Fixed** after step 1.
 4. **The suite runs in parallel.** Workers of `pytest -n auto --dist=loadscope` share one Redis database, which every
    teardown empties with `flushall` (`app/tests/conftest.py:170, 351, 397`), one SQLite file (`test_booking.db`, from
    `app/tests/utils/env.py:21`), `/tmp/jobs`, and the working directory, where the qblox dummy writes `tmp.q1asm` and

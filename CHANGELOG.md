@@ -82,6 +82,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   nonce and timestamp were signed; MSS must sign the new message too, so the two are upgraded together
 - Fixed every job token being expired when issued on a device whose `BCC_CURRENT_DATE` is in the past: its expiry is
   now counted from the real time, as PyJWT checks it
+- Fixed a process building quantify executors for two configs failing with AttributeError on the second, which closed
+  every cluster before the components cached for the first
 
 ### Removed
 

@@ -11,6 +11,7 @@
 # that they have been altered from the originals.
 
 """Tests specific to the quantum executor service"""
+import shutil
 import socket
 
 import pytest
@@ -23,17 +24,6 @@ _REAL_HARDWARE_QUANTIFY_CONFIG_FILE = get_fixture_path("generic-quantify-config.
 _REAL_HARDWARE_QUANTIFY_METADATA_FILE = get_fixture_path("real-quantify-config.yml")
 _BACKEND_CONFIG_PATH = get_fixture_path("backend_config.toml")
 _CALIBRATION_SEED_FILE = get_fixture_path("quantify.seed.toml")
-
-
-@pytest.fixture(autouse=True)
-def _close_cached_instruments():
-    """Closes the dummy clusters other tests' executors left cached: building an executor of
-    other hardware closes every cluster first, and then fails to close their components
-    """
-    if HAS_QUANTIFY:
-        from ...libs.quantum_executor.quantify.executor import QuantifyExecutor
-
-        QuantifyExecutor._close_cached_instruments()
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
@@ -79,3 +69,30 @@ def test_recalibrate_refuses_more_than_one_cluster(tmp_path, mocker):
     with pytest.raises(ValueError, match="one cluster"):
         executor.recalibrate()
     calibrate.assert_not_called()
+
+
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
+def test_executors_of_two_quantify_configs_are_built_one_after_another(tmp_path):
+    from ...libs.quantum_executor.quantify.executor import QuantifyExecutor
+    from ..utils.env import TEST_QUANTIFY_CONFIG_FILE, TEST_QUANTIFY_METADATA_FILE
+
+    other_metadata_file = tmp_path / "quantify-metadata.yml"
+    shutil.copy(TEST_QUANTIFY_METADATA_FILE, other_metadata_file)
+    backend_config = BackendConfig.from_toml(
+        _BACKEND_CONFIG_PATH, seed_file=_CALIBRATION_SEED_FILE
+    )
+    QuantifyExecutor(
+        quantify_config_file=TEST_QUANTIFY_CONFIG_FILE,
+        quantify_metadata_file=TEST_QUANTIFY_METADATA_FILE,
+        backend_config=backend_config,
+        data_dir=tmp_path,
+    )
+
+    other_executor = QuantifyExecutor(
+        quantify_config_file=TEST_QUANTIFY_CONFIG_FILE,
+        quantify_metadata_file=other_metadata_file,
+        backend_config=backend_config,
+        data_dir=tmp_path,
+    )
+
+    assert other_executor.quantify_metadata.root
