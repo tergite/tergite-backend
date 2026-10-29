@@ -231,7 +231,7 @@ def test_each_device_has_its_own_executor_lock(tmp_path, monkeypatch):
         "/users",
         "/bookings",
         "/jobs",
-        f"/logfiles/{uuid4()}",
+        "/logfiles/7c9e6679-7425-40de-944b-e07fc1f90ae7",
         "/recalibration/info",
         "/switch/status",
     ],

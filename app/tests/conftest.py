@@ -15,6 +15,7 @@ from .utils.env import (
     TEST_QISKIT_1Q_SEED_FILE,
     TEST_QISKIT_2Q_SEED_FILE,
     TEST_QUANTIFY_SEED_FILE,
+    TEST_ROOT,
     TEST_RQ_REDIS_URL,
     TEST_SIMQ1_BACKEND_SETTINGS_FILE,
     TEST_SIMQ2_BACKEND_SETTINGS_FILE,
@@ -166,7 +167,7 @@ INVALID_CREATE_BOOKINGS_PARAMS = [
 def redis_client() -> Generator[Redis, Any, None]:
     """A mock redis client"""
     yield _redis_connection
-    _redis_connection.flushall()
+    _redis_connection.flushdb()
 
 
 @pytest.fixture
@@ -351,7 +352,7 @@ def qiskit_1q_rest_client(
 
     yield get_test_client(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
-    _redis_connection.flushall()
+    _redis_connection.flushdb()
     clear_quantum_executor(ignore_errors=True)
 
 
@@ -399,7 +400,7 @@ def qiskit_2q_rest_client(
 
     yield get_test_client(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
-    _redis_connection.flushall()
+    _redis_connection.flushdb()
     clear_quantum_executor(ignore_errors=True)
 
 
@@ -434,6 +435,16 @@ def storage_root():
     path.mkdir(parents=True, exist_ok=True)
     yield path
     shutil.rmtree(path, ignore_errors=True)
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _run_in_the_test_root():
+    """Runs the suite in this worker's own folder, as some libraries write files where
+    they run"""
+    project_root = Path.cwd()
+    os.chdir(TEST_ROOT)
+    yield
+    os.chdir(project_root)
 
 
 @pytest.fixture(autouse=True)

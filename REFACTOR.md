@@ -186,6 +186,8 @@ Tests and tooling only. After this step, a refactor commit that changes behaviou
    worker gets its own SQLite file and storage roots under `tmp_path_factory`; the executor lock's path is passed in
    (step 0.6); the suite runs from a temporary working directory. `env.py` also defaults to port 6379 while CI and
    `CONTRIBUTING.md` use 6378: one default.
+   **Done** with `tempfile.mkdtemp` instead of `tmp_path_factory`: the settings read the folders when `conftest.py`
+   is imported, before any fixture runs. The default port is 6378.
 5. **The suite runs fast.** Build the app once per session, as MSS's suite does, instead of reloading `settings` and
    `app` and running the lifespan for each of about 120 tests; preload the executor once per session, not in every
    `PreloadedSimpleWorker.__init__`; replace `test_store.py`'s real sleeps (about 21 s) with `time-machine`, which then

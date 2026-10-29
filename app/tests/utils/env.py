@@ -10,7 +10,10 @@
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
+import atexit
 import os
+import shutil
+import tempfile
 from os import environ
 from pathlib import Path
 
@@ -18,10 +21,17 @@ from app.tests.utils.fixtures import get_fixture_path
 
 _PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.resolve()
 _TESTS_FOLDER = _PROJECT_ROOT / "app" / "tests"
-_PATH_TO_TEST_SQL_DB = _PROJECT_ROOT / "test_booking.db"
+# set when pytest-xdist runs the tests, e.g. gw3; each worker has its own files and Redis database
+_XDIST_WORKER = os.getenv("PYTEST_XDIST_WORKER", "gw0")
+
+# made on import, as the settings read it before any fixture runs; the suite runs in it.
+# Removed at exit, not by a fixture, as xdist's controller imports this but runs no fixture
+TEST_ROOT = Path(tempfile.mkdtemp(prefix=f"bcc-tests-{_XDIST_WORKER}-"))
+atexit.register(shutil.rmtree, TEST_ROOT, ignore_errors=True)
+_PATH_TO_TEST_SQL_DB = TEST_ROOT / "booking.db"
 
 TEST_DEFAULT_PREFIX = "system_test"
-TEST_STORAGE_ROOT = "/tmp/jobs"
+TEST_STORAGE_ROOT = f"{TEST_ROOT / 'storage'}"
 
 TEST_DEFAULT_PREFIX_SIM_1Q = "qiskit_pulse_1q"
 TEST_DEFAULT_PREFIX_SIM_2Q = "qiskit_pulse_2q"
@@ -76,9 +86,9 @@ TEST_MSS_NONCE_TTL = 200
 TEST_BCC_NONCE_TTL = 200
 TEST_CORS_ORIGINS = "testclient,localhost,127.0.0.1"
 
-REDIS_PORT = os.getenv("REDIS_PORT", "6379")
+REDIS_PORT = os.getenv("REDIS_PORT", "6378")
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_DB = os.getenv("REDIS_DB", "2")
+REDIS_DB = f"{int(os.getenv('REDIS_DB', '2')) + int(_XDIST_WORKER.removeprefix('gw'))}"
 
 TEST_RQ_REDIS_URL = os.getenv(
     "RQ_REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
