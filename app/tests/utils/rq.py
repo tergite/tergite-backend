@@ -12,11 +12,7 @@
 
 """Utilities for testing rq workers and queues"""
 from datetime import datetime, timedelta, timezone
-from typing import (
-    List,
-    Optional,
-    Union,
-)
+from typing import Any, Generator, List, Optional, Union
 
 import pytest
 import time_machine
@@ -27,6 +23,7 @@ from rq import SimpleWorker, Worker
 from rq.timeouts import TimerDeathPenalty
 
 from app.api.worker import PreloadedRqWorker
+from app.services.scheduler import close_device_resources
 from app.services.scheduler.queues import QueuePool
 from app.tests.utils.env import (
     TEST_DEFAULT_PREFIX,
@@ -78,21 +75,31 @@ def get_rq_worker(queues: List[Queue]) -> Union[Worker, SimpleWorker]:
 
 
 @pytest.fixture
-def rq_worker(redis_client) -> Union[Worker, SimpleWorker]:
+def rq_worker(redis_client) -> Generator[PreloadedSimpleWorker, Any, None]:
     """The worker of the quantify device's queues"""
-    return _get_device_worker(redis_client, prefix=TEST_DEFAULT_PREFIX)
+    worker = _get_device_worker(redis_client, prefix=TEST_DEFAULT_PREFIX)
+    yield worker
+    _close_worker_resources(worker)
 
 
 @pytest.fixture
-def rq_worker_for_simulator_1q(redis_client) -> Union[Worker, SimpleWorker]:
+def rq_worker_for_simulator_1q(
+    redis_client,
+) -> Generator[PreloadedSimpleWorker, Any, None]:
     """The worker of the 1-qubit simulator's queues"""
-    return _get_device_worker(redis_client, prefix=TEST_DEFAULT_PREFIX_SIM_1Q)
+    worker = _get_device_worker(redis_client, prefix=TEST_DEFAULT_PREFIX_SIM_1Q)
+    yield worker
+    _close_worker_resources(worker)
 
 
 @pytest.fixture
-def rq_worker_for_simulator_2q(redis_client) -> Union[Worker, SimpleWorker]:
+def rq_worker_for_simulator_2q(
+    redis_client,
+) -> Generator[PreloadedSimpleWorker, Any, None]:
     """The worker of the 2-qubit simulator's queues"""
-    return _get_device_worker(redis_client, prefix=TEST_DEFAULT_PREFIX_SIM_2Q)
+    worker = _get_device_worker(redis_client, prefix=TEST_DEFAULT_PREFIX_SIM_2Q)
+    yield worker
+    _close_worker_resources(worker)
 
 
 def get_queue_by_name(worker: SimpleWorker, name: str) -> RqQueue:
@@ -196,3 +203,8 @@ def _get_device_worker(redis_client: Redis, prefix: str) -> Union[Worker, Simple
         recalibration_timeout=TEST_MAX_RECALIBRATION_QUEUE_TIME,
     )
     return get_rq_pool_worker(queue_pool)
+
+
+def _close_worker_resources(worker: PreloadedSimpleWorker) -> None:
+    for device_resources in worker.device_resources.values():
+        close_device_resources(device_resources)

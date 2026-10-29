@@ -30,13 +30,13 @@ from ..services.booking import (
 )
 from ..services.devices import is_offline, save_all_device_params
 from ..services.external.mss import (
-    disconnect_mss_client,
     verify_mss_signature,
 )
 from ..services.scheduler import (
     DeviceResources,
     JobFile,
     clear_quantum_executor,
+    close_device_resources,
     get_job,
     init_recalibration,
     stop_recalibration,
@@ -96,10 +96,11 @@ async def lifespan(app: FastAPI):
     for device in settings.get_device_names():
         with settings.using_device(device):
             stop_recalibration(app.state.device_resources[device], ignore_errors=True)
+    for device_resources in app.state.device_resources.values():
+        close_device_resources(device_resources)
     app.state.device_resources.clear()
     app.state.request_logs_stores.clear()
     clear_quantum_executor(ignore_errors=True)
-    disconnect_mss_client(ignore_errors=True)
     clear_redis_connections(ignore_errors=True)
     clear_sql_engine_cache()
 

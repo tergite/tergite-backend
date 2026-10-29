@@ -16,56 +16,17 @@ import math
 import time
 from contextlib import suppress
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Any, Optional, Self, cast
 
 from websockets import ConnectionClosed, WebSocketException
 from websockets.sync.client import ClientConnection, connect
 
-import settings
+from app.utils.config import DeviceSettings
 from app.utils.exc import MssRejectedError, MssTimeoutError
 from app.utils.logging import err_logger
 
 from .auth import create_headers
 from .dtos import DeviceEvent, EventResponse
-
-_MSS_CLIENTS: dict[str, "MssClient"] = {}
-
-
-def get_mss_client() -> "MssClient":
-    """Returns the current device's MssClient."""
-    mss_client = _MSS_CLIENTS.get(settings.DEFAULT_PREFIX)
-    if mss_client is None:
-        mss_client = MssClient(
-            uri=str(settings.MSS_DEVICE_EVENTS_ENDPOINT),
-            device=settings.DEFAULT_PREFIX,
-            private_key_file=settings.PRIVATE_KEY_FILE,
-            key_password=settings.PRIVATE_KEY_PASSWORD,
-            open_timeout=settings.MSS_CONNECTION_TIMEOUT,
-            response_timeout=settings.MSS_RESPONSE_TIMEOUT,
-            max_reconnection_delay=settings.MSS_MAX_RECONNECTION_DELAY,
-            max_reconnections=settings.MSS_CONNECTION_MAX_ATTEMPTS,
-        )
-        _MSS_CLIENTS[settings.DEFAULT_PREFIX] = mss_client
-
-    return mss_client
-
-
-def disconnect_mss_client(ignore_errors: bool = False):
-    """Disconnects the MSSClients of all devices, resetting their connections
-
-    Args:
-        ignore_errors: Whether to ignore errors when disconnecting. Defaults to False.
-    """
-    for mss_client in _MSS_CLIENTS.values():
-        try:
-            mss_client.close()
-        except Exception as exp:
-            if ignore_errors:
-                err_logger.warning(f"error closing MSSClient: {exp}")
-            else:
-                raise exp
-
-    _MSS_CLIENTS.clear()
 
 
 class MssClient:
@@ -106,6 +67,20 @@ class MssClient:
         self._client: Optional[ClientConnection] = None
         self._max_reconnections = (
             math.inf if max_reconnections is None else max_reconnections
+        )
+
+    @classmethod
+    def from_settings(cls, device_settings: DeviceSettings) -> Self:
+        """Constructs the client of the device of the given settings"""
+        return cls(
+            uri=f"{device_settings.mss_device_events_endpoint}",
+            device=device_settings.default_prefix,
+            private_key_file=device_settings.private_key_file,
+            key_password=device_settings.private_key_password,
+            open_timeout=device_settings.mss_connection_timeout,
+            response_timeout=device_settings.mss_response_timeout,
+            max_reconnection_delay=device_settings.mss_max_reconnection_delay,
+            max_reconnections=device_settings.mss_connection_max_attempts,
         )
 
     def __connect(self, **kwargs: Any) -> ClientConnection:

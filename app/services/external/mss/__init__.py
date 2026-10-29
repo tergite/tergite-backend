@@ -17,7 +17,7 @@ from .auth import (
     verify_mss_signature,
 )
 from .dtos import DeviceEvent, DeviceEventName, DeviceSwitchData, EventResponse
-from .service import MssClient, disconnect_mss_client, get_mss_client
+from .service import MssClient
 
 __all__ = [
     "DeviceEvent",
@@ -25,9 +25,7 @@ __all__ = [
     "DeviceSwitchData",
     "EventResponse",
     "MssClient",
-    "disconnect_mss_client",
     "encrypt_mss_jwt_token",
-    "get_mss_client",
     "get_mss_public_key",
     "get_private_key",
     "verify_mss_signature",

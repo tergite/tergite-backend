@@ -20,15 +20,11 @@ from sqlalchemy import Engine
 
 from ...libs.queues.dtos import ExecutorOptions, Job
 from ...utils.config import DeviceSettings
+from ...utils.logging import err_logger
 from ...utils.redis import get_redis_connection
 from ...utils.redis_store import Collection
 from ..booking import get_bookings_sql_engine
-from ..external.mss import (
-    MssClient,
-    get_mss_client,
-    get_mss_public_key,
-    get_private_key,
-)
+from ..external.mss import MssClient, get_mss_public_key, get_private_key
 from .queues import QueuePool
 from .store import get_jobs_store
 from .utils import get_executor_options
@@ -62,7 +58,7 @@ class DeviceResources:
             bookings_db=get_bookings_sql_engine(device_settings.booking_db_url),
             jobs_store=get_jobs_store(redis, device_settings),
             queues=QueuePool.from_settings(device_settings, redis),
-            mss_client=get_mss_client(),
+            mss_client=MssClient.from_settings(device_settings),
             executor_options=get_executor_options(),
             mss_public_key=get_mss_public_key(device_settings.mss_public_key_path),
             private_key=get_private_key(
@@ -72,3 +68,11 @@ class DeviceResources:
                 device_settings.executor_data_dir / ".quantum-executor.lock"
             ),
         )
+
+
+def close_device_resources(device: DeviceResources) -> None:
+    """Closes the connections the device's resources hold open, logging any that fails"""
+    try:
+        device.mss_client.close()
+    except Exception as exp:
+        err_logger.warning(f"error closing the MSS client: {exp}")

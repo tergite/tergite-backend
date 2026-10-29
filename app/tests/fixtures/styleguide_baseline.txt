@@ -33,7 +33,6 @@ boolean: app/libs/quantum_executor/quantify/experiment.py::_ChannelPlan.had_any_
 boolean: app/libs/quantum_executor/quantify/experiment.py::_State.has_emitted
 boolean: app/libs/quantum_executor/quantify/experiment.py::_construct_schedule(include_dynamic_frequency_ops)
 boolean: app/libs/queues/dtos.py::ExecutorOptions.are_clusters_resettable
-boolean: app/services/external/mss/service.py::disconnect_mss_client(ignore_errors)
 boolean: app/services/scheduler/service.py::_cancel_job_in_queues(ignore_errors)
 boolean: app/services/scheduler/service.py::stop_recalibration(ignore_errors)
 boolean: app/services/scheduler/utils.py::_init_executor(reset)
@@ -66,7 +65,6 @@ import-layering: app/services/booking/dtos.py::import settings
 import-layering: app/services/booking/service.py::import settings
 import-layering: app/services/booking/store.py::import settings
 import-layering: app/services/external/mss/auth.py::import settings
-import-layering: app/services/external/mss/service.py::import settings
 import-layering: app/services/scheduler/utils.py::import settings
 import-layering: app/utils/compat.py::import settings
 import-layering: app/utils/redis.py::import settings
@@ -293,7 +291,6 @@ type-hints: app/services/booking/service.py::_validate_no_overlap
 type-hints: app/services/booking/service.py::delete_bookings
 type-hints: app/services/booking/service.py::delete_users
 type-hints: app/services/external/mss/service.py::MssClient.send
-type-hints: app/services/external/mss/service.py::disconnect_mss_client
 type-hints: app/services/scheduler/dtos.py::JobFileParams.parse_qobj
 type-hints: app/services/scheduler/dtos.py::JobFileParams.serialize_qobj
 type-hints: app/services/scheduler/queues.py::QueuePool.empty
