@@ -227,9 +227,6 @@ class QuantumJob:
         if isinstance(self.qobj, PulseQobj) and self.qobj_data is None:
             self.qobj_data = QobjData.from_qobj(self.qobj)
 
-        if isinstance(self.qobj, PulseQobj) and self.metadata is None:
-            self.metadata = QobjMetadata.from_qobj(self.qobj)
-
         if isinstance(self.qobj_data, QobjData) and self.qobj is None:
             self.qobj = self.qobj_data.to_qobj()
 

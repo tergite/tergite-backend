@@ -11,11 +11,8 @@
 # that they have been altered from the originals.
 
 import json
-import logging
-import os
 import re
 from os import PathLike
-from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 import qblox_instruments
@@ -26,7 +23,6 @@ from pydantic import (
     Field,
     RootModel,
     field_validator,
-    model_validator,
 )
 from quantify_scheduler.backends.qblox_backend import QbloxHardwareCompilationConfig
 
@@ -49,11 +45,6 @@ _QBLOX_CLUSTER_TYPE_MAP: Dict[str, qblox_instruments.ClusterType] = {
 CLUSTER_NAME_REGEX = re.compile(r"^cluster[A-Za-z0-9]+$", re.IGNORECASE)
 SPI_RACK_INSTRUMENT_TYPE = "SPI-Rack"
 CLUSTER_INSTRUMENT_TYPE = "Cluster"
-
-
-class CouplerMapEntry(BaseModel):
-    spi_module_number: int
-    dac_name: str
 
 
 class ModuleConfig(BaseModel):
@@ -105,39 +96,6 @@ class InstrumentConfig(BaseModel):
                 f"Invalid top-level instrument_type '{v}'. Allowed types: {ALLOWED_TOP_LEVEL_INSTRUMENTS}"
             )
         return v
-
-
-class SpiRackConfig(InstrumentConfig):
-    """A subset of the configuration expected for each SPI-Rack device."""
-
-    port: Optional[str] = None
-    is_dummy: bool = False
-    coupler_spi_mapping: Dict[str, CouplerMapEntry] = {}
-    parking_current: float = 1e-4
-
-    class Config:
-        extra = "allow"
-
-    @model_validator(mode="after")
-    def check_port_availability(self):
-        """Check that port is reachable on the current machine
-
-        This depends on the current operating system
-
-        * On Windows we do no checks for
-        * On POSIX we only check that the device node exists under ``/dev``.
-
-        Raises:
-            ValueError: Couldn't find the serial port {port} of the SPI rack.
-        """
-        if self.is_dummy:
-            logging.warning(f"SPI port {self.port} configured for dummy device.")
-        elif self.port is None or (os.name != "nt" and not Path(self.port).exists()):
-            raise ValueError(
-                f"Couldn't find the serial port {self.port} of the SPI rack."
-            )
-
-        return self
 
 
 class QuantifyMetadata(RootModel[Dict[str, InstrumentConfig]]):

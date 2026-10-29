@@ -1,6 +1,6 @@
 # Code that broke a style rule when app/tests/test_styleguide.py was added (step 1.9).
 # This list only shrinks: delete a line when its violation is fixed, never add one.
-banner: app/libs/quantum_executor/quantify/executor.py:119
+banner: app/libs/quantum_executor/quantify/executor.py:116
 banner: settings.py:211
 banner: settings.py:213
 banner: settings.py:242
@@ -262,7 +262,6 @@ type-hints: app/libs/quantum_executor/quantify/instruction.py::AcquireInstructio
 type-hints: app/libs/quantum_executor/quantify/instruction.py::AcquireInstruction.list_from_qobj_inst
 type-hints: app/libs/quantum_executor/quantify/instruction.py::BaseInstruction.__init__
 type-hints: app/libs/quantum_executor/quantify/instruction.py::BaseInstruction.register
-type-hints: app/libs/quantum_executor/quantify/instruction.py::BaseInstruction.unique_name
 type-hints: app/libs/quantum_executor/quantify/instruction.py::DelayInstruction.__init__
 type-hints: app/libs/quantum_executor/quantify/instruction.py::DelayInstruction.list_from_qobj_inst
 type-hints: app/libs/quantum_executor/quantify/instruction.py::InitialObjectInstruction.__init__
@@ -278,7 +277,6 @@ type-hints: app/libs/quantum_executor/quantify/instruction.py::ShiftPhaseInstruc
 type-hints: app/libs/quantum_executor/quantify/instruction.py::WacqtCZPulseInstruction.__init__
 type-hints: app/libs/quantum_executor/quantify/utils/config.py::InstrumentConfig.validate_instrument_type
 type-hints: app/libs/quantum_executor/quantify/utils/config.py::ModuleConfig.validate_module_instrument_type
-type-hints: app/libs/quantum_executor/quantify/utils/config.py::SpiRackConfig.check_port_availability
 type-hints: app/libs/quantum_executor/utils/general.py::load_config
 type-hints: app/libs/quantum_executor/utils/general.py::search_nested
 type-hints: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.__init__
@@ -382,7 +380,6 @@ verb: app/libs/quantum_executor/base/quantum_job/__init__.py::xarray_to_list
 verb: app/libs/quantum_executor/qiskit/backends/two_qubit.py::QiskitPulse2Q.train_discriminator.basis_state_index
 verb: app/libs/quantum_executor/qiskit/executor.py::QiskitDynamicsExecutor.new_one_qubit
 verb: app/libs/quantum_executor/qiskit/executor.py::QiskitDynamicsExecutor.new_two_qubit
-verb: app/libs/quantum_executor/qiskit/experiment.py::_bytes_to_schedule
 verb: app/libs/quantum_executor/qiskit/functions.py::_delta_t_function
 verb: app/libs/quantum_executor/qiskit/functions.py::_flux
 verb: app/libs/quantum_executor/qiskit/functions.py::omega_c
@@ -390,7 +387,6 @@ verb: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.error
 verb: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.info
 verb: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.warning
 verb: app/libs/quantum_executor/utils/serialization.py::iqx_rld
-verb: app/libs/quantum_executor/utils/serialization.py::iqx_rle
 verb: app/libs/queues/dtos.py::Timestamps.with_updates
 verb: app/libs/queues/types.py::StaticQueue.next
 verb: app/libs/queues/utils.py::noop

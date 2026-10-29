@@ -11,7 +11,7 @@
 # that they have been altered from the originals.
 """Utils for running recalibration"""
 import enum
-from typing import Literal, Mapping, Optional, Unpack
+from typing import Optional, Unpack
 
 from tergite_tuner import NodeEnum, SessionContext, read_result, run_node
 from tergite_tuner.config.session import SessionOptions
@@ -19,28 +19,11 @@ from tergite_tuner.config.session import SessionOptions
 from app.libs.device_parameters import BackendConfig, DeviceCalibration
 from app.utils.datetime import utc_now_str
 
-_CalibrationResult = Mapping[
-    Literal["transmons", "couplers", "cs"],
-    Mapping[str, Mapping[str, str | float | int | bool | list | dict | None]],
-]
-
 
 class _RunMode(enum.Enum):
     ALL_QUBITS = 0
     ONE_QUBIT_AT_A_TIME = 1
 
-
-# the order of the nodes matters also
-_QUBITS_NODE_RUN_MAP = {
-    NodeEnum.RABI_OSCILLATIONS: _RunMode.ALL_QUBITS,
-    NodeEnum.RAMSEY_CORRECTION: _RunMode.ALL_QUBITS,
-    NodeEnum.RAMSEY_CORRECTION_12: _RunMode.ONE_QUBIT_AT_A_TIME,
-    NodeEnum.RO_FREQUENCY_TWO_STATE_OPTIMIZATION: _RunMode.ALL_QUBITS,
-    NodeEnum.RO_AMPLITUDE_TWO_STATE_OPTIMIZATION: _RunMode.ALL_QUBITS,
-    NodeEnum.RO_FREQUENCY_THREE_STATE_OPTIMIZATION: _RunMode.ALL_QUBITS,
-    NodeEnum.RO_AMPLITUDE_THREE_STATE_OPTIMIZATION: _RunMode.ALL_QUBITS,
-    NodeEnum.RANDOMIZED_BENCHMARKING: _RunMode.ALL_QUBITS,
-}
 
 _INITIAL_QUBITS_NODE_RUN_MAP = {
     NodeEnum.RESONATOR_SPECTROSCOPY: _RunMode.ALL_QUBITS,

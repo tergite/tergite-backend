@@ -177,35 +177,9 @@ def _collect_from_obj(acq_instrs: Sequence["PulseQobjInstruction"]) -> AcqParams
     return AcqParams(qubits=qubits, memory_slots=memory_slots)
 
 
-def _collect_from_dict(acq_instrs: Sequence[dict]) -> AcqParams:
-    """Gather qubits / memory_slots from a sequence of `dict` instructions."""
-    qubits: List[int] = []
-    memory_slots: List[int] = []
-
-    for inst in acq_instrs:
-        try:
-            q_list = inst["qubits"]
-            m_list = inst["memory_slot"]
-        except KeyError as err:
-            raise ValueError(f"Acquire instruction dict is missing {err!s}") from None
-
-        if len(q_list) != len(m_list):
-            raise ValueError(
-                "Acquire instruction dict has mismatched list lengths "
-                f"(qubits={len(q_list)}, memory_slot={len(m_list)})."
-            )
-
-        qubits.extend(q_list)
-        memory_slots.extend(m_list)
-
-    return AcqParams(qubits=qubits, memory_slots=memory_slots)
-
-
 def get_acquisition_parameters_from_experiment(
     exp_index: int,
     qobj: "PulseQobj",
-    *,
-    mode: Literal["object", "dict"] = "object",
 ) -> AcqParams:
     """
     Extract the qubit indices and memory-slot indices used by *acquire*
@@ -214,8 +188,6 @@ def get_acquisition_parameters_from_experiment(
     Args:
         exp_index: index of the experiment in `qobj.experiments`.
         qobj: a :class:`PulseQobj` containing the experiments.
-        mode: `object` (default) - parse the instructions objects directly;
-              `dict` - parse after converting the qobj to a dict.
     Returns:
         AcqParams: named tuple of `(qubits, memory_slots)`.
     Raises:
@@ -231,32 +203,12 @@ def get_acquisition_parameters_from_experiment(
             f"Experiment index {exp_index} out of range (0 ... {len(qobj.experiments) - 1})."
         )
 
-    # check mode and parse appropriately
-    if mode == "object":
-        acq_instrs = [
-            inst for inst in experiment_obj.instructions if inst.name == "acquire"
-        ]
-        if not acq_instrs:
-            raise ValueError(
-                f"Experiment {exp_index} contains no 'acquire' instruction."
-            )
-        return _collect_from_obj(acq_instrs)
-
-    elif mode == "dict":
-        qobj_dict = qobj.to_dict()
-        experiment_dict = qobj_dict["experiments"][exp_index]
-        acq_instrs = [
-            inst
-            for inst in experiment_dict["instructions"]
-            if inst["name"] == "acquire"
-        ]
-        if not acq_instrs:
-            raise ValueError(
-                f"Experiment {exp_index} contains no 'acquire' instruction."
-            )
-        return _collect_from_dict(acq_instrs)
-
-    raise ValueError(f"Unknown mode={mode!r}")
+    acq_instrs = [
+        inst for inst in experiment_obj.instructions if inst.name == "acquire"
+    ]
+    if not acq_instrs:
+        raise ValueError(f"Experiment {exp_index} contains no 'acquire' instruction.")
+    return _collect_from_obj(acq_instrs)
 
 
 def _parse_exp_index_from_name(expt_name: str, delimiter: str = "~") -> Optional[int]:

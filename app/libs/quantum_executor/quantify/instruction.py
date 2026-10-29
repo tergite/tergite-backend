@@ -128,17 +128,8 @@ class BaseInstruction:
         return "\n".join(repr_list)
 
     @property
-    def unique_name(self):
-        return f"{self.pretty_name}-{self.channel.clock}-{round(self.t0 * 1e9)}"
-
-    @property
     def pretty_name(self) -> str:
         return self.name
-
-    @property
-    def final_timestamp(self) -> float:
-        """The final timestamp after the duration of this instruction"""
-        return self.t0 + self.duration
 
     def get_phase_delta(self, channel: QuantifyChannel) -> float:
         """A representation of the change in phase this instruction introduces to its channel"""
@@ -169,7 +160,6 @@ class BaseInstruction:
         Returns:
             the Operation generated for this instruction
         """
-        pass
 
     @classmethod
     @abc.abstractmethod

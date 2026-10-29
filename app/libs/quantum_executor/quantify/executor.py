@@ -22,7 +22,6 @@ This module implements the quantify executor.
 import logging
 import os
 import time
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
@@ -53,8 +52,6 @@ from app.utils.compat import MeasurementMode, SPIMode
 
 from ...device_parameters import DeviceCalibration
 from .utils.calibration import recalibrate
-
-worker_logger = logging.getLogger(__name__)
 
 
 class QuantifyExecutor(QuantumExecutor):
@@ -131,14 +128,6 @@ class QuantifyExecutor(QuantumExecutor):
         )
         self._experiment_delay = self.quantify_metadata.experiment_delay
 
-        self._couplers = sorted(backend_config.device_config.coupling_dict.keys())
-
-        # Build maps between coupler IDs and Quantify/port names from the hardware_map.
-        # Assumes generate_hardware_map has entries for 'uN' like: hardware_map['u1'] -> (clock, port).
-        self._coupler_to_port = {
-            u: self.hardware_map[u][1] for u in self._couplers if u in self.hardware_map
-        }
-        self._port_to_coupler = {port: u for u, port in self._coupler_to_port.items()}
         self.coordinator_name = f"{self.device_name}_executor"
         # keyed by the metadata the clusters come from, so an executor of other hardware with
         # the same device name never reuses them
@@ -285,26 +274,19 @@ class QuantifyExecutor(QuantumExecutor):
 
         # Stop any running sequences.
         self._coordinator.stop()
-        t1 = datetime.now()
 
         compiled_schedule = self._compiler.compile(
             schedule=experiment.schedule,
             config=self._compilation_config,
         )
-        t2 = datetime.now()
-        print(t2 - t1, "DURATION OF COMPILING")
 
         logger.log_Q1ASM_programs(compiled_schedule)
         logger.log_schedule(compiled_schedule)
 
         self._coordinator.prepare(compiled_schedule)
-        t3 = datetime.now()
         self._coordinator.start()
         self._coordinator.wait_done(timeout_sec=10)
         results = self._coordinator.retrieve_acquisition()
-        print(f"{results=}")
-        t4 = datetime.now()
-        print(t4 - t3, "DURATION OF MEASURING")
 
         return QExperimentResult.from_xarray(results)
 

@@ -12,13 +12,11 @@
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
-import io
 import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Type
 
-import qiskit.qpy as qpy
 from qiskit.pulse.schedule import Schedule
 
 from app.libs.qiskit.qobj import (
@@ -132,31 +130,3 @@ def _to_native_instruction(
         raise NotImplementedError(
             f"No mapping for PulseQobjInstruction {qobj_inst}.\n {exp}"
         )
-
-
-def _schedule_to_bytes(schedule: Schedule) -> bytes:
-    """Converts the schedule into a list of bytes that can be pickled
-
-    Args:
-        schedule: the schedule to serialize
-
-    Returns:
-        bytes got from serializing the schedule
-    """
-    buf = io.BytesIO()
-    qpy.dump([schedule], buf)
-    return buf.getvalue()
-
-
-def _bytes_to_schedule(value: bytes) -> Schedule:
-    """Converts the bytes into a schedule
-
-    Args:
-        value: the bytes to parse
-
-    Returns:
-        the schedule got after serialization
-    """
-    buf = io.BytesIO(value)
-    [schedule] = qpy.load(buf)
-    return schedule

@@ -12,18 +12,7 @@
 #
 # Refactored by Martin Ahindura (2024)
 
-from itertools import groupby
 from typing import Any, List, Tuple, Union
-
-
-def iqx_rle(seq: List[Any]) -> List[Union[Tuple[Any], Tuple[Any, int]]]:
-    """
-    Run-length encodes a sequence.
-    Constant subsequences are stored as a single term and count, rather than as the original subsequence.
-    Counts equal to 1 are omitted.
-    """
-    seq = [(k, sum(1 for _ in g)) for k, g in groupby(seq)]
-    return [(c, rep) if rep > 1 else (c,) for c, rep in seq]
 
 
 def iqx_rld(enc_seq: List[Union[Tuple[Any], Tuple[Any, int]]]) -> List[Any]:
