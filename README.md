@@ -38,7 +38,7 @@ cd tergite-backend
 
 - Install dependencies. Note that we can either use the simulators (`qiskit`) or connect to Qblox clusters (`quantify`).
   To install for simulators, use `--extra qiskit` and to install for Qblox, use `--extra quantify`.  
-  **Take note that you can use both at the same time because they conflict with each other**.
+  **Take note that you cannot use both at the same time because they conflict with each other**.
 
 ```shell
 uv sync --dev --extra quantify
@@ -93,8 +93,8 @@ cp quantify-metadata.example.yml quantify-metadata.yml
 _Note: If you want to just run a dummy cluster, you can copy the one in the test fixtures_
 
 ```shell
-cp tests/fixtures/generic-quantify-config.yml quantify-config.json
-cp tests/fixtures/generic-quantify-config.json quantify-metadata.yml
+cp tests/fixtures/generic-quantify-config.json quantify-config.json
+cp tests/fixtures/generic-quantify-config.yml quantify-metadata.yml
 ```
 
 - Copy the backend example config file `backend_config.example.toml` into the `backend_config.toml` file and update the variables there in.
