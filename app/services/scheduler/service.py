@@ -149,28 +149,12 @@ def submit_job_file(
     Returns:
         the submitted job
     """
-    upload_folder = device.settings.job_upload_pool
-    backend_name = device.executor_options.backend_name
-
     job_id = credentials.job_id
-    user_id = credentials.user_id
     if device.jobs_store.is_stored(job_id):
         raise ConflictError(f"job_id {job_id} already exists")
 
-    # save job file
-    new_file_path = upload_folder / job_id
-    _save_uploaded_file(upload_file, target=new_file_path)
-
-    # save job in database
-    calibration_info = get_device_calibration_info(device.bookings_db, backend_name)
-    job = Job(
-        job_id=job_id,
-        device=backend_name,
-        calibration_date=calibration_info.last_calibrated,
-        user_id=user_id,
-        stage=Stage.PRE_PROC_Q,
-    )
-
+    _save_uploaded_file(upload_file, target=device.settings.job_upload_pool / job_id)
+    job = _get_new_job(device, credentials)
     dispatcher.enqueue_job(device, job, is_booking_excluded=should_force_normal_queue)
     return job
 
@@ -324,31 +308,8 @@ def delete_user_profile(device: DeviceResources, user_id: str) -> None:
     if user is None:
         raise ItemNotFoundError(f"the user of id {user_id} was not found")
 
-    # cancel the user's jobs that have not finished, queued or running
-    job_store = device.jobs_store
-    user_jobs = job_store.find(user_id=user_id)
-    for job in user_jobs:
-        if job.status.is_terminal():
-            continue
-        job_store.update(
-            job.job_id,
-            {
-                "status": JobStatus.CANCELLED,
-                "cancellation_reason": "Cancelled on user deletion",
-                "updated_at": utc_now_str(),
-            },
-        )
-
-    # cancel bookings of the user
-    user_incomplete_bookings = get_many_bookings(
-        device.bookings_db, Booking.end_utc > get_utc_now(), Booking.user_id == user_id
-    )
-    booking_ids = [booking.id for booking in user_incomplete_bookings]
-
-    # delete the bookings in the database
-    delete_bookings(device.bookings_db, Booking.id.in_(booking_ids))
-
-    # delete the user
+    _cancel_pending_jobs(device, user_id)
+    _cancel_incomplete_bookings(device, user_id)
     delete_users(device.bookings_db, User.id == user_id)
     wake_workers(device, "heavy")
 
@@ -413,3 +374,43 @@ def _save_uploaded_file(file: UploadFile, target: Path) -> Path:
     file.file.close()
 
     return target
+
+
+def _get_new_job(device: DeviceResources, credentials: MSSTokenClaims) -> Job:
+    """Gets the job of the credentials, at the stage before preprocessing, on the device's
+    current calibration"""
+    backend_name = device.executor_options.backend_name
+    calibration_info = get_device_calibration_info(device.bookings_db, backend_name)
+    return Job(
+        job_id=credentials.job_id,
+        device=backend_name,
+        calibration_date=calibration_info.last_calibrated,
+        user_id=credentials.user_id,
+        stage=Stage.PRE_PROC_Q,
+    )
+
+
+def _cancel_pending_jobs(device: DeviceResources, user_id: str) -> None:
+    """Cancels the user's jobs that have not ended, queued or running"""
+    for job in device.jobs_store.find(user_id=user_id):
+        if job.status.is_terminal():
+            continue
+        device.jobs_store.update(
+            job.job_id,
+            {
+                "status": JobStatus.CANCELLED,
+                "cancellation_reason": "Cancelled on user deletion",
+                "updated_at": utc_now_str(),
+            },
+        )
+
+
+def _cancel_incomplete_bookings(device: DeviceResources, user_id: str) -> None:
+    """Deletes the user's bookings that have not ended"""
+    incomplete_bookings = get_many_bookings(
+        device.bookings_db, Booking.end_utc > get_utc_now(), Booking.user_id == user_id
+    )
+    delete_bookings(
+        device.bookings_db,
+        Booking.id.in_([booking.id for booking in incomplete_bookings]),
+    )
