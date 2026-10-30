@@ -27,7 +27,7 @@ from redis import Redis
 
 from ...libs.device_parameters import BackendConfig, Device, DeviceCalibration
 from ...utils.datetime import get_utc_now
-from ...utils.redis_store import Collection
+from ...utils.exc import ItemNotFoundError
 from ..external.mss import (
     DeviceEvent,
     DeviceEventName,
@@ -52,8 +52,10 @@ def get_device_info(
     Raises:
         ItemNotFoundError: '{backend_name}' not found
     """
-    devices_store = Collection(connection, schema=Device)
-    return devices_store.get_one(backend_name)
+    data = connection.get(_get_device_info_key(backend_name))
+    if data is None:
+        raise ItemNotFoundError(f"'{backend_name}' not found")
+    return Device.model_validate_json(data)
 
 
 def get_device_calibration_info(
@@ -70,10 +72,12 @@ def get_device_calibration_info(
         the DeviceCalibration info of the device
 
     Raises:
-        ItemNotFoundError: '{backend_config.general_config.name}' not found
+        ItemNotFoundError: '{backend_name}' not found
     """
-    calib_store = Collection(connection, schema=DeviceCalibration)
-    return calib_store.get_one(backend_name)
+    data = connection.get(_get_calibration_info_key(backend_name))
+    if data is None:
+        raise ItemNotFoundError(f"'{backend_name}' not found")
+    return DeviceCalibration.model_validate_json(data)
 
 
 def save_all_device_params(
@@ -92,8 +96,8 @@ def save_all_device_params(
     device_info = Device.from_config(backend_config)
     calib_info = DeviceCalibration.from_config(backend_config)
 
-    _save_device_info(redis, data=device_info)
-    _save_calibration_info(redis, data=calib_info)
+    redis.set(_get_device_info_key(device_info.name), device_info.model_dump_json())
+    redis.set(_get_calibration_info_key(calib_info.name), calib_info.model_dump_json())
 
     # update MSS of this backend's configuration
     _send_device_params_to_mss(
@@ -145,28 +149,6 @@ def _get_offline_flag_key(device_name: str) -> str:
     return f"{device_name}:offline"
 
 
-def _save_device_info(redis: Redis, data: Device) -> None:
-    """Saves the device information in redis
-
-    Args:
-        redis: connection to redis
-        data: the static device parameters of the backend
-    """
-    devices_db = Collection[Device](redis, schema=Device)
-    devices_db.insert(data)
-
-
-def _save_calibration_info(redis: Redis, data: DeviceCalibration) -> None:
-    """Saves the calibration information in redis
-
-    Args:
-        redis: connection to redis
-        data: the dynamic device parameters of the backend
-    """
-    calib_db = Collection[DeviceCalibration](redis, schema=DeviceCalibration)
-    calib_db.insert(data)
-
-
 def _send_device_params_to_mss(
     mss_client: MssClient,
     device_info: Device,
@@ -199,3 +181,13 @@ def _send_device_params_to_mss(
     mss_client.send_event(
         recalibration_event, error_prefix="error sending recalibration info: "
     )
+
+
+def _get_device_info_key(backend_name: str) -> str:
+    """Gets the key of the backend's device info, as JSON"""
+    return f"{backend_name}:device-info"
+
+
+def _get_calibration_info_key(backend_name: str) -> str:
+    """Gets the key of the backend's calibration info, as JSON"""
+    return f"{backend_name}:calibration-info"
