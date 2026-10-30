@@ -155,14 +155,14 @@ def mark_preprocessed(device: DeviceResources, job: Job) -> str:
 
 def mark_executed(device: DeviceResources, job_id: str, results_file: str) -> Job:
     """Leaves the executed job for a light worker to postprocess its results file"""
-    job = update_job_stage(device.jobs_store, job_id=job_id, stage=Stage.PST_PROC_Q)
+    # before the stage, which lets a light worker claim the job and read its results file
     with Session(device.bookings_db) as session:
         row = session.get(JobRow, (device.settings.default_prefix, job_id))
         row.executed_at = get_utc_now()
         row.results_file = results_file
         session.add(row)
         session.commit()
-    return job
+    return update_job_stage(device.jobs_store, job_id=job_id, stage=Stage.PST_PROC_Q)
 
 
 def run_next_preprocessing(device: DeviceResources) -> bool:
