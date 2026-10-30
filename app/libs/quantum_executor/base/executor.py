@@ -164,7 +164,7 @@ def preprocess_qobj(
             qobj_tag=qobj_tag,
         )
 
-        results_file_path = _get_preprocessed_expt_file(job_id, folder=results_folder)
+        results_file_path = _get_expt_metadata_file(job_id, folder=results_folder)
         with open(results_file_path, "wb") as file:
             pickle.dump(expt_metadata.to_dict(), file)
 
@@ -187,7 +187,7 @@ def run_job(executor: QuantumExecutor, job_id: str, inputs_folder: Path) -> str:
     Returns:
         the path to the results obtained after measurement
     """
-    preprocessed_file = _get_preprocessed_expt_file(job_id, folder=inputs_folder)
+    preprocessed_file = _get_expt_metadata_file(job_id, folder=inputs_folder)
     logger: Optional[ExperimentLogger] = None
     try:
         expt_metadata = _load_expt_metadata(preprocessed_file)
@@ -257,17 +257,10 @@ class NativeExptMetadata:
         return cls(**kwargs)
 
 
-def _get_preprocessed_expt_file(job_id: str, folder: Path) -> Path:
-    """Gets the path to the file containing the preprocessed experiments
-
-    Args:
-        job_id: the unique identifier of the job
-        folder: the folder containing the preprocessed experiment files
-
-    Returns:
-        the path to the file
-    """
-    return folder / f"{job_id}-expt-metadata.json"
+def _get_expt_metadata_file(job_id: str, folder: Path) -> Path:
+    """Gets the path of the file in the folder that the job's experiments' metadata is
+    pickled to"""
+    return folder / f"{job_id}-expt-metadata.pickle"
 
 
 def _load_expt_metadata(file: Path) -> "NativeExptMetadata":
