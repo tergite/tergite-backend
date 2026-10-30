@@ -546,6 +546,25 @@ rules, and code a change touches is brought in line with them.
 13. **Every request, job and store is scoped to its device** (§8). One process serves several
     devices, so whatever a device owns is keyed or held per device.
 
+### Verifying a change
+
+**Every commit** runs `black` and `isort` with no flags and `pyflakes` over the source folders,
+then the tests the change can affect, serially, logged as [below](#slow-commands). A change
+that reaches executor code (`libs/quantum_executor/`, `services/scheduler/tasks.py`,
+`_init_executor`) runs them in both environments, `.venv` and `.venv-qiskit` (§13), as each
+extra skips the other's tests. A commit that fixes a style violation deletes its line from
+the styleguide baseline; none adds one.
+
+**Before a merge request**:
+
+- the full suite in both environments; the qiskit one needs no Redis;
+- tergite-frontend's `dev/e2e_native_test.sh` against this checkout (`BACKEND_PATH`);
+- the performance check, recorded with `dev/perf/record.sh` and compared with
+  `dev/perf/baselines`, which are never re-recorded for an older commit. Its numbers are this
+  machine's, so on a busy machine record the base commit too, in a worktree, back to back
+  with the change, and compare the two;
+- the change tried on a running BCC: a simulator device with MSS.
+
 ### Slow commands
 
 Redirect test suites, builds and e2e runs to one temp file per kind of run, then grep and tail
