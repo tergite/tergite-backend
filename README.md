@@ -125,7 +125,8 @@ cp calibration.seed.example.toml calibration.seed.toml
 
 ## Documentation
 
-Find more documentation in the [docs folder](./docs)
+Find how the backend is built, and the conventions to follow when changing it, in [DESIGN.md](./DESIGN.md),
+and more documentation in the [docs folder](./docs)
 
 ## Contribution Guidelines
 
