@@ -199,7 +199,7 @@ class QuantifyExecutor(QuantumExecutor):
         self._coordinator.wait_done(timeout_sec=10)
         results = self._coordinator.retrieve_acquisition()
 
-        return QExperimentResult.from_xarray(results)
+        return results
 
     def _get_coordinator(self, should_reset_clusters: bool) -> InstrumentCoordinator:
         """Gets the coordinator of the executor's clusters, cached across executors of the
