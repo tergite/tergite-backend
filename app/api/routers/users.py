@@ -109,7 +109,6 @@ async def get_mss_token(
 
     user = booking.get_or_create_user(device.bookings_db, user_id)
 
-    # create encrypted token
     token = booking.create_mss_jwt_token(
         user,
         job_id=job_id,
