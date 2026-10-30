@@ -14,11 +14,11 @@
 import numpy as np
 from qiskit.pulse import Acquire
 
-import app.libs.quantum_executor.qiskit.executor as qiskit_executor
-from app.libs.quantum_executor.base.experiment import NativeExperiment
-from app.libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
-from app.libs.quantum_executor.base.quantum_job.typing import QExperimentResult
-from app.libs.quantum_executor.utils.logger import ExperimentLogger
+import libs.quantum_executor.qiskit.executor as qiskit_executor
+from libs.quantum_executor.base.experiment import NativeExperiment
+from libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
+from libs.quantum_executor.base.quantum_job.typing import QExperimentResult
+from libs.quantum_executor.utils.logger import ExperimentLogger
 
 
 class StubExecutor(qiskit_executor.QiskitDynamicsExecutor):

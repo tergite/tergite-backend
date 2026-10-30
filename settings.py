@@ -23,7 +23,7 @@ import os
 from pathlib import Path
 from typing import List, Optional
 
-from app.utils.config import DeviceSettings, read_device_settings
+from utils.config import DeviceSettings, read_device_settings
 
 # found, not imported, as importing it takes seconds and hundreds of MB
 HAS_QISKIT_DYNAMICS = importlib.util.find_spec("qiskit_dynamics") is not None

@@ -19,12 +19,12 @@ from sqlalchemy import Engine
 from sqlmodel import Session
 
 import settings
-from app.libs.queues.dtos import Job, JobStatus, Stage
-from app.services.booking import Booking, User
-from app.services.scheduler import JobsStore
-from app.utils.datetime import get_utc_now, utc_now_str
-from app.utils.sql_db import get_sql_engine, migrate_sql_db
-from app.utils.strings import uuid_str
+from libs.queues.dtos import Job, JobStatus, Stage
+from services.booking import Booking, User
+from services.scheduler import JobsStore
+from utils.datetime import get_utc_now, utc_now_str
+from utils.sql_db import get_sql_engine, migrate_sql_db
+from utils.strings import uuid_str
 
 JOB_COUNT = 500
 BOOKING_COUNT = 200

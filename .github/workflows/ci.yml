@@ -43,10 +43,10 @@ jobs:
       - name: Run tests
         run: |
           uv sync --dev --extra ${{ matrix.deps-group }}
-          uv run black --check app
-          uv run isort --check-only app
-          uv run pyflakes app main.py settings.py
-          uv run pytest app;
+          uv run black --check api libs services utils tests dev migrations main.py settings.py
+          uv run isort --check-only api libs services utils tests dev migrations main.py settings.py
+          uv run pyflakes api libs services utils tests dev migrations main.py settings.py
+          uv run pytest tests;
         env:
           REDIS_HOST: localhost
           REDIS_PORT: 6379

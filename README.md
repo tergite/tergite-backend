@@ -93,8 +93,8 @@ cp quantify-metadata.example.yml quantify-metadata.yml
 _Note: If you want to just run a dummy cluster, you can copy the one in the test fixtures_
 
 ```shell
-cp app/tests/fixtures/generic-quantify-config.yml quantify-config.json
-cp app/tests/fixtures/generic-quantify-config.json quantify-metadata.yml
+cp tests/fixtures/generic-quantify-config.yml quantify-config.json
+cp tests/fixtures/generic-quantify-config.json quantify-metadata.yml
 ```
 
 - Copy the backend example config file `backend_config.example.toml` into the `backend_config.toml` file and update the variables there in.
@@ -106,7 +106,7 @@ cp backend_config.example.toml backend_config.toml
 _Note: If you are running the simulator, you can copy the one in the test fixtures_
 
 ```shell
-cp app/tests/fixtures/backend_config.simq1.toml backend_config.toml
+cp tests/fixtures/backend_config.simq1.toml backend_config.toml
 ```
 
 - Copy the example file for initial device calibrations `calibration.seed.example.toml` into the `calibration.seed.toml` file and update the variables accordingly. 

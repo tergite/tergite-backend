@@ -19,9 +19,9 @@ from datetime import datetime
 from typing import List, Optional
 
 import settings
-from app.libs.queues.dtos import Job, TimestampPair
-from app.services.scheduler import JobsStore
-from app.utils.sql_db import get_sql_engine
+from libs.queues.dtos import Job, TimestampPair
+from services.scheduler import JobsStore
+from utils.sql_db import get_sql_engine
 
 DRAIN_TIMEOUT_SECONDS = 300
 POLL_INTERVAL_SECONDS = 2

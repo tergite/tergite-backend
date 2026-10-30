@@ -23,10 +23,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 from sqlmodel import SQLModel
 
-from app.services.booking import Booking
-from app.services.devices.store import DeviceParametersRow, SwitchedOffDeviceRow
-from app.services.external.mss.nonces import MssNonceRow
-from app.services.scheduler.store import JobRow, RecalibrationRow
+from services.booking import Booking
+from services.devices.store import DeviceParametersRow, SwitchedOffDeviceRow
+from services.external.mss.nonces import MssNonceRow
+from services.scheduler.store import JobRow, RecalibrationRow
 
 # the models whose tables Alembic migrates, User's coming with Booking's module
 _MODELS = (

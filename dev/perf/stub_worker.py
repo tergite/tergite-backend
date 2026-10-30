@@ -17,7 +17,7 @@ The qiskit executor is swapped before main.py builds one, so BCC_ENV_FILE must n
 device's env file: settings is read on import, before main.py could set it.
 """
 
-import app.libs.quantum_executor.qiskit.executor as qiskit_executor
+import libs.quantum_executor.qiskit.executor as qiskit_executor
 import main
 from dev.perf.stub_executor import StubExecutor
 

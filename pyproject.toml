@@ -118,7 +118,7 @@ Changelog = "https://github.com/tergite/tergite-backend/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["app*"]                    
+include = ["api*", "libs*", "services*", "utils*"]
 exclude = ["tests*", "build*", "dist*", "*.egg-info", ".venv*", "venv*"]
 
 [tool.setuptools_scm]
@@ -131,7 +131,7 @@ skip_gitignore = true
 profile = "black"
 
 [tool.pytest.ini_options]
-testpaths = ["app/tests"]
+testpaths = ["tests"]
 log_level = "ERROR"
 timeout = 120
 timeout_method = "thread"
@@ -140,7 +140,7 @@ markers = [
 ]
 filterwarnings = [
   "ignore:This package has reached its end of life\\.:DeprecationWarning:quantify_scheduler\\..*",
-  "ignore:qiskit\\.providers\\.models is deprecated since Qiskit 1\\.2 and will be removed in Qiskit 2\\.0\\.:DeprecationWarning:app\\.libs\\.quantum_executor\\.qiskit\\.backends\\..*",
+  "ignore:qiskit\\.providers\\.models is deprecated since Qiskit 1\\.2 and will be removed in Qiskit 2\\.0\\.:DeprecationWarning:libs\\.quantum_executor\\.qiskit\\.backends\\..*",
   # Qiskit Qobj / BackendV1 workflow deprecation
   "ignore:.*The `Qobj` class and related functionality are part of the deprecated `BackendV1` workflow.*:DeprecationWarning",
   # NetworkX edges= kwarg change (message starts with \n so .*edges=.* won't match)

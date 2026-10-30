@@ -135,11 +135,11 @@ config.ini
 
 # hdf5 binary files
 *.hdf5
-!app/tests/fixtures/*.hdf5
+!tests/fixtures/*.hdf5
 
 # ssh keys
 *.pem
-!app/tests/fixtures/*.pem
+!tests/fixtures/*.pem
 
 Labber/
 
@@ -149,7 +149,7 @@ tmp/
 # quantum_executor
 
 # test data
-app/tests/data/
+tests/data/
 data/
 pytest-data/
 

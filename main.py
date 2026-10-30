@@ -28,7 +28,7 @@
 # nuitka-project: --include-data-files={MAIN_DIRECTORY}/migrations/env.py=migrations/env.py
 # nuitka-project: --include-data-files={MAIN_DIRECTORY}/migrations/versions/*.py=migrations/versions/
 # uvicorn imports the app by name, which Nuitka cannot follow
-# nuitka-project: --include-module=app.api
+# nuitka-project: --include-module=api
 
 # nuitka-project-if: os.getenv("EXECUTOR") == "qiskit":
 #   nuitka-project: --output-filename=bcc.simulator
@@ -259,7 +259,7 @@ def _serve(
     _load_devices(env_files)
     # by import string, as uvicorn reloads and runs workers only so
     uvicorn.run(
-        "app.api:app",
+        "api:app",
         host=host,
         reload=should_reload,
         port=port,
@@ -272,9 +272,9 @@ def _serve(
 def _run_worker(kind: str, env_files: list[str], device: str | None = None) -> None:
     _load_devices(env_files)
     import settings
-    from app.api.worker import preload_worker_globals
-    from app.services.scheduler.dispatcher import Dispatcher
-    from app.utils.logging import set_up_logging
+    from api.worker import preload_worker_globals
+    from services.scheduler.dispatcher import Dispatcher
+    from utils.logging import set_up_logging
 
     is_heavy = kind == "heavy"
     devices = (

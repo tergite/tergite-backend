@@ -41,11 +41,11 @@ tests:
     - uv sync --dev --extra $DEPS_GROUP
     - source .venv/bin/activate
     # Check formatting
-    - black --check app
-    - isort --check-only app
-    - pyflakes app main.py settings.py
+    - black --check api libs services utils tests dev migrations main.py settings.py
+    - isort --check-only api libs services utils tests dev migrations main.py settings.py
+    - pyflakes api libs services utils tests dev migrations main.py settings.py
     # Run unit tests
-    - pytest app
+    - pytest tests
   cache:
     key: "uv-cache-$DEPS_GROUP-$CI_COMMIT_REF_SLUG"
     paths:

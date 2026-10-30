@@ -123,7 +123,7 @@ redis-server --port 6378
 - Lint with black
 
 ```shell
-black --check app
+black --check api libs services utils tests dev migrations main.py settings.py
 ```
 
 - Optionally enable pre-commit hook to run black 
@@ -135,7 +135,7 @@ pre-commit install
 - Run the tests by running the command below at the root of the project. 
 
 ```shell
-pytest -n auto --dist=loadscope app
+pytest -n auto --dist=loadscope tests
 ```
 
 ## How to Install as a Service

@@ -28,14 +28,14 @@ cp quantify-config.example.yml quantify-config.yml
 
 You may wish to run some dummy QBLOX instruments if you don't have access to the physical QBLOX instruments
 
-We already have a preconfigured [`dummy-quantify-config.yml`](../app/tests/fixtures/dummy-quantify-config.yml) for this in the 
-`app/tests/fixtures` folder.   
+We already have a preconfigured [`dummy-quantify-config.yml`](../tests/fixtures/dummy-quantify-config.yml) for this in the 
+`tests/fixtures` folder.   
 
 Copy it to your root folder.
 
 ```shell
 # on the root of the project
-cp app/tests/fixtures/dummy-quantify-config.yml quantify-config.yml
+cp tests/fixtures/dummy-quantify-config.yml quantify-config.yml
 ```
 
 _NOTE: You can find out more about the configuration properties in the quantify-config file by 
@@ -64,14 +64,14 @@ You may wish to run a single-qubit simulator.
 
 First update the `.env` file to contain `BCC_EXECUTOR_TYPE=qiskit_pulse_1q`.  
 
-We already have a preconfigured [`backend_config.simq1.toml`](../app/tests/fixtures/backend_config.simq1.toml) for this in the 
-`app/tests/fixtures` folder.   
+We already have a preconfigured [`backend_config.simq1.toml`](../tests/fixtures/backend_config.simq1.toml) for this in the 
+`tests/fixtures` folder.   
 
 Copy it to your root folder.
 
 ```shell
 # on the root of the project
-cp app/tests/fixtures/backend_config.simq1.toml backend_config.toml
+cp tests/fixtures/backend_config.simq1.toml backend_config.toml
 ```
 
 And run the application.
@@ -86,14 +86,14 @@ You may wish to run a two-qubit-gate simulator.
 
 First update the `.env` file to contain `BCC_EXECUTOR_TYPE=qiskit_pulse_2q`.  
 
-We already have a preconfigured [`backend_config.simq2.toml`](../app/tests/fixtures/backend_config.simq2.toml) for this in the 
-`app/tests/fixtures` folder.   
+We already have a preconfigured [`backend_config.simq2.toml`](../tests/fixtures/backend_config.simq2.toml) for this in the 
+`tests/fixtures` folder.   
 
 Copy it to your root folder.
 
 ```shell
 # on the root of the project
-cp app/tests/fixtures/backend_config.simq2.toml backend_config.toml
+cp tests/fixtures/backend_config.simq2.toml backend_config.toml
 ```
 
 And run the application.

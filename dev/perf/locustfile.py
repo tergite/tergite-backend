@@ -21,7 +21,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 from locust import HttpUser, between, task
 
-FIXTURES_PATH = Path(__file__).parents[2] / "app" / "tests" / "fixtures"
+FIXTURES_PATH = Path(__file__).parents[2] / "tests" / "fixtures"
 MSS_PRIVATE_KEY = serialization.load_pem_private_key(
     (FIXTURES_PATH / "mss_private_key.pem").read_bytes(), password=None
 )

@@ -38,7 +38,7 @@ ROOT_PATH="$(cd "$(dirname "$0")/../.." && pwd)"
 # the Python the backend is released with; uv would otherwise take the newest it can find or
 # download, whose wheels may not exist yet
 export UV_PYTHON="${UV_PYTHON:-3.13}"
-FIXTURES_PATH="$ROOT_PATH/app/tests/fixtures"
+FIXTURES_PATH="$ROOT_PATH/tests/fixtures"
 BCC_PORT=8102
 MSS_PORT=8006
 REDIS_PORT=6382
