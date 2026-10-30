@@ -25,8 +25,9 @@ book a time slot to accept only one user's jobs and waitlist other users' jobs.
 
 ## Dependencies
 
-- [Redis](https://redis.io/)
-- [SQLite](https://www.sqlite.org/), which holds the bookings and the jobs
+- [SQLite](https://www.sqlite.org/), or another database SQLAlchemy supports, which holds the bookings,
+  the jobs, the device parameters and switch, and MSS's nonces
+- [Redis](https://redis.io/), for the `quantify` executor only, whose tergite-tuner keeps its sessions there
 
 
 ## Operations (REST API)

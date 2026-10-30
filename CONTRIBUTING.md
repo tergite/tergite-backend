@@ -80,7 +80,8 @@ All signed CLAs are emails to us at <quantum-nextlabs@chalmers.se>.
 
 ## How to Test
 
-- Ensure you have a [redis server](https://redis.io/docs/install/install-redis/) installed on your local machine.
+- Ensure you have a [redis server](https://redis.io/docs/install/install-redis/) installed on your local machine,
+  which the `quantify` extra's tests need.
 - Ensure you have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed. 
  (_You could simply have python +3.13 installed instead._)
 
@@ -113,7 +114,7 @@ uv sync --dev --extra quantify
 source .venv/bin/activate
 ```
 
-- Start the redis server in another terminal on port 6378
+- For the `quantify` extra, start the redis server in another terminal on port 6378
 
 ```shell
 redis-server --port 6378
@@ -144,7 +145,7 @@ pytest -n auto --dist=loadscope app
   the qiskit simulators. They install side by side.
 
 - Install it. A deb asks for a first backend instance: its name, which is its `DEFAULT_PREFIX`,
-  executor, port, MSS URL and Redis.
+  executor, port, MSS URL and, for quantify, Redis.
 
 ```shell
 sudo apt install ./tergite-backend_<version>_amd64.deb
@@ -174,7 +175,8 @@ journalctl -u bcc@lab1 -f
 
 ## Build Executable with [Nuitka](https://nuitka.net/)
 
-- Ensure you have a [redis server](https://redis.io/docs/install/install-redis/) installed on your local machine.
+- Ensure you have a [redis server](https://redis.io/docs/install/install-redis/) installed on your local machine,
+  which the `quantify` extra's tests need.
 - Ensure you have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed. 
  (_You could simply have python +3.13 installed instead._)
 
@@ -207,7 +209,7 @@ uv sync --dev --extra quantify
 source .venv/bin/activate
 ```
 
-- Start the redis server in another terminal on port 6378
+- For the `quantify` extra, start the redis server in another terminal on port 6378
 
 ```shell
 redis-server --port 6378

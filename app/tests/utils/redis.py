@@ -10,20 +10,21 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 
-"""Fixtures of the Redis the tests run on"""
+"""The Redis that quantify's tergite-tuner keeps its sessions in, in the tests"""
 from typing import Any, Generator
 
 import pytest
-import redis
-from redis.client import Redis
 
 from app.tests.utils.env import TEST_RQ_REDIS_URL
 
-_redis_connection = redis.Redis.from_url(TEST_RQ_REDIS_URL)
-
 
 @pytest.fixture
-def redis_client() -> Generator[Redis, Any, None]:
-    """The test Redis database, emptied after the test"""
-    yield _redis_connection
-    _redis_connection.flushdb()
+def redis_client() -> Generator[Any, Any, None]:
+    """tergite-tuner's Redis, emptied after the test"""
+    # imported here, as only the quantify extra, by tergite-tuner, installs redis
+    import redis
+
+    connection = redis.Redis.from_url(TEST_RQ_REDIS_URL)
+    yield connection
+    connection.flushdb()
+    connection.close()

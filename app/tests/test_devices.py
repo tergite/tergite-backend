@@ -123,9 +123,7 @@ def test_env_file_keys_are_bcc_prefixed(tmp_path, monkeypatch):
         load_test_devices(tmp_path, monkeypatch, ["sim"], {"PORT": "8123"})
 
 
-def test_switching_a_device_off_leaves_the_others_on(
-    tmp_path, monkeypatch, mocker, redis_client
-):
+def test_switching_a_device_off_leaves_the_others_on(tmp_path, monkeypatch, mocker):
     """/<device>/switch/off takes that device offline, and only it"""
     from app.api import app
 
@@ -220,7 +218,7 @@ def test_each_device_has_its_own_executor_lock(tmp_path, monkeypatch):
     ],
 )
 def test_each_route_group_reaches_the_device_its_path_names(
-    tmp_path, monkeypatch, mocker, redis_client, path
+    tmp_path, monkeypatch, mocker, path
 ):
     from app.api import app
     from app.api.dependencies import (

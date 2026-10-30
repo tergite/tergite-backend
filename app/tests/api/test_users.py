@@ -179,9 +179,9 @@ def test_admin_view_users(client, pagination: "PaginationInfo"):
         assert actual_output == expected
 
 
-@pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_delete_profile(
-    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture, fake_clock
+    client, worker, job, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """DELETE '/me' should delete their own user profile"""
     with client as client:
@@ -233,9 +233,9 @@ def test_delete_profile(
         assert all([v.status == JobStatus.SUCCESSFUL for v in other_user_jobs])
 
 
-@pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_delete_profile_cancels_executing_jobs(
-    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture, fake_clock
+    client, worker, job, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     with client as client:
         users = create_many_users(client, USERS[:1])
@@ -253,9 +253,9 @@ def test_delete_profile_cancels_executing_jobs(
         assert get_stored_jobs()[0].status == JobStatus.CANCELLED
 
 
-@pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_delete_profile_during_booking_releases_the_waitlist(
-    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture, fake_clock
+    client, worker, job, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """Other users' jobs waiting on a booking run once its owner is deleted"""
     with client as client:
@@ -280,9 +280,9 @@ def test_delete_profile_during_booking_releases_the_waitlist(
         assert get_stored_jobs()[0].status == JobStatus.SUCCESSFUL
 
 
-@pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_admin_remove_user(
-    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture, fake_clock
+    client, worker, job, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """DELETE '/users/{user_id}' by admin removes the user, and their bookings and jobs"""
     with client as client:
@@ -337,11 +337,9 @@ def test_admin_remove_user(
         assert all([v.status == JobStatus.SUCCESSFUL for v in other_user_jobs])
 
 
-@pytest.mark.parametrize(
-    "client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS[:-1]
-)
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS[:-1])
 def test_non_admin_remove_user(
-    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture, fake_clock
+    client, worker, job, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """Non admin cannot remove the profile of any user"""
     with client as client:

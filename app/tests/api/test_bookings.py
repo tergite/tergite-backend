@@ -159,8 +159,8 @@ def test_create_too_many_booking(client):
                 assert response.status_code == 200
 
 
-@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_WORKER_TUPLES)
-def test_unauthenticated_create_booking(client, worker, redis_conn):
+@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
+def test_unauthenticated_create_booking(client, worker):
     """Creating booking outside MSS errors out"""
     with client as client:
         headers = get_bearer_headers("token")
@@ -243,8 +243,8 @@ def test_view_bookings(client, pagination: "PaginationInfo"):
                 assert actual_output == expected
 
 
-@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_WORKER_TUPLES)
-def test_unauthenticated_view_bookings(client, worker, redis_conn):
+@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
+def test_unauthenticated_view_bookings(client, worker):
     """Viewing bookings with non-existing user or outside MSS errors out"""
     with client as client:
         response = client.get("/bookings", headers=get_bearer_headers("token"))
@@ -289,9 +289,9 @@ def test_unauthenticated_view_bookings_configs(client):
         assert response.json() == {"detail": "user not authenticated"}
 
 
-@pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_cancel_future_booking(
-    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture, fake_clock
+    client, worker, job, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """POST '/booking/{id}/cancel' for a future booking, deletes the booking and allows jobs to run without it."""
     with client as client:
@@ -338,9 +338,9 @@ def test_cancel_future_booking(
         assert job_ids == expected_job_ids
 
 
-@pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_cancel_future_booking_new_mss_user(
-    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture
+    client, worker, job, jobs_folder, mocker: MockerFixture
 ):
     """POST '/booking/{id}/cancel' for a future booking, deletes the booking even if it was created without a preexisting user."""
     with client as client:
@@ -514,11 +514,9 @@ def test_mss_admin_new_to_the_device_cancels_booking(client):
         assert response.status_code == 200
 
 
-@pytest.mark.parametrize(
-    "client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS[:-1]
-)
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS[:-1])
 def test_cancel_active_booking(
-    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture, fake_clock
+    client, worker, job, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """POST '/bookings/{id}/cancel' for an active booking fails."""
     with client as client:
@@ -569,9 +567,9 @@ def test_cancel_active_booking(
         assert last_booker_job_start < booking_end_timestamp
 
 
-@pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_cancel_completed_booking(
-    client, worker, redis_conn, job, mocker: MockerFixture, fake_clock
+    client, worker, job, mocker: MockerFixture, fake_clock
 ):
     """POST '/bookings/{id}/cancel' for a completed booking fails."""
     with client as client:

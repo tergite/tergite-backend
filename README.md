@@ -15,7 +15,7 @@ If you are reading this on GitHub, then you are looking at a mirror.
 ## Dependencies
 
 - [Python 3.13](https://www.python.org/)
-- [Redis](https://redis.io/)
+- [Redis](https://redis.io/), for the `quantify` executor only, whose tergite-tuner keeps its sessions there
 
 ## Quick Start
 
@@ -28,7 +28,7 @@ wget -qO- https://astral.sh/uv/install.sh | sh
 # curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-- Ensure you have the [Redis](https://redis.io/) server running
+- For the `quantify` executor, ensure you have the [Redis](https://redis.io/) server running
 - Clone the repo
 
 ```shell

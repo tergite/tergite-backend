@@ -477,6 +477,14 @@ TTLs, pagination and a Lua script, used by three stores of which only one needs 
    database. Redis is then needed only by tergite-tuner's sessions (`quantify/executor.py:215`), so a qiskit
    device runs without one; once tergite-tuner keeps them in an SQL database, in a change of its own there, the BCC drops
    Redis.
+   *Done*, but for the start-up lock, which became a `FileLock` on `<storage root>/.start-up.lock`: it guards the
+   migration, so it cannot be a table the migration creates, and SQL's table-less locks differ by database. The
+   workers now migrate under it too, as one started beside a new database's API could claim from no table. The
+   tables are `device_parameters` (0006), `switched_off_device` (0007) and `mss_nonce` (0008), whose failed insert
+   is the claim; `DeviceResources.redis`, `app/utils/redis.py` and the `redis` and `hiredis` dependencies went, as
+   tergite-tuner brings `redis` with the quantify extra. Only the quantify test client empties Redis, and a deb
+   asks for Redis only for quantify. `BCC_RQ_REDIS_URL` keeps its name, read now only by tergite-tuner, as renaming
+   it breaks env files and the packages' provisioning: step 7.3's.
 
 ## Step 6: classes, long functions and DTOs
 
@@ -560,7 +568,8 @@ One package per commit; the style-guide baseline (1.9) shrinks with each.
 3. **Names that do not mislead**: `jobs_db`, a Redis collection (`scheduler/utils.py:192, 225, 254`);
    `log_job_failure`, which sets `FAILED` (`fail_job`); `_get_preprocessed_expt_file`, a pickle named `.json`
    (`base/executor.py:285`); `get_executor_and_options`, whose pair `get_quantum_executor` pulls apart (`:115`);
-   `_read_devices`, returning (default, all) (`settings.py:413`).
+   `_read_devices`, returning (default, all) (`settings.py:413`); `BCC_RQ_REDIS_URL`, now tergite-tuner's Redis, with
+   the old name read as well, as the packages' provisioning writes it.
 4. **Booleans** start with `is_`/`should_`: about 35, e.g. `reset`, `noise`, `ignore_errors`, `local`, `job_exists`
    (`dependencies.py:275`), `force_normal_queue`, `emit`, `empty_queues`, `reload`, `desc`.
 5. **Comments**: the 7 banners (`settings.py:212-214, 243-245`, `quantify/executor.py:119`, `utils/logger.py:62`,

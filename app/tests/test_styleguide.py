@@ -523,7 +523,7 @@ def _get_layer(module_name: str) -> str:
 
 
 def _get_imported_layer(imported: str) -> str:
-    """Gets the layer an imported module is in, e.g. utils for app.utils.redis"""
+    """Gets the layer an imported module is in, e.g. utils for app.utils.sql_db"""
     parts = imported.split(".")
     return parts[1] if parts[0] == "app" and len(parts) > 1 else parts[0]
 

@@ -90,7 +90,7 @@ def quantify_rest_client(
 
 @pytest.fixture
 def qiskit_1q_rest_client(
-    request, mocker, mock_mss, redis_client, monkeypatch
+    request, mocker, mock_mss, monkeypatch
 ) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
     monkeypatch.setenv("BCC_EXECUTOR_TYPE", "qiskit_pulse_1q")
@@ -132,7 +132,7 @@ def qiskit_1q_rest_client(
 
 @pytest.fixture
 def qiskit_2q_rest_client(
-    request, mocker, mock_mss, redis_client, monkeypatch
+    request, mocker, mock_mss, monkeypatch
 ) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
     monkeypatch.setenv("BCC_EXECUTOR_TYPE", "qiskit_pulse_2q")

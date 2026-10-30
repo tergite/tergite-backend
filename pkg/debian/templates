@@ -28,7 +28,7 @@ Type: select
 Choices-C: local, url
 Choices: local Redis, existing Redis
 Default: local
-Description: Redis for the job queues:
+Description: Redis for tergite-tuner's sessions:
 
 Template: @PACKAGE@/redis_url
 Type: string

@@ -43,10 +43,8 @@ _EXPECTED_RECALIBRATION_SEED_CONTENT = load_fixture(
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="the simulators send no calibration")
-@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_WORKER_TUPLES)
-def test_recalibration_sends_the_calibration_to_mss(
-    client, redis_conn, worker, mock_mss
-):
+@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
+def test_recalibration_sends_the_calibration_to_mss(client, worker, mock_mss):
     with client as client:
         start_up_event_count = len(mock_mss.sent_events)
 
@@ -61,10 +59,8 @@ def test_recalibration_sends_the_calibration_to_mss(
     not HAS_QUANTIFY,
     reason="the seed this checks is written by quantify's recalibration",
 )
-@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_WORKER_TUPLES)
-def test_init_recalibration_with_interval(
-    client, redis_conn, worker, quantify_seed_file
-):
+@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
+def test_init_recalibration_with_interval(client, worker, quantify_seed_file):
     """Init recalibration restarts the calibration sequence, changing the interval from the default"""
     with client as client:
         user_id = create_many_users(client, raw_users=USERS)[0]["id"]
@@ -103,10 +99,8 @@ def test_init_recalibration_with_interval(
     not HAS_QUANTIFY,
     reason="the seed this checks is written by quantify's recalibration",
 )
-@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_WORKER_TUPLES)
-def test_init_recalibration_without_interval(
-    client, redis_conn, worker, quantify_seed_file
-):
+@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
+def test_init_recalibration_without_interval(client, worker, quantify_seed_file):
     """Init recalibration restarts the calibration sequence without interval continues with the default interval"""
     with client as client:
         user_id = create_many_users(client, raw_users=USERS)[0]["id"]
@@ -135,9 +129,9 @@ def test_init_recalibration_without_interval(
     not HAS_QUANTIFY,
     reason="the seed this checks is written by quantify's recalibration",
 )
-@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_WORKER_TUPLES)
+@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
 def test_init_recalibration_with_start_time(
-    client, redis_conn, worker, quantify_seed_file, fake_clock
+    client, worker, quantify_seed_file, fake_clock
 ):
     """POST /recalibration/init restarts the recalibration sequence at a given start time in future"""
     with client as client:
@@ -169,8 +163,8 @@ def test_init_recalibration_with_start_time(
         assert seed_file_content == _EXPECTED_RECALIBRATION_SEED_CONTENT
 
 
-@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_WORKER_TUPLES)
-def test_get_recalibration_info(client, redis_conn, worker, fake_clock):
+@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
+def test_get_recalibration_info(client, worker, fake_clock):
     """Get /recalibration/info gets recalibration info retrieves the basic recalibration info"""
     with client as client:
         user_id = create_many_users(client, raw_users=USERS)[0]["id"]
@@ -255,8 +249,8 @@ def test_get_recalibration_info(client, redis_conn, worker, fake_clock):
         }
 
 
-@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_WORKER_TUPLES)
-def test_cancel_default_recalibration(client, redis_conn, worker):
+@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
+def test_cancel_default_recalibration(client, worker):
     """POST /recalibration/cancel cancels the default recalibration started on startup"""
     with client as client:
         user_id = create_many_users(client, raw_users=USERS)[0]["id"]
@@ -270,9 +264,9 @@ def test_cancel_default_recalibration(client, redis_conn, worker):
         assert get_recalibrations() == []
 
 
-@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_WORKER_TUPLES)
+@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
 def test_init_recalibration_reads_a_naive_start_time_as_utc(
-    client, redis_conn, worker, monkeypatch
+    client, worker, monkeypatch
 ):
     """POST /recalibration/init schedules a start time without a timezone in UTC,
     whatever the server's own timezone"""
@@ -297,8 +291,8 @@ def test_init_recalibration_reads_a_naive_start_time_as_utc(
         time.tzset()
 
 
-@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_WORKER_TUPLES)
-def test_failed_recalibration_schedules_the_next(client, redis_conn, worker):
+@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
+def test_failed_recalibration_schedules_the_next(client, worker):
     with client as client:
         failing_executor = Mock(recalibrate=Mock(side_effect=RuntimeError("no device")))
         set_worker_executor(worker, failing_executor)
@@ -311,8 +305,8 @@ def test_failed_recalibration_schedules_the_next(client, redis_conn, worker):
         assert upcoming.status == "scheduled"
 
 
-@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_WORKER_TUPLES)
-def test_cancel_recalibration_while_one_runs(client, redis_conn, worker):
+@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
+def test_cancel_recalibration_while_one_runs(client, worker):
     """POST /recalibration/cancel during a recalibration leaves none to follow it"""
     with client as client:
         user_id = create_many_users(client, raw_users=USERS[:1])[0]["id"]
@@ -329,8 +323,8 @@ def test_cancel_recalibration_while_one_runs(client, redis_conn, worker):
         assert [row.status for row in get_recalibrations()] == ["finished"]
 
 
-@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_WORKER_TUPLES)
-def test_cancel_restarted_recalibration(client, redis_conn, worker):
+@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
+def test_cancel_restarted_recalibration(client, worker):
     """POST /recalibration/cancel cancels any recalibration restarted even after cancellation"""
     with client as client:
         user_id = create_many_users(client, raw_users=USERS)[0]["id"]

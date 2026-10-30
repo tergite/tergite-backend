@@ -27,7 +27,6 @@ if HAS_QUANTIFY:
     CLIENT_AND_WORKER_TUPLES += [
         (
             lazy_fixture("quantify_rest_client"),
-            lazy_fixture("redis_client"),
             lazy_fixture("quantify_worker"),
         ),
     ]
@@ -39,12 +38,10 @@ if HAS_QISKIT_DYNAMICS:
     CLIENT_AND_WORKER_TUPLES += [
         (
             lazy_fixture("qiskit_1q_rest_client"),
-            lazy_fixture("redis_client"),
             lazy_fixture("qiskit_1q_worker"),
         ),
         (
             lazy_fixture("qiskit_2q_rest_client"),
-            lazy_fixture("redis_client"),
             lazy_fixture("qiskit_2q_worker"),
         ),
     ]
@@ -80,7 +77,6 @@ if HAS_QUANTIFY:
     QUANTIFY_UPLOAD_JOB_PARAMS = [
         (
             lazy_fixture("quantify_rest_client"),
-            lazy_fixture("redis_client"),
             lazy_fixture("quantify_worker"),
             job,
         )
@@ -97,7 +93,6 @@ if HAS_QISKIT_DYNAMICS:
     SIM_1Q_UPLOAD_JOB_PARAMS = [
         (
             lazy_fixture("qiskit_1q_rest_client"),
-            lazy_fixture("redis_client"),
             lazy_fixture("qiskit_1q_worker"),
             job,
         )
@@ -107,7 +102,6 @@ if HAS_QISKIT_DYNAMICS:
     SIM_2Q_UPLOAD_JOB_PARAMS = [
         (
             lazy_fixture("qiskit_2q_rest_client"),
-            lazy_fixture("redis_client"),
             lazy_fixture("qiskit_2q_worker"),
             job,
         )
@@ -158,14 +152,14 @@ VIEW_JOBS_PARAMS = (
 # client, worker, job, device_name, user
 VIEW_JOB_PARAMS = [
     (client, worker, job, device_name, user)
-    for (client, _, worker, job, device_name) in VIEW_JOBS_PARAMS
+    for (client, worker, job, device_name) in VIEW_JOBS_PARAMS
     for user in USERS[:2]
 ]
 
 ALL_INVALID_UPLOAD_JOB_PARAMS = [
-    (client, redis, worker, job)
+    (client, worker, job)
     for job in INVALID_JOBS_FOR_UPLOAD
-    for client, redis, worker in CLIENT_AND_WORKER_TUPLES
+    for client, worker in CLIENT_AND_WORKER_TUPLES
 ]
 
 VIEW_MANY_PARAMS = [

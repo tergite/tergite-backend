@@ -35,9 +35,9 @@ from app.tests.utils.users import (
 )
 
 
-@pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_download_logfile(
-    logfile_download_folder, client, redis_conn, worker, job, mocker, jobs_folder
+    logfile_download_folder, client, worker, job, mocker, jobs_folder
 ):
     """GET to '/logfiles/{logfile_id}' downloads the given logfile"""
     # using context manager to ensure on_startup runs
@@ -61,9 +61,9 @@ def test_download_logfile(
         assert file_content == job
 
 
-@pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_logfile_for_non_existing_job(
-    logfile_download_folder, client, redis_conn, worker, job, mocker
+    logfile_download_folder, client, worker, job, mocker
 ):
     """GET '/logfiles/{logfile_id}' for non-existing jobs fails with a 404"""
     # using context manager to ensure on_startup runs
@@ -82,9 +82,9 @@ def test_logfile_for_non_existing_job(
         assert response.json() == {"detail": f"job {job_id} does not exist"}
 
 
-@pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_unauthenticated_download_logfile(
-    logfile_download_folder, client, redis_conn, worker, job, mocker, jobs_folder
+    logfile_download_folder, client, worker, job, mocker, jobs_folder
 ):
     """Unauthenticated GET to '/logfiles/{logfile_id}' errors out"""
     # using context manager to ensure on_startup runs

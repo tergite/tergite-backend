@@ -14,14 +14,6 @@ import pytest
 
 
 @pytest.fixture
-def redis_conn_spy(mocker):
-    """Spies on calls to redis.Redis.from_url."""
-    from redis import Redis
-
-    return mocker.patch("redis.Redis.from_url", wraps=Redis.from_url)
-
-
-@pytest.fixture
 def mss_conn_spy(mocker, mock_mss):
     """Spies on calls to websockets.sync.client.connect (as imported in mss.service)."""
     return mocker.patch(

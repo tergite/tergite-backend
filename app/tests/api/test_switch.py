@@ -50,8 +50,8 @@ def test_switch_tells_mss_when(client, mock_mss):
         assert datetime.fromisoformat(switched_on["data"]["date"])
 
 
-@pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
-def test_switch_off(client, redis_conn, jobs_folder, worker, job, mocker, fake_clock):
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+def test_switch_off(client, jobs_folder, worker, job, mocker, fake_clock):
     """POST '/switch/off' switches off the scheduler and does not allow jobs"""
     with client as client:
         users = create_many_users(client, raw_users=USERS[:2])
@@ -87,8 +87,8 @@ def test_switch_off(client, redis_conn, jobs_folder, worker, job, mocker, fake_c
         assert stored_jobs == []
 
 
-@pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
-def test_switch_on(client, redis_conn, jobs_folder, worker, job, mocker, fake_clock):
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+def test_switch_on(client, jobs_folder, worker, job, mocker, fake_clock):
     """POST '/switch/on' switches on the scheduler and allowing jobs"""
     with client as client:
         users = create_many_users(client, raw_users=USERS[:2])
@@ -181,8 +181,8 @@ def test_switch_answers_other_requests_while_it_tells_mss(client, mocker):
         assert answered_while_sending == [True]
 
 
-@pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
-def test_switch_status(client, redis_conn, jobs_folder, worker, job, mocker):
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+def test_switch_status(client, jobs_folder, worker, job, mocker):
     """GET '/switch/status' shows the status of the device if ON or OFF"""
     with client as client:
         users = create_many_users(client, raw_users=USERS[:2])

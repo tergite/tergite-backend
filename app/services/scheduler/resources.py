@@ -15,13 +15,11 @@ from typing import TYPE_CHECKING, Optional, Self
 
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, RSAPublicKey
 from filelock import FileLock
-from redis import Redis
 from sqlalchemy import Engine
 
 from ...libs.queues.dtos import ExecutorOptions
 from ...utils.config import DeviceSettings
 from ...utils.logging import err_logger
-from ...utils.redis import get_redis_connection
 from ...utils.sql_db import get_sql_engine
 from ..external.mss import MssClient, get_mss_public_key, get_private_key
 from .store import JobsStore
@@ -37,7 +35,6 @@ class DeviceResources:
     keys got from them"""
 
     settings: DeviceSettings
-    redis: Redis
     bookings_db: Engine
     jobs_store: JobsStore
     mss_client: MssClient
@@ -52,14 +49,12 @@ class DeviceResources:
     @classmethod
     def from_settings(cls, device_settings: DeviceSettings) -> Self:
         """Gets the resources of the device of these settings"""
-        redis = get_redis_connection(device_settings.rq_redis_url)
         private_key = get_private_key(
             device_settings.private_key_file, device_settings.private_key_password
         )
         sql_db = get_sql_engine(device_settings.booking_db_url)
         return cls(
             settings=device_settings,
-            redis=redis,
             bookings_db=sql_db,
             jobs_store=JobsStore.from_settings(sql_db, device_settings),
             mss_client=MssClient.from_settings(device_settings, private_key),
@@ -80,7 +75,6 @@ def close_device_resources(device: DeviceResources) -> None:
     except Exception as exp:
         err_logger.warning(f"error closing the MSS client: {exp}")
     device.bookings_db.dispose()
-    device.redis.close()
     if device.executor is not None:
         try:
             device.executor.close()
