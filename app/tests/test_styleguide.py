@@ -184,6 +184,7 @@ VERBS = frozenset(
         "verify",
         "view",
         "wait",
+        "wake",
         "write",
     }
 )

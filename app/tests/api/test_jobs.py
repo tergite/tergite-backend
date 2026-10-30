@@ -14,6 +14,8 @@
 """Tests for the API's job routes, and the jobs' way through the queues"""
 import dataclasses
 import os
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 from itertools import zip_longest
 from unittest.mock import Mock
@@ -25,6 +27,7 @@ from pytest_mock import MockerFixture
 
 from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps
 from app.services.booking import Booking
+from app.services.scheduler import dispatcher as scheduler_dispatcher
 from app.services.scheduler.dispatcher import fail_overdue_jobs
 from app.tests.utils.api import (
     create_mss_headers,
@@ -65,7 +68,7 @@ from app.tests.utils.users import (
     create_many_users,
     create_user,
 )
-from app.tests.utils.workers import set_worker_executor, wait_on_worker
+from app.tests.utils.workers import TestWorker, set_worker_executor, wait_on_worker
 
 # (patch target, patch kwargs) making one stage of a job fail; "executor" is the worker's
 _FAILING_STAGE_PATCHES = [
@@ -1520,6 +1523,41 @@ def test_job_whose_worker_died_fails_after_its_time_limit(
         assert stored_job.status == expected_status
 
 
+@pytest.mark.timeout(60)
+@pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+def test_waiting_workers_are_woken_for_a_new_job(
+    client, redis_conn, jobs_folder, worker, job, mocker
+):
+    """Workers that would otherwise wait a minute run a new job through at once"""
+    mocker.patch.object(scheduler_dispatcher, "_MAX_WAIT_SECONDS", 60)
+    devices = worker.device_resources
+    workers = [
+        TestWorker(devices, should_run_heavy=True, should_run_light=False),
+        TestWorker(devices, should_run_heavy=False, should_run_light=True),
+    ]
+    threads = [
+        threading.Thread(target=waiting_worker.run) for waiting_worker in workers
+    ]
+    with client as client:
+        users = create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_info = get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )[0]
+        for thread in threads:
+            thread.start()
+        try:
+            submit_jobs(client, data=[job_info])
+            stored_job = _wait_for_job_to_end(max_wait_seconds=30)
+        finally:
+            for waiting_worker in workers:
+                waiting_worker.stop()
+            for thread in threads:
+                thread.join()
+
+    assert stored_job.status == JobStatus.SUCCESSFUL
+
+
 @pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_mss_admin_new_to_the_device_views_and_cancels_job(
     client, redis_conn, jobs_folder, worker, job, mocker
@@ -1745,3 +1783,14 @@ def test_unauthenticated_cancel_job(
         response = client.post(url, json=payload)
         assert response.status_code == 401
         assert response.json() == {"detail": "user not authenticated"}
+
+
+def _wait_for_job_to_end(max_wait_seconds: float) -> Job:
+    """Waits for the test device's one job to end, returning it as it ended or as it stands"""
+    deadline = time.monotonic() + max_wait_seconds
+    while time.monotonic() < deadline:
+        [stored_job] = get_stored_jobs()
+        if stored_job.status.is_terminal():
+            break
+        time.sleep(0.1)
+    return stored_job

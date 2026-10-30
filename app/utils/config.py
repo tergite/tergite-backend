@@ -221,6 +221,11 @@ class DeviceSettings(BaseSettings):
         return self.storage_root / self.default_prefix / self.job_pre_proc_pool_dirname
 
     @property
+    def wakeups_dir(self) -> Path:
+        """The folder whose files name the ports the device's waiting workers listen on"""
+        return self.storage_root / self.default_prefix / "wakeups"
+
+    @property
     def job_upload_pool(self) -> Path:
         return self.prefix_root / self.job_upload_pool_dirname
 

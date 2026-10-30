@@ -12,7 +12,7 @@
 """Routes that switch the device on and off"""
 from fastapi import APIRouter, Depends
 
-from app.services import devices
+from app.services import devices, scheduler
 
 from ...utils.messages import GeneralMessage
 from ..dependencies import (
@@ -49,6 +49,7 @@ def switch_on(device: DeviceResourcesDep) -> GeneralMessage:
     Only MSS admin users can switch on and off this device
     """
     devices.switch_on(device.redis, device.mss_client, device.settings.default_prefix)
+    scheduler.wake_workers(device, "heavy")
     return {"status": "success"}
 
 

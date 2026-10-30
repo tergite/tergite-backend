@@ -31,7 +31,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Changed the 422 for a booking that starts in the past or lasts outside the device's limits to give its message
   as `detail`, as the other errors do, instead of pydantic's list of errors
 - Changed the workers to take their jobs and recalibrations from the bookings database instead of RQ's queues, and
-  `bcc rq --kind` to `bcc worker --kind`; work queued in RQ before upgrading is dropped, so let the queues empty first
+  `bcc rq --kind` to `bcc worker --kind`; work queued in RQ before upgrading is dropped, so let the queues empty first.
+  An idle worker waits on a UDP port of 127.0.0.1, which the API wakes it on
 - Changed a booker's job submitted before their booking to run in it, ahead of other users' jobs, instead of waiting
   behind them
 - Changed the settings to be read with pydantic-settings: the `BCC_` names are the same, but now match whatever their

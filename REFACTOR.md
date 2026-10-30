@@ -466,6 +466,11 @@ TTLs, pagination and a Lua script, used by three stores of which only one needs 
    wake-up, a datagram on a Unix socket in its device's folder that the API, after committing a job or cancel, and
    the heavy worker, after an execution, send; a lost one costs a few seconds' fallback poll. Postgres's
    `LISTEN/NOTIFY` could replace the socket there.
+   *Done*, but on UDP: a worker binds a port of 127.0.0.1 and names it in `<device>/wakeups/<kind>-<pid>.port`,
+   as a Unix socket's path can pass macOS's 104 bytes (`dev/perf/`'s, in a scratch folder, did) and several light
+   workers each need their own. The API wakes the heavy worker on a job, a booking's change, a recalibration and
+   switching on; the heavy worker wakes the light ones after an execution. A worker waits at most 5 s, or to the
+   bookings' next change; due recalibrations and dead workers' jobs wait out the 5 s, instead of being timed.
 7. **Redis only for autocalibration**, now that B stays, one store per commit: the device parameters of 5.2, the
    offline flag (`devices/service.py:142`), the MSS nonces of 5.1 (a table with a unique key and an expiry time, whose
    failed insert is the claim `SET NX` was) and the API's start-up lock (`dependencies.py:72`) move to the SQL

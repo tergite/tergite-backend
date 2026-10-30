@@ -225,6 +225,9 @@ _Note: The user must specify the backend they are booking when submitting reques
   next, else the oldest preprocessing, else a recalibration that is due. A light worker
   postprocesses the oldest executed job of every device.
 - A worker claims a job in one transaction, so no two workers run the same stage of a job.
+- A worker with nothing to claim waits until the API or the heavy worker wakes it, with a
+  datagram to the loopback port it names in `<storage root>/<device>/wakeups/`, or until the
+  bookings next change, for at most 5 seconds.
 
 ### When there is no active booking:
 

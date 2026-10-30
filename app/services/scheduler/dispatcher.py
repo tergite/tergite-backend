@@ -15,12 +15,12 @@ A device's heavy worker claims the job the bookings let execute, then its oldest
 preprocess, then its due recalibration; a light worker claims every device's oldest job to
 postprocess. A booking's start and end are times the claim compares with now, a recalibration
 is a row with a due time, a cancelled job one no claim takes, and a job whose stage outlives
-its timeout is failed by whichever worker next looks.
+its timeout is failed by whichever worker next looks. A worker with nothing to claim waits for
+a wake-up, the next change in the bookings, or the fallback wait, whichever comes first.
 """
 import logging
 import signal
 import threading
-import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Any, Callable, Iterator, NoReturn, Optional
@@ -39,9 +39,11 @@ from .dtos import RecalibrationInfo, RecalibrationStatus
 from .resources import DeviceResources
 from .store import JobRow, RecalibrationRow
 from .utils import log_job_failure, update_job_in_mss, update_job_stage
+from .wakeups import WakeUpListener, WorkerKind, wake_workers
 
-# a worker's pause, in seconds, when it found nothing to claim
-_IDLE_PAUSE_SECONDS = 0.2
+# the longest wait, in seconds, of a worker with nothing to claim: the delay of a lost
+# wake-up, a due recalibration, or the failure of a job whose worker died
+_MAX_WAIT_SECONDS = 5.0
 # picks, in the session, a waiting job of the device at the stage, or none
 _RowPicker = Callable[[Session, DeviceResources, Stage], Optional[JobRow]]
 _TERMINAL_STATUSES = tuple(status.value for status in JobStatus if status.is_terminal())
@@ -64,6 +66,7 @@ class Dispatcher:
         self._should_run_heavy = should_run_heavy
         self._should_run_light = should_run_light
         self._is_stopped = False
+        self._listener: Optional[WakeUpListener] = None
 
     def run(self, is_burst: bool = False, max_jobs: Optional[int] = None) -> bool:
         """Runs what is due until stopped, or, in a burst, until nothing is
@@ -75,23 +78,56 @@ class Dispatcher:
         Returns:
             whether it ran anything
         """
+        if not is_burst:
+            self._listener = WakeUpListener(
+                self.device_resources.values(), kinds=self._get_kinds()
+            )
         run_count = 0
-        while not self._is_stopped and (max_jobs is None or run_count < max_jobs):
-            has_run = False
-            for device in self.device_resources.values():
-                if self._run_once(device):
-                    has_run = True
-                    run_count += 1
-                    break
-            if not has_run:
-                if is_burst:
-                    break
-                time.sleep(_IDLE_PAUSE_SECONDS)
+        try:
+            while not self._is_stopped and (max_jobs is None or run_count < max_jobs):
+                has_run = False
+                for device in self.device_resources.values():
+                    if self._run_once(device):
+                        has_run = True
+                        run_count += 1
+                        break
+                if not has_run:
+                    if is_burst:
+                        break
+                    self._listener.wait(timeout=self._get_wait_seconds())
+        finally:
+            if self._listener is not None:
+                self._listener.close()
+                self._listener = None
         return run_count > 0
 
     def stop(self) -> None:
         """Stops the run after the work under way"""
         self._is_stopped = True
+        if self._listener is not None:
+            self._listener.wake()
+
+    def _get_kinds(self) -> list[WorkerKind]:
+        kinds: list[WorkerKind] = []
+        if self._should_run_heavy:
+            kinds.append("heavy")
+        if self._should_run_light:
+            kinds.append("light")
+        return kinds
+
+    def _get_wait_seconds(self) -> float:
+        """Gets the seconds to the bookings' next change in which jobs may execute, at most
+        the longest wait"""
+        change_times = []
+        if self._should_run_heavy:
+            change_times = [
+                get_next_change_at(device) for device in self.device_resources.values()
+            ]
+        next_change_at = min(filter(None, change_times), default=None)
+        if next_change_at is None:
+            return _MAX_WAIT_SECONDS
+        seconds_to_change = (next_change_at - get_utc_now()).total_seconds()
+        return min(seconds_to_change, _MAX_WAIT_SECONDS)
 
     def _run_once(self, device: DeviceResources) -> bool:
         fail_overdue_jobs(device)
@@ -128,6 +164,7 @@ def enqueue_job(
             row.is_booking_excluded = True
             session.add(row)
             session.commit()
+    wake_workers(device, "heavy")
 
 
 def mark_preprocessed(device: DeviceResources, job: Job) -> None:
@@ -158,7 +195,9 @@ def mark_executed(device: DeviceResources, job_id: str, results_file: str) -> Jo
         row.results_file = results_file
         session.add(row)
         session.commit()
-    return update_job_stage(device.jobs_store, job_id=job_id, stage=Stage.PST_PROC_Q)
+    job = update_job_stage(device.jobs_store, job_id=job_id, stage=Stage.PST_PROC_Q)
+    wake_workers(device, "light")
+    return job
 
 
 def mark_postprocessed(device: DeviceResources, job_id: str) -> None:
@@ -337,6 +376,7 @@ def schedule_recalibration(
             )
         )
         session.commit()
+    wake_workers(device, "heavy")
 
 
 def stop_recalibration(device: DeviceResources) -> None:

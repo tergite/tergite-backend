@@ -52,6 +52,7 @@ from ..devices import get_device_calibration_info
 from . import dispatcher
 from .dtos import RecalibrationInfo
 from .resources import DeviceResources
+from .wakeups import wake_workers
 
 
 def submit_booking(
@@ -69,13 +70,15 @@ def submit_booking(
     Returns:
         the submitted booking
     """
-    return create_booking(
+    booking = create_booking(
         device.bookings_db,
         user_id=user_id,
         data=booking_info,
         config=BookingsConfig.from_settings(device.settings),
         now=device.settings.get_utc_now(),
     )
+    wake_workers(device, "heavy")
+    return booking
 
 
 def cancel_booking(
@@ -126,6 +129,7 @@ def cancel_booking(
         )
 
     delete_bookings(device.bookings_db, Booking.id == booking_id)
+    wake_workers(device, "heavy")
 
 
 def submit_job_file(
@@ -346,6 +350,7 @@ def delete_user_profile(device: DeviceResources, user_id: str) -> None:
 
     # delete the user
     delete_users(device.bookings_db, User.id == user_id)
+    wake_workers(device, "heavy")
 
 
 def init_recalibration(

@@ -30,6 +30,7 @@ from .store import JobsStore
 from .utils import (
     get_executor,
 )
+from .wakeups import wake_workers
 
 __all__ = [
     "DeviceResources",
@@ -49,4 +50,5 @@ __all__ = [
     "stop_recalibration",
     "submit_booking",
     "submit_job_file",
+    "wake_workers",
 ]
