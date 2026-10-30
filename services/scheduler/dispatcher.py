@@ -86,6 +86,9 @@ class Dispatcher:
         self._should_run_light = should_run_light
         self._is_stopped = False
         self._listener: Optional[WakeUpListener] = None
+        # the device a pass starts from, the one after that which last ran something, so
+        # that a light worker takes its devices in turn
+        self._next_device_index = 0
         self._deadline = deadline
         # by device, the monotonic time before which MSS, found unreachable, is not tried
         self._mss_retry_times: dict[str, float] = {}
@@ -106,12 +109,15 @@ class Dispatcher:
             )
         run_count = 0
         try:
+            devices = list(self.device_resources.values())
             while not self._is_stopped and (max_jobs is None or run_count < max_jobs):
                 has_run = False
-                for device in self.device_resources.values():
-                    if self._run_once(device):
+                for offset in range(len(devices)):
+                    index = (self._next_device_index + offset) % len(devices)
+                    if self._run_once(devices[index]):
                         has_run = True
                         run_count += 1
+                        self._next_device_index = index + 1
                         break
                 if not has_run:
                     if is_burst:

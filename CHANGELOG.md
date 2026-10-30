@@ -63,6 +63,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- Fixed a light worker serving several devices postprocessing the first device's jobs before any other's; it now
+  takes the devices in turn
 - Fixed a recalibration whose worker died or was killed showing as under way in `/recalibration/info` from then on;
   a heavy worker starting marks it failed
 - Fixed a worker stuck in a call its time limit cannot interrupt, e.g. an instrument driver's, stalling its device until

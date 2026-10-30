@@ -286,13 +286,13 @@ stage is marked `failed` with its reason, logged to the job supervisor log, and 
 ### 6.2 A worker's loop
 
 `Dispatcher.run` loops over the worker's devices, in the order the env files gave them. For
-each device it runs `_run_once`; as soon as one device runs something, it starts again from
-the first device, so the first device's work goes first. Only when no device had anything does
-it wait.
+each device it runs `_run_once`; as soon as one device runs something, the next pass starts
+from the device after it, so that a light worker, which serves every device, takes them in
+turn. Only when no device had anything does it wait.
 
 ```mermaid
 flowchart TD
-    start([next pass]) --> dev{{for each device, in order}}
+    start([next pass]) --> dev{{for each device, from the one after<br/>the last that ran something}}
     dev --> kept[send MSS the device's kept events, §8.4]
     kept --> overdue[fail the device's jobs whose working stage<br/>is older than its timeout: their worker died]
     overdue --> light{light worker?}
@@ -941,8 +941,6 @@ Worth knowing before you are surprised by them:
 - **Some stuck processes are not noticed.** A worker's deadline is checked only by `bcc start`,
   so a worker run alone with `bcc worker` is not; nor is a worker stuck while it starts, before
   its first pass sets a deadline, nor the API (§6.5).
-- **A light worker favours the first device.** After any work its pass starts again from the
-  first device, so the first device's postprocessing always goes before the others' (§6.2).
 - **The 5 s wait is a constant**, `_MAX_WAIT_SECONDS` in the dispatcher, not a setting.
 - **Nothing ages a waiting job.** Outside bookings, a job longer than the time to the next
   booking waits while shorter ones overtake it, for as long as the bookings leave it no room
