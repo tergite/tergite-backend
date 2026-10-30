@@ -49,7 +49,7 @@ def preload_worker_globals(
             device, executor=executor, executor_options=executor_options
         )
         save_all_device_params(
-            redis=device.redis,
+            db_engine=device.bookings_db,
             backend_config=executor_options.backend_config,
             mss_client=device.mss_client,
         )

@@ -162,7 +162,7 @@ def submit_job_file(
     _save_uploaded_file(upload_file, target=new_file_path)
 
     # save job in database
-    calibration_info = get_device_calibration_info(device.redis, backend_name)
+    calibration_info = get_device_calibration_info(device.bookings_db, backend_name)
     job = Job(
         job_id=job_id,
         device=backend_name,

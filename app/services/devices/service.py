@@ -24,6 +24,8 @@
 #   app/services/scheduler/service.py
 """The device's properties and calibration, stored and published to MSS, and its switch"""
 from redis import Redis
+from sqlalchemy import Engine
+from sqlmodel import Session
 
 from ...libs.device_parameters import BackendConfig, Device, DeviceCalibration
 from ...utils.datetime import get_utc_now
@@ -34,61 +36,35 @@ from ..external.mss import (
     DeviceSwitchData,
     MssClient,
 )
+from .store import DeviceParametersRow
 
 
-def get_device_info(
-    connection: Redis,
-    backend_name: str,
-) -> Device:
-    """Retrieves this device's info in Device format
-
-    Args:
-        connection: connection to the redis server
-        backend_name: the name of the backend
-
-    Returns:
-        the device info of the device
+def get_device_info(db_engine: Engine, backend_name: str) -> Device:
+    """Gets the backend's device info
 
     Raises:
         ItemNotFoundError: '{backend_name}' not found
     """
-    data = connection.get(_get_device_info_key(backend_name))
-    if data is None:
-        raise ItemNotFoundError(f"'{backend_name}' not found")
-    return Device.model_validate_json(data)
+    row = _get_parameters_row(db_engine, backend_name)
+    return Device.model_validate_json(row.device_info)
 
 
 def get_device_calibration_info(
-    connection: Redis,
-    backend_name: str,
+    db_engine: Engine, backend_name: str
 ) -> DeviceCalibration:
-    """Retrieves this device's calibration info in DeviceCalibration format
-
-    Args:
-        connection: connection to the redis server
-        backend_name: the name of the backend
-
-    Returns:
-        the DeviceCalibration info of the device
+    """Gets the backend's calibration info
 
     Raises:
         ItemNotFoundError: '{backend_name}' not found
     """
-    data = connection.get(_get_calibration_info_key(backend_name))
-    if data is None:
-        raise ItemNotFoundError(f"'{backend_name}' not found")
-    return DeviceCalibration.model_validate_json(data)
+    row = _get_parameters_row(db_engine, backend_name)
+    return DeviceCalibration.model_validate_json(row.calibration_info)
 
 
 def save_all_device_params(
-    redis: Redis, backend_config: BackendConfig, mss_client: MssClient
+    db_engine: Engine, backend_config: BackendConfig, mss_client: MssClient
 ) -> None:
-    """Saves all device parameters in both redis and in MSS
-
-    Args:
-        redis: connection to redis
-        backend_config: the configuration of the backend
-        mss_client: the MSS client
+    """Saves the backend's device info and calibration info, and sends them to MSS
 
     Raises:
         ValueError: error message from MSS when it attempts to update mss
@@ -96,8 +72,15 @@ def save_all_device_params(
     device_info = Device.from_config(backend_config)
     calib_info = DeviceCalibration.from_config(backend_config)
 
-    redis.set(_get_device_info_key(device_info.name), device_info.model_dump_json())
-    redis.set(_get_calibration_info_key(calib_info.name), calib_info.model_dump_json())
+    with Session(db_engine) as session:
+        session.merge(
+            DeviceParametersRow(
+                backend_name=device_info.name,
+                device_info=device_info.model_dump_json(),
+                calibration_info=calib_info.model_dump_json(),
+            )
+        )
+        session.commit()
 
     # update MSS of this backend's configuration
     _send_device_params_to_mss(
@@ -183,11 +166,9 @@ def _send_device_params_to_mss(
     )
 
 
-def _get_device_info_key(backend_name: str) -> str:
-    """Gets the key of the backend's device info, as JSON"""
-    return f"{backend_name}:device-info"
-
-
-def _get_calibration_info_key(backend_name: str) -> str:
-    """Gets the key of the backend's calibration info, as JSON"""
-    return f"{backend_name}:calibration-info"
+def _get_parameters_row(db_engine: Engine, backend_name: str) -> DeviceParametersRow:
+    with Session(db_engine) as session:
+        row = session.get(DeviceParametersRow, backend_name)
+    if row is None:
+        raise ItemNotFoundError(f"'{backend_name}' not found")
+    return row

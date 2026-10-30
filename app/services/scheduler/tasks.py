@@ -169,7 +169,7 @@ def postprocess(device: DeviceResources, job: Job, results_file: str) -> str:
         quantum_job = read_job_from_hdf5(new_file)
         if quantum_job.meas_level == MeasLvl.DISCRIMINATED:
             calibration = get_device_calibration_info(
-                device.redis, backend_name=backend_name
+                device.bookings_db, backend_name=backend_name
             )
             discriminator = functools.partial(apply_linear_discriminator, calibration)
 
