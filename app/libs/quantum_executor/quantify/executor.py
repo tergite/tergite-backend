@@ -23,7 +23,7 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import qblox_instruments
 import toml
@@ -131,50 +131,12 @@ class QuantifyExecutor(QuantumExecutor):
         # keyed by the metadata the clusters come from, so an executor of other hardware with
         # the same device name never reuses them
         self._instruments_key = str(Path(os.fsdecode(quantify_metadata_file)).resolve())
-        no_gc_instruments_cache = self.__class__._non_gc_instruments.get(
-            self._instruments_key, {}
+        self._coordinator = self._get_coordinator(
+            should_reset_clusters=reset and are_clusters_resettable
         )
-        try:
-            self._coordinator = no_gc_instruments_cache[self.coordinator_name]
-        except KeyError:
-            # make sure all previous connections are closed, which leaves no cached instrument usable;
-            # the cached components first, as closing one reads its cluster
-            # FIXME: This global is unnatural but QCoDeS' delegation force us to make
-            #   all instruments globals
-            self.__class__._close_cached_instruments()
-            qblox_instruments.Cluster.close_all()
-
-            # FIXME: Saving to the class variable just to escape the garbage collector
-            #   since QCoDeS already keeps these instruments as globals
-            #   and they raise errors if they already exist in QCoDeS
-            no_gc_instruments_cache = self.__class__._non_gc_instruments.setdefault(
-                self._instruments_key, {}
-            )
-            self._coordinator = InstrumentCoordinator(self.coordinator_name)
-            try:
-                clusters = _create_clusters(self.quantify_metadata)
-                for cluster in clusters:
-                    if reset and are_clusters_resettable:
-                        cluster.reset()
-
-                    cluster_component = ClusterComponent(cluster)
-                    component_name = self._coordinator.add_component(cluster_component)
-                    no_gc_instruments_cache[component_name] = cluster_component
-            except Exception:
-                self._coordinator.close()
-                raise
-            # cached only once it has its clusters: cached before, a cluster that could not be
-            # reached left the next executor a coordinator without them, and every job failed
-            no_gc_instruments_cache[self.coordinator_name] = self._coordinator
-
-        try:
-            self._quantum_device = Instrument.find_instrument(
-                self.device_name, QuantumDevice
-            )
-        except KeyError:
-            self._quantum_device = QuantumDevice(self.device_name)
-
-        self._quantum_device.hardware_config(self.quantify_config)
+        self._quantum_device = _get_quantum_device(
+            self.device_name, self.quantify_config
+        )
         self._compiler = SerialCompiler(name=f"{self.device_name}_compiler")
         self._compilation_config = self._quantum_device.generate_compilation_config()
 
@@ -184,64 +146,14 @@ class QuantifyExecutor(QuantumExecutor):
         Returns:
             the final device calibration state after recalibration
         """
-        data_dir = Path(self.data_dir)
-        backend_config = self.backend_config
-        calib_device_conf = self.calib_device_conf
-        calib_node_conf = self.calib_node_conf
-        calib_spi_conf = self.calib_spi_conf
-        qubits = backend_config.device_config.qubit_ids
-        couplers = [
-            f"{q1}_{q2}"
-            for q1, q2 in backend_config.device_config.coupling_dict.values()
-        ]
-        fixed_duration_couplers = backend_config.device_config.fixed_duration_couplers
-        reverse_phase_qubits = backend_config.device_config.reverse_phase_qubits
-        cluster_config = self.quantify_config
-
-        clusters = [
-            (name, conf)
-            for name, conf in self.quantify_metadata.root.items()
-            if conf.instrument_type == "Cluster"
-        ]
-        if len(clusters) > 1:
-            raise ValueError(
-                "recalibration runs through one cluster, as tergite_tuner does, "
-                f"but the quantify metadata lists {len(clusters)}"
-            )
-        if not clusters:
+        cluster = _get_recalibration_cluster(self.quantify_metadata)
+        if cluster is None:
             return None
 
-        [(name, conf)] = clusters
-        cluster_mode = MeasurementMode.dummy if conf.is_dummy else MeasurementMode.real
-        logging.info(f"recalibrating {name} in {cluster_mode} mode...")
-
-        results = recalibrate(
-            backend_config=self.backend_config,
-            cluster_mode=cluster_mode,
-            stdout_log_level=25,
-            file_log_level=25,
-            cluster_ip=conf.ip_address,
-            redis_url=self._redis_url,
-            data_dir=data_dir,
-            spi_mode=SPIMode.dummy,
-            qubits=qubits,
-            couplers=couplers,
-            is_recalibration=True,
-            ignore_spec=True,
-            save_plot=False,
-            fixed_duration_couplers=fixed_duration_couplers,
-            reverse_phase_qubits=reverse_phase_qubits,
-            cluster_config=cluster_config,
-            spi_config=calib_spi_conf,
-            device_config=calib_device_conf,
-            node_config=calib_node_conf,
-        )
-
+        results = self._recalibrate_cluster(*cluster)
         if isinstance(results, DeviceCalibration):
-            calib_seed_file = self.calib_seed_file
-            logging.info(f"calibration complete. Saving to {calib_seed_file}...")
-            _save_calibration_seed(results, calib_seed_file)
-
+            logging.info(f"calibration complete. Saving to {self.calib_seed_file}...")
+            _save_calibration_seed(results, self.calib_seed_file)
         return results
 
     def to_native_experiments(
@@ -288,6 +200,80 @@ class QuantifyExecutor(QuantumExecutor):
         results = self._coordinator.retrieve_acquisition()
 
         return QExperimentResult.from_xarray(results)
+
+    def _get_coordinator(self, should_reset_clusters: bool) -> InstrumentCoordinator:
+        """Gets the coordinator of the executor's clusters, cached across executors of the
+        same metadata, or else creates it"""
+        cached_instruments = self.__class__._non_gc_instruments.get(
+            self._instruments_key, {}
+        )
+        try:
+            return cached_instruments[self.coordinator_name]
+        except KeyError:
+            return self._create_coordinator(should_reset_clusters)
+
+    def _create_coordinator(self, should_reset_clusters: bool) -> InstrumentCoordinator:
+        """Creates the coordinator of the clusters the metadata lists, and caches it, once
+        the cached instruments, which none can then use, are closed"""
+        # the cached components first, as closing one reads its cluster
+        # FIXME: This global is unnatural but QCoDeS' delegation force us to make
+        #   all instruments globals
+        self.__class__._close_cached_instruments()
+        qblox_instruments.Cluster.close_all()
+
+        # FIXME: Saving to the class variable just to escape the garbage collector
+        #   since QCoDeS already keeps these instruments as globals
+        #   and they raise errors if they already exist in QCoDeS
+        cached_instruments = self.__class__._non_gc_instruments.setdefault(
+            self._instruments_key, {}
+        )
+        coordinator = InstrumentCoordinator(self.coordinator_name)
+        try:
+            for cluster in _create_clusters(self.quantify_metadata):
+                if should_reset_clusters:
+                    cluster.reset()
+                cluster_component = ClusterComponent(cluster)
+                component_name = coordinator.add_component(cluster_component)
+                cached_instruments[component_name] = cluster_component
+        except Exception:
+            coordinator.close()
+            raise
+        # cached only once it has its clusters: cached before, a cluster that could not be
+        # reached left the next executor a coordinator without them, and every job failed
+        cached_instruments[self.coordinator_name] = coordinator
+        return coordinator
+
+    def _recalibrate_cluster(
+        self, name: str, conf: InstrumentConfig
+    ) -> DeviceCalibration | None:
+        """Recalibrates the device through the cluster with tergite-tuner"""
+        backend_config = self.backend_config
+        cluster_mode = MeasurementMode.dummy if conf.is_dummy else MeasurementMode.real
+        logging.info(f"recalibrating {name} in {cluster_mode} mode...")
+        return recalibrate(
+            backend_config=backend_config,
+            cluster_mode=cluster_mode,
+            stdout_log_level=25,
+            file_log_level=25,
+            cluster_ip=conf.ip_address,
+            redis_url=self._redis_url,
+            data_dir=Path(self.data_dir),
+            spi_mode=SPIMode.dummy,
+            qubits=backend_config.device_config.qubit_ids,
+            couplers=[
+                f"{q1}_{q2}"
+                for q1, q2 in backend_config.device_config.coupling_dict.values()
+            ],
+            is_recalibration=True,
+            ignore_spec=True,
+            save_plot=False,
+            fixed_duration_couplers=backend_config.device_config.fixed_duration_couplers,
+            reverse_phase_qubits=backend_config.device_config.reverse_phase_qubits,
+            cluster_config=self.quantify_config,
+            spi_config=self.calib_spi_conf,
+            device_config=self.calib_device_conf,
+            node_config=self.calib_node_conf,
+        )
 
     def close(self) -> None:
         self._coordinator.stop()
@@ -391,3 +377,36 @@ def _create_cluster(name: str, conf: InstrumentConfig) -> qblox_instruments.Clus
         identifier=conf.ip_address,
         dummy_cfg=dummy_cfg,
     )
+
+
+def _get_quantum_device(name: str, quantify_config: Any) -> QuantumDevice:
+    """Gets the quantum device of the name, which QCoDeS keeps once made, with the
+    hardware config"""
+    try:
+        device = Instrument.find_instrument(name, QuantumDevice)
+    except KeyError:
+        device = QuantumDevice(name)
+    device.hardware_config(quantify_config)
+    return device
+
+
+def _get_recalibration_cluster(
+    metadata: QuantifyMetadata,
+) -> Optional[Tuple[str, InstrumentConfig]]:
+    """Gets the name and config of the one cluster the metadata lists, which tergite-tuner
+    recalibrates through, or None if it lists none
+
+    Raises:
+        ValueError: recalibration runs through one cluster, ... but the quantify metadata lists {n}
+    """
+    clusters = [
+        (name, conf)
+        for name, conf in metadata.root.items()
+        if conf.instrument_type == "Cluster"
+    ]
+    if len(clusters) > 1:
+        raise ValueError(
+            "recalibration runs through one cluster, as tergite_tuner does, "
+            f"but the quantify metadata lists {len(clusters)}"
+        )
+    return clusters[0] if clusters else None
