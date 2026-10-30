@@ -175,7 +175,6 @@ type-hints: app/libs/queues/dtos.py::TimestampPair.set_finish_timestamp
 type-hints: app/libs/queues/dtos.py::TimestampPair.set_start_timestamp
 type-hints: app/services/booking/dtos.py::Booking.validate_end_utc
 type-hints: app/services/booking/dtos.py::Booking.validate_start_utc
-type-hints: app/services/booking/dtos.py::Booking.validate_total_duration
 type-hints: app/services/booking/dtos.py::NewBookingInfo.validate_end_utc
 type-hints: app/services/booking/dtos.py::NewBookingInfo.validate_start_utc
 type-hints: app/services/booking/service.py::_validate_max_slots

@@ -70,6 +70,7 @@ def store_bookings(db_engine: Engine, user_id: str) -> None:
                         "user_id": user_id,
                         "start_utc": start_utc,
                         "end_utc": start_utc + timedelta(minutes=30),
+                        "total_duration": timedelta(minutes=30).total_seconds(),
                     }
                 )
             )

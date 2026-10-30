@@ -14,7 +14,7 @@
 """Module containing the schemas of the data storage/transfer objects"""
 
 from datetime import datetime
-from typing import Any, List, Optional, Self
+from typing import List, Optional, Self
 
 from pydantic import (
     BaseModel,
@@ -22,7 +22,6 @@ from pydantic import (
     ValidationInfo,
     computed_field,
     field_validator,
-    model_validator,
 )
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -79,18 +78,15 @@ class User(NewUserInfo, table=True):
 class NewBookingInfo(BaseModel):
     """Schema for creating new bookings"""
 
-    # we validate on assignment so that total_duration always in sync
-    # with the start_utc and end_utc
-    model_config = ConfigDict(validate_assignment=True)
-
     start_utc: datetime
     end_utc: datetime
-    _total_duration: float = 0
 
     @computed_field
+    @property
     def total_duration(self) -> float:
-        """the total duration of the booking"""
-        return self._total_duration
+        """The seconds the booking lasts, which the booking service checks against the
+        device's limits"""
+        return (self.end_utc - self.start_utc).total_seconds()
 
     @field_validator("start_utc", mode="after")
     @classmethod
@@ -109,13 +105,6 @@ class NewBookingInfo(BaseModel):
                 f"end_utc ({v}) comes earlier than start_utc ({start_utc})"
             )
         return v
-
-    @model_validator(mode="after")
-    def generate_total_duration(self) -> Self:
-        """Generate the total duration of this booking; the booking service checks it
-        against the device's limits"""
-        self._total_duration = (self.end_utc - self.start_utc).total_seconds()
-        return self
 
 
 class Booking(SQLModel, table=True):
@@ -139,8 +128,8 @@ class Booking(SQLModel, table=True):
     user: Optional[User] = Relationship(
         back_populates="bookings", passive_deletes="all"
     )
-    # optional: total_duration is overwritten by field validator
-    total_duration: float = Field(default=0)
+    # its new booking info's, stored so that bookings sort by it
+    total_duration: float
 
     @field_validator("start_utc", mode="after")
     @classmethod
@@ -159,17 +148,6 @@ class Booking(SQLModel, table=True):
                 f"end_utc ({v}) comes earlier than start_utc ({start_utc})"
             )
         return v
-
-    @field_validator("total_duration", mode="after")
-    @classmethod
-    def validate_total_duration(cls, v: Any, info: ValidationInfo):
-        """Generate the total duration of this booking"""
-        try:
-            # the booking service checks it against the device's limits
-            duration = (info.data["end_utc"] - info.data["start_utc"]).total_seconds()
-            return duration
-        except KeyError:
-            return 0
 
     def is_active_at(self, now: datetime) -> bool:
         """Whether this booking must be running at the given time"""
