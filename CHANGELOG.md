@@ -60,6 +60,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- Fixed a reply from MSS being awaited past `BCC_MSS_RESPONSE_TIMEOUT` while other messages kept arriving, each of
+  which restarted the wait
+- Fixed an event to MSS whose connection dropped before MSS replied timing out, which failed a job that had succeeded;
+  the event is sent again on the new connection
 - Fixed a restart of the API alone overwriting, in Redis and MSS, the calibration the heavy worker published, e.g. the
   simulators' trained discriminators, so that jobs were discriminated wrongly until the worker restarted; the heavy
   worker alone publishes the device's properties and calibration now

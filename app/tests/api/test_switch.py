@@ -129,24 +129,18 @@ def test_switch_on(client, jobs_folder, worker, job, mocker, fake_clock):
 
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
-def test_switch_answers_502_when_mss_refuses_the_event(client, mocker):
+def test_switch_answers_502_when_mss_refuses_the_event(client, mock_mss):
     with client as client:
-        mocker.patch.object(MssClient, "send")
-        mocker.patch.object(
-            MssClient,
-            "recv",
-            return_value={"status": "failed", "detail": "no such device"},
-        )
+        mock_mss.rejected_event_names = {"switched_off"}
         response = client.post("/switch/off", headers=create_mss_headers(is_admin=True))
 
         assert response.status_code == 502
 
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
-def test_switch_answers_504_when_mss_does_not_answer(client, mocker):
+def test_switch_answers_504_when_mss_does_not_answer(client, mock_mss):
     with client as client:
-        mocker.patch.object(MssClient, "send")
-        mocker.patch.object(MssClient, "recv", side_effect=TimeoutError("no response"))
+        mock_mss.is_silent = True
         response = client.post("/switch/off", headers=create_mss_headers(is_admin=True))
 
         assert response.status_code == 504

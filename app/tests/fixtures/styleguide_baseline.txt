@@ -178,7 +178,6 @@ type-hints: app/services/booking/service.py::_validate_max_slots
 type-hints: app/services/booking/service.py::_validate_no_overlap
 type-hints: app/services/booking/service.py::delete_bookings
 type-hints: app/services/booking/service.py::delete_users
-type-hints: app/services/external/mss/service.py::MssClient.send
 type-hints: app/services/scheduler/dtos.py::JobFileParams.parse_qobj
 type-hints: app/services/scheduler/dtos.py::JobFileParams.serialize_qobj
 type-hints: app/services/scheduler/service.py::cancel_booking
@@ -211,7 +210,6 @@ verb: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.error
 verb: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.info
 verb: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.warning
 verb: app/libs/quantum_executor/utils/serialization.py::iqx_rld
-verb: app/services/external/mss/service.py::MssClient.recv
 verb: app/utils/compat.py::gen_tuid
 verb: app/utils/datetime.py::utc_now_str
 verb: app/utils/strings.py::uuid_str

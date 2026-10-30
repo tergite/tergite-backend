@@ -15,7 +15,7 @@ import json
 import math
 import time
 from contextlib import suppress
-from typing import Any, Optional, Self, cast
+from typing import Any, Callable, Optional, Self, TypeVar, cast
 
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from websockets import ConnectionClosed, WebSocketException
@@ -27,6 +27,8 @@ from app.utils.logging import err_logger
 
 from .auth import create_headers
 from .dtos import DeviceEvent, EventResponse
+
+_T = TypeVar("_T")
 
 
 class MssClient:
@@ -102,98 +104,11 @@ class MssClient:
             **options,
         )
 
-    def send(self, payload: str):
-        """Sends payload to MSS
-
-        Args:
-            payload: the payload to send to MSS
-        """
-        delay = 1
-        start_time = time.time()
-        timeout = self._response_timeout
-        is_sent = False
-        attempts = 0
-        max_attempts = self._max_reconnections + 1
-
-        while not is_sent:
-            try:
-                if time.time() - start_time > timeout:
-                    raise TimeoutError(f"response took longer than timeout {timeout}s")
-
-                if attempts >= max_attempts:
-                    raise TimeoutError(
-                        f"maximum connection attempts {max_attempts} exceeded"
-                    )
-
-                if not self._client:
-                    attempts += 1
-                    self._client = self.__connect()
-
-                self._client.send(payload, text=True)
-                is_sent = True
-            except TimeoutError as e:
-                raise e
-            except (ConnectionClosed, WebSocketException, OSError) as e:
-                err_logger.warning(
-                    f"Connection lost ({e}). Reconnecting in {delay} seconds..."
-                )
-                self._client = None
-                time.sleep(delay)
-                delay = min(delay * 2, self._max_reconnection_delay)
-
-    def recv(
-        self, filters: dict | None = None, error_prefix: str = ""
-    ) -> dict[str, Any]:
-        """Receives response from MSS
-
-        Args:
-            filters: the filter that the message should match; default = None, meaning the first message to arrive
-            error_prefix: Optional prefix to prepend to error messages
-
-        Raises:
-            TimeoutError: response took longer than `self._response_timeout`
-        """
-        delay = 1
-        start_time = time.time()
-        filters = filters or {}
-        timeout = self._response_timeout
-        max_attempts = self._max_reconnections + 1
-        attempts = 0
-
-        while True:
-            try:
-                if time.time() - start_time > timeout:
-                    raise TimeoutError(
-                        f"{error_prefix}response took longer than timeout {timeout}s"
-                    )
-                if attempts >= max_attempts:
-                    raise TimeoutError(
-                        f"{error_prefix}maximum connection attempts {max_attempts} exceeded"
-                    )
-
-                if not self._client:
-                    attempts += 1
-                    self._client = self.__connect()
-
-                raw_data = self._client.recv(decode=False, timeout=timeout)
-                with suppress(json.JSONDecodeError):
-                    response = json.loads(raw_data)
-                    if all(response.get(k) == v for k, v in filters.items()):
-                        return response
-            except TimeoutError as e:
-                raise e
-            except (ConnectionClosed, WebSocketException, OSError) as e:
-                err_logger.warning(
-                    f"Connection lost ({e}). Reconnecting in {delay} seconds..."
-                )
-                self._client = None
-                time.sleep(delay)
-                delay = min(delay * 2, self._max_reconnection_delay)
-
     def send_event(self, payload: DeviceEvent, error_prefix: str = "") -> EventResponse:
-        """Sends an event payload to MSS
+        """Sends an event payload to MSS, and waits for MSS's reply to it
 
-        It does an exponential backoff reconnection in case of a disconnection
+        A connection lost before the reply is reopened, after a growing delay, and the
+        event sent again on it, as the reply to it on the old one is lost with it
 
         Args:
             payload: the payload to send to MSS
@@ -207,18 +122,81 @@ class MssClient:
             MssTimeoutError: {error_prefix}response took longer than timeout
             RuntimeError: {error_prefix}no connection yet
         """
-        event_id = payload.id
         event_json = payload.model_dump_json()
+        deadline = time.monotonic() + self._response_timeout
+
+        def send_and_receive_reply(client: ClientConnection) -> dict[str, Any]:
+            client.send(event_json, text=True)
+            return _receive_reply(client, event_id=payload.id, deadline=deadline)
+
         try:
-            self.send(event_json)
-            resp = self.recv(filters={"id": event_id}, error_prefix=error_prefix)
+            resp = self._run_connected(send_and_receive_reply, deadline=deadline)
         except TimeoutError as exp:
             raise MssTimeoutError(f"{error_prefix}{exp}")
         if resp.get("status") != "success":
             raise MssRejectedError(f"{error_prefix}{resp.get('detail')}")
         return cast(EventResponse, resp)
 
+    def _run_connected(
+        self,
+        operation: Callable[[ClientConnection], _T],
+        deadline: Optional[float] = None,
+    ) -> _T:
+        """Calls the operation on the connection to MSS, connecting first, and reconnecting
+        after a growing delay while the connection fails, until the deadline, by default
+        the response timeout from now, or the most connection attempts
+
+        Raises:
+            TimeoutError: response took longer than timeout, or maximum connection attempts exceeded
+        """
+        if deadline is None:
+            deadline = time.monotonic() + self._response_timeout
+        delay = 1
+        attempts = 0
+        max_attempts = self._max_reconnections + 1
+        while True:
+            if time.monotonic() > deadline:
+                raise TimeoutError(
+                    f"response took longer than timeout {self._response_timeout}s"
+                )
+            if attempts >= max_attempts:
+                raise TimeoutError(
+                    f"maximum connection attempts {max_attempts} exceeded"
+                )
+            try:
+                if not self._client:
+                    attempts += 1
+                    self._client = self.__connect()
+                return operation(self._client)
+            except TimeoutError:
+                raise
+            except (ConnectionClosed, WebSocketException, OSError) as e:
+                err_logger.warning(
+                    f"Connection lost ({e}). Reconnecting in {delay} seconds..."
+                )
+                self._client = None
+                time.sleep(delay)
+                delay = min(delay * 2, self._max_reconnection_delay)
+
     def close(self) -> None:
         """Closes client to MSS"""
         if self._client:
             self._client.close()
+
+
+def _receive_reply(
+    client: ClientConnection, event_id: str, deadline: float
+) -> dict[str, Any]:
+    """Receives MSS's reply to the event, waiting what is left to the deadline, and
+    skipping the other messages
+
+    Raises:
+        TimeoutError: the deadline passed
+    """
+    while True:
+        seconds_left = max(deadline - time.monotonic(), 0)
+        raw_data = client.recv(decode=False, timeout=seconds_left)
+        with suppress(json.JSONDecodeError):
+            response = json.loads(raw_data)
+            if response.get("id") == event_id:
+                return response

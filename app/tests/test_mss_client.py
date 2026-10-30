@@ -10,7 +10,9 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests for the client that sends the device's events to MSS"""
+import itertools
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -54,13 +56,18 @@ def test_event_mss_does_not_answer_times_out(mock_mss):
         _get_mss_client().send_event(_get_switched_on_event())
 
 
-def test_connection_dropped_while_waiting_is_reopened_but_loses_the_reply(mock_mss):
+def test_event_whose_connection_dropped_before_its_reply_is_resent(mock_mss):
+    """The reply on the dropped connection is lost with it, so the event is sent again"""
     mock_mss.should_drop_next_recv = True
+    event = _get_switched_on_event()
 
-    with pytest.raises(MssTimeoutError):
-        _get_mss_client().send_event(_get_switched_on_event())
+    response = _get_mss_client().send_event(event)
 
-    assert len(mock_mss.connections) == 2
+    assert response["status"] == "success"
+    assert [
+        [sent["id"] for sent in connection.sent_events]
+        for connection in mock_mss.connections
+    ] == [[event.id], [event.id]]
 
 
 def test_connection_signed_with_another_key_is_refused(mock_mss):
@@ -70,6 +77,37 @@ def test_connection_signed_with_another_key_is_refused(mock_mss):
         client.send_event(_get_switched_on_event())
 
     assert mock_mss.connections == []
+
+
+def test_reply_is_awaited_for_what_is_left_of_the_timeout(mocker):
+    """Each message that is not the reply leaves less of the timeout to wait in"""
+    # a clock that moves on 0.1 s at each reading
+    mocker.patch(
+        "app.services.external.mss.service.time.monotonic",
+        side_effect=itertools.count(step=0.1),
+    )
+    event = _get_switched_on_event()
+    timeouts = []
+    messages = iter(
+        [
+            b'{"id": "other"}',
+            b"not json",
+            f'{{"id": "{event.id}", "status": "success"}}',
+        ]
+    )
+
+    def recv(decode: bool, timeout: float) -> bytes:
+        timeouts.append(timeout)
+        return next(messages)
+
+    client = _get_mss_client()
+    client._client = SimpleNamespace(send=lambda *_, **__: None, recv=recv)
+
+    response = client.send_event(event)
+
+    assert response["status"] == "success"
+    assert timeouts[0] < 1
+    assert all(earlier > later for earlier, later in itertools.pairwise(timeouts))
 
 
 def _get_mss_client(private_key_file: Path = TEST_PRIVATE_KEY_FILE) -> MssClient:
