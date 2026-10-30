@@ -63,12 +63,9 @@ def mock_run_node(
     for name in elements:
         for qoi in qois:
             data[group][name][qoi] = RECALIBRATION_MOCKS[element].get(qoi)
-            session._redis_fields_touched[qoi] = (
-                session._redis_fields_touched.get(qoi, 0) + 1
-            )
         data["cs"][name][node.value] = "calibrated"
 
-    session.redis_store.save_many(data)
+    _write_results(session, data)
     # FIXME: data is not fully nested as expected.
     return session, data
 
@@ -79,6 +76,8 @@ def _populate_initial_parameters(session: "SessionContext"):
     Args:
         session: the session context
     """
+    if _is_state_in_session(session):
+        return  # the session starts from the device config itself
     initial_qubit_parameters = session.device_config.qubits
     initial_coupler_parameters = session.device_config.couplers
 
@@ -110,8 +109,8 @@ def _populate_node_parameters(
         node_name: the name of the node
         is_node_calibrated: whether the node is calibrated
     """
-    transmon_configuration = session.node_config
-    if not node_name in transmon_configuration:
+    transmon_configuration = session.node_config.root
+    if node_name not in transmon_configuration:
         logging.info(f"{node_name} does not have specific node config")
         return
     if is_node_calibrated:
@@ -122,21 +121,22 @@ def _populate_node_parameters(
     qubits = session.qubits
 
     all_components_node_conf = data.get("all", {})
-    session.redis_store.save_many(
+    _load_values(
+        session,
         {
             # FIXME: this should probably be only qubits not qubits + couplers
             "transmons": {k: all_components_node_conf for k in qubits},
             "couplers": {
                 coupler: data[coupler] for coupler in couplers if coupler in data
             },
-        }
+        },
     )
 
 
 def _get_element_qois(
     node: NodeEnum, session: "SessionContext"
 ) -> tuple[Literal["qubit", "coupler"], list[str]]:
-    """Whether the node calibrates qubits or couplers, and the Redis fields it sets.
+    """Whether the node calibrates qubits or couplers, and the fields it sets.
 
     Reads tergite-tuner's NodeSpecs, or its node classes in versions before them.
     """
@@ -152,3 +152,29 @@ def _get_element_qois(
 
     spec = {**DEFAULT_NODE_SPECS, **session.node_specs}[node]
     return spec.element, list(spec.qois.values())
+
+
+def _write_results(session: "SessionContext", records: Dict[str, Any]) -> None:
+    """Writes a node's results where the tuner keeps them: its session's state, or Redis before it."""
+    if _is_state_in_session(session):
+        session.state.write(records)
+        return
+    for collection in ("transmons", "couplers"):
+        for record in records[collection].values():
+            for field in record:
+                touched = session._redis_fields_touched
+                touched[field] = touched.get(field, 0) + 1
+    session.redis_store.save_many(records)
+
+
+def _load_values(session: "SessionContext", records: Dict[str, Any]) -> None:
+    """Loads values a run starts from: into the session's state, or Redis before it."""
+    if _is_state_in_session(session):
+        session.state.load(records)
+    else:
+        session.redis_store.save_many(records)
+
+
+def _is_state_in_session(session: "SessionContext") -> bool:
+    """Whether the tuner keeps the device in the session, as it does from its refactor."""
+    return hasattr(type(session), "state")
