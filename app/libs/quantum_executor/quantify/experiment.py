@@ -87,7 +87,8 @@ def _is_baseband_clock(clock: str) -> bool:
 class _ChannelPlan:
     clock: str
     schedulable: List[BaseInstruction]
-    had_any_instructions: bool
+    # whether the channel has no instructions, even ones left out of the schedule
+    is_empty: bool
 
 
 @dataclass
@@ -97,7 +98,7 @@ class _State:
     )
     sync_tick: int  # accumulated global wait applied to this channel
     last_label: str  # last EMITTED op label (for tail idle)
-    has_emitted: bool
+    is_any_emitted: bool
 
 
 @dataclass(frozen=True)
@@ -256,7 +257,7 @@ def _get_channel_plans(
                 if should_include_frequency_ops
                 or not isinstance(inst, FREQ_CONTROL_INSTRUCTIONS)
             ],
-            had_any_instructions=bool(channel.instructions),
+            is_empty=not channel.instructions,
         )
         for channel in channel_registry.values()
     ]
@@ -348,7 +349,7 @@ def _add_aligned_operations(
     sorted_slots = sorted(set().union(*by_clock_slot.values()))
     states = {
         plan.clock: _State(
-            dispatch_tick=0, sync_tick=0, last_label=root_label, has_emitted=False
+            dispatch_tick=0, sync_tick=0, last_label=root_label, is_any_emitted=False
         )
         for plan in channel_plans
     }
@@ -372,7 +373,7 @@ def _add_aligned_operations(
                     operation=inst.to_operation(config=config),
                 )
                 state.last_label = inst.label
-                state.has_emitted = True
+                state.is_any_emitted = True
                 state.dispatch_tick += 1
     return states
 
@@ -414,10 +415,10 @@ def _add_tail_idles(
     """Adds an idle after the last operation of each channel that had instructions,
     even if none was scheduled"""
     for plan in channel_plans:
-        if not plan.had_any_instructions:
+        if plan.is_empty:
             continue
         state = states[plan.clock]
-        ref = state.last_label if state.has_emitted else root_label
+        ref = state.last_label if state.is_any_emitted else root_label
         schedule.add(
             ref_op=ref,
             ref_pt="end",

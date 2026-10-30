@@ -50,11 +50,7 @@ def test_frequency_instructions_are_scheduled_only_when_included(
     [plan] = _get_channel_plans(registry, should_include_frequency_ops)
 
     expected = [set_freq, delay] if should_include_frequency_ops else [delay]
-    assert (plan.clock, plan.schedulable, plan.had_any_instructions) == (
-        "q0.01",
-        expected,
-        True,
-    )
+    assert (plan.clock, plan.schedulable, plan.is_empty) == ("q0.01", expected, False)
 
 
 def test_a_clock_starts_at_its_earliest_set_frequency():
@@ -87,9 +83,15 @@ def test_instructions_group_by_the_tick_they_start_at():
 
 def test_active_clocks_wait_for_the_latest_to_be_ready():
     states = {
-        "busy": _State(dispatch_tick=3, sync_tick=1, last_label="", has_emitted=True),
-        "idle": _State(dispatch_tick=0, sync_tick=0, last_label="", has_emitted=False),
-        "done": _State(dispatch_tick=0, sync_tick=0, last_label="", has_emitted=False),
+        "busy": _State(
+            dispatch_tick=3, sync_tick=1, last_label="", is_any_emitted=True
+        ),
+        "idle": _State(
+            dispatch_tick=0, sync_tick=0, last_label="", is_any_emitted=False
+        ),
+        "done": _State(
+            dispatch_tick=0, sync_tick=0, last_label="", is_any_emitted=False
+        ),
     }
 
     _align_to_barrier(states, slot=2, active_clocks=["busy", "idle"])

@@ -6,8 +6,6 @@ boolean: app/libs/device_parameters/dtos.py::_BackendGeneralConfig.characterized
 boolean: app/libs/device_parameters/dtos.py::_BackendGeneralConfig.open_pulse
 boolean: app/libs/device_parameters/dtos.py::_BackendGeneralConfig.simulator
 boolean: app/libs/quantum_executor/qiskit/instruction.py::GaussianPlay.__init__(limit_amplitude)
-boolean: app/libs/quantum_executor/quantify/experiment.py::_ChannelPlan.had_any_instructions
-boolean: app/libs/quantum_executor/quantify/experiment.py::_State.has_emitted
 constant-position: app/libs/quantum_executor/quantify/utils/calibration.py::_FIXED_DURATION_COUPLER_NODES
 constant-position: app/libs/quantum_executor/quantify/utils/calibration.py::_NON_FIXED_DURATION_COUPLER_NODES
 license-header: app/libs/__init__.py
