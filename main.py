@@ -72,6 +72,118 @@ COMMANDS = ("start", "serve", "worker")
 
 
 def main() -> None:
+    parser = _get_argument_parser()
+    args = parser.parse_args(_with_default_command(sys.argv[1:]))
+    if args.command == "start" and args.light_workers < 1:
+        parser.error("--light-workers must be at least 1")
+    _load_devices(args.env_files)
+    _run_command(args)
+
+
+def _start(
+    host: str,
+    port: int,
+    forwarded_allow_ips: str | None,
+    light_workers: int,
+    env_files: list[str],
+    workers: int | None,
+) -> None:
+    """Runs the API and the workers as child processes, stopping them all when any stops,
+    so that the service manager restarts the backend whole. The children start the
+    platform's way: macOS cannot fork a process that has loaded its frameworks."""
+    import settings
+
+    processes = _get_worker_processes(
+        env_files, devices=settings.get_device_names(), light_workers=light_workers
+    )
+    processes.append(
+        multiprocessing.Process(
+            target=_serve,
+            args=(host, port, forwarded_allow_ips, env_files, False, workers),
+            name="api",
+        )
+    )
+    for process in processes:
+        process.start()
+
+    # after the children start, which keep the handlers uvicorn and the workers install
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    stopped = _wait_for_first_stop(processes)
+    sys.exit(
+        f"bcc: the {stopped.name} process stopped with exit code {stopped.exitcode}"
+    )
+
+
+def _get_worker_processes(
+    env_files: list[str], devices: list[str], light_workers: int
+) -> list[multiprocessing.Process]:
+    """Gets the processes, not yet started, of a heavy worker for each device and of the
+    light workers"""
+    processes = [
+        multiprocessing.Process(
+            target=_run_worker,
+            args=("heavy", env_files, device),
+            name=f"heavy worker of {device}",
+        )
+        for device in devices
+    ]
+    processes.extend(
+        multiprocessing.Process(
+            target=_run_worker,
+            args=("light", env_files),
+            name=f"light worker {number}",
+        )
+        for number in range(1, light_workers + 1)
+    )
+    return processes
+
+
+def _wait_for_first_stop(
+    processes: list[multiprocessing.Process],
+) -> multiprocessing.Process:
+    """Waits for any of the processes to stop, then stops the rest
+
+    Returns:
+        the first that stopped
+    """
+    try:
+        wait([process.sentinel for process in processes])
+        return next(process for process in processes if not process.is_alive())
+    finally:
+        for process in processes:
+            process.terminate()
+        for process in processes:
+            process.join()
+
+
+def _run_command(args: argparse.Namespace) -> None:
+    """Runs the command the arguments name, with the devices loaded"""
+    import settings
+
+    if args.command == "start":
+        _start(
+            args.host,
+            args.port or settings.get_device_settings().port,
+            args.forwarded_allow_ips,
+            args.light_workers,
+            args.env_files,
+            args.workers,
+        )
+    elif args.command == "serve":
+        _serve(
+            args.host,
+            args.port or settings.get_device_settings().port,
+            args.forwarded_allow_ips,
+            args.env_files,
+            args.reload,
+            args.workers,
+        )
+    else:
+        _run_worker(args.kind, args.env_files, args.device)
+
+
+def _get_argument_parser() -> argparse.ArgumentParser:
+    """Gets the parser of the bcc command's arguments"""
     parser = argparse.ArgumentParser(
         description="Manage the Backend Control Computer (BCC); start is the default command."
     )
@@ -132,88 +244,7 @@ def main() -> None:
     worker_parser.add_argument(
         "--device", help="The device a heavy worker runs; default: the first."
     )
-
-    args = parser.parse_args(_with_default_command(sys.argv[1:]))
-    _load_devices(args.env_files)
-    import settings
-
-    if args.command == "start":
-        if args.light_workers < 1:
-            parser.error("--light-workers must be at least 1")
-        _start(
-            args.host,
-            args.port or settings.get_device_settings().port,
-            args.forwarded_allow_ips,
-            args.light_workers,
-            args.env_files,
-            args.workers,
-        )
-    elif args.command == "serve":
-        _serve(
-            args.host,
-            args.port or settings.get_device_settings().port,
-            args.forwarded_allow_ips,
-            args.env_files,
-            args.reload,
-            args.workers,
-        )
-    else:
-        _run_worker(args.kind, args.env_files, args.device)
-
-
-def _start(
-    host: str,
-    port: int,
-    forwarded_allow_ips: str | None,
-    light_workers: int,
-    env_files: list[str],
-    workers: int | None,
-) -> None:
-    """Runs the API and the workers as child processes, stopping them all when any stops,
-    so that the service manager restarts the backend whole. The children start the
-    platform's way: macOS cannot fork a process that has loaded its frameworks."""
-    import settings
-
-    processes = [
-        multiprocessing.Process(
-            target=_run_worker,
-            args=("heavy", env_files, device),
-            name=f"heavy worker of {device}",
-        )
-        for device in settings.get_device_names()
-    ]
-    processes.extend(
-        multiprocessing.Process(
-            target=_run_worker,
-            args=("light", env_files),
-            name=f"light worker {number}",
-        )
-        for number in range(1, light_workers + 1)
-    )
-    processes.append(
-        multiprocessing.Process(
-            target=_serve,
-            args=(host, port, forwarded_allow_ips, env_files, False, workers),
-            name="api",
-        )
-    )
-    for process in processes:
-        process.start()
-
-    # after the children start, which keep the handlers uvicorn and the workers install
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    try:
-        wait([process.sentinel for process in processes])
-        stopped = next(process for process in processes if not process.is_alive())
-    finally:
-        for process in processes:
-            process.terminate()
-        for process in processes:
-            process.join()
-
-    sys.exit(
-        f"bcc: the {stopped.name} process stopped with exit code {stopped.exitcode}"
-    )
+    return parser
 
 
 def _serve(
