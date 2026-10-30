@@ -171,7 +171,6 @@ def preprocess_qobj(
         logger.info(f"Translated to {len(native_expts)} native experiments.")
         return total_duration, str(results_file_path)
     except Exception as e:
-        # log exceptions
         logger.error(f"\nFailed job: {job_id}, tuid: {tuid}\n{format_exc()}")
         raise e
 
@@ -211,7 +210,6 @@ def run_job(executor: QuantumExecutor, job_id: str, inputs_folder: Path) -> str:
         logger.info(f"Completed {job_id if job_id else 'local job'} with tuid {tuid}.")
     except Exception as e:
         if logger:
-            # record exceptions
             logger.error(f"\nFailed job: {job_id}\n{format_exc()}")
         raise e
 

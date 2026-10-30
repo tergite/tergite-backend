@@ -22,9 +22,9 @@ QDataArray: TypeAlias = xr.DataArray
 QDataset: TypeAlias = xr.Dataset
 
 IQValue = np.complexfloating
-RepetitionsByAcquisitionsMatrix = Annotated[QDataArray, "repetition", "acq"]
-"""xarray.DataArray of repetitions (rows) by acquisitions (columns)"""
+# a channel's acquisitions, a row per repetition and a column per acquisition
 # See: https://quantify-os.org/docs/quantify-scheduler/dev/user/user_guide.html#retrieve-acquisitions-through-instrumentcoordinator
+RepetitionsByAcquisitionsMatrix = Annotated[QDataArray, "repetition", "acq"]
 
 QChannel = str
 QExperimentName = str

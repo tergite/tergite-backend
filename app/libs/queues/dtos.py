@@ -133,13 +133,7 @@ class Timestamps(BaseModel):
                 self.execution.finish_timestamp - self.execution.start_timestamp
             ).total_seconds()
         except (TypeError, AttributeError):
-            """
-            TypeError: unsupported operand type(s) for -: 'datetime.datetime' and 'NoneType'
-            TypeError: unsupported operand type(s) for -: 'NoneType' and 'datetime.datetime'
-            TypeError: unsupported operand type(s) for -: 'NoneType' and 'NoneType'
-            AttributeError: 'NoneType' object has no attribute 'started'
-            AttributeError: 'NoneType' object has no attribute 'finished'
-            """
+            # the execution, or one of its timestamps, is missing
             return None
 
 

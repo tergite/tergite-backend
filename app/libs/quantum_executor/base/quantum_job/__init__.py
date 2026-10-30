@@ -320,7 +320,6 @@ def _save_qobj_header_to_hdf5(file: h5py.File, header_dict: dict):
         file: the HDF5 file to save to
         header_dict: the dict from QobjHeader
     """
-    # save header backend metadata
     backend_metadata = QobjHeaderMetadata.from_qobj_header(header_dict).model_dump()
     _save_hdf5_attributes(
         file, path=_HDF5_HEADER_METADATA_PATH, source=backend_metadata
@@ -356,20 +355,16 @@ def _save_sweep_data_to_hdf5(file: h5py.File, header_dict: dict):
     try:
         sweep_data = QobjSweepData.from_qobj_header(header_dict)
     except ValueError:
-        # return early if no sweep data
         return
 
-    # save header sweep metadata
     _save_hdf5_attributes(file, path=_HDF5_SWEEP_DATA_PATH, source=sweep_data.metadata)
 
-    # save the raw sweep data
     sweep_data_dict = sweep_data.model_dump()
     for path_segments in search_nested(sweep_data_dict, "slots"):
         sweep_group = file.require_group(_HDF5_SWEEP_DATA_PATH)
         slots_path = "/".join(path_segments)
         slots_group = sweep_group.create_group(slots_path)
 
-        # save param metadata
         # -1 is "slots", -2 is parameter name, -3 is "parameters"
         param = path_segments[-2]
         param_group_path = f"{_HDF5_SWEEP_DATA_PATH}/parameters/{param}"
@@ -488,7 +483,6 @@ def _save_hdf5_attributes(file: h5py.File, path: str, source: dict):
         source: the dictionary to copy from
     """
     if len(source) == 0:
-        # do nothing if dict is empty
         return
 
     if path not in file:

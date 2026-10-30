@@ -226,7 +226,6 @@ class QobjMetadata:
         )
 
     def to_dict(self) -> dict:
-        """Converts current to dictionary"""
         return asdict(self)
 
 
@@ -251,7 +250,6 @@ class QobjData:
         )
 
     def to_dict(self) -> dict:
-        """Converts current to dictionary"""
         return asdict(self)
 
     def to_qobj(self) -> PulseQobj:
@@ -288,7 +286,6 @@ class QuantumJob:
         return QobjMetadata.from_qobj(self.qobj)
 
     def to_dict(self):
-        """Converts current to dictionary"""
         return asdict(self)
 
 

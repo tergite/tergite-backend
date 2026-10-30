@@ -61,7 +61,6 @@ class ExperimentLogger:
         self.logger = self.get_file_logger(__name__, self.folder, self.formatter)
         self.logger.propagate = False
 
-        # --- Default state
         self.last_timing_table = pd.DataFrame()
         self.last_programs = dict()
 

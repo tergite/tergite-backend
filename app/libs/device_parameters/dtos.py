@@ -578,7 +578,6 @@ class DeviceCalibration(BaseModel):
         Returns:
             the new instance of DeviceCalibration
         """
-        # set defaults
         kwargs.setdefault("last_calibrated", utc_now_str())
         kwargs.setdefault("version", "0.0.0")
 
@@ -757,7 +756,6 @@ def _get_local_phases(
         else:
             target_phase = -target_phase
 
-    # convert to radians
     return np.deg2rad(control_phase), np.deg2rad(target_phase)
 
 
