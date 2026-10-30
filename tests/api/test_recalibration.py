@@ -20,6 +20,8 @@ from unittest.mock import Mock
 import pytest
 import toml
 
+from api.worker import preload_worker_globals
+from services.scheduler import close_device_resources
 from tests.utils.api import (
     create_mss_headers,
 )
@@ -31,7 +33,10 @@ from tests.utils.params import (
     HAS_QUANTIFY,
     USERS,
 )
-from tests.utils.recalibrations import get_recalibrations
+from tests.utils.recalibrations import (
+    get_recalibrations,
+    start_due_recalibration_without_running_it,
+)
 from tests.utils.users import (
     create_many_users,
 )
@@ -303,6 +308,28 @@ def test_failed_recalibration_schedules_the_next(client, worker):
         assert failed.status == "failed"
         assert "no device" in failed.error
         assert upcoming.status == "scheduled"
+
+
+@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
+def test_recalibration_left_started_by_a_dead_worker_fails_as_a_new_one_starts(
+    client, worker
+):
+    with client as client:
+        user_id = create_many_users(client, raw_users=USERS[:1])[0]["id"]
+        device = next(iter(worker.device_resources.values()))
+        start_due_recalibration_without_running_it(device.settings.default_prefix)
+
+        restarted = preload_worker_globals(device.settings, should_load_executor=True)
+        close_device_resources(restarted)
+
+        info = client.get(
+            "/recalibration/info", headers=create_mss_headers(user_id, is_admin=True)
+        ).json()
+        [abandoned] = [row for row in get_recalibrations() if row.started_at]
+        assert abandoned.status == "failed"
+        assert "stopped" in abandoned.error
+        assert info["current_job_id"] is None
+        assert info["previous_job_id"] == abandoned.id
 
 
 @pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)

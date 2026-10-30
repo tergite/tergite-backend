@@ -17,7 +17,11 @@ from importlib import import_module
 from filelock import FileLock
 
 from services.devices import save_all_device_params
-from services.scheduler import DeviceResources, get_executor
+from services.scheduler import (
+    DeviceResources,
+    fail_abandoned_recalibrations,
+    get_executor,
+)
 from utils.config import DeviceSettings, create_device_folders
 from utils.sql_db import migrate_sql_db
 
@@ -39,6 +43,8 @@ def preload_worker_globals(
 
     device = DeviceResources.from_settings(device_settings)
     if should_load_executor:
+        # a heavy worker alone recalibrates, so one starting finds any left by the last
+        fail_abandoned_recalibrations(device)
         executor = get_executor(device.executor_options)
         # published here alone, as the executor may refine the backend config, e.g. the
         # simulators train their discriminators, which the API, building none, has not

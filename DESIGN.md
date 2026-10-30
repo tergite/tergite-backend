@@ -449,6 +449,9 @@ stage under way without waiting out its timeout.
   `BCC_DEFAULT_RECALIBRATION_INTERVAL` unless given an interval; the API does this at every
   start. A heavy worker starts the earliest due row in one transaction, inserting the next one
   interval later, then runs it under the executor lock and `BCC_MAX_RECALIBRATION_QUEUE_TIME`.
+  A heavy worker starting fails the device's rows left `started` by one that stopped before
+  they ended (`fail_abandoned_recalibrations`), unless the executor lock is held, as by a
+  recalibration another heavy worker is running.
 - **The executor lock**, a file lock in the device's `executor_data` folder, keeps
   preprocessing, executions and recalibrations of a device from running at once on its
   instruments, should two heavy workers serve it.
@@ -938,9 +941,6 @@ Worth knowing before you are surprised by them:
 - **Some stuck processes are not noticed.** A worker's deadline is checked only by `bcc start`,
   so a worker run alone with `bcc worker` is not; nor is a worker stuck while it starts, before
   its first pass sets a deadline, nor the API (§6.5).
-- **A worker that dies during a recalibration leaves its row `started`**, so
-  `/recalibration/info` reports it as under way from then on; the next recalibration was
-  scheduled when it started, so they go on.
 - **A light worker favours the first device.** After any work its pass starts again from the
   first device, so the first device's postprocessing always goes before the others' (§6.2).
 - **The 5 s wait is a constant**, `_MAX_WAIT_SECONDS` in the dispatcher, not a setting.

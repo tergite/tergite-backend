@@ -63,6 +63,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- Fixed a recalibration whose worker died or was killed showing as under way in `/recalibration/info` from then on;
+  a heavy worker starting marks it failed
 - Fixed a worker stuck in a call its time limit cannot interrupt, e.g. an instrument driver's, stalling its device until
   someone restarted the backend; `bcc start` now kills a worker past its deadline, which restarts the backend
 - Fixed an unreachable MSS stopping the workers, and failing a job that had succeeded when its results could not be

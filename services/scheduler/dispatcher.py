@@ -28,6 +28,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Any, Callable, Iterator, NoReturn, Optional
 
+from filelock import Timeout as FileLockTimeout
 from sqlalchemy import Engine
 from sqlmodel import Session, col, delete, or_, select
 from sqlmodel.sql.expression import SelectOfScalar
@@ -437,6 +438,28 @@ def fail_overdue_jobs(device: DeviceResources) -> None:
         ).all()
     for job_id in overdue_job_ids:
         _fail_job(device, job_id, reason="timed out")
+
+
+def fail_abandoned_recalibrations(device: DeviceResources) -> None:
+    """Fails the device's recalibrations that a worker started and stopped before they ended,
+    as it died or was killed; unless one is running, which holds the executor lock"""
+    try:
+        with device.executor_lock.acquire(timeout=0):
+            with Session(device.bookings_db) as session:
+                for row in session.exec(
+                    select(RecalibrationRow).where(
+                        col(RecalibrationRow.device_name)
+                        == device.settings.default_prefix,
+                        col(RecalibrationRow.status) == RecalibrationStatus.STARTED,
+                    )
+                ):
+                    row.status = RecalibrationStatus.FAILED
+                    row.ended_at = get_utc_now()
+                    row.error = "the worker running it stopped before it ended"
+                    session.add(row)
+                session.commit()
+    except FileLockTimeout:
+        logging.warning("a recalibration is running, so none was abandoned")
 
 
 def schedule_recalibration(
