@@ -173,11 +173,9 @@ type-hints: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.log_Q1AS
 type-hints: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.log_schedule
 type-hints: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.make_logger
 type-hints: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.warning
-type-hints: app/libs/queues/dtos.py::Job.validate_model
 type-hints: app/libs/queues/dtos.py::JobStatus.is_terminal
 type-hints: app/libs/queues/dtos.py::TimestampPair.set_finish_timestamp
 type-hints: app/libs/queues/dtos.py::TimestampPair.set_start_timestamp
-type-hints: app/libs/queues/dtos.py::Timestamps.with_updates
 type-hints: app/services/booking/dtos.py::Booking.validate_end_utc
 type-hints: app/services/booking/dtos.py::Booking.validate_start_utc
 type-hints: app/services/booking/dtos.py::Booking.validate_total_duration
@@ -220,7 +218,6 @@ verb: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.error
 verb: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.info
 verb: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.warning
 verb: app/libs/quantum_executor/utils/serialization.py::iqx_rld
-verb: app/libs/queues/dtos.py::Timestamps.with_updates
 verb: app/services/external/mss/service.py::MssClient.recv
 verb: app/utils/compat.py::gen_tuid
 verb: app/utils/datetime.py::utc_now_str

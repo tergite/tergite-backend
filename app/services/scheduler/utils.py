@@ -29,6 +29,7 @@ from ...libs.queues.dtos import (
     JobStage,
     JobStatus,
     Stage,
+    TimestampPair,
     Timestamps,
 )
 from ...utils.config import DeviceSettings
@@ -408,13 +409,9 @@ def _get_next_timestamps(job: Job, next_stage: Stage, current_time: str) -> Time
     Returns:
         the next timestamps for that job
     """
-    timestamps = job.timestamps
-    if timestamps is None:
-        timestamps = Timestamps()
-
-    new_timestamps = {
-        stage_name: {timestamp_label: current_time}
-        for stage_name, timestamp_label in _STAGE_TIMESTAMPS_MAP[next_stage]
-    }
-
-    return timestamps.with_updates(new_timestamps)
+    timestamps = job.timestamps or Timestamps()
+    updated_pairs = {}
+    for stage_name, event in _STAGE_TIMESTAMPS_MAP[next_stage]:
+        pair = getattr(timestamps, stage_name) or TimestampPair()
+        updated_pairs[stage_name] = pair.model_copy(update={event: current_time})
+    return timestamps.model_copy(update=updated_pairs)

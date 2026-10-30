@@ -16,6 +16,7 @@ from datetime import datetime
 from enum import Enum, unique
 from os import PathLike
 from typing import (
+    Any,
     Dict,
     List,
     Literal,
@@ -124,34 +125,6 @@ class Timestamps(BaseModel):
     post_processing: Optional[TimestampPair] = None
     final: Optional[TimestampPair] = None
 
-    def with_updates(self, updates: Dict[JobStage, Dict[JobEvent, str]]):
-        """Generates a new timestamp instance with the new partial updates
-
-        Args:
-            updates: dict of partial updates to incorporate into the new timestamp
-
-        Returns:
-            a new timestamp with the given updates
-        """
-        parsed_updates = self.model_validate(updates)
-        updates_dict = parsed_updates.model_dump(
-            exclude_unset=True, exclude_defaults=True
-        )
-
-        model_copy = self.model_copy()
-
-        for name, new_pair in updates_dict.items():  # type: str, dict
-            original_pair = getattr(model_copy, name)
-
-            for label, timestamp in new_pair.items():
-                if original_pair is None:
-                    original_pair = TimestampPair()
-                    setattr(model_copy, name, original_pair)
-
-                setattr(original_pair, label, timestamp)
-
-        return model_copy
-
     @property
     def resource_usage(self) -> Optional[float]:
         """the resource usage obtained from this timestamp"""
@@ -217,7 +190,6 @@ class Job(BaseModel):
     status: JobStatus = JobStatus.PENDING
     failure_reason: Optional[str] = None
     cancellation_reason: Optional[str] = None
-    actual_duration: Optional[float] = None
     download_url: Optional[str] = None
     result: Optional[JobResult] = None
     created_at: Optional[str] = Field(default_factory=utc_now_str)
@@ -239,17 +211,21 @@ class Job(BaseModel):
         except AttributeError:
             return None
 
-    @model_validator(mode="after")
-    def validate_model(self):
-        """Validate some computed fields"""
-        # set the actual_duration
-        try:
-            if self.actual_duration is None and self.timestamps.resource_usage:
-                self.actual_duration = self.timestamps.resource_usage
-        except AttributeError:
-            pass
+    @model_validator(mode="before")
+    @classmethod
+    def remove_computed_fields(cls, data: Any) -> Any:
+        """Removes the computed fields that a dumped job carries, which extra would keep"""
+        if not isinstance(data, dict):
+            return data
+        return {k: v for k, v in data.items() if k not in cls.model_computed_fields}
 
-        return self
+    @computed_field
+    @property
+    def actual_duration(self) -> Optional[float]:
+        """The seconds the job took to execute, once it has"""
+        if self.timestamps is None:
+            return None
+        return self.timestamps.resource_usage
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
