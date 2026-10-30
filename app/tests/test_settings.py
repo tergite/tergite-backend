@@ -140,7 +140,7 @@ def test_quantify_metadata_is_broken(monkeypatch):
     _reload_settings()
 
     with pytest.raises(ValidationError):
-        get_executor(ExecutorOptions.from_settings())
+        get_executor(ExecutorOptions.from_settings(settings.get_device_settings()))
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
@@ -154,7 +154,7 @@ def test_quantify_config_is_broken(monkeypatch):
     _reload_settings()
 
     with pytest.raises(ValidationError):
-        get_executor(ExecutorOptions.from_settings())
+        get_executor(ExecutorOptions.from_settings(settings.get_device_settings()))
 
 
 def test_executor_options_allow_resetting_the_clusters_when_set(monkeypatch):
@@ -164,7 +164,9 @@ def test_executor_options_allow_resetting_the_clusters_when_set(monkeypatch):
     monkeypatch.setenv("BCC_ARE_CLUSTERS_RESETTABLE", "true")
     _reload_settings()
 
-    assert ExecutorOptions.from_settings().are_clusters_resettable
+    assert ExecutorOptions.from_settings(
+        settings.get_device_settings()
+    ).are_clusters_resettable
 
 
 def _reload_settings() -> None:

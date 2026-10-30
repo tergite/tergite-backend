@@ -40,8 +40,7 @@ from pydantic import (
 )
 from pydantic_core import CoreSchema, core_schema
 
-import settings
-
+from ...utils.config import DeviceSettings
 from ...utils.datetime import to_utc, utc_now_str
 from ...utils.model import PartialMeta
 from ...utils.redis_store import Schema
@@ -389,7 +388,7 @@ class ExecutorOptions:
         backend_name: name of backend
         should_restore_currents: whether the executor should restore SPI currents
         are_clusters_resettable: whether the clusters for this executor can be reset
-        data_directory: the directory where to save experiment data; default = settings.EXECUTOR_DATA_DIR
+        data_directory: the directory where to save experiment data
         calibration_node_config: the configuration file for the nodes during calibration
         calibration_device_config: the configuration file for the entire devices during calibration
         calibration_spi_config: the configuration file for the spi during calibration
@@ -411,26 +410,26 @@ class ExecutorOptions:
     calibration_seed_file: Optional[PathLike[str]] = None
 
     @classmethod
-    def from_settings(cls) -> Self:
-        """Generates executor options from settings"""
+    def from_settings(cls, device_settings: DeviceSettings) -> Self:
+        """Generates executor options from the device's settings"""
         backend_config = BackendConfig.from_toml(
-            settings.BACKEND_SETTINGS,
-            seed_file=settings.CALIBRATION_SEED,
+            device_settings.backend_settings,
+            seed_file=device_settings.calibration_seed,
         )
         return cls(
-            executor_type=settings.EXECUTOR_TYPE,
+            executor_type=device_settings.executor_type,
             backend_name=backend_config.name,
             backend_config=backend_config,
-            calibration_seed_file=settings.CALIBRATION_SEED,
-            quantify_config_file=settings.QUANTIFY_CONFIG_FILE,
-            quantify_metadata_file=settings.QUANTIFY_METADATA_FILE,
-            should_restore_currents=settings.SHOULD_RESTORE_CURRENTS,
-            are_clusters_resettable=settings.IS_CLUSTER_RESET_ALLOWED,
-            data_directory=settings.EXECUTOR_DATA_DIR,
-            calibration_node_config=settings.CALIBRATION_NODE_CONFIG_FILE,
-            calibration_device_config=settings.CALIBRATION_DEVICE_CONFIG_FILE,
-            calibration_spi_config=settings.CALIBRATION_SPI_CONFIG_FILE,
-            redis_url=settings.RQ_REDIS_URL,
+            calibration_seed_file=device_settings.calibration_seed,
+            quantify_config_file=device_settings.quantify_config_file,
+            quantify_metadata_file=device_settings.quantify_metadata_file,
+            should_restore_currents=device_settings.should_restore_currents,
+            are_clusters_resettable=device_settings.is_cluster_reset_allowed,
+            data_directory=device_settings.executor_data_dir,
+            calibration_node_config=device_settings.calibration_node_config_file,
+            calibration_device_config=device_settings.calibration_device_config_file,
+            calibration_spi_config=device_settings.calibration_spi_config_file,
+            redis_url=device_settings.rq_redis_url,
         )
 
 
