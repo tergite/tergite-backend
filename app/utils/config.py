@@ -221,6 +221,11 @@ class DeviceSettings(BaseSettings):
         return self.storage_root / self.default_prefix / self.job_pre_proc_pool_dirname
 
     @property
+    def start_up_lock_file(self) -> Path:
+        """The lock that starting a device, which migrates its database, holds"""
+        return self.storage_root / ".start-up.lock"
+
+    @property
     def wakeups_dir(self) -> Path:
         """The folder whose files name the ports the device's waiting workers listen on"""
         return self.storage_root / self.default_prefix / "wakeups"

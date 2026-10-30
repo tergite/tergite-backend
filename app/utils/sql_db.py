@@ -16,6 +16,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterable, Iterator, Type
 
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import Engine
 from sqlalchemy.pool import NullPool
 from sqlmodel import Session, SQLModel, col, create_engine, desc
@@ -40,10 +42,6 @@ def get_sql_engine(url: str) -> Engine:
 
 def migrate_sql_db(url: str) -> None:
     """Migrates the database at the URL to the models' schema, with Alembic"""
-    # imported here, as only the API migrates
-    from alembic import command
-    from alembic.config import Config
-
     config = Config(
         str(_ALEMBIC_CONFIG_FILE), attributes={"should_configure_logging": False}
     )

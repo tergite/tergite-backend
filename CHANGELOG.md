@@ -26,7 +26,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 - Changed the jobs to be kept in the bookings database, `BCC_BOOKING_DB_URL`, instead of Redis; jobs stored in
   Redis before upgrading are no longer listed, so let the queues empty first
-- Changed the bookings database to be created and upgraded with Alembic as the API starts, instead of by SQLModel;
+- Changed the bookings database to be created and upgraded with Alembic as the API and the workers start, instead of by SQLModel;
   an existing one is kept as it is, but for its unused `user.password` column, which is dropped
 - Changed the 422 for a booking that starts in the past or lasts outside the device's limits to give its message
   as `detail`, as the other errors do, instead of pydantic's list of errors

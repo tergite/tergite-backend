@@ -14,9 +14,12 @@
 import dataclasses
 from importlib import import_module
 
+from filelock import FileLock
+
 from ..services.devices import save_all_device_params
 from ..services.scheduler import DeviceResources, get_executor
 from ..utils.config import DeviceSettings, create_device_folders
+from ..utils.sql_db import migrate_sql_db
 
 
 def preload_worker_globals(
@@ -28,6 +31,9 @@ def preload_worker_globals(
         the device's resources
     """
     create_device_folders(device_settings)
+    # as the API may not have yet, under the lock it migrates under
+    with FileLock(device_settings.start_up_lock_file):
+        migrate_sql_db(device_settings.booking_db_url)
     # so that the tasks' first run need not import them
     import_module("app.services.scheduler.tasks")
 
