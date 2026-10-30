@@ -23,9 +23,8 @@
 # - Chalmers Next Labs, 2026: gathered from app/libs/device_parameters and
 #   app/services/scheduler/service.py
 """The device's properties and calibration, stored and published to MSS, and its switch"""
-from redis import Redis
 from sqlalchemy import Engine
-from sqlmodel import Session
+from sqlmodel import Session, col, delete
 
 from ...libs.device_parameters import BackendConfig, Device, DeviceCalibration
 from ...utils.datetime import get_utc_now
@@ -36,7 +35,7 @@ from ..external.mss import (
     DeviceSwitchData,
     MssClient,
 )
-from .store import DeviceParametersRow
+from .store import DeviceParametersRow, SwitchedOffDeviceRow
 
 
 def get_device_info(db_engine: Engine, backend_name: str) -> Device:
@@ -88,14 +87,16 @@ def save_all_device_params(
     )
 
 
-def switch_off(redis: Redis, mss_client: MssClient, device_name: str) -> None:
+def switch_off(db_engine: Engine, mss_client: MssClient, device_name: str) -> None:
     """Switches off the device, and tells MSS
 
     Raises:
         MssRejectedError: error sending switch off data: {error message}
         MssTimeoutError: error sending switch off data: response took longer than timeout
     """
-    redis.set(_get_offline_flag_key(device_name), 1)
+    with Session(db_engine) as session:
+        session.merge(SwitchedOffDeviceRow(device_name=device_name))
+        session.commit()
     mss_client.send_event(
         DeviceEvent(
             name=DeviceEventName.SWITCHED_OFF,
@@ -105,14 +106,20 @@ def switch_off(redis: Redis, mss_client: MssClient, device_name: str) -> None:
     )
 
 
-def switch_on(redis: Redis, mss_client: MssClient, device_name: str) -> None:
+def switch_on(db_engine: Engine, mss_client: MssClient, device_name: str) -> None:
     """Switches on the device, and tells MSS
 
     Raises:
         MssRejectedError: error sending switch on data: {error message}
         MssTimeoutError: error sending switch on data: response took longer than timeout
     """
-    redis.delete(_get_offline_flag_key(device_name))
+    with Session(db_engine) as session:
+        session.exec(
+            delete(SwitchedOffDeviceRow).where(
+                col(SwitchedOffDeviceRow.device_name) == device_name
+            )
+        )
+        session.commit()
     mss_client.send_event(
         DeviceEvent(
             name=DeviceEventName.SWITCHED_ON,
@@ -122,14 +129,10 @@ def switch_on(redis: Redis, mss_client: MssClient, device_name: str) -> None:
     )
 
 
-def is_offline(redis: Redis, device_name: str) -> bool:
+def is_offline(db_engine: Engine, device_name: str) -> bool:
     """Checks if the named device is switched off"""
-    return redis.exists(_get_offline_flag_key(device_name)) == 1
-
-
-def _get_offline_flag_key(device_name: str) -> str:
-    """Gets the key of the flag set while the device is switched off, one per device"""
-    return f"{device_name}:offline"
+    with Session(db_engine) as session:
+        return session.get(SwitchedOffDeviceRow, device_name) is not None
 
 
 def _send_device_params_to_mss(

@@ -103,7 +103,7 @@ def check_device_is_online(device: DeviceResourcesDep) -> None:
     Raises:
         IsOfflineError: {device name} is offline
     """
-    if is_offline(device.redis, device.settings.default_prefix):
+    if is_offline(device.bookings_db, device.settings.default_prefix):
         raise IsOfflineError(f"{device.settings.default_prefix} is offline")
 
 

@@ -38,7 +38,9 @@ def switch_off(device: DeviceResourcesDep) -> GeneralMessage:
 
     Only MSS admin users can switch on and off this device
     """
-    devices.switch_off(device.redis, device.mss_client, device.settings.default_prefix)
+    devices.switch_off(
+        device.bookings_db, device.mss_client, device.settings.default_prefix
+    )
     return {"status": "success"}
 
 
@@ -48,7 +50,9 @@ def switch_on(device: DeviceResourcesDep) -> GeneralMessage:
 
     Only MSS admin users can switch on and off this device
     """
-    devices.switch_on(device.redis, device.mss_client, device.settings.default_prefix)
+    devices.switch_on(
+        device.bookings_db, device.mss_client, device.settings.default_prefix
+    )
     scheduler.wake_workers(device, "heavy")
     return {"status": "success"}
 
@@ -56,6 +60,6 @@ def switch_on(device: DeviceResourcesDep) -> GeneralMessage:
 @router.get("/switch/status", dependencies=[Depends(get_verified_mss_user_id)])
 async def get_switch_status(device: DeviceResourcesDep):
     """Gets the status of this device"""
-    is_offline = devices.is_offline(device.redis, device.settings.default_prefix)
+    is_offline = devices.is_offline(device.bookings_db, device.settings.default_prefix)
     status = "OFF" if is_offline else "ON"
     return {"status": status}

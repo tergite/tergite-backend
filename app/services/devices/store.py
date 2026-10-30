@@ -9,7 +9,7 @@
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
-"""The devices' parameters, in the SQL database"""
+"""The devices' parameters and switches, in the SQL database"""
 from sqlmodel import Field, SQLModel
 
 
@@ -21,3 +21,11 @@ class DeviceParametersRow(SQLModel, table=True):
     backend_name: str = Field(primary_key=True)
     device_info: str
     calibration_info: str
+
+
+class SwitchedOffDeviceRow(SQLModel, table=True):
+    """A device switched off, until it is switched on"""
+
+    __tablename__ = "switched_off_device"
+
+    device_name: str = Field(primary_key=True)

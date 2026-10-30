@@ -24,11 +24,17 @@ from sqlalchemy.pool import NullPool
 from sqlmodel import SQLModel
 
 from app.services.booking import Booking
-from app.services.devices.store import DeviceParametersRow
+from app.services.devices.store import DeviceParametersRow, SwitchedOffDeviceRow
 from app.services.scheduler.store import JobRow, RecalibrationRow
 
 # the models whose tables Alembic migrates, User's coming with Booking's module
-_MODELS = (Booking, DeviceParametersRow, JobRow, RecalibrationRow)
+_MODELS = (
+    Booking,
+    DeviceParametersRow,
+    JobRow,
+    RecalibrationRow,
+    SwitchedOffDeviceRow,
+)
 target_metadata = SQLModel.metadata
 # a URL set in Alembic's config, as the API and the tests set one, stands in for the env file's
 database_url = context.config.get_main_option("sqlalchemy.url")

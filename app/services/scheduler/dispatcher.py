@@ -137,7 +137,9 @@ class Dispatcher:
             return False
 
         device_name = device.settings.default_prefix
-        if self.should_wait_while_offline and is_offline(device.redis, device_name):
+        if self.should_wait_while_offline and is_offline(
+            device.bookings_db, device_name
+        ):
             return False
         # recalibration last, when the device has no job to run
         return (

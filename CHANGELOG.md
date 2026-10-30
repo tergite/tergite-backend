@@ -26,6 +26,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 - Changed the jobs to be kept in the bookings database, `BCC_BOOKING_DB_URL`, instead of Redis; jobs stored in
   Redis before upgrading are no longer listed, so let the queues empty first
+- Changed whether a device is switched off to be kept in the bookings database instead of Redis; a device switched
+  off before upgrading is on after it, so switch it off again
 - Changed the bookings database to be created and upgraded with Alembic as the API and the workers start, instead of by SQLModel;
   an existing one is kept as it is, but for its unused `user.password` column, which is dropped
 - Changed the 422 for a booking that starts in the past or lasts outside the device's limits to give its message
