@@ -100,7 +100,7 @@ cd tergite-backend
 
 - Install dependencies. Note that we can either use the simulators (`qiskit`) or connect to Qblox clusters (`quantify`).
   To install for simulators, use `--extra qiskit` and to install for Qblox, use `--extra quantify`.  
-  **Take note that you can use both at the same time because they conflict with each other**.
+  **Take note that you cannot use both at the same time because they conflict with each other**.
 
 ```shell
 uv sync --dev --extra quantify
@@ -120,22 +120,26 @@ source .venv/bin/activate
 redis-server --port 6378
 ```
 
-- Lint with black
+- Lint with black, isort and pyflakes, as CI does
 
 ```shell
 black --check api libs services utils tests dev migrations main.py settings.py
+isort --check-only api libs services utils tests dev migrations main.py settings.py
+pyflakes api libs services utils tests dev migrations main.py settings.py
 ```
 
-- Optionally enable pre-commit hook to run black 
+- Optionally enable the pre-commit hook to run black and isort
 
 ```shell
 pre-commit install
 ```
 
-- Run the tests by running the command below at the root of the project. 
+- Run the tests by running the command below at the root of the project.
+  `-n auto --dist=loadscope` runs them in parallel, but the booking tests count real
+  seconds, so they can fail on a busy machine.
 
 ```shell
-pytest -n auto --dist=loadscope tests
+pytest tests
 ```
 
 ## How to Install as a Service
@@ -175,8 +179,6 @@ journalctl -u bcc@lab1 -f
 
 ## Build Executable with [Nuitka](https://nuitka.net/)
 
-- Ensure you have a [redis server](https://redis.io/docs/install/install-redis/) installed on your local machine,
-  which the `quantify` extra's tests need.
 - Ensure you have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed. 
  (_You could simply have python +3.13 installed instead._)
 
@@ -193,29 +195,7 @@ git clone git@github.com:tergite/tergite-backend.git
 cd tergite-backend
 ```
 
-- Install dependencies. Note that we can either use the simulators (`qiskit`) or connect to Qblox clusters (`quantify`).
-  To install for simulators, use `--extra qiskit` and to install for Qblox, use `--extra quantify`.  
-  **Take note that you can use both at the same time because they conflict with each other**.
-
-```shell
-uv sync --dev --extra quantify
-# or for simulators only
-# uv sync --dev --extra qiskit
-```
-
-- Activate your environment
-
-```shell
-source .venv/bin/activate
-```
-
-- For the `quantify` extra, start the redis server in another terminal on port 6378
-
-```shell
-redis-server --port 6378
-```
-
-- Build the main.py file
+- Build the main.py file, which installs the dependencies of the executor first
 
 ```shell
 pkg/build.sh
