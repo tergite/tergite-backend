@@ -436,6 +436,31 @@ TTLs, pagination and a Lua script, used by three stores of which only one needs 
    times and peak memory; lines of code; and the workarounds each needs against its library (rule 9).
    **Decide**, from the comparison, which stays; whether B is built at all is decided first. With 5.3's jobs in SQL,
    B's SQLite store comes nearly free.
+   *Compared* at `3478d6e`, on a machine whose load average ran from 7 to 32:
+   - Tests: A passes both suites. B fails 15 (quantify) and 16 (qiskit). 25 read RQ's own state (all 21 of
+     `test_recalibration`, and `test_cancel_job_cancels_its_rq_job`) and would be rewritten for B. The rest are
+     policy: B fills a gap before a booking with a job that fits, where A's waitlist is first in, first out; and it
+     fails a booker's over-long job only while the booking runs, which the tests' clock has passed.
+   - Perf: neither failed a request or a job, once B's results-file race was fixed. B waits about 200 ms (p95) to
+     preprocess or postprocess, its 0.2 s idle poll, against A's 122 and 31 ms, and 29 ms to execute against 45.
+     The API's p95s moved with the load, not the option: B's two runs were 3% under and 39% over A's aggregate.
+     B's peaks are lower: heavy worker 247–491 MiB against 621, light 98–161 against 232, Redis keys about 1,000
+     against 1,988.
+   - Code: A's own is about 1,330 lines (`libs/queues/types.py`, `queues.py`, `utils/rq.py`, `api/worker.py` and
+     its branches in tasks and service); B's about 715, `dispatcher.py` 579 of them.
+   - Workarounds: A overrides `DeviceJob._execute` and `PreloadedRqWorker.execute_job`/`check_for_suspension`,
+     runs RQ's scheduler in a spawned process, needs `OBJC_DISABLE_INITIALIZE_FORK_SAFETY` on macOS, keeps the
+     waitlist in a Lua-scripted list beside RQ and idle timers as repeated jobs, names rq jobs `{job}_{STAGE}`, and
+     reads the started registry without cleanup. B limits a stage's time by SIGALRM, main thread only; runs it
+     unforked, so a crash takes the worker, which the recovery pass covers; polls; imports `tasks` lazily to break
+     a cycle; and registers no RQ worker, so `dev/perf/record.sh` waits for a ready line instead.
+   - Redis: A needs it for RQ; under B, item 6 makes it optional.
+6. **Redis only for autocalibration**, if B stays, one store per commit: the device parameters of 5.2, the offline
+   flag (`devices/service.py:142`), the MSS nonces of 5.1 (a table with a unique key and an expiry time, whose
+   failed insert is the claim `SET NX` was) and the API's start-up lock (`dependencies.py:72`) move to the SQL
+   database. Redis is then needed only by tergite-tuner's sessions (`quantify/executor.py:215`), so a qiskit
+   device runs without one; once tergite-tuner keeps them in SQLite, in a change of its own there, the BCC drops
+   Redis. Under A, RQ keeps Redis required, and this item is dropped.
 
 ## Step 6: classes, long functions and DTOs
 
