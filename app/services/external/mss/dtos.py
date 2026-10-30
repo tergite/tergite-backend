@@ -44,16 +44,18 @@ class EventResponse(GeneralMessage):
     id: str
 
 
+# the type of each event's data
+_EVENT_DATA_TYPES: Dict[DeviceEventName, Type[DeviceEventData]] = {
+    DeviceEventName.INITIALIZED: Device,
+    DeviceEventName.RECALIBRATED: DeviceCalibration,
+    DeviceEventName.JOB_UPDATED: Job,
+    DeviceEventName.SWITCHED_OFF: DeviceSwitchData,
+    DeviceEventName.SWITCHED_ON: DeviceSwitchData,
+}
+
+
 class DeviceEvent(BaseModel):
     """The schema for device events"""
-
-    __status_data_map__: Dict[DeviceEventName, Type[DeviceEventData]] = {
-        DeviceEventName.INITIALIZED: Device,
-        DeviceEventName.RECALIBRATED: DeviceCalibration,
-        DeviceEventName.JOB_UPDATED: Job,
-        DeviceEventName.SWITCHED_OFF: DeviceSwitchData,
-        DeviceEventName.SWITCHED_ON: DeviceSwitchData,
-    }
 
     id: str = Field(default_factory=uuid_str)
     name: DeviceEventName
@@ -65,7 +67,7 @@ class DeviceEvent(BaseModel):
         cls, value: DeviceEventData, info: ValidationInfo
     ) -> DeviceEventData:
         """Validates the data depending on the name type"""
-        expected_data_cls = cls.__status_data_map__[info.data["name"]]
+        expected_data_cls = _EVENT_DATA_TYPES[info.data["name"]]
         if not isinstance(value, expected_data_cls):
             raise ValueError(
                 f"data must be of type {expected_data_cls.__name__}, was {type(value)}"
