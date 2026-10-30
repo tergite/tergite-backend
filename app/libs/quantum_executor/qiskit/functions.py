@@ -61,6 +61,11 @@ def omega_c(
     return omega_c0 * np.sqrt(np.abs(np.cos(np.pi * phi_t_vals)))
 
 
+def get_lo_range(frequency: float) -> list[float]:
+    """Gets the range, in GHz, of a local oscillator 0.1 GHz either side of the frequency in Hz"""
+    return [frequency / 1e9 - 0.1, frequency / 1e9 + 0.1]
+
+
 def _delta_t_function(t: float, t_w: float, t_rf: float, t_p: float, delta_0: float):
     """
     Vectorized envelope function δ(t) as a function of time.

@@ -13,11 +13,12 @@
 # that they have been altered from the originals.
 import enum
 from pathlib import Path
-from typing import List, Type
+from typing import List
 
 import numpy as np
 from numpy import typing as npt
 from qiskit.result import Result as qiskitResult
+from qiskit_dynamics import DynamicsBackend
 
 from app.libs.qiskit.qobj import PulseQobj
 from app.libs.quantum_executor.base.executor import QuantumExecutor
@@ -29,9 +30,8 @@ from ..base.quantum_job import MeasRet, QDataset, get_experiment_name
 from ..base.quantum_job.dtos import NativeQobjConfig
 from ..base.quantum_job.typing import QExperimentResult, RepetitionsByAcquisitionsMatrix
 from ..utils.logger import ExperimentLogger
-from .backends.base import QiskitPulseBackend
-from .backends.one_qubit import QiskitPulse1Q
-from .backends.two_qubit import QiskitPulse2Q
+from .backends.one_qubit import get_one_qubit_backend, train_one_qubit_discriminator
+from .backends.two_qubit import get_two_qubit_backend, train_two_qubit_discriminator
 
 
 class QiskitDynamicsExecutor(QuantumExecutor):
@@ -39,19 +39,17 @@ class QiskitDynamicsExecutor(QuantumExecutor):
         self,
         backend_config: BackendConfig,
         data_dir: Path,
-        backend_cls: Type[QiskitPulseBackend] = QiskitPulse1Q,
-        **kwargs,
+        backend: DynamicsBackend,
     ):
-        """Creates the QiskitDynamicsExecutor for the given backend class and key-word args
+        """Creates the QiskitDynamicsExecutor that simulates on the given backend
 
         Args:
             backend_config: the configuration of the backend
             data_dir: the directory where to save experiment data
-            backend_cls: the class of the backend
-            kwargs: extra key-word args to pass to the backend on initialisation
+            backend: the simulator
         """
-        super().__init__(data_dir=data_dir, backend_config=backend_config, **kwargs)
-        self.backend = backend_cls(backend_config=backend_config, **kwargs)
+        super().__init__(data_dir=data_dir, backend_config=backend_config)
+        self.backend = backend
 
     def recalibrate(self, **kwargs) -> None:
         pass
@@ -117,15 +115,15 @@ class QiskitDynamicsExecutor(QuantumExecutor):
         instance = cls(
             backend_config=backend_config,
             data_dir=data_dir,
-            backend_cls=QiskitPulse1Q,
-            meas_level=1,
-            meas_return="single",
+            backend=get_one_qubit_backend(
+                backend_config, meas_level=1, meas_return="single"
+            ),
         )
 
         if reset:
             # train the discriminators and update the backend config
             instance.backend_config.calibration_config.discriminators = (
-                instance.backend.train_discriminator()
+                train_one_qubit_discriminator(instance.backend, backend_config)
             )
 
         return instance
@@ -147,15 +145,15 @@ class QiskitDynamicsExecutor(QuantumExecutor):
         instance = cls(
             backend_config=backend_config,
             data_dir=data_dir,
-            backend_cls=QiskitPulse2Q,
-            meas_level=1,
-            meas_return="single",
+            backend=get_two_qubit_backend(
+                backend_config, meas_level=1, meas_return="single"
+            ),
         )
 
         if reset:
             # train the discriminators and update the backend config
             instance.backend_config.calibration_config.discriminators = (
-                instance.backend.train_discriminator()
+                train_two_qubit_discriminator(instance.backend)
             )
         return instance
 
