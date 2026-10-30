@@ -423,6 +423,9 @@ TTLs, pagination and a Lua script, used by three stores of which only one needs 
      its own (`types.py:444-478`) beside RQ's. RQ stores both; `import_func` and `get_function_import_path`
      (`app/libs/queues/utils.py`) give way to `rq.utils.import_attribute`. `StaticQueue` stays a Redis list per
      device, and bookings stay start and end events, idle timers and the waitlist.
+     *Done:* the scheduler enqueues its tasks on plain `rq.Queue`s, the postprocessing callbacks with them; an
+     execution's estimated duration is its rq job's meta, and a queue's duration sums its queued jobs' and what
+     is left of its running one's, from RQ's started registry, instead of a counter beside a copy of each job.
    - **B, a dispatcher over the jobs store**, as qpi-ui's (`internal/scheduler/scheduler.go`): a job is a row with a
      status, and each device's dispatcher claims the next by the booking policy, in one function: the booked
      user's oldest job, else the oldest of anyone's once the booker is idle. A booking's start and end are times

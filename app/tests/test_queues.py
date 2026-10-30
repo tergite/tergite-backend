@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests for the queue types"""
+import math
 from datetime import timedelta
 
 import pytest
@@ -17,10 +18,14 @@ import time_machine
 from pydantic import ValidationError
 from rq import Queue, SimpleWorker, get_current_job
 from rq.job import Job as RqJob
+from rq.registry import StartedJobRegistry
+from rq.utils import now
 
 from app.api.worker import DeviceJob
 from app.libs.queues.dtos import Job
-from app.libs.queues.types import RunnerQueue, StaticQueue
+from app.libs.queues.types import StaticQueue
+from app.services.scheduler import queues
+from app.services.scheduler.queues import get_queue_duration
 from app.utils.rq import get_next_job_on_queue
 
 
@@ -56,18 +61,10 @@ def test_clear_deletes_every_key_of_the_queue(redis_client):
     assert redis_client.keys("*") == []
 
 
-def test_total_duration_counts_the_time_left_of_the_running_job(redis_client):
-    queue = RunnerQueue(
-        "test_queue",
-        connection=redis_client,
-        job_executor_func=_get_test_queue_total_duration,
-    )
-    queue.enqueue(
-        Job(device="loke", calibration_date="", estimated_duration=10), job_id="first"
-    )
-    queue.enqueue(
-        Job(device="loke", calibration_date="", estimated_duration=5), job_id="second"
-    )
+def test_queue_duration_counts_the_time_left_of_the_running_job(redis_client):
+    queue = Queue("test_queue", connection=redis_client)
+    queue.enqueue(_get_test_queue_duration, meta=_get_duration_meta(10), job_id="first")
+    queue.enqueue(_get_test_queue_duration, meta=_get_duration_meta(5), job_id="second")
 
     SimpleWorker([queue], connection=redis_client, job_class=DeviceJob).work(
         burst=True, max_jobs=1
@@ -77,33 +74,35 @@ def test_total_duration_counts_the_time_left_of_the_running_job(redis_client):
     assert first_job.return_value() == pytest.approx(15, abs=1)
 
 
-def test_total_duration_stops_counting_a_job_past_its_estimate(redis_client):
+def test_queue_duration_stops_counting_a_job_past_its_estimate(redis_client):
     with time_machine.travel(0, tick=False) as clock:
-        queue = RunnerQueue("test_queue", connection=redis_client)
-        queue.enqueue(
-            Job(device="loke", calibration_date="", estimated_duration=10),
-            job_id="first",
-        )
-        SimpleWorker([queue], connection=redis_client, job_class=DeviceJob).work(
-            burst=True
-        )
+        queue = Queue("test_queue", connection=redis_client)
+        job = queue.enqueue("time.sleep", meta=_get_duration_meta(10), job_id="first")
+        job.started_at = now()
+        job.save()
+        # taken off the queue as a worker running it would, with no execution of its own
+        queue.remove(job)
+        redis_client.zadd(StartedJobRegistry(queue=queue).key, {job.id: math.inf})
 
         clock.shift(4)
-        assert queue.total_duration == 6
+        assert get_queue_duration(queue) == 6
         clock.shift(20)
-        assert queue.total_duration == 0
+        assert get_queue_duration(queue) == 0
 
 
 def test_next_job_on_queue_is_a_queued_one_before_a_scheduled_one(redis_client):
     queue = Queue("test_queue", connection=redis_client)
-    queue.enqueue_in(
-        timedelta(minutes=5), "app.libs.queues.utils.noop", job_id="scheduled"
-    )
-    queue.enqueue("app.libs.queues.utils.noop", job_id="queued")
+    queue.enqueue_in(timedelta(minutes=5), "time.sleep", job_id="scheduled")
+    queue.enqueue("time.sleep", job_id="queued")
 
     assert get_next_job_on_queue(queue).id == "queued"
 
 
-def _get_test_queue_total_duration(_device_resources: None, job: Job) -> float:
-    connection = get_current_job().connection
-    return RunnerQueue("test_queue", connection=connection).total_duration
+def _get_test_queue_duration(_device_resources: None) -> float:
+    return get_queue_duration(
+        Queue("test_queue", connection=get_current_job().connection)
+    )
+
+
+def _get_duration_meta(seconds: float) -> dict:
+    return {queues._DURATION_META_KEY: seconds}

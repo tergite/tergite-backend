@@ -26,7 +26,7 @@ from typing import Any, Optional, Tuple, Type
 import redis
 import rq.job
 from pydantic import ValidationError
-from rq import Repeat
+from rq import Callback, Repeat
 
 from app.libs.qiskit.qobj import PulseQobj
 
@@ -56,6 +56,7 @@ from ..booking import (
 from ..devices import get_device_calibration_info
 from ..external.mss import DeviceEvent, DeviceEventName
 from .dtos import JobFile
+from .queues import enqueue_execution, get_queue_duration
 from .resources import DeviceResources
 from .utils import (
     apply_linear_discriminator,
@@ -248,9 +249,12 @@ def execute(device: DeviceResources, job: Job) -> Tuple[str, str]:
         postproc_queue = device.queues.postprocessing
         job = update_job_stage(jobs_store, job_id=job_id, stage=Stage.PST_PROC_Q)
         postproc_queue.enqueue(
+            postprocess,
             job,
             results_file=results_file,
             job_id=get_rq_job_id(job_id, Stage.PST_PROC_Q),
+            on_success=Callback(postprocessing_success_callback),
+            on_failure=Callback(postprocessing_failure_callback),
         )
 
         # clean up
@@ -462,7 +466,7 @@ def _try_enqueue_on_normal_queue(device: DeviceResources, job: Job) -> str:
 
     if next_booking:
         time_to_next_booking = (next_booking.start_utc - get_utc_now()).total_seconds()
-        queue_duration = queue.total_duration
+        queue_duration = get_queue_duration(queue)
         # usable time before the next booking starts must account for the jobs that are already scheduled
         usable_time = time_to_next_booking - queue_duration
 
@@ -471,7 +475,7 @@ def _try_enqueue_on_normal_queue(device: DeviceResources, job: Job) -> str:
             return job_id
 
     job = update_job_stage(jobs_store, job_id=job_id, stage=Stage.EXEC_Q)
-    queue.enqueue(job, job_id=get_rq_job_id(job_id, Stage.EXEC_Q))
+    enqueue_execution(queue, job, job_id=get_rq_job_id(job_id, Stage.EXEC_Q))
     return job_id
 
 
@@ -518,7 +522,7 @@ def _try_enqueue_on_booked_queue(
     queue = device.queues.booked_execution
 
     time_left = (active_booking.end_utc - get_utc_now()).total_seconds()
-    usable_time = time_left - queue.total_duration
+    usable_time = time_left - get_queue_duration(queue)
     is_booker = user_id == active_booking.user_id
 
     if is_booker:
@@ -540,7 +544,7 @@ def _try_enqueue_on_booked_queue(
                 restart_in=job.estimated_duration,
             )
             job = update_job_stage(device.jobs_store, job_id=job_id, stage=Stage.EXEC_Q)
-            queue.enqueue(job, job_id=get_rq_job_id(job_id, Stage.EXEC_Q))
+            enqueue_execution(queue, job, job_id=get_rq_job_id(job_id, Stage.EXEC_Q))
         return job_id
 
     _push_to_waitlist(device, job_id=job_id)
@@ -597,7 +601,7 @@ def _pop_waitlist_to_booking(device: DeviceResources) -> Optional[str]:
             max_idle_time=0,
         )
     job = update_job_stage(device.jobs_store, job_id=job.job_id, stage=Stage.EXEC_Q)
-    queue.enqueue(job, *args, **kwargs)
+    enqueue_execution(queue, job, *args, **kwargs)
 
     return job.job_id
 
@@ -618,7 +622,7 @@ def _pop_waitlist_to_normal_queue(device: DeviceResources):
 
     for job, args, kwargs in job_tuples:
         job = update_job_stage(device.jobs_store, job_id=job.job_id, stage=Stage.EXEC_Q)
-        normal_queue.enqueue(job, *args, **kwargs)
+        enqueue_execution(normal_queue, job, *args, **kwargs)
 
 
 def _fail_job(device: DeviceResources, job_id: str, reason: str) -> Job:

@@ -250,6 +250,7 @@ def submit_job_file(
         booking_id = active_booking.id
 
     device.queues.preprocessing.enqueue(
+        f"{_TASKS_MODULE}.preprocess",
         job,
         booking_id=booking_id,
         job_file=job_file_path,
@@ -548,17 +549,11 @@ def _cancel_job_in_queues(queues: QueuePool, job: Job, ignore_errors: bool = Fal
         rq.exceptions.InvalidJobOperation: if the job has already been cancelled
     """
     job_id = job.job_id
-    preprocessing_storage_id = StorageID.from_details(uuid=job_id, duration=None)
     execution_storage_id = StorageID.from_details(
         uuid=job_id, duration=job.estimated_duration
     )
-
     with suppress(ValidationError):
         queues.waitlist.pop_job(execution_storage_id)
-    queues.preprocessing.remove_job(preprocessing_storage_id)
-    queues.normal_execution.remove_job(execution_storage_id)
-    queues.booked_execution.remove_job(execution_storage_id)
-    queues.postprocessing.remove_job(execution_storage_id)
 
     # rq job ids are global, so the normal and booked execution queues share the EXEC_Q one
     connection = queues.preprocessing.connection

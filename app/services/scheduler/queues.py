@@ -12,17 +12,24 @@
 # that they have been altered from the originals.
 #
 """Module containing all the queues relevant for this application"""
+from datetime import timedelta
 from functools import cached_property
-from typing import Self
+from typing import Any, Self
 
 from redis import Redis
 from rq import Queue as RqQueue
+from rq.job import Job as RqJob
+from rq.registry import StartedJobRegistry
+from rq.utils import now
 
-from ...libs.queues.types import RunnerQueue, StaticQueue
+from ...libs.queues.dtos import Job
+from ...libs.queues.types import StaticQueue
 from ...utils.config import DeviceSettings
 
 # the tasks go by import path, as importing them loads the executor's heavy libraries
 _TASKS_MODULE = f"{__package__}.tasks"
+# the rq job's meta key of its job's estimated seconds of execution
+_DURATION_META_KEY = "estimated_duration"
 
 
 class QueuePool:
@@ -95,7 +102,7 @@ class QueuePool:
         self.waitlist = get_waitlist(prefix, connection=connection)
 
     @cached_property
-    def queues(self) -> dict[str, StaticQueue | RqQueue | RunnerQueue]:
+    def queues(self) -> dict[str, StaticQueue | RqQueue]:
         """Mapping of the queues in the pool, keyed by name"""
         return {
             self.preprocessing.name: self.preprocessing,
@@ -155,7 +162,7 @@ def get_preprocessing_queue(
     connection: Redis,
     default_timeout: int,
     **kwargs,
-) -> RunnerQueue:
+) -> RqQueue:
     """Gets the queue for preprocessing
 
     Args:
@@ -166,15 +173,12 @@ def get_preprocessing_queue(
             - job_class: Optional[Union[str, type['Job']]] = None,
             - serializer: Optional[Union[Serializer, str]] = None,
             - death_penalty_class: Optional[type[BaseDeathPenalty]] = UnixSignalDeathPenalty,
-            - success_callback: the callback to run on successful execution of the job
-            - failure_callback: the callback to run on failed execution of the job
             - stopped_callback: the callback to run when a job is stopped before it completes
 
     Returns:
-        a RunnerQueue instance to be used in preprocessing
+        a Queue instance to be used in preprocessing
     """
-    kwargs["job_executor_func"] = f"{_TASKS_MODULE}.preprocess"
-    return RunnerQueue(
+    return RqQueue(
         f"{prefix}_preprocessing",
         connection,
         default_timeout=default_timeout,
@@ -187,7 +191,7 @@ def get_normal_execution_queue(
     connection: Redis,
     default_timeout: int,
     **kwargs,
-) -> RunnerQueue:
+) -> RqQueue:
     """Gets the queue for executing on the normal queue
 
     Args:
@@ -198,15 +202,12 @@ def get_normal_execution_queue(
             - job_class: Optional[Union[str, type['Job']]] = None,
             - serializer: Optional[Union[Serializer, str]] = None,
             - death_penalty_class: Optional[type[BaseDeathPenalty]] = UnixSignalDeathPenalty,
-            - success_callback: the callback to run on successful execution of the job
-            - failure_callback: the callback to run on failed execution of the job
             - stopped_callback: the callback to run when a job is stopped before it completes
 
     Returns:
-        a RunnerQueue instance to be used in normal execution
+        a Queue instance to be used in normal execution
     """
-    kwargs["job_executor_func"] = f"{_TASKS_MODULE}.execute"
-    return RunnerQueue(
+    return RqQueue(
         f"{prefix}_normal_execution",
         connection,
         default_timeout=default_timeout,
@@ -219,7 +220,7 @@ def get_booked_execution_queue(
     connection: Redis,
     default_timeout: int,
     **kwargs,
-) -> RunnerQueue:
+) -> RqQueue:
     """Gets the queue for executing on the booked execution queue
 
     Args:
@@ -231,15 +232,12 @@ def get_booked_execution_queue(
             - job_class: Optional[Union[str, type['Job']]] = None,
             - serializer: Optional[Union[Serializer, str]] = None,
             - death_penalty_class: Optional[type[BaseDeathPenalty]] = UnixSignalDeathPenalty,
-            - success_callback: the callback to run on successful execution of the job
-            - failure_callback: the callback to run on failed execution of the job
             - stopped_callback: the callback to run when a job is stopped before it completes
 
     Returns:
-        a RunnerQueue instance to be used in booked execution
+        a Queue instance to be used in booked execution
     """
-    kwargs["job_executor_func"] = f"{_TASKS_MODULE}.execute"
-    return RunnerQueue(
+    return RqQueue(
         f"{prefix}_booked_execution",
         connection,
         default_timeout=default_timeout,
@@ -280,7 +278,7 @@ def get_postprocessing_queue(
     connection: Redis,
     default_timeout: int,
     **kwargs,
-) -> RunnerQueue:
+) -> RqQueue:
     """Gets the queue for postprocessing
 
     Args:
@@ -294,12 +292,9 @@ def get_postprocessing_queue(
             - stopped_callback: the callback to run when a job is stopped before it completes
 
     Returns:
-        a RunnerQueue instance to be used in preprocessing
+        a Queue instance to be used in preprocessing
     """
-    kwargs["job_executor_func"] = f"{_TASKS_MODULE}.postprocess"
-    kwargs["success_callback"] = f"{_TASKS_MODULE}.postprocessing_success_callback"
-    kwargs["failure_callback"] = f"{_TASKS_MODULE}.postprocessing_failure_callback"
-    return RunnerQueue(
+    return RqQueue(
         f"{prefix}_postprocessing",
         connection,
         default_timeout=default_timeout,
@@ -326,7 +321,7 @@ def get_recalibration_queue(
             - stopped_callback: the callback to run when a job is stopped before it completes
 
     Returns:
-        a RunnerQueue instance to be used in preprocessing
+        a Queue instance to be used in preprocessing
     """
     return RqQueue(
         f"{prefix}_recalibration",
@@ -334,3 +329,51 @@ def get_recalibration_queue(
         default_timeout=default_timeout,
         **kwargs,
     )
+
+
+def enqueue_execution(queue: RqQueue, job: Job, *args: Any, **kwargs: Any) -> RqJob:
+    """Queues the job's execution, with its estimated duration for get_queue_duration
+
+    Args:
+        queue: the execution queue
+        job: the job to execute
+        args: the other positional arguments of the execute task
+        kwargs: the other key-word arguments of the execute task, and rq's
+    """
+    return queue.enqueue(
+        f"{_TASKS_MODULE}.execute",
+        job,
+        *args,
+        meta={_DURATION_META_KEY: job.estimated_duration or 0},
+        **kwargs,
+    )
+
+
+def get_queue_duration(queue: RqQueue) -> float:
+    """Gets the estimated seconds of the executions queued, and of what is left of the running one"""
+    connection = queue.connection
+    queued_jobs = RqJob.fetch_many(queue.job_ids, connection=connection)
+    running_jobs = RqJob.fetch_many(
+        # no cleanup, which fails abandoned jobs, in whichever process asks
+        StartedJobRegistry(queue=queue).get_job_ids(cleanup=False),
+        connection=connection,
+    )
+    queued_seconds = sum(_get_estimated_duration(job) for job in queued_jobs if job)
+    current_time = now()
+    seconds_left = sum(
+        max(
+            0.0,
+            (
+                job.started_at
+                + timedelta(seconds=_get_estimated_duration(job))
+                - current_time
+            ).total_seconds(),
+        )
+        for job in running_jobs
+        if job and job.started_at
+    )
+    return queued_seconds + seconds_left
+
+
+def _get_estimated_duration(rq_job: RqJob) -> float:
+    return rq_job.meta.get(_DURATION_META_KEY, 0)

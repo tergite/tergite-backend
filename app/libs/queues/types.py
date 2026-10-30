@@ -13,22 +13,13 @@
 """Module containing the types of queues"""
 
 import math
-import time
 import zlib
-from contextlib import suppress
-from types import TracebackType
-from typing import Any, Callable, Dict, Generator, Optional, Tuple, Type, Union
+from typing import Any, Callable, Dict, Generator, Optional, Tuple, Union
 
-from pydantic import ValidationError
 from redis import Redis
-from rq import Callback, Queue, get_current_job
-from rq.job import Job as RqJob
-from rq.results import Result as RqResult
 from rq.serializers import DefaultSerializer, Serializer
-from rq.timeouts import BaseDeathPenalty, UnixSignalDeathPenalty
 
 from .dtos import Job, StorageID
-from .utils import get_function_import_path, import_func, noop
 
 # KEYS: the queue's list, jobs hash, args-kwargs hash and metadata hash
 # ARGV: the storage id, the metadata's duration field and the job's negated duration
@@ -64,7 +55,6 @@ class StaticQueue:
         self._metadata = f"metadata_{name}"
         self._args_kwargs_db = f"__args_kwargs_{name}"
         self._duration_key = "total_duration"
-        self._current_job_end_key = "current_job_ends_at"
         self._connection = connection
         self._serializer = serializer
         self._pop_job_script = connection.register_script(_POP_JOB_SCRIPT)
@@ -77,14 +67,6 @@ class StaticQueue:
             return float(value)
         except TypeError:
             return 0
-
-    @property
-    def current_job_time_left(self) -> float:
-        """the seconds left, by its estimate, of the job last taken off this queue"""
-        ends_at = self._connection.hget(self._metadata, self._current_job_end_key)
-        if ends_at is None:
-            return 0
-        return max(0.0, float(ends_at) - time.time())
 
     def add(self, job: Job, *args, **kwargs):
         """Adds the item to the queue
@@ -109,41 +91,6 @@ class StaticQueue:
         )
 
         pipe.execute()
-
-    def next(self) -> Optional[Tuple[Job, Tuple[Any, ...], Dict[str, Any]]]:
-        """Gets the next item on the queue
-
-        Returns:
-            the job and the args, kwargs next on the queue or None if there is no item
-        """
-        try:
-            storage_id = self._connection.lpop(self.name)
-            storage_id = StorageID(_to_str(storage_id))
-            job_duration = storage_id.duration
-
-            pipe = self._connection.pipeline()
-
-            pipe.hincrbyfloat(self._metadata, self._duration_key, -job_duration)
-            pipe.hget(self._database, storage_id)
-            pipe.hget(self._args_kwargs_db, storage_id)
-            pipe.hdel(self._database, storage_id)
-            pipe.hdel(self._args_kwargs_db, storage_id)
-            pipeline_results = pipe.execute()
-
-            job_json = pipeline_results[1]
-            args_kwargs_bytes = pipeline_results[2]
-
-            job = Job.model_validate_json(job_json)
-            self._connection.hset(
-                self._metadata,
-                self._current_job_end_key,
-                time.time() + job_duration,
-            )
-
-            args, kwargs = _deserialize_args_kwargs(self._serializer, args_kwargs_bytes)
-            return job, args, kwargs
-        except ValidationError:
-            return None
 
     def empty(self):
         """Empties the queue. This is an alias for clear()"""
@@ -257,137 +204,6 @@ class StaticQueue:
             batch += 1
 
 
-class RunnerQueue(Queue):
-    """The queue that can run jobs"""
-
-    def __init__(
-        self,
-        name: str = "default",
-        connection: Redis | None = None,
-        default_timeout: int | None = None,
-        is_async: bool = True,
-        job_class: str | Type[RqJob] | None = None,
-        serializer: Serializer | str | None = None,
-        death_penalty_class: Type[BaseDeathPenalty] | None = UnixSignalDeathPenalty,
-        job_executor_func: Union[Callable[[Job, ...], Any], str] = noop,
-        success_callback: Callable[[RqJob, Redis, RqResult, ...], Any] = noop,
-        failure_callback: Callable[
-            [RqJob, Redis, Type[Exception], Exception, TracebackType, ...], Any
-        ] = noop,
-        stopped_callback: Callable[[RqJob, Redis, ...], Any] = noop,
-        **kwargs: Any,
-    ):
-        """Initializes a Queue object.
-
-        Args:
-            name: The queue name. Defaults to 'default'.
-            default_timeout: Queue's default timeout. Defaults to None.
-            connection: Redis connection. Defaults to None.
-            is_async: Whether jobs should run "async" (using the worker).
-                If `is_async` is false, jobs will run on the same process from where it was called. Defaults to True.
-            job_class: Job class or a string referencing the Job class path.
-                Defaults to None.
-            serializer: Serializer. Defaults to None.
-            death_penalty_class: Job class or a string referencing the Job class path.
-                Defaults to UnixSignalDeathPenalty.
-            job_executor_func: function to execute the job. It can be the import path or the function itself.
-                Defaults to noop.
-            success_callback: the callback to run on successful execution of the job
-            failure_callback: the callback to run on failed execution of the job
-            stopped_callback: the callback to run when a job is stopped before it completes
-        """
-        super().__init__(
-            name=name,
-            connection=connection,
-            default_timeout=default_timeout,
-            is_async=is_async,
-            job_class=job_class,
-            serializer=serializer,
-            death_penalty_class=death_penalty_class,
-            **kwargs,
-        )
-        if callable(job_executor_func):
-            job_executor_func = get_function_import_path(job_executor_func)
-
-        self._static_queue = StaticQueue(f"__static_{name}", connection=connection)
-        self._job_executor_func = job_executor_func
-        self._success_callback = _to_callback(success_callback)
-        self._failure_callback = _to_callback(failure_callback)
-        self._stopped_callback = _to_callback(stopped_callback)
-
-    @property
-    def total_duration(self) -> float:
-        """the total duration of all pending jobs plus the time left to the end of the current job"""
-        return (
-            self._static_queue.total_duration + self._static_queue.current_job_time_left
-        )
-
-    def enqueue(self, job: Job, *args, job_id: str, **kwargs) -> RqJob:
-        """Creates a rq job to represent the delayed function call and enqueues it.
-        Receives the same parameters accepted by the `enqueue_call` method except for 'f'.
-
-        Args:
-            job: The job to pass to this queue
-            args: function args
-            job_id: the id of the rq job
-            kwargs: function kwargs
-
-        Returns:
-            rq_job (rq.job.Job): The created rq.job.Job
-        """
-        queue_kwargs = {
-            "job_timeout": kwargs.pop("job_timeout", None),
-            "result_ttl": kwargs.pop("result_ttl", None),
-            "ttl": kwargs.pop("ttl", None),
-            "failure_ttl": kwargs.pop("failure_ttl", None),
-            "description": kwargs.pop("description", None),
-            "depends_on": kwargs.pop("depends_on", None),
-            "at_front": kwargs.pop("at_front", False),
-            "meta": kwargs.pop("meta", None),
-            "retry": kwargs.pop("retry", None),
-            "repeat": kwargs.pop("repeat", None),
-            "pipeline": kwargs.pop("pipeline", None),
-            "on_success": kwargs.pop("on_success", self._success_callback),
-            "on_failure": kwargs.pop("on_failure", self._failure_callback),
-            "on_stopped": kwargs.pop("on_stopped", self._stopped_callback),
-            "job_id": job_id,
-        }
-
-        self._static_queue.add(job, *args, **kwargs)
-
-        return super().enqueue(
-            _run_next_job,
-            self._static_queue.name,
-            self._job_executor_func,
-            **queue_kwargs,
-        )
-
-    def remove_job(self, storage_id: StorageID) -> None:
-        """Removes the job of the given storage id from those waiting to run, if it is there
-
-        Args:
-            storage_id: the identifier of the job in the static queue storage
-        """
-        with suppress(ValidationError):
-            self._static_queue.pop_job(storage_id)
-
-
-def _run_next_job(device_resources: Any, static_queue_name: str, exec_func_path: str):
-    """A wrapper around the execution function to do some book-keeping on next job on the queue
-
-    Args:
-        device_resources: what the job's device runs on, which the worker passes in first
-            and the execution function takes first too
-        static_queue_name: the name of the static queue
-        exec_func_path: the import path of the function that executes this job
-    """
-    connection = get_current_job().connection
-    static_queue = StaticQueue(static_queue_name, connection=connection)
-    job, args, kwargs = static_queue.next()
-    exec_func = import_func(exec_func_path)
-    return exec_func(device_resources, job, *args, **kwargs)
-
-
 def _to_str(value: Union[str, bytes]) -> str:
     """Gets a string from a value that may be bytes
 
@@ -401,20 +217,6 @@ def _to_str(value: Union[str, bytes]) -> str:
         return value.decode("utf-8")
     except AttributeError:
         return value
-
-
-def _to_callback(func: Union[str, Callable[..., Any], Callback]) -> Callback:
-    """Converts a function or str into an rq callback
-
-    Args:
-        func: the function or its import path or its callback object
-
-    Returns:
-        the callback with the function
-    """
-    if isinstance(func, Callback):
-        return func
-    return Callback(func)
 
 
 def _deserialize_args_kwargs(

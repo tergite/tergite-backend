@@ -239,13 +239,10 @@ type-hints: app/libs/queues/dtos.py::JobStatus.is_terminal
 type-hints: app/libs/queues/dtos.py::TimestampPair.set_finish_timestamp
 type-hints: app/libs/queues/dtos.py::TimestampPair.set_start_timestamp
 type-hints: app/libs/queues/dtos.py::Timestamps.with_updates
-type-hints: app/libs/queues/types.py::RunnerQueue.enqueue
 type-hints: app/libs/queues/types.py::StaticQueue.add
 type-hints: app/libs/queues/types.py::StaticQueue.clear
 type-hints: app/libs/queues/types.py::StaticQueue.empty
 type-hints: app/libs/queues/types.py::StaticQueue.pop_first
-type-hints: app/libs/queues/types.py::_run_next_job
-type-hints: app/libs/queues/utils.py::noop
 type-hints: app/services/booking/dtos.py::Booking.generate_end_event_id
 type-hints: app/services/booking/dtos.py::Booking.generate_idle_timer_id
 type-hints: app/services/booking/dtos.py::Booking.generate_start_event_id
@@ -315,8 +312,6 @@ verb: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.info
 verb: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.warning
 verb: app/libs/quantum_executor/utils/serialization.py::iqx_rld
 verb: app/libs/queues/dtos.py::Timestamps.with_updates
-verb: app/libs/queues/types.py::StaticQueue.next
-verb: app/libs/queues/utils.py::noop
 verb: app/services/external/mss/service.py::MssClient.recv
 verb: app/services/scheduler/tasks.py::post_booking_cleanup
 verb: app/services/scheduler/tasks.py::postprocessing_failure_callback
