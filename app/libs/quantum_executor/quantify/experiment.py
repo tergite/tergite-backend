@@ -18,7 +18,7 @@
 import math
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set, Tuple, Type
+from typing import Dict, List, Optional, Tuple, Type
 
 from quantify_scheduler import Schedule
 from quantify_scheduler.operations.pulse_library import IdlePulse, ResetClockPhase
@@ -81,12 +81,6 @@ def _is_drive_clock(clock: str) -> bool:
 def _is_baseband_clock(clock: str) -> bool:
     # baseband clock can be 0
     return clock.endswith(".baseband") or clock == "cl0.baseband"
-
-
-@dataclass(frozen=True)
-class _ClockInitCandidate:
-    t0: float
-    freq_hz: float
 
 
 @dataclass(frozen=True)
@@ -230,72 +224,92 @@ def _construct_schedule(
     - include_dynamic_frequency_ops=False keeps dynamic frequency commands in playback
       but excludes them from schedule operations.
     """
-
     schedule = Schedule(name=header.name, repetitions=config.shots)
+    timegrid_interval = float(timegrid_interval)
+    channel_plans = _get_channel_plans(channel_registry, include_dynamic_frequency_ops)
 
-    # Single pass over channel_registry: collect channel_plans and initial clock frequency for each channel
-    drive_clocks: Set[str] = set()
-    init_freq_by_clock: Dict[str, Optional[_ClockInitCandidate]] = {}
-    channel_plans: List[_ChannelPlan] = []
+    _add_clock_resources(schedule, _get_initial_clock_frequencies(channel_registry))
+    drive_clocks = [
+        channel.clock
+        for channel in channel_registry.values()
+        if _is_drive_clock(channel.clock)
+    ]
+    root_label = _add_root_and_phase_resets(schedule, config, drive_clocks)
+    states = _add_aligned_operations(
+        schedule, channel_plans, config, root_label, timegrid_interval
+    )
+    _add_tail_idles(schedule, channel_plans, states, root_label, timegrid_interval)
+    return schedule
 
-    # get clock frequencies and list of instructions
-    for channel in channel_registry.values():  # QuantifyChannel
-        clock = channel.clock
 
-        if _is_drive_clock(clock):
-            drive_clocks.add(clock)
-
-        instructions = channel.instructions
-        had_any = bool(instructions)
-
-        # Keep best init candidate per clock
-        best: Optional[_ClockInitCandidate] = init_freq_by_clock.get(clock)
-        schedulable: List[BaseInstruction] = []
-
-        for inst in instructions:
-            # Infer init frequency from SetFreqInstruction
-            if isinstance(inst, SetFreqInstruction):
-                cand = _ClockInitCandidate(t0=inst.t0, freq_hz=float(inst.frequency))
-                if best is None or cand.t0 < best.t0:
-                    best = cand
-
-            if (not include_dynamic_frequency_ops) and isinstance(
-                inst, FREQ_CONTROL_INSTRUCTIONS
-            ):
-                continue
-
-            schedulable.append(inst)
-
-        init_freq_by_clock[clock] = best
-
-        channel_plans.append(
-            _ChannelPlan(
-                clock=clock, schedulable=schedulable, had_any_instructions=had_any
-            )
+def _get_channel_plans(
+    channel_registry: "QuantifyChannelRegistry", should_include_frequency_ops: bool
+) -> List[_ChannelPlan]:
+    """Gets each channel's instructions to schedule: all of them, or all but the ones
+    that control the frequency"""
+    return [
+        _ChannelPlan(
+            clock=channel.clock,
+            schedulable=[
+                inst
+                for inst in channel.instructions
+                if should_include_frequency_ops
+                or not isinstance(inst, FREQ_CONTROL_INSTRUCTIONS)
+            ],
+            had_any_instructions=bool(channel.instructions),
         )
+        for channel in channel_registry.values()
+    ]
 
-    # add clock resources first
-    for clock, cand in init_freq_by_clock.items():
-        if _is_baseband_clock(clock):
-            freq_hz = 0.0
-        else:
-            freq_hz = cand.freq_hz if cand is not None else PLACEHOLDER_CLOCK_FREQ_HZ
 
-        schedule.add_resource(ClockResource(name=clock, freq=freq_hz))
+def _get_initial_clock_frequencies(
+    channel_registry: "QuantifyChannelRegistry",
+) -> Dict[str, float]:
+    """Gets each clock's frequency at the start: its earliest setf's, 0 Hz for a baseband
+    clock, or the placeholder for a clock no setf sets"""
+    frequencies = {}
+    for channel in channel_registry.values():
+        if _is_baseband_clock(channel.clock):
+            frequencies[channel.clock] = 0.0
+            continue
+        set_freqs = [
+            inst
+            for inst in channel.instructions
+            if isinstance(inst, SetFreqInstruction)
+        ]
+        earliest = min(set_freqs, key=lambda inst: inst.t0, default=None)
+        frequencies[channel.clock] = (
+            float(earliest.frequency)
+            if earliest is not None
+            else PLACEHOLDER_CLOCK_FREQ_HZ
+        )
+    return frequencies
 
-    # add schedule operations
+
+def _add_clock_resources(schedule: Schedule, frequencies: Dict[str, float]) -> None:
+    """Adds a clock resource for each clock, before any operation"""
+    for clock, frequency in frequencies.items():
+        schedule.add_resource(ClockResource(name=clock, freq=frequency))
+
+
+def _add_root_and_phase_resets(
+    schedule: Schedule, config: "PulseQobjConfig", drive_clocks: List[str]
+) -> str:
+    """Adds the idle every other operation starts after, and a phase reset at its start
+    for each drive clock
+
+    Returns:
+        the idle's label
+    """
     root_instruction = InitialObjectInstruction()
-    root_op = root_instruction.to_operation(config=config)
     schedule.add(
         ref_op=None,
         ref_pt="end",
         ref_pt_new="start",
         rel_time=0.0,
         label=root_instruction.label,
-        operation=root_op,
+        operation=root_instruction.to_operation(config=config),
     )
-
-    # Phase resets at the very start (after resources exist).
     for clock in drive_clocks:
         schedule.add(
             ref_op=root_instruction.label,
@@ -305,144 +319,115 @@ def _construct_schedule(
             label=f"reset_phase_{clock}",
             operation=ResetClockPhase(clock=clock),
         )
+    return root_instruction.label
 
-    timegrid_interval = float(timegrid_interval)
 
+def _add_aligned_operations(
+    schedule: Schedule,
+    channel_plans: List[_ChannelPlan],
+    config: "PulseQobjConfig",
+    root_label: str,
+    timegrid_interval: float,
+) -> Dict[str, _State]:
+    """Adds each instruction's operation at its time slot, aligned across the channels
+
+    Each operation costs its channel one grid interval to dispatch, which shifts the
+    channel's later operations, and so breaks the barriers that a common start time
+    makes between channels. Each slot, in time order, raises every channel still active
+    to the latest one's ready time, slot + sync + dispatch, by adding to its sync; each
+    of its operations then starts at slot + sync + dispatch + 1, after the root, in grid
+    ticks rather than floats, so that rounding does not accumulate.
+
+    Returns:
+        each clock's state after its last operation
     """
-    tl;dr: We keep track timegrid shifts and synchronize it accross the channels
-
-    As we add timegrid_interval to our original scheduled operations.
-    We shift the start time of the next operation, 
-        therefore breaking alignment/barriers accross the channels
-    We need to compensate for that by keeping track of a "global clock".
-    
-    A few things to consider like including dynamic frequency ops in schedule plan 
-        and float operations accumulating small errors.
-
-    Plan: 
-
-    grid_ticks function converts float to int in nanoseconds
-
-    Convert channel plan to group by time slot: 
-        by_clock[clock][slot_tick]  
-    Build a gloal slot list:
-        slots = sorted(union of all slot_ticks accross all clocks)
-    
-    maintain per clock state: 
-        dispatch_tick - last scheduled op 
-        sync_tick - accumulated global wait applied to this channel
-
-
-    Per each slot:
-        1. Compute global barrier
-        2. Bring all channels up to barrier by increasing their sync_tick
-        3. Schedule each instruction in the slot
-            - start_tick = slot + sync_tick + dispatch_tick + 1
-            - the +1 is the per-instruction dispatch cost
-    """
-
-    def to_tick(t: float) -> int:
-        return int(math.floor(t / timegrid_interval + 0.5 + 1e-12))
-
-    def from_tick(k: int) -> float:
-        return k * timegrid_interval
-
-    # Group instructions by (clock, slot_tick)
-    by_clock_slot: Dict[str, Dict[int, List[Tuple[BaseInstruction, bool]]]] = {}
-    last_slot_by_clock: Dict[str, int] = {}
-    slots: Set[int] = set()
-    clocks_in_order: List[str] = [p.clock for p in channel_plans]
-
-    for plan in channel_plans:
-        slot_map: Dict[int, List[Tuple[BaseInstruction, bool]]] = defaultdict(list)
-        max_slot = -1
-        for inst in plan.schedulable:
-            s = to_tick(inst.t0)
-            max_slot = max(max_slot, s)
-            slots.add(s)
-            emit = True
-            if (not include_dynamic_frequency_ops) and isinstance(
-                inst, FREQ_CONTROL_INSTRUCTIONS
-            ):
-                emit = False
-
-            slot_map[s].append((inst, emit))
-
-        by_clock_slot[plan.clock] = slot_map
-        last_slot_by_clock[plan.clock] = max_slot
-
-    sorted_slots = sorted(slots)
-
-    state: Dict[str, _State] = {
-        clock: _State(
-            dispatch_tick=0,
-            sync_tick=0,
-            last_label=root_instruction.label,
-            has_emitted=False,
+    by_clock_slot = _group_by_slot(channel_plans, timegrid_interval)
+    last_slot_by_clock = {
+        clock: max(slot_map, default=-1) for clock, slot_map in by_clock_slot.items()
+    }
+    sorted_slots = sorted(set().union(*by_clock_slot.values()))
+    states = {
+        plan.clock: _State(
+            dispatch_tick=0, sync_tick=0, last_label=root_label, has_emitted=False
         )
-        for clock in clocks_in_order
+        for plan in channel_plans
     }
 
-    # Schedule every op at absolute time relative to root end:
-    #   t_abs_tick = slot + sync + dispatch + 1
-    # barrier aligns "ready" time = slot + sync + dispatch (before paying +1 for the op)
     for slot in sorted_slots:
-
-        active_clocks = [
-            c for c in clocks_in_order if last_slot_by_clock.get(c, -1) >= slot
-        ]
+        active_clocks = [clock for clock in states if last_slot_by_clock[clock] >= slot]
         if not active_clocks:
             break
+        _align_to_barrier(states, slot, active_clocks)
 
-        # barrier: align all active channels
-        barrier = max(
-            slot + state[c].sync_tick + state[c].dispatch_tick for c in active_clocks
+        for clock in active_clocks:
+            state = states[clock]
+            for inst in by_clock_slot[clock].get(slot, []):
+                start_tick = slot + state.sync_tick + state.dispatch_tick + 1
+                schedule.add(
+                    ref_op=root_label,
+                    ref_pt="end",
+                    ref_pt_new="start",
+                    rel_time=start_tick * timegrid_interval,
+                    label=inst.label,
+                    operation=inst.to_operation(config=config),
+                )
+                state.last_label = inst.label
+                state.has_emitted = True
+                state.dispatch_tick += 1
+    return states
+
+
+def _group_by_slot(
+    channel_plans: List[_ChannelPlan], timegrid_interval: float
+) -> Dict[str, Dict[int, List[BaseInstruction]]]:
+    """Groups each clock's instructions by the grid tick they start at"""
+    by_clock_slot = {}
+    for plan in channel_plans:
+        slot_map: Dict[int, List[BaseInstruction]] = defaultdict(list)
+        for inst in plan.schedulable:
+            slot_map[_to_tick(inst.t0, timegrid_interval)].append(inst)
+        by_clock_slot[plan.clock] = slot_map
+    return by_clock_slot
+
+
+def _align_to_barrier(
+    states: Dict[str, _State], slot: int, active_clocks: List[str]
+) -> None:
+    """Raises the active clocks' syncs so that each is ready at the slot when the
+    latest is"""
+    barrier = max(
+        slot + states[clock].sync_tick + states[clock].dispatch_tick
+        for clock in active_clocks
+    )
+    for clock in active_clocks:
+        state = states[clock]
+        state.sync_tick += barrier - (slot + state.sync_tick + state.dispatch_tick)
+
+
+def _add_tail_idles(
+    schedule: Schedule,
+    channel_plans: List[_ChannelPlan],
+    states: Dict[str, _State],
+    root_label: str,
+    timegrid_interval: float,
+) -> None:
+    """Adds an idle after the last operation of each channel that had instructions,
+    even if none was scheduled"""
+    for plan in channel_plans:
+        if not plan.had_any_instructions:
+            continue
+        state = states[plan.clock]
+        ref = state.last_label if state.has_emitted else root_label
+        schedule.add(
+            ref_op=ref,
+            ref_pt="end",
+            ref_pt_new="start",
+            rel_time=timegrid_interval,
+            label=f"{ref}__tail_idle",
+            operation=IdlePulse(duration=timegrid_interval),
         )
 
-        # bring all active clocks up to barrier by increasing their sync_tick
-        for c in active_clocks:
-            st = state[c]
-            ready = slot + st.sync_tick + st.dispatch_tick
-            if ready < barrier:
-                st.sync_tick += barrier - ready
 
-        # emit (or skip) all instructions at this slot
-        for c in active_clocks:
-            st = state[c]
-            insts = by_clock_slot[c].get(slot)
-            if not insts:
-                continue
-
-            for inst, emit in insts:
-                start_tick = slot + st.sync_tick + st.dispatch_tick + 1
-
-                if emit:
-                    schedule.add(
-                        ref_op=root_instruction.label,
-                        ref_pt="end",
-                        ref_pt_new="start",
-                        rel_time=from_tick(start_tick),
-                        label=inst.label,
-                        operation=inst.to_operation(config=config),
-                    )
-                    st.last_label = inst.label
-                    st.has_emitted = True
-
-                # always consume dispatch time (timing) even if not emitted
-                st.dispatch_tick += 1
-
-    for plan in channel_plans:
-        # tail idle if the channel had ANY instructions,
-        # even if all were filtered out as freq-control ops.
-        if plan.had_any_instructions:
-            st = state[plan.clock]
-            ref = st.last_label if st.has_emitted else root_instruction.label
-            schedule.add(
-                ref_op=ref,
-                ref_pt="end",
-                ref_pt_new="start",
-                rel_time=timegrid_interval,
-                label=f"{ref}__tail_idle",
-                operation=IdlePulse(duration=timegrid_interval),
-            )
-    return schedule
+def _to_tick(t: float, timegrid_interval: float) -> int:
+    """Gets the grid tick nearest the time in seconds"""
+    return int(math.floor(t / timegrid_interval + 0.5 + 1e-12))

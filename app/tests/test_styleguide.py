@@ -33,6 +33,7 @@ VERBS = frozenset(
     {
         "accept",
         "add",
+        "align",
         "apply",
         "attach",
         "authenticate",
@@ -89,6 +90,7 @@ VERBS = frozenset(
         "from",
         "generate",
         "get",
+        "group",
         "handle",
         "hash",
         "ignore",
