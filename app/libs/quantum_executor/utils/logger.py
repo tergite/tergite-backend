@@ -17,7 +17,7 @@ import logging
 import logging.handlers
 from os.path import abspath, join
 from pathlib import Path
-from typing import Union
+from typing import Dict, Optional, Union
 
 import pandas as pd
 import tabulate
@@ -194,8 +194,19 @@ class ExperimentLogger:
         the current Q1ASM programming for that sequencer is printed (symmetric difference).
         """
 
-        programs = dict()
-        # extract sequencer programs by searching for "seq_fn"
+        programs = self._get_sequencer_programs(compiled_schedule)
+        for sequencer, program in programs.items():
+            self._log_program_delta(
+                sequencer, program, last_program=self.last_programs.get(sequencer)
+            )
+        self.last_programs = programs
+
+    def _get_sequencer_programs(
+        self, compiled_schedule: "CompiledSchedule"
+    ) -> Dict[tuple, set]:
+        """Gets each sequencer's cleaned Q1ASM program, from its seq_fn file or else its
+        embedded sequence, logging the sequencers it cannot read one from"""
+        programs = {}
         for path in search_nested(compiled_schedule.compiled_instructions, "seq_fn"):
             # Get the parent dictionary that contains both "seq_fn" and "sequence"
             parent = compiled_schedule.compiled_instructions
@@ -203,17 +214,14 @@ class ExperimentLogger:
                 parent = parent[key]
             seq_fn_value = parent.get("seq_fn")
             if seq_fn_value is None:
-                # If no file path is provided, try to use the embedded sequence
                 sequence_dict = parent.get("sequence")
-                if sequence_dict and "program" in sequence_dict:
-                    program = sequence_dict["program"]
-                else:
+                if not (sequence_dict and "program" in sequence_dict):
                     self.info(
                         f"Skipping path {path} because neither 'seq_fn' nor a valid 'sequence' is provided."
                     )
                     continue
+                program = sequence_dict["program"]
             else:
-                # Old behavior: load the configuration file using seq_fn_value
                 try:
                     config = load_config(seq_fn_value)
                 except Exception as e:
@@ -228,30 +236,27 @@ class ExperimentLogger:
                     continue
                 program = config["program"]
 
-            # Process the program lines and clean them up
-            program_lines = program.split("\n")
-            program_set = self.clean_Q1ASM_program(program_lines)
-            programs[path] = program_set
+            programs[path] = self.clean_Q1ASM_program(program.split("\n"))
+        return programs
 
-        # Compute delta with last compiled schedule and log changes
-        for sequencer, program in programs.items():
-            if sequencer not in self.last_programs:
-                self.info(
-                    f"+{len(program)} lines. Q1ASM:\n+++ {self.format_Q1ASM(sequencer, program)}"
-                )
-            else:
-                delta = programs[sequencer] ^ self.last_programs[sequencer]
-                removed_loc = set(
-                    filter(lambda line: line in self.last_programs[sequencer], delta)
-                )
-                added_loc = set(filter(lambda line: line in programs[sequencer], delta))
-                if removed_loc:
-                    self.info(
-                        f"-{len(removed_loc)} lines. Q1ASM:\n--- {self.format_Q1ASM(sequencer, removed_loc)}"
-                    )
-                if added_loc:
-                    self.info(
-                        f"+{len(added_loc)} lines. Q1ASM:\n+++ {self.format_Q1ASM(sequencer, added_loc)}"
-                    )
+    def _log_program_delta(
+        self, sequencer: tuple, program: set, last_program: Optional[set]
+    ) -> None:
+        """Logs the lines the sequencer's program removed since the last, and those it
+        added, or all of it if it had none"""
+        if last_program is None:
+            self.info(
+                f"+{len(program)} lines. Q1ASM:\n+++ {self.format_Q1ASM(sequencer, program)}"
+            )
+            return
 
-        self.last_programs = programs
+        removed_loc = last_program - program
+        added_loc = program - last_program
+        if removed_loc:
+            self.info(
+                f"-{len(removed_loc)} lines. Q1ASM:\n--- {self.format_Q1ASM(sequencer, removed_loc)}"
+            )
+        if added_loc:
+            self.info(
+                f"+{len(added_loc)} lines. Q1ASM:\n+++ {self.format_Q1ASM(sequencer, added_loc)}"
+            )
