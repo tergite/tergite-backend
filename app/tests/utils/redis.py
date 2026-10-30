@@ -15,7 +15,7 @@ from typing import Any, Generator
 
 import pytest
 
-from app.tests.utils.env import TEST_RQ_REDIS_URL
+from app.tests.utils.env import TEST_TUNER_REDIS_URL
 
 
 @pytest.fixture
@@ -24,7 +24,7 @@ def redis_client() -> Generator[Any, Any, None]:
     # imported here, as only the quantify extra, by tergite-tuner, installs redis
     import redis
 
-    connection = redis.Redis.from_url(TEST_RQ_REDIS_URL)
+    connection = redis.Redis.from_url(TEST_TUNER_REDIS_URL)
     yield connection
     connection.flushdb()
     connection.close()

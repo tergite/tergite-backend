@@ -93,7 +93,7 @@ main() {
 		BCC_PORT=$port
 		BCC_MACHINE_ROOT_URL=http://$host:$port
 		BCC_MSS_MACHINE_ROOT_URL=$mss_url
-		BCC_RQ_REDIS_URL=$(add_password "$redis_url" "$REDIS_PASSWORD")
+		BCC_TUNER_REDIS_URL=$(add_password "$redis_url" "$REDIS_PASSWORD")
 
 		BCC_STORAGE_ROOT=$data/storage
 		BCC_BOOKING_DB_URL=sqlite:///$data/booking.db

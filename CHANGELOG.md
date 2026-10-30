@@ -31,6 +31,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   off before upgrading is on after it, so switch it off again
 - Changed the device parameters and MSS's request nonces to be kept in the bookings database instead of Redis, which
   only the quantify executor's tergite-tuner now needs; the simulators, and their package, run without one
+- Changed `BCC_RQ_REDIS_URL` to `BCC_TUNER_REDIS_URL`, as RQ is gone and tergite-tuner alone uses it; the old name is
+  still read
 - Changed the bookings database to be created and upgraded with Alembic as the API and the workers start, instead of by SQLModel;
   an existing one is kept as it is, but for its unused `user.password` column, which is dropped
 - Changed the 422 for a booking that starts in the past or lasts outside the device's limits to give its message

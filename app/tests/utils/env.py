@@ -89,10 +89,9 @@ REDIS_PORT = os.getenv("REDIS_PORT", "6378")
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_DB = f"{int(os.getenv('REDIS_DB', '2')) + int(_XDIST_WORKER.removeprefix('gw'))}"
 
-TEST_RQ_REDIS_URL = os.getenv(
-    "RQ_REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
+TEST_TUNER_REDIS_URL = os.getenv(
+    "TUNER_REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
 )
-TEST_JOBS_REDIS_URL = TEST_RQ_REDIS_URL
 TEST_LOG_LEVEL = os.getenv("LOG_LEVEL", "ERROR")
 TEST_DEBUG = os.getenv("DEBUG", "False")
 TEST_MAX_WORKER_WAIT_TIME = int(os.getenv("TEST_MAX_WORKER_WAIT_TIME", "120"))
@@ -159,7 +158,6 @@ def setup_test_env():
     environ["BCC_BOOKING_DB_URL"] = f"{TEST_BOOKING_DB_URL}"
     environ["BCC_JWT_SECRET"] = f"{TEST_JWT_SECRET}"
     environ["BCC_JWT_TTL"] = f"{TEST_JWT_TTL}"
-    environ["BCC_JOBS_REDIS_URL"] = f"{TEST_JOBS_REDIS_URL}"
     environ["BCC_MSS_PUBLIC_KEY_PATH"] = f"{TEST_MSS_PUBLIC_KEY_PATH}"
     environ["BCC_MSS_NONCE_TTL"] = f"{TEST_MSS_NONCE_TTL}"
     environ["BCC_PRIVATE_KEY_FILE"] = f"{TEST_PRIVATE_KEY_FILE}"

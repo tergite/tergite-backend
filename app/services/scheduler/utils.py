@@ -92,7 +92,7 @@ def get_executor_options(device_settings: DeviceSettings) -> ExecutorOptions:
         calibration_node_config=device_settings.calibration_node_config_file,
         calibration_device_config=device_settings.calibration_device_config_file,
         calibration_spi_config=device_settings.calibration_spi_config_file,
-        redis_url=device_settings.rq_redis_url,
+        redis_url=device_settings.tuner_redis_url,
     )
 
 

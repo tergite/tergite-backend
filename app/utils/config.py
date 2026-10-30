@@ -24,7 +24,7 @@ from typing import Annotated, Any, List, Optional, Self
 from urllib.parse import urlsplit
 
 from dotenv import dotenv_values
-from pydantic import Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_core.core_schema import ValidationInfo
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
@@ -108,8 +108,10 @@ class DeviceSettings(BaseSettings):
     redis_user: Optional[str] = None
     redis_password: Optional[str] = None
     redis_db: int = 0
-    # by default the one of the redis_* settings
-    rq_redis_url: Optional[str] = None
+    # tergite-tuner's, by default the one of the redis_* settings; RQ's, by its old name
+    tuner_redis_url: Optional[str] = Field(
+        None, validation_alias=AliasChoices("BCC_TUNER_REDIS_URL", "BCC_RQ_REDIS_URL")
+    )
 
     # default: 6 hours
     max_time_slot_length: float = 21600
@@ -202,8 +204,8 @@ class DeviceSettings(BaseSettings):
             self.mss_device_events_endpoint = _get_mss_device_events_endpoint(
                 self.mss_machine_root_url, self.default_prefix
             )
-        if self.rq_redis_url is None:
-            self.rq_redis_url = self.redis_url
+        if self.tuner_redis_url is None:
+            self.tuner_redis_url = self.redis_url
         if self.app_settings == "production":
             self.current_date = None
         return self
@@ -310,10 +312,13 @@ def _get_init_keys() -> dict[str, str]:
     """Gets the key DeviceSettings takes each setting by, by the setting's env name"""
     init_keys = {}
     for field_name, field in DeviceSettings.model_fields.items():
-        if field.validation_alias is None:
+        alias = field.validation_alias
+        if alias is None:
             init_keys[f"BCC_{field_name.upper()}"] = field_name
+        elif isinstance(alias, AliasChoices):
+            init_keys.update({f"{choice}": f"{choice}" for choice in alias.choices})
         else:
-            init_keys[f"{field.validation_alias}"] = f"{field.validation_alias}"
+            init_keys[f"{alias}"] = f"{alias}"
     return init_keys
 
 
