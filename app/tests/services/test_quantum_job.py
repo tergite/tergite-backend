@@ -19,6 +19,7 @@ import xarray as xr
 
 from ...libs.quantum_executor.base.quantum_job import (
     ByteOrder,
+    _get_experiment_order,
     _get_register,
     _get_sdk_qubit_index_map,
     _to_hex_shots,
@@ -196,3 +197,9 @@ def test_each_shot_reads_as_hex(byteorder, expected_hex):
     register = np.array([[1, 0], [0, 0], [0, 1]], dtype=np.int8)
 
     assert _to_hex_shots(register, num_of_states=2, byteorder=byteorder) == expected_hex
+
+
+def test_experiments_sort_by_index_then_unindexed_by_name():
+    names = ["plain", "b~10", "c", "a~2"]
+
+    assert sorted(names, key=_get_experiment_order) == ["a~2", "b~10", "c", "plain"]

@@ -78,42 +78,18 @@ class Stage(int, Enum):
 class TimestampPair(BaseModel):
     started: Optional[str] = None
     finished: Optional[str] = None
-    _start_timestamp: Optional[datetime] = None
-    _finish_timestamp: Optional[datetime] = None
 
     @computed_field
     @property
     def start_timestamp(self) -> Optional[datetime]:
-        """started as a datetime"""
-        if self._start_timestamp is None:
-            try:
-                self._start_timestamp = datetime.fromisoformat(self.started)
-            except TypeError:
-                pass
-
-        return self._start_timestamp
-
-    @start_timestamp.setter
-    def set_start_timestamp(self, value: Optional[datetime]):
-        """Sets the start timestamp of the pair"""
-        self._start_timestamp = value
+        """started, as a datetime"""
+        return None if self.started is None else datetime.fromisoformat(self.started)
 
     @computed_field
     @property
     def finish_timestamp(self) -> Optional[datetime]:
-        """finished as a datetime"""
-        if self._finish_timestamp is None:
-            try:
-                self._finish_timestamp = datetime.fromisoformat(self.finished)
-            except TypeError:
-                pass
-
-        return self._finish_timestamp
-
-    @finish_timestamp.setter
-    def set_finish_timestamp(self, value: Optional[datetime]):
-        """Sets the start timestamp of the pair"""
-        self._finish_timestamp = value
+        """finished, as a datetime"""
+        return None if self.finished is None else datetime.fromisoformat(self.finished)
 
 
 class Timestamps(BaseModel):

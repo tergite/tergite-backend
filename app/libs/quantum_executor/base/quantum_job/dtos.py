@@ -193,7 +193,7 @@ class NativeQobjConfig:
             the NativeQobjConfig object
         """
         acq_return_type = value["acq_return_type"].to_type()
-        value = {**value, "acq_return_type": acq_return_type}
+        value = value | {"acq_return_type": acq_return_type}
         return cls(**value)
 
 

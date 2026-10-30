@@ -366,8 +366,8 @@ def _create_cluster(name: str, conf: InstrumentConfig) -> qblox_instruments.Clus
     dummy_cfg = None
     if getattr(conf, "is_dummy", False):
         dummy_cfg = {
-            int(idx): _QBLOX_CLUSTER_TYPE_MAP[conf.instrument_type]
-            for idx, conf in conf.modules.items()
+            int(idx): _QBLOX_CLUSTER_TYPE_MAP[module.instrument_type]
+            for idx, module in conf.modules.items()
         }
 
     return qblox_instruments.Cluster(

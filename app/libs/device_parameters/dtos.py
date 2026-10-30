@@ -705,7 +705,7 @@ class BackendConfig(BaseModel):
         return cls(
             general_config=_BackendGeneralConfig(**config.get("general_config", {})),
             device_config=_BackendDeviceConfig(**config.get("device_config", {})),
-            gates={k: {**v} for k, v in config.get("gates", {}).items()},
+            gates={k: dict(v) for k, v in config.get("gates", {}).items()},
             calibration_config=calibration_config,
         )
 

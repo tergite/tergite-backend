@@ -148,8 +148,6 @@ type-hints: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.log_Q1AS
 type-hints: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.log_schedule
 type-hints: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.warning
 type-hints: app/libs/queues/dtos.py::JobStatus.is_terminal
-type-hints: app/libs/queues/dtos.py::TimestampPair.set_finish_timestamp
-type-hints: app/libs/queues/dtos.py::TimestampPair.set_start_timestamp
 type-hints: app/services/booking/dtos.py::Booking.validate_end_utc
 type-hints: app/services/booking/dtos.py::Booking.validate_start_utc
 type-hints: app/services/booking/dtos.py::NewBookingInfo.validate_end_utc

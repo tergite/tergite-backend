@@ -439,18 +439,7 @@ def _extract_results_from_hdf5(
     # HDF5 visit() traverses groups alphabetically, so without this "~10" would
     # come before "~2", causing discriminate_results / xarray_to_list to look up
     # the wrong qobj.experiments[i] for every experiment after the 9th.
-    results = dict(
-        sorted(
-            results.items(),
-            key=lambda kv: (
-                _parse_exp_index_from_name(kv[0])
-                if _parse_exp_index_from_name(kv[0]) is not None
-                else kv[0]
-            ),
-        )
-    )
-
-    return results
+    return dict(sorted(results.items(), key=lambda kv: _get_experiment_order(kv[0])))
 
 
 def _match_hdf5_paths(file: h5py.File, pattern: re.Pattern) -> List[Match]:
@@ -754,3 +743,10 @@ def _to_iq_point(value: np.generic) -> IQPoint:
     if not np.isfinite([point.real, point.imag]).all():
         point = 0j
     return (float(point.real), float(point.imag))
+
+
+def _get_experiment_order(expt_name: str) -> Tuple[int, int, str]:
+    """Gets where the experiment sorts: by the index in its name, and those without one
+    after, by name; an index and a name never compare, as an int and a str do not"""
+    index = _parse_exp_index_from_name(expt_name)
+    return (0, index, "") if index is not None else (1, 0, expt_name)
