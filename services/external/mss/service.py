@@ -84,6 +84,16 @@ class MssClient:
             max_reconnections=device_settings.mss_connection_max_attempts,
         )
 
+    @property
+    def device(self) -> str:
+        """the name of the device whose events this client sends"""
+        return self._device
+
+    @property
+    def response_timeout(self) -> float:
+        """the seconds an event may take to be answered, reconnections included"""
+        return self._response_timeout
+
     def __connect(self, **kwargs: Any) -> ClientConnection:
         """Connects to MSS returning a new connection
 
@@ -120,17 +130,45 @@ class MssClient:
         Raises:
             MssRejectedError: {error_prefix}{error message}
             MssTimeoutError: {error_prefix}response took longer than timeout
-            RuntimeError: {error_prefix}no connection yet
         """
-        event_json = payload.model_dump_json()
+        return self.send_event_json(
+            payload.id, payload.model_dump_json(), error_prefix=error_prefix
+        )
+
+    def send_event_json(
+        self,
+        event_id: str,
+        event_json: str,
+        error_prefix: str = "",
+        max_reconnections: Optional[int] = None,
+    ) -> EventResponse:
+        """Sends an event, already serialized, to MSS, as send_event does
+
+        Args:
+            event_id: the event's id, which MSS's reply carries
+            event_json: the event, as JSON
+            error_prefix: Optional prefix to prepend to error messages
+            max_reconnections: the most times to reconnect; default: the client's
+
+        Returns:
+            the event response
+
+        Raises:
+            MssRejectedError: {error_prefix}{error message}
+            MssTimeoutError: {error_prefix}response took longer than timeout
+        """
         deadline = time.monotonic() + self._response_timeout
 
         def send_and_receive_reply(client: ClientConnection) -> dict[str, Any]:
             client.send(event_json, text=True)
-            return _receive_reply(client, event_id=payload.id, deadline=deadline)
+            return _receive_reply(client, event_id=event_id, deadline=deadline)
 
         try:
-            resp = self._run_connected(send_and_receive_reply, deadline=deadline)
+            resp = self._run_connected(
+                send_and_receive_reply,
+                deadline=deadline,
+                max_reconnections=max_reconnections,
+            )
         except TimeoutError as exp:
             raise MssTimeoutError(f"{error_prefix}{exp}")
         if resp.get("status") != "success":
@@ -141,10 +179,12 @@ class MssClient:
         self,
         operation: Callable[[ClientConnection], _T],
         deadline: Optional[float] = None,
+        max_reconnections: Optional[int] = None,
     ) -> _T:
         """Calls the operation on the connection to MSS, connecting first, and reconnecting
         after a growing delay while the connection fails, until the deadline, by default
-        the response timeout from now, or the most connection attempts
+        the response timeout from now, or the most connection attempts, by default the
+        client's
 
         Raises:
             TimeoutError: response took longer than timeout, or maximum connection attempts exceeded
@@ -153,7 +193,9 @@ class MssClient:
             deadline = time.monotonic() + self._response_timeout
         delay = 1
         attempts = 0
-        max_attempts = self._max_reconnections + 1
+        if max_reconnections is None:
+            max_reconnections = self._max_reconnections
+        max_attempts = max_reconnections + 1
         while True:
             if time.monotonic() > deadline:
                 raise TimeoutError(
@@ -171,10 +213,14 @@ class MssClient:
             except TimeoutError:
                 raise
             except (ConnectionClosed, WebSocketException, OSError) as e:
+                self._client = None
+                if attempts >= max_attempts:
+                    raise TimeoutError(
+                        f"maximum connection attempts {max_attempts} exceeded"
+                    )
                 err_logger.warning(
                     f"Connection lost ({e}). Reconnecting in {delay} seconds..."
                 )
-                self._client = None
                 time.sleep(delay)
                 delay = min(delay * 2, self._max_reconnection_delay)
 

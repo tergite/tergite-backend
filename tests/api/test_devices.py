@@ -17,6 +17,7 @@ import pytest
 import settings
 from api.worker import preload_worker_globals
 from services.scheduler import close_device_resources
+from services.scheduler.dispatcher import Dispatcher
 from tests.utils.api import (
     create_mss_headers,
 )
@@ -61,6 +62,30 @@ def test_only_the_heavy_worker_publishes_the_device_and_its_calibration(
         assert initialized["data"] == static_properties
         assert recalibrated["name"] == "recalibrated"
         assert recalibrated["data"] == dynamic_properties
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_the_heavy_worker_starts_without_mss_and_publishes_once_it_is_back(
+    client, mock_mss
+):
+    with client as client:
+        mock_mss.is_unreachable = True
+        device = preload_worker_globals(
+            settings.get_device_settings(), should_load_executor=True
+        )
+        try:
+            mock_mss.is_unreachable = False
+            light_worker = Dispatcher(
+                {device.settings.default_prefix: device},
+                should_run_heavy=False,
+                should_run_light=True,
+            )
+            light_worker.run(is_burst=True)
+        finally:
+            close_device_resources(device)
+
+        event_names = [event["name"] for event in mock_mss.sent_events]
+        assert event_names[:2] == ["initialized", "recalibrated"]
 
 
 @pytest.mark.parametrize("client, expected", STATIC_PROPERTIES_PARAMS)

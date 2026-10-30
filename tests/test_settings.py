@@ -91,7 +91,8 @@ def test_mss_client_reconnects_as_often_as_the_settings_say(mocker, monkeypatch)
 
     expected_connect_calls = connection_attempts + 1
     assert mock_connect.call_count == expected_connect_calls
-    assert mock_sleep.call_count == expected_connect_calls
+    # a delay between attempts, none after the last
+    assert mock_sleep.call_count == expected_connect_calls - 1
 
 
 def test_calibration_seed_required_for_simulator(patched_mss_websockets, monkeypatch):

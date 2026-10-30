@@ -18,6 +18,7 @@ import logging
 import threading
 from collections.abc import Iterable
 from datetime import datetime
+from pathlib import Path
 from typing import (
     Any,
     Dict,
@@ -41,7 +42,15 @@ from websockets.sync.client import ClientConnection
 from websockets.typing import DataLike
 from websockets.uri import parse_uri
 
-from tests.utils.env import TEST_PUBLIC_KEY_FILE
+from services.external.mss.auth import get_private_key
+from services.external.mss.dtos import (
+    DeviceEvent,
+    DeviceEventName,
+    DeviceSwitchData,
+)
+from services.external.mss.service import MssClient
+from tests.utils.env import TEST_PRIVATE_KEY_FILE, TEST_PUBLIC_KEY_FILE
+from utils.datetime import get_utc_now
 
 _MESSAGE_TYPES = (
     "initialized",
@@ -58,7 +67,8 @@ _default_protocol = ClientProtocol(uri=parse_uri("ws://localhost:8000"))
 
 class MockMss:
     """The MSS end of the websockets the BCC opens: it records the events sent on each, and
-    can refuse an event, stay silent, or drop a connection while the BCC waits, as MSS may
+    can refuse an event, stay silent, drop a connection while the BCC waits, or refuse to
+    connect, as MSS may
     """
 
     def __init__(self):
@@ -66,13 +76,28 @@ class MockMss:
         self.rejected_event_names: Set[str] = set()
         self.is_silent = False
         self.should_drop_next_recv = False
+        self._is_unreachable = False
 
     def connect(self, uri: str, **kwargs: Any) -> "MockWebsocket":
         """Replaces websockets.sync.client.connect, handshaking as it does"""
+        if self.is_unreachable:
+            raise ConnectionRefusedError(f"{uri} is unreachable")
         connection = MockWebsocket(mss=self, uri=uri, **kwargs)
         connection.handshake(additional_headers=kwargs.get("additional_headers"))
         self.connections.append(connection)
         return connection
+
+    @property
+    def is_unreachable(self) -> bool:
+        """whether MSS refuses connections, having dropped those it had"""
+        return self._is_unreachable
+
+    @is_unreachable.setter
+    def is_unreachable(self, value: bool) -> None:
+        self._is_unreachable = value
+        if value:
+            for connection in self.connections:
+                connection.close()
 
     @property
     def sent_events(self) -> List[Dict[str, Any]]:
@@ -212,6 +237,24 @@ def mock_mss(mocker) -> MockMss:
 def patched_mss_websockets(mocker, mock_mss) -> Generator[MockerFixture, Any, None]:
     """Patch the websocket used to connect to MSS"""
     yield mocker
+
+
+def get_mss_client(private_key_file: Path = TEST_PRIVATE_KEY_FILE) -> MssClient:
+    """Gets a client of device loke's MSS, which answers within a second"""
+    return MssClient(
+        uri="ws://mss.test/devices/ws/loke",
+        device="loke",
+        private_key=get_private_key(private_key_file, password=None),
+        response_timeout=1,
+        max_reconnections=2,
+    )
+
+
+def get_switched_on_event() -> DeviceEvent:
+    """Gets an event that the device was switched on now"""
+    return DeviceEvent(
+        name=DeviceEventName.SWITCHED_ON, data=DeviceSwitchData(date=get_utc_now())
+    )
 
 
 def _verify_headers(headers):

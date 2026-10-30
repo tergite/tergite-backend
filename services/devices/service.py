@@ -35,6 +35,7 @@ from ..external.mss import (
     DeviceEventName,
     DeviceSwitchData,
     MssClient,
+    send_mss_event,
 )
 from .store import DeviceParametersRow, SwitchedOffDeviceRow
 
@@ -64,11 +65,8 @@ def get_device_calibration_info(
 def save_all_device_params(
     db_engine: Engine, backend_config: BackendConfig, mss_client: MssClient
 ) -> None:
-    """Saves the backend's device info and calibration info, and sends them to MSS
-
-    Raises:
-        ValueError: error message from MSS when it attempts to update mss
-    """
+    """Saves the backend's device info and calibration info, and sends them to MSS, or keeps
+    them for it while it cannot be reached"""
     device_info = Device.from_config(backend_config)
     calib_info = DeviceCalibration.from_config(backend_config)
 
@@ -82,9 +80,15 @@ def save_all_device_params(
         )
         session.commit()
 
-    # update MSS of this backend's configuration
-    _send_device_params_to_mss(
-        mss_client, device_info=device_info, calibration_info=calib_info
+    send_mss_event(
+        db_engine,
+        mss_client,
+        DeviceEvent(name=DeviceEventName.INITIALIZED, data=device_info),
+    )
+    send_mss_event(
+        db_engine,
+        mss_client,
+        DeviceEvent(name=DeviceEventName.RECALIBRATED, data=calib_info),
     )
 
 
@@ -134,40 +138,6 @@ def is_offline(db_engine: Engine, device_name: str) -> bool:
     """Checks if the named device is switched off"""
     with Session(db_engine) as session:
         return session.get(SwitchedOffDeviceRow, device_name) is not None
-
-
-def _send_device_params_to_mss(
-    mss_client: MssClient,
-    device_info: Device,
-    calibration_info: DeviceCalibration,
-) -> None:
-    """
-    Sends this backend's information to MSS
-
-    Args:
-        mss_client: the MSS client
-        device_info: the static device info to send to the MSS
-        calibration_info: the dynamic device properties to send to MSS
-
-    Raises:
-        ValueError: error message from MSS
-    """
-    initialization_event = DeviceEvent(
-        name=DeviceEventName.INITIALIZED,
-        data=device_info,
-    )
-    recalibration_event = DeviceEvent(
-        name=DeviceEventName.RECALIBRATED,
-        data=calibration_info,
-    )
-
-    mss_client.send_event(
-        initialization_event, error_prefix="error sending initialization info: "
-    )
-
-    mss_client.send_event(
-        recalibration_event, error_prefix="error sending recalibration info: "
-    )
 
 
 def _get_parameters_row(db_engine: Engine, backend_name: str) -> DeviceParametersRow:

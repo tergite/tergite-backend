@@ -11,20 +11,12 @@
 # that they have been altered from the originals.
 """Tests for the client that sends the device's events to MSS"""
 import itertools
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from services.external.mss.auth import get_private_key
-from services.external.mss.dtos import (
-    DeviceEvent,
-    DeviceEventName,
-    DeviceSwitchData,
-)
-from services.external.mss.service import MssClient
-from tests.utils.env import TEST_MSS_PRIVATE_KEY_PATH, TEST_PRIVATE_KEY_FILE
-from utils.datetime import get_utc_now
+from tests.utils.env import TEST_MSS_PRIVATE_KEY_PATH
+from tests.utils.mss import get_mss_client, get_switched_on_event
 from utils.exc import MssRejectedError, MssTimeoutError
 
 
@@ -34,9 +26,9 @@ def _skip_reconnection_delays(mocker):
 
 
 def test_event_is_sent_and_answered(mock_mss):
-    event = _get_switched_on_event()
+    event = get_switched_on_event()
 
-    response = _get_mss_client().send_event(event)
+    response = get_mss_client().send_event(event)
 
     assert response["status"] == "success"
     assert [sent["id"] for sent in mock_mss.sent_events] == [event.id]
@@ -46,22 +38,22 @@ def test_event_mss_rejects_raises(mock_mss):
     mock_mss.rejected_event_names.add("switched_on")
 
     with pytest.raises(MssRejectedError, match="rejected"):
-        _get_mss_client().send_event(_get_switched_on_event())
+        get_mss_client().send_event(get_switched_on_event())
 
 
 def test_event_mss_does_not_answer_times_out(mock_mss):
     mock_mss.is_silent = True
 
     with pytest.raises(MssTimeoutError):
-        _get_mss_client().send_event(_get_switched_on_event())
+        get_mss_client().send_event(get_switched_on_event())
 
 
 def test_event_whose_connection_dropped_before_its_reply_is_resent(mock_mss):
     """The reply on the dropped connection is lost with it, so the event is sent again"""
     mock_mss.should_drop_next_recv = True
-    event = _get_switched_on_event()
+    event = get_switched_on_event()
 
-    response = _get_mss_client().send_event(event)
+    response = get_mss_client().send_event(event)
 
     assert response["status"] == "success"
     assert [
@@ -71,10 +63,10 @@ def test_event_whose_connection_dropped_before_its_reply_is_resent(mock_mss):
 
 
 def test_connection_signed_with_another_key_is_refused(mock_mss):
-    client = _get_mss_client(private_key_file=TEST_MSS_PRIVATE_KEY_PATH)
+    client = get_mss_client(private_key_file=TEST_MSS_PRIVATE_KEY_PATH)
 
     with pytest.raises(MssTimeoutError, match="maximum connection attempts"):
-        client.send_event(_get_switched_on_event())
+        client.send_event(get_switched_on_event())
 
     assert mock_mss.connections == []
 
@@ -86,7 +78,7 @@ def test_reply_is_awaited_for_what_is_left_of_the_timeout(mocker):
         "services.external.mss.service.time.monotonic",
         side_effect=itertools.count(step=0.1),
     )
-    event = _get_switched_on_event()
+    event = get_switched_on_event()
     timeouts = []
     messages = iter(
         [
@@ -100,7 +92,7 @@ def test_reply_is_awaited_for_what_is_left_of_the_timeout(mocker):
         timeouts.append(timeout)
         return next(messages)
 
-    client = _get_mss_client()
+    client = get_mss_client()
     client._client = SimpleNamespace(send=lambda *_, **__: None, recv=recv)
 
     response = client.send_event(event)
@@ -108,19 +100,3 @@ def test_reply_is_awaited_for_what_is_left_of_the_timeout(mocker):
     assert response["status"] == "success"
     assert timeouts[0] < 1
     assert all(earlier > later for earlier, later in itertools.pairwise(timeouts))
-
-
-def _get_mss_client(private_key_file: Path = TEST_PRIVATE_KEY_FILE) -> MssClient:
-    return MssClient(
-        uri="ws://mss.test/devices/ws/loke",
-        device="loke",
-        private_key=get_private_key(private_key_file, password=None),
-        response_timeout=1,
-        max_reconnections=2,
-    )
-
-
-def _get_switched_on_event() -> DeviceEvent:
-    return DeviceEvent(
-        name=DeviceEventName.SWITCHED_ON, data=DeviceSwitchData(date=get_utc_now())
-    )

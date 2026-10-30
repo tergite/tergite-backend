@@ -1426,6 +1426,101 @@ def test_finished_job_is_sent_to_mss_with_its_results(
         assert job_updates[-1]["result"]["memory"]
 
 
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+def test_job_finished_while_mss_is_unreachable_reaches_it_once_back(
+    client, jobs_folder, worker, job, mocker, mock_mss, fake_clock
+):
+    with client as client:
+        users = create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_info = get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )[0]
+        submit_jobs(client, data=[job_info])
+
+        mock_mss.is_unreachable = True
+        worker.run(is_burst=True)
+        assert get_stored_jobs()[0].status == JobStatus.SUCCESSFUL
+
+        mock_mss.is_unreachable = False
+        worker.run(is_burst=True)
+        job_updates = [
+            event["data"]
+            for event in mock_mss.sent_events
+            if event["name"] == "job_updated"
+        ]
+        assert job_updates[-1]["status"] == "successful"
+        assert job_updates[-1]["result"]["memory"]
+
+
+@pytest.mark.parametrize("patch_target, patch_kwargs", _FAILING_STAGE_PATCHES)
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+def test_job_failed_while_mss_is_unreachable_reaches_it_once_back(
+    client,
+    jobs_folder,
+    worker,
+    job,
+    mocker,
+    mock_mss,
+    fake_clock,
+    patch_target,
+    patch_kwargs,
+):
+    with client as client:
+        users = create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_info = get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )[0]
+        if patch_target == "executor":
+            set_worker_executor(worker, patch_kwargs["return_value"])
+        else:
+            mocker.patch(patch_target, **patch_kwargs)
+        submit_jobs(client, data=[job_info])
+
+        mock_mss.is_unreachable = True
+        worker.run(is_burst=True)
+        assert get_stored_jobs()[0].status == JobStatus.FAILED
+
+        mock_mss.is_unreachable = False
+        worker.run(is_burst=True)
+        job_updates = [
+            event["data"]
+            for event in mock_mss.sent_events
+            if event["name"] == "job_updated"
+        ]
+        assert job_updates[-1]["status"] == "failed"
+
+
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+def test_dead_workers_job_failed_while_mss_is_unreachable_reaches_it_once_back(
+    client, jobs_folder, worker, job, mocker, mock_mss, fake_clock
+):
+    with client as client:
+        users = create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_info = get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )[0]
+        submit_jobs(client, data=[job_info])
+        worker.run(is_burst=True, max_jobs=1)
+        device = next(iter(worker.device_resources.values()))
+        claim_job_long_ago(device, job_id=job_info["job_id"], stage=Stage.EXEC_W)
+
+        mock_mss.is_unreachable = True
+        worker.run(is_burst=True)
+        assert get_stored_jobs()[0].status == JobStatus.FAILED
+
+        mock_mss.is_unreachable = False
+        worker.run(is_burst=True)
+        job_updates = [
+            event["data"]
+            for event in mock_mss.sent_events
+            if event["name"] == "job_updated"
+        ]
+        assert job_updates[-1]["status"] == "failed"
+
+
 @pytest.mark.parametrize(
     "query, expected_is_excluded", [("?force_normal_queue=true", True), ("", False)]
 )

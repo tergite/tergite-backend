@@ -17,6 +17,7 @@ from .auth import (
     verify_mss_signature,
 )
 from .dtos import DeviceEvent, DeviceEventName, DeviceSwitchData, EventResponse
+from .events import send_kept_mss_events, send_mss_event
 from .nonces import claim_mss_nonce
 from .service import MssClient
 
@@ -30,5 +31,7 @@ __all__ = [
     "encrypt_mss_jwt_token",
     "get_mss_public_key",
     "get_private_key",
+    "send_kept_mss_events",
+    "send_mss_event",
     "verify_mss_signature",
 ]

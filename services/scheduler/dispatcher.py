@@ -16,11 +16,13 @@ preprocess, then its due recalibration; a light worker claims every device's old
 postprocess. A booking's start and end are times the claim compares with now, a recalibration
 is a row with a due time, a cancelled job one no claim takes, and a job whose stage outlives
 its timeout is failed by whichever worker next looks. A worker with nothing to claim waits for
-a wake-up, the next change in the bookings, or the fallback wait, whichever comes first.
+a wake-up, the next change in the bookings, or the fallback wait, whichever comes first. Each
+pass first sends MSS the events kept while it could not be reached.
 """
 import logging
 import signal
 import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Any, Callable, Iterator, NoReturn, Optional
@@ -36,6 +38,7 @@ from utils.sql_db import open_immediate_session
 
 from ..booking import Booking, get_active_booking, get_next_booking
 from ..devices import is_offline
+from ..external.mss import send_kept_mss_events
 from .dtos import RecalibrationInfo, RecalibrationStatus
 from .resources import DeviceResources
 from .store import JobRow, RecalibrationRow
@@ -68,6 +71,8 @@ class Dispatcher:
         self._should_run_light = should_run_light
         self._is_stopped = False
         self._listener: Optional[WakeUpListener] = None
+        # by device, the monotonic time before which MSS, found unreachable, is not tried
+        self._mss_retry_times: dict[str, float] = {}
 
     def run(self, is_burst: bool = False, max_jobs: Optional[int] = None) -> bool:
         """Runs what is due until stopped, or, in a burst, until nothing is
@@ -131,6 +136,7 @@ class Dispatcher:
         return min(seconds_to_change, _MAX_WAIT_SECONDS)
 
     def _run_once(self, device: DeviceResources) -> bool:
+        self._send_kept_mss_events(device)
         fail_overdue_jobs(device)
         if self._should_run_light and run_next_postprocessing(device):
             return True
@@ -148,6 +154,21 @@ class Dispatcher:
             or run_next_preprocessing(device)
             or run_due_recalibration(device)
         )
+
+    def _send_kept_mss_events(self, device: DeviceResources) -> None:
+        """Sends MSS the device's kept events, trying one connection, and after a failure
+        not again for the longest reconnection delay, so that an unreachable MSS costs the
+        worker little"""
+        device_name = device.settings.default_prefix
+        if time.monotonic() < self._mss_retry_times.get(device_name, 0.0):
+            return
+        is_reached = send_kept_mss_events(
+            device.bookings_db, device.mss_client, max_reconnections=0
+        )
+        if not is_reached:
+            self._mss_retry_times[device_name] = (
+                time.monotonic() + device.settings.mss_max_reconnection_delay
+            )
 
 
 def enqueue_job(
@@ -209,11 +230,7 @@ def mark_postprocessed(device: DeviceResources, job_id: str) -> None:
     if job.status == JobStatus.SUCCESSFUL:
         job = update_job_stage(device.jobs_store, job_id=job_id, stage=Stage.FINAL_W)
 
-    update_job_in_mss(
-        device.mss_client,
-        payload=job,
-        job_supervisor_log=device.settings.job_supervisor_log,
-    )
+    update_job_in_mss(device.bookings_db, device.mss_client, payload=job)
 
 
 def run_next_preprocessing(device: DeviceResources) -> bool:
@@ -598,11 +615,7 @@ def _fail_job(device: DeviceResources, job_id: str, reason: str) -> None:
         reason=reason,
         job_supervisor_log=device.settings.job_supervisor_log,
     )
-    update_job_in_mss(
-        device.mss_client,
-        payload=job,
-        job_supervisor_log=device.settings.job_supervisor_log,
-    )
+    update_job_in_mss(device.bookings_db, device.mss_client, payload=job)
 
 
 def _run_logged(

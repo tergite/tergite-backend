@@ -25,6 +25,7 @@ from sqlmodel import SQLModel
 
 from services.booking import Booking
 from services.devices.store import DeviceParametersRow, SwitchedOffDeviceRow
+from services.external.mss.events import MssEventRow
 from services.external.mss.nonces import MssNonceRow
 from services.scheduler.store import JobRow, RecalibrationRow
 
@@ -33,6 +34,7 @@ _MODELS = (
     Booking,
     DeviceParametersRow,
     JobRow,
+    MssEventRow,
     MssNonceRow,
     RecalibrationRow,
     SwitchedOffDeviceRow,

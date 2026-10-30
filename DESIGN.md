@@ -292,7 +292,8 @@ it wait.
 ```mermaid
 flowchart TD
     start([next pass]) --> dev{{for each device, in order}}
-    dev --> overdue[fail the device's jobs whose working stage<br/>is older than its timeout: their worker died]
+    dev --> kept[send MSS the device's kept events, §8.4]
+    kept --> overdue[fail the device's jobs whose working stage<br/>is older than its timeout: their worker died]
     overdue --> light{light worker?}
     light -- yes --> post[claim the oldest PST_PROC_Q job<br/>and postprocess it]
     post -- claimed --> start
@@ -577,24 +578,44 @@ sequenceDiagram
 
 ### 8.4 When MSS cannot be reached
 
-What the code does today, by sender, when MSS does not answer or rejects the event:
+The workers keep what MSS cannot take, so that neither a job nor a worker depends on MSS
+answering (`send_mss_event`, in
+[services/external/mss/events.py](services/external/mss/events.py)):
 
-- **The heavy worker at start** cannot send `initialized`, so it exits; under `bcc start`, the
-  whole backend then stops and the service manager restarts it (systemd after 10 s), until MSS
-  answers.
-- **A job failing in preprocessing or execution** is marked `failed` in BCC. When the task's own
-  error handling failed it, the error telling MSS is logged and the heavy worker goes on. When
-  the dispatcher failed it, as too long for its booking, past its time limit, or overdue, the
-  error ends the worker, and under `bcc start` the whole backend restarts. MSS keeps the job's
-  last state either way.
-- **A light worker** that cannot send a job's results fails the job ("error during post
-  processing"), replacing its `successful` status, and then cannot send that failure either:
-  the error ends the light worker, and under `bcc start` the whole backend restarts. The same
-  happens if the final `job_updated` cannot be sent, which leaves the job at `FINAL_Q`.
-- **A switch** is recorded, and the route answers 504.
+- **An event MSS cannot be reached for**, once its sending has run out of time or connection
+  attempts (8.3), is kept as a row of the `mss_event` table, and the worker goes on: the job's
+  state in BCC is what it was, and the worker stays up.
+- **While events of a device are kept**, a new one is kept behind them without being sent, so
+  that MSS gets the device's events in the order they happened, and only the first event of an
+  outage waits on MSS.
+- **Each pass of a worker's loop** (§6.2) first sends its devices' kept events, oldest first,
+  trying a single connection; after a failure it waits `BCC_MSS_MAX_RECONNECTION_DELAY` before
+  trying again. A process claims an event while it sends it, so that two processes do not send
+  one twice, and a claim older than twice `BCC_MSS_RESPONSE_TIMEOUT`, its sender dead, lapses.
+- **An event MSS refuses** is logged and dropped, as sending it again would not change MSS's
+  answer.
+- **A switch** is the exception: the API sends it directly, as it is answering MSS's own call;
+  the switch is recorded, and the route answers 504.
 
-Nothing sends a lost event again later: MSS learns of a job's state only from its next event.
-These are listed under §17.
+```mermaid
+sequenceDiagram
+    participant W as worker
+    participant D as mss_event
+    participant M as MSS
+
+    W-xM: job_updated (results): no connection
+    W->>D: keep it
+    W->>D: keep job_updated (final), behind it
+    Note over W: next pass, and every BCC_MSS_MAX_RECONNECTION_DELAY after a failure
+    W->>D: claim the oldest
+    W->>M: job_updated (results), one connection attempt
+    M-->>W: success
+    W->>D: delete it, claim the next
+    W->>M: job_updated (final)
+    M-->>W: success
+    W->>D: delete it
+```
+
 ## 9. Devices
 
 One process tree serves the devices of its env files: `main.py start --env-file loke.env
@@ -625,6 +646,7 @@ The SQL database at `BCC_BOOKING_DB_URL` (SQLite by default) holds, as SQLModel 
 | `device_parameters` | the backend's device info and calibration, which the heavy worker saves |
 | `switched_off_device` | a device switched off, until it is switched on |
 | `mss_nonce` | MSS's nonces, until they expire |
+| `mss_event` | the events MSS could not be reached for, until a worker has sent them (§8.4) |
 
 Alembic migrates it ([migrations/](migrations)): the API and the workers both migrate at start,
 under the start-up lock, and `tests/test_migrations.py` fails when a model changed without a
@@ -896,11 +918,9 @@ On top of the [style guide](#style-guide):
 
 Worth knowing before you are surprised by them:
 
-- **An unreachable MSS stops the backend.** A heavy worker cannot start without sending
-  `initialized`; a worker that cannot report a job the dispatcher failed ends; a light worker
-  that cannot report a job's results ends, turning the job, which succeeded, into `failed`.
-  Under `bcc start` each restarts the whole backend. Events
-  lost meanwhile are not sent again (§8.4).
+- **MSS learns late of what happened while it was unreachable.** The kept events reach it once
+  it is back, at a worker's next pass (§8.4); until then it shows the jobs' and the device's
+  last state it had. A switch made meanwhile reaches it only when switched again.
 - **MSS's online flag follows any one socket.** BCC holds a socket per device per process, and
   MSS marks the device offline when any of them closes, such as an idle one that missed its
   pings, until another connects (§8.1).

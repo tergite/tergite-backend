@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
 import numpy as np
 from numpy import typing as npt
+from sqlalchemy import Engine
 
 from libs.device_parameters import BackendConfig, DeviceCalibration
 from libs.quantum_executor.utils.serialization import iqx_rld
@@ -36,10 +37,9 @@ from libs.queues.dtos import (
 )
 from utils.config import DeviceSettings
 from utils.datetime import utc_now_str
-from utils.exc import MssRejectedError
 from utils.logging import err_logger
 
-from ..external.mss import DeviceEvent, DeviceEventName, EventResponse, MssClient
+from ..external.mss import DeviceEvent, DeviceEventName, MssClient, send_mss_event
 from .store import JobsStore
 
 if TYPE_CHECKING:
@@ -219,32 +219,13 @@ def update_job_results(
     )
 
 
-def update_job_in_mss(
-    mss_client: MssClient, payload: Job, job_supervisor_log: Path
-) -> EventResponse:
-    """Updates the job in MSS with the given payload
-
-    Args:
-        mss_client: the MSS client
-        payload: the new updates to apply to the given job in MSS
-        job_supervisor_log: the device's job supervisor log file, where a rejection is logged
-
-    Returns:
-        the response received after request to MSS
-
-    Raises:
-        RuntimeError: Public API returned {resp.status_code}
-    """
-    job_update_event = DeviceEvent(name=DeviceEventName.JOB_UPDATED, data=payload)
-    try:
-        resp = mss_client.send_event(
-            job_update_event, error_prefix="error sending job to MSS: "
-        )
-    except MssRejectedError as exp:
-        log_job_error(job_supervisor_log, f"{exp}")
-        raise RuntimeError(f"Public API returned an error: {exp}")
-
-    return resp
+def update_job_in_mss(db_engine: Engine, mss_client: MssClient, payload: Job) -> None:
+    """Sends MSS the job, or keeps it for MSS until MSS can be reached"""
+    send_mss_event(
+        db_engine,
+        mss_client,
+        DeviceEvent(name=DeviceEventName.JOB_UPDATED, data=payload),
+    )
 
 
 def apply_linear_discriminator(

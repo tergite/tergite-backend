@@ -40,7 +40,7 @@ from libs.queues.dtos import Job, JobStatus, Memory, Stage
 from utils.exc import JobAlreadyCancelled, PostProcessingError
 
 from ..devices import get_device_calibration_info
-from ..external.mss import DeviceEvent, DeviceEventName
+from ..external.mss import DeviceEvent, DeviceEventName, send_mss_event
 from .dtos import JobFile
 from .resources import DeviceResources
 from .utils import (
@@ -138,11 +138,7 @@ def postprocess(device: DeviceResources, job: Job, results_file: str) -> str:
             data=_get_memory(quantum_job, calibration),
             machine_root_url=device.settings.machine_root_url,
         )
-        update_job_in_mss(
-            device.mss_client,
-            payload=job,
-            job_supervisor_log=device.settings.job_supervisor_log,
-        )
+        update_job_in_mss(device.bookings_db, device.mss_client, payload=job)
         return job.job_id
     except Exception as exp:
         raise PostProcessingError(exp=exp, job_id=job_id)
@@ -218,12 +214,11 @@ def _get_memory(
 def _send_calibration_to_mss(
     device: DeviceResources, calibration: DeviceCalibration
 ) -> None:
-    logging.info("Updating MSS...")
-    response = device.mss_client.send_event(
+    send_mss_event(
+        device.bookings_db,
+        device.mss_client,
         DeviceEvent(name=DeviceEventName.RECALIBRATED, data=calibration),
-        error_prefix="error sending recalibration info: ",
     )
-    logging.info(f"calibration data updated in MSS with response: {response["status"]}")
 
 
 def _fail_job(device: DeviceResources, job_id: str, reason: str) -> Job:
@@ -234,9 +229,5 @@ def _fail_job(device: DeviceResources, job_id: str, reason: str) -> Job:
         reason=reason,
         job_supervisor_log=device.settings.job_supervisor_log,
     )
-    update_job_in_mss(
-        device.mss_client,
-        payload=job,
-        job_supervisor_log=device.settings.job_supervisor_log,
-    )
+    update_job_in_mss(device.bookings_db, device.mss_client, payload=job)
     return job
