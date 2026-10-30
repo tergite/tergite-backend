@@ -435,7 +435,9 @@ stage under way without waiting out its timeout.
   monotonic clock) as it goes: before a stage, its time limit plus `BCC_MSS_RESPONSE_TIMEOUT`,
   for telling MSS of it, plus a minute (`_DEADLINE_MARGIN_SECONDS`), or none for a stage without
   a limit; at the start of a pass, `BCC_MSS_RESPONSE_TIMEOUT` plus the minute; before a wait,
-  the wait plus the minute. `bcc start` checks every worker's deadline every 5 s
+  the wait plus the minute. Before its first pass, as it connects to the clusters and loads its
+  executor, it has the one `bcc start` sets as it starts it, `BCC_MAX_WORKER_START_TIME`, 10
+  minutes by default, the longest of its devices'. `bcc start` checks every worker's deadline every 5 s
   (`DEADLINE_CHECK_SECONDS` in `main.py`), and kills, with `SIGKILL`, as its `SIGTERM` handler
   could not run, a worker past it; then it stops the rest, and the service manager restarts the
   backend. The killed worker's job is then failed as overdue.
@@ -960,8 +962,7 @@ Worth knowing before you are surprised by them:
   it is back, at a worker's next pass (§8.4); until then it shows the jobs' and the device's
   last state it had. A switch made meanwhile reaches it only when switched again.
 - **Some stuck processes are not noticed.** A worker's deadline is checked only by `bcc start`,
-  so a worker run alone with `bcc worker` is not; nor is a worker stuck while it starts, before
-  its first pass sets a deadline, nor the API (§6.5).
+  so a worker run alone with `bcc worker` is not, nor is the API (§6.5).
 - **Nothing ages a waiting job.** Outside bookings, a job longer than the time to the next
   booking waits while shorter ones overtake it, for as long as the bookings leave it no room;
   `BCC_MAX_EXECUTION_QUEUE_TIME` fails it after a day, rather than run it sooner (§6.3).

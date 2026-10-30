@@ -59,6 +59,7 @@
 #   nuitka-project: --include-package=h5py
 
 import argparse
+import math
 import multiprocessing
 import os
 import signal
@@ -107,9 +108,14 @@ def _start(
         args=(host, port, forwarded_allow_ips, env_files, False, workers),
         name="api",
     )
+    # a light worker loads every device, so the longest any of them allows
+    start_seconds = max(
+        settings.get_device_settings(device).max_worker_start_time
+        for device in settings.get_device_names()
+    )
+    _start_processes(worker_deadlines, start_seconds=start_seconds)
+    api_process.start()
     processes = [*worker_deadlines, api_process]
-    for process in processes:
-        process.start()
 
     # after the children start, which keep the handlers uvicorn and the workers install
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
@@ -144,6 +150,16 @@ def _get_worker_processes(
         )
         deadlines[process] = deadline
     return deadlines
+
+
+def _start_processes(
+    deadlines: dict[multiprocessing.Process, "WorkerDeadline"], start_seconds: float
+) -> None:
+    """Starts the workers, each with the deadline of its start-up, by which its first pass is
+    to set one itself; 0 seconds are no limit"""
+    for process, deadline in deadlines.items():
+        deadline.set_in(start_seconds if start_seconds > 0 else math.inf)
+        process.start()
 
 
 def _wait_for_first_stop(

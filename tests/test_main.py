@@ -85,6 +85,21 @@ def test_a_worker_past_its_deadline_is_killed_and_stops_the_rest():
     assert not idle.is_alive()
 
 
+@pytest.mark.timeout(60)
+def test_a_worker_stuck_before_its_first_pass_is_killed_at_its_start_up_deadline():
+    """As connecting to the clusters may hang, before the worker sets a deadline itself"""
+    deadline = WorkerDeadline()
+    starting = multiprocessing.Process(
+        target=_wait_forever, name="heavy worker of Alpha"
+    )
+
+    main._start_processes({starting: deadline}, start_seconds=0.5)
+    stopped = main._wait_for_first_stop([starting], deadlines={starting: deadline})
+
+    assert stopped is starting
+    assert starting.exitcode == -signal.SIGKILL
+
+
 def _get_stuck(deadline: WorkerDeadline) -> None:
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
     deadline.set_in(0.5)
