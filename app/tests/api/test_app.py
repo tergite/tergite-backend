@@ -21,7 +21,6 @@ import pytest
 from pydantic import ValidationError
 from starlette.requests import Request
 
-import settings
 from app.tests.utils.api import (
     create_invalid_mss_headers,
     create_mss_headers,
@@ -219,21 +218,16 @@ def test_offline_device_refuses_the_routes_that_change_or_list_its_work(client):
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
 def test_every_response_carries_its_request_id(client):
-    """X-Request-ID is MSS's x-mss-request-id, or a new one, and the request is logged once"""
+    """X-Request-ID is MSS's x-mss-request-id, or a new one"""
     with client as client:
         headers = create_mss_headers()
         answered = client.get("/", headers=headers)
         refused = client.get("/")
         missing = client.get("/no-such-route")
 
-        nonce = headers["x-mss-request-id"]
-        device = settings.get_device_settings().default_prefix
-        requests_store = client.app.state.request_logs_stores[device]
-        logged_ids = [log.request_id for log in requests_store.get_all()]
-        assert answered.headers["X-Request-ID"] == nonce
+        assert answered.headers["X-Request-ID"] == headers["x-mss-request-id"]
         assert validate_uuid4_str(refused.headers["X-Request-ID"])
         assert validate_uuid4_str(missing.headers["X-Request-ID"])
-        assert logged_ids.count(nonce) == 1
 
 
 @pytest.mark.parametrize("error, status_code", _ERROR_STATUS_CODES)

@@ -99,6 +99,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Removed
 
+- Removed `BCC_REQUEST_LOG_TTL` and `BCC_REQUEST_LOG_CLEAN_INTERVAL`, with the two weeks of requests the BCC kept in
+  Redis and read nowhere; MSS's nonces are still kept for `MSS_NONCE_TTL`
 - Removed `BCC_IS_ASYNC`, which ran each job inside the API request that queued it; the jobs run on the workers only
 - Removed `bcc.service` and `start_bcc.sh`'s conda-based systemd mode, which the packages replace
 - Removed the Docker image and its release jobs; the debs and macOS packages, or `bcc` from a checkout, run the backend

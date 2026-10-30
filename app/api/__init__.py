@@ -24,7 +24,7 @@ import settings
 from .dependencies import get_verified_mss_user_id, lifespan
 from .device_routing import DeviceRoutingMiddleware
 from .errors import add_error_handlers
-from .middleware import log_requests
+from .middleware import add_request_id
 from .routers import bookings, devices, jobs, logfiles, recalibration, switch, users
 
 # application
@@ -54,7 +54,7 @@ if len(cors_origins) > 0:
         allow_headers=["*"],
     )
 
-app.middleware("http")(log_requests)
+app.middleware("http")(add_request_id)
 
 # routing
 # added last, so outermost: the other middlewares and the routes run as the path's device

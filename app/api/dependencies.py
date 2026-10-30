@@ -54,7 +54,6 @@ from ..utils.exc import (
 from ..utils.logging import set_up_logging
 from ..utils.redis import get_redis_connection
 from ..utils.strings import validate_uuid4_str
-from .middleware import get_request_logs_store
 
 # how long a device's start-up lock outlasts an API worker that stopped holding it
 _START_UP_LOCK_SECONDS = 300
@@ -66,7 +65,6 @@ async def lifespan(app: FastAPI):
     # each API worker, which uvicorn may start apart from main.py, sets up its own
     set_up_logging(settings.get_device_settings().log_level)
     app.state.device_resources = {}
-    app.state.request_logs_stores = {}
     for device in settings.get_device_names():
         device_settings = settings.get_device_settings(device)
         create_device_folders(device_settings)
@@ -82,9 +80,6 @@ async def lifespan(app: FastAPI):
             ):
                 resources = DeviceResources.from_settings(device_settings)
                 app.state.device_resources[device] = resources
-                app.state.request_logs_stores[device] = get_request_logs_store(
-                    resources.redis, device_settings
-                )
                 _start_device(resources)
         finally:
             lock_connection.close()
@@ -97,7 +92,6 @@ async def lifespan(app: FastAPI):
     for device_resources in app.state.device_resources.values():
         close_device_resources(device_resources)
     app.state.device_resources.clear()
-    app.state.request_logs_stores.clear()
 
 
 def get_device_resources(request: Request) -> DeviceResources:

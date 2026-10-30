@@ -85,10 +85,6 @@ class DeviceSettings(BaseSettings):
     mss_public_key_path: Path = _ROOT_PATH / "public-mss-key.pem"
     # time-to-live for the nonce; defaults to 5 minutes
     mss_nonce_ttl: float = 300
-    # time to live for the request logs; defaults to 2 weeks
-    request_log_ttl: float = 3600 * 24 * 14
-    # time interval between consecutive cleanups of expired indexes; defaults to 5 hours
-    request_log_clean_interval: float = 3600 * 5
     # time to live for the jobs store; defaults to 2 weeks
     jobs_store_ttl: float = 3600 * 24 * 14
     # time interval between consecutive cleanups of expired indexes; defaults to 5 hours

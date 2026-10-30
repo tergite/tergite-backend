@@ -92,7 +92,6 @@ type-hints: app/api/dependencies.py::get_mss_token_claims_dep
 type-hints: app/api/dependencies.py::lifespan
 type-hints: app/api/device_routing.py::DeviceRoutingMiddleware.__call__
 type-hints: app/api/dtos.py::PaginatedListResponse.model_dump
-type-hints: app/api/middleware.py::log_requests
 type-hints: app/api/routers/devices.py::get_dynamic_properties
 type-hints: app/api/routers/devices.py::get_static_properties
 type-hints: app/api/routers/logfiles.py::download_logfile
