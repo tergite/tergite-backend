@@ -203,8 +203,7 @@ def _add_instruction_to_channel_registry(
         qobj_inst,
         **instruction_kwargs,
     ):
-        if instruction.name != "ResetClockPhase":
-            instruction.register()
+        channel_registry.add(instruction)
 
 
 def _construct_schedule(

@@ -22,7 +22,7 @@ class QuantifyChannelRegistry(dict):
     """A registry of channels accessible by their clock's
 
     To get a given channel, even if it does not exist yet,
-    just try accessing it from the registry e.g. registry["m0"].
+    index the registry, e.g. registry["m0"]; get returns None for a missing one.
 
     If it does not exist,
     a new one with default final_phase=0, final_frequency=0, final_acquisitions=0,
@@ -30,17 +30,14 @@ class QuantifyChannelRegistry(dict):
     key = 'm0'.
     """
 
-    def __getitem__(self, item) -> "QuantifyChannel":
-        try:
-            return super().__getitem__(item)
-        except KeyError:
-            value = QuantifyChannel(clock=item)
-            self.__setitem__(item, value)
-            return value
+    def __missing__(self, clock: str) -> "QuantifyChannel":
+        channel = QuantifyChannel(clock=clock)
+        self[clock] = channel
+        return channel
 
-    def get(self, __key):
-        """Return the channel for the given clock name"""
-        return self.__getitem__(__key)
+    def add(self, instruction: "BaseInstruction") -> None:
+        """Adds the instruction to its channel's playback, at the next position"""
+        instruction.position = instruction.channel.register_instruction(instruction)
 
 
 @dataclass(eq=True)

@@ -14,6 +14,7 @@
 
 import abc
 import math
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 from uuid import uuid4 as uuid
 
@@ -30,7 +31,6 @@ from quantify_scheduler.operations.pulse_library import (
     DRAGPulse,
     IdlePulse,
     NumericalPulse,
-    ResetClockPhase,
     SetClockFrequency,
     ShiftClockPhase,
     SoftSquarePulse,
@@ -49,87 +49,27 @@ DT_CONST = 1e-9
 INITIAL_RESET_VALUE = 500e-6
 
 
-"""
-Qblox instruments send pulses in a given equidistant time grid.
-See https://docs.qblox.com/en/main/cluster/q1_sequence_processor.html#acquisitions for example  
+@dataclass(kw_only=True)
+class BaseInstruction(abc.ABC):
+    """An instruction on a channel, whose playback the channel registry adds it to"""
 
-Or see the table of Q1ASM instructions at
-https://docs.qblox.com/en/main/cluster/q1_sequence_processor.html#q1-instructions,
-where the execution time is always a multiple of 4 as of the time of writing this code.
-"""
-
-
-class BaseInstruction:
-    __slots__ = (
-        "t0",
-        "name",
-        "channel",
-        "port",
-        "duration",
-        "frequency",
-        "phase",
-        "memory_slot",
-        "protocol",
-        "parameters",
-        "pulse_shape",
-        "bin_mode",
-        "acq_return_type",
-        "label",
-        "position",
-    )
-
-    t0: float
     name: str
+    t0: float
     channel: QuantifyChannel
-    port: str
     duration: float
-    frequency: float
-    phase: float
-    memory_slot: List[int]
-    protocol: str
-    parameters: dict
-    pulse_shape: str
-    bin_mode: BinMode
-    acq_return_type: type
-    label: str
-    position: int
-
-    def __init__(self, **kwargs):
-        self.label = str(uuid())
-        for k, v in kwargs.items():
-            setattr(self, k, v)
-
-    def __eq__(self, other: object) -> bool:
-        self_attrs = set(filter(lambda v: hasattr(self, v), BaseInstruction.__slots__))
-        other_attrs = set(
-            filter(lambda v: hasattr(other, v), BaseInstruction.__slots__)
-        )
-
-        # if they have different attributes, they cannot be equal
-        if self_attrs != other_attrs:
-            return False
-
-        # label is always unique
-        attrs = self_attrs - {"label"}
-
-        # if they have the same attributes, they must also all have the same values
-        for attr in attrs:
-            if getattr(self, attr) != getattr(other, attr):
-                return False
-
-        # otherwise, they are the same
-        return True
-
-    def __repr__(self) -> str:
-        repr_list = [f"BaseInstruction object @ {hex(id(self))}:"]
-        for attr in BaseInstruction.__slots__:
-            if hasattr(self, attr):
-                repr_list.append(f"\t{attr} : {getattr(self, attr)}".expandtabs(4))
-        return "\n".join(repr_list)
-
-    @property
-    def pretty_name(self) -> str:
-        return self.name
+    port: Optional[str] = None
+    frequency: Optional[float] = None
+    phase: Optional[float] = None
+    memory_slot: Optional[int] = None
+    protocol: Optional[str] = None
+    parameters: dict = field(default_factory=dict)
+    pulse_shape: Optional[str] = None
+    bin_mode: Optional[BinMode] = None
+    acq_return_type: Optional[type] = None
+    # unique to each instruction, so never compared
+    label: str = field(default_factory=lambda: str(uuid()), compare=False)
+    # its index among its channel's instructions, once added
+    position: Optional[int] = None
 
     def get_phase_delta(self, channel: QuantifyChannel) -> float:
         """A representation of the change in phase this instruction introduces to its channel"""
@@ -142,13 +82,6 @@ class BaseInstruction:
     def get_acquisitions_delta(self, channel: QuantifyChannel) -> int:
         """A representation of the change in acquisitions this instruction introduces to its channel"""
         return 0
-
-    def register(self):
-        """Registers itself on its channel, updating its position.
-
-        Its position is its index in the list of instructions attached to the channel
-        """
-        self.position = self.channel.register_instruction(self)
 
     @abc.abstractmethod
     def to_operation(self, config: PulseQobjConfig) -> Operation:
@@ -185,18 +118,16 @@ class BaseInstruction:
         """
 
 
+@dataclass(kw_only=True)
 class InitialObjectInstruction(BaseInstruction):
-    __slots__ = ()
+    """The idle that a schedule's other operations start after"""
 
-    def __init__(
-        self,
-        channel: QuantifyChannel = QuantifyChannel(clock="cl0.baseband"),
-        t0=0.0,
-        duration=INITIAL_RESET_VALUE,
-        **kwargs,
-    ):
-        kwargs["name"] = "initial_object"
-        super().__init__(t0=t0, channel=channel, duration=duration, **kwargs)
+    name: str = field(default="initial_object", init=False)
+    t0: float = 0.0
+    channel: QuantifyChannel = field(
+        default_factory=lambda: QuantifyChannel(clock="cl0.baseband")
+    )
+    duration: float = INITIAL_RESET_VALUE
 
     @classmethod
     def list_from_qobj_inst(
@@ -207,7 +138,7 @@ class InitialObjectInstruction(BaseInstruction):
     ) -> List["InitialObjectInstruction"]:
         t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         duration = _map_to_qblox_timegrid(qobj_inst.duration * DT_CONST)
-        channel = channel_registry.get(qobj_inst.ch)
+        channel = channel_registry[qobj_inst.ch]
         return [
             cls(
                 t0=t0,
@@ -222,18 +153,11 @@ class InitialObjectInstruction(BaseInstruction):
         return op
 
 
+@dataclass(kw_only=True)
 class AcquireInstruction(BaseInstruction):
     """Instructions from PulseQobjInstruction with name 'acquire'"""
 
-    __slots__ = ()
-
-    def __init__(self, **kwargs):
-        kwargs["name"] = "acquire"
-        super().__init__(**kwargs)
-
-    @property
-    def pretty_name(self) -> str:
-        return self.protocol
+    name: str = field(default="acquire", init=False)
 
     def get_acquisitions_delta(self, channel: QuantifyChannel) -> int:
         return 1
@@ -247,7 +171,6 @@ class AcquireInstruction(BaseInstruction):
         hardware_map: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> List["AcquireInstruction"]:
-        name = qobj_inst.name
         t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         duration = _map_to_qblox_timegrid(qobj_inst.duration * DT_CONST)
         acquire_instructions = []
@@ -257,9 +180,8 @@ class AcquireInstruction(BaseInstruction):
             clock_name, port_name = hardware_map[qobj_channel]
             acquire_instructions.append(
                 cls(
-                    name=name,
                     t0=t0,
-                    channel=channel_registry.get(clock_name),
+                    channel=channel_registry[clock_name],
                     port=port_name,
                     duration=duration,
                     memory_slot=qobj_inst.memory_slot[n],
@@ -294,14 +216,11 @@ class AcquireInstruction(BaseInstruction):
         return op
 
 
+@dataclass(kw_only=True)
 class DelayInstruction(BaseInstruction):
     """Instructions from PulseQobjInstruction with name 'delay'"""
 
-    __slots__ = ()
-
-    def __init__(self, **kwargs):
-        kwargs["name"] = "delay"
-        super().__init__(**kwargs)
+    name: str = field(default="delay", init=False)
 
     @classmethod
     def list_from_qobj_inst(
@@ -313,12 +232,11 @@ class DelayInstruction(BaseInstruction):
     ) -> List["DelayInstruction"]:
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
-        channel = channel_registry.get(clock_name)
+        channel = channel_registry[clock_name]
         t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         duration = _map_to_qblox_timegrid(qobj_inst.duration * DT_CONST)
         return [
             cls(
-                name=qobj_inst.name,
                 t0=t0,
                 channel=channel,
                 port=port_name,
@@ -332,14 +250,11 @@ class DelayInstruction(BaseInstruction):
         return op
 
 
+@dataclass(kw_only=True)
 class SetFreqInstruction(BaseInstruction):
     """Instructions from PulseQobjInstruction with name 'setf'"""
 
-    __slots__ = ()
-
-    def __init__(self, **kwargs):
-        kwargs["name"] = "setf"
-        super().__init__(**kwargs)
+    name: str = field(default="setf", init=False)
 
     def get_frequency_delta(self, channel: QuantifyChannel) -> float:
         # reset the channel frequency to zero then add the instruction frequency
@@ -355,12 +270,11 @@ class SetFreqInstruction(BaseInstruction):
     ) -> List["SetFreqInstruction"]:
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
-        channel = channel_registry.get(clock_name)
+        channel = channel_registry[clock_name]
         frequency_hz = qobj_inst.frequency * 1e9
         t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         return [
-            SetFreqInstruction(
-                name=qobj_inst.name,
+            cls(
                 channel=channel,
                 port=port_name,
                 duration=0.0,
@@ -378,14 +292,11 @@ class SetFreqInstruction(BaseInstruction):
         )
 
 
+@dataclass(kw_only=True)
 class ShiftFreqInstruction(BaseInstruction):
     """Instructions from PulseQobjInstruction with name 'shiftf'"""
 
-    __slots__ = ()
-
-    def __init__(self, **kwargs):
-        kwargs["name"] = "shiftf"  # 'shiftf' does not work apparently
-        super().__init__(**kwargs)
+    name: str = field(default="shiftf", init=False)
 
     def get_frequency_delta(self, channel: QuantifyChannel) -> float:
         return self.frequency
@@ -401,11 +312,10 @@ class ShiftFreqInstruction(BaseInstruction):
         t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
-        channel = channel_registry.get(clock_name)
+        channel = channel_registry[clock_name]
         frequency = qobj_inst.frequency
         return [
-            ShiftFreqInstruction(
-                name=qobj_inst.name,
+            cls(
                 channel=channel,
                 port=port_name,
                 duration=0.0,
@@ -423,14 +333,11 @@ class ShiftFreqInstruction(BaseInstruction):
         )
 
 
+@dataclass(kw_only=True)
 class SetPhaseInstruction(BaseInstruction):
     """Instructions from PulseQobjInstruction with names 'setp'"""
 
-    __slots__ = ()
-
-    def __init__(self, **kwargs):
-        kwargs["name"] = "setp"
-        super().__init__(**kwargs)
+    name: str = field(default="setp", init=False)
 
     def get_phase_delta(self, channel: QuantifyChannel) -> float:
         # reset the channel phase to zero then add the instruction phase
@@ -447,13 +354,12 @@ class SetPhaseInstruction(BaseInstruction):
         t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
-        channel = channel_registry.get(clock_name)
+        channel = channel_registry[clock_name]
         # phase_degree = qobj_inst.phase * 180 / np.pi
         phase_degree = math.degrees(float(qobj_inst.phase))
         phase_degree = round(phase_degree, 12)
         return [
-            SetPhaseInstruction(
-                name=qobj_inst.name,
+            cls(
                 channel=channel,
                 port=port_name,
                 duration=0.0,
@@ -477,14 +383,11 @@ class SetPhaseInstruction(BaseInstruction):
         return ShiftClockPhase(phase_shift=delta, clock=self.channel.clock)
 
 
+@dataclass(kw_only=True)
 class ShiftPhaseInstruction(BaseInstruction):
     """Instructions from PulseQobjInstruction with names 'fc'"""
 
-    __slots__ = ()
-
-    def __init__(self, **kwargs):
-        kwargs["name"] = "fc"
-        super().__init__(**kwargs)
+    name: str = field(default="fc", init=False)
 
     def get_phase_delta(self, channel: QuantifyChannel) -> float:
         return self.phase
@@ -500,7 +403,7 @@ class ShiftPhaseInstruction(BaseInstruction):
         t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
-        channel = channel_registry.get(clock_name)
+        channel = channel_registry[clock_name]
         phase_degree = qobj_inst.phase * 180 / np.pi
         drive_frequencies = kwargs.get("drive_frequencies") or {}
         lo_frequencies = kwargs.get("lo_frequencies") or {}
@@ -514,8 +417,7 @@ class ShiftPhaseInstruction(BaseInstruction):
             phase_degree = -phase_degree
 
         return [
-            ShiftPhaseInstruction(
-                name=qobj_inst.name,
+            cls(
                 channel=channel,
                 port=port_name,
                 duration=0.0,
@@ -534,10 +436,9 @@ class ShiftPhaseInstruction(BaseInstruction):
         )
 
 
+@dataclass(kw_only=True)
 class GaussPulseInstruction(BaseInstruction):
     """Instructions from PulseQobjInstruction for parametric pulse with gaussian shape."""
-
-    __slots__ = ()
 
     @classmethod
     def list_from_qobj_inst(
@@ -553,7 +454,7 @@ class GaussPulseInstruction(BaseInstruction):
         duration = _map_to_qblox_timegrid(qobj_inst.parameters["duration"] * DT_CONST)
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
-        channel = channel_registry.get(clock_name)
+        channel = channel_registry[clock_name]
         return [
             cls(
                 name=qobj_inst.name,
@@ -583,10 +484,9 @@ class GaussPulseInstruction(BaseInstruction):
         return op
 
 
+@dataclass(kw_only=True)
 class SquarePulseInstruction(BaseInstruction):
     """Instructions from PulseQobjInstruction for parametric pulse with square shape."""
-
-    __slots__ = ()
 
     @classmethod
     def list_from_qobj_inst(
@@ -601,22 +501,18 @@ class SquarePulseInstruction(BaseInstruction):
         duration = _map_to_qblox_timegrid(qobj_inst.parameters["duration"] * DT_CONST)
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
-        channel = channel_registry.get(clock_name)
-
-        reset_clock = ResetClockPhase(
-            clock=clock_name,
-        )
-
-        square = cls(
-            name=qobj_inst.name,
-            t0=t0,
-            channel=channel,
-            port=port_name,
-            duration=duration,
-            pulse_shape=qobj_inst.pulse_shape,
-            parameters=qobj_inst.parameters,
-        )
-        return [inst for inst in (reset_clock, square) if inst is not None]
+        channel = channel_registry[clock_name]
+        return [
+            cls(
+                name=qobj_inst.name,
+                t0=t0,
+                channel=channel,
+                port=port_name,
+                duration=duration,
+                pulse_shape=qobj_inst.pulse_shape,
+                parameters=qobj_inst.parameters,
+            )
+        ]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
         amp = self.parameters.get("amp")
@@ -630,10 +526,9 @@ class SquarePulseInstruction(BaseInstruction):
         return op
 
 
+@dataclass(kw_only=True)
 class PulseLibInstruction(BaseInstruction):
     """Instructions from PulseQobjInstruction with name in pulse config library"""
-
-    __slots__ = ()
 
     @classmethod
     def list_from_qobj_inst(
@@ -647,7 +542,7 @@ class PulseLibInstruction(BaseInstruction):
         t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
-        channel = channel_registry.get(clock_name)
+        channel = channel_registry[clock_name]
         name = qobj_inst.name
         # FIXME: pulse_library seems to be a list but is accessed as a dict
         pulse_duration = config.pulse_library[name].shape[0]
@@ -673,6 +568,7 @@ class PulseLibInstruction(BaseInstruction):
             raise RuntimeError(f"Unable to schedule operation {self}.")
 
 
+@dataclass(kw_only=True)
 class WacqtCZPulseInstruction(BaseInstruction):
     """
     Microwave-frequency flux pulse for the WACQT-CZ gate.
@@ -680,11 +576,7 @@ class WacqtCZPulseInstruction(BaseInstruction):
     •  `parameters` must contain `duration` (int samples) and `dc_bias` (A).
     """
 
-    __slots__ = ()
-
-    def __init__(self, **kwargs):
-        kwargs["name"] = "wacqt_cz"
-        super().__init__(**kwargs)
+    name: str = field(default="wacqt_cz", init=False)
 
     @classmethod
     def list_from_qobj_inst(
@@ -709,7 +601,7 @@ class WacqtCZPulseInstruction(BaseInstruction):
         duration = _map_to_qblox_timegrid(params["duration"] * DT_CONST)
 
         clock, port = hardware_map[qobj_inst.ch]
-        channel = channel_registry.get(clock)
+        channel = channel_registry[clock]
 
         return [
             cls(
