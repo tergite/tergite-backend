@@ -13,6 +13,8 @@
 # that they have been altered from the originals.
 #
 """Utility functions for the scheduler service"""
+import logging
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
@@ -37,13 +39,14 @@ from ...utils.datetime import utc_now_str
 from ...utils.exc import MssRejectedError
 from ...utils.logging import err_logger
 from ..external.mss import DeviceEvent, DeviceEventName, EventResponse, MssClient
-from .dtos import LogLevel
 from .store import JobsStore
 
 if TYPE_CHECKING:
     from ...libs.quantum_executor.base.executor import QuantumExecutor
 
 
+# a job supervisor log's line, e.g. [2026-01-01T00:00:00.000Z] ERROR: ..., in UTC
+_JOB_LOG_FORMAT = "[%(asctime)s] %(levelname)s: %(message)s"
 _STAGE_TIMESTAMPS_MAP: Dict[Stage, Tuple[Tuple[JobStage, JobEvent], ...]] = {
     Stage.REG_Q: (),
     Stage.REG_W: (("registration", "started"),),
@@ -102,31 +105,9 @@ def get_executor(executor_options: ExecutorOptions) -> "QuantumExecutor":
     return executor
 
 
-def log_job_msg(
-    job_supervisor_log: Path, message: str, level: LogLevel = LogLevel.INFO
-) -> None:
-    """Save message to job supervisor log file.
-
-    Args:
-        job_supervisor_log: the device's job supervisor log file
-        message (str): message to log
-        level (LogLevel, optional): log level of the message. Defaults to LogLevel.INFO.
-    """
-    # FIXME: Why a custom logger. Can't we use the normal logging
-    color: Tuple[str, str, str] = (
-        "\033[0m",  # color end
-        "\033[0;33m",  # yellow
-        "\033[0;31m",  # red
-    )
-
-    formatted_time = utc_now_str()
-
-    logstring: str = (
-        f"{color[level.value]}[{formatted_time}] {level.name}: {message}{color[0]}\n"
-    )
-
-    with job_supervisor_log.open("a") as destination:
-        destination.write(logstring)
+def log_job_error(job_supervisor_log: Path, message: str) -> None:
+    """Logs the error to the device's job supervisor log"""
+    _get_job_logger(job_supervisor_log).error(message)
 
 
 def move_file(file: Path, new_folder: Path, ext: str = "") -> Path:
@@ -201,10 +182,9 @@ def log_job_failure(
         },
     )
 
-    log_job_msg(
+    log_job_error(
         job_supervisor_log,
         f"Job {job_id} failed at {job.stage.verbose_name} due to {reason}",
-        level=LogLevel.ERROR,
     )
 
     return job
@@ -260,7 +240,7 @@ def update_job_in_mss(
             job_update_event, error_prefix="error sending job to MSS: "
         )
     except MssRejectedError as exp:
-        log_job_msg(job_supervisor_log, f"{exp}", level=LogLevel.ERROR)
+        log_job_error(job_supervisor_log, f"{exp}")
         raise RuntimeError(f"Public API returned an error: {exp}")
 
     return resp
@@ -415,3 +395,21 @@ def _get_next_timestamps(job: Job, next_stage: Stage, current_time: str) -> Time
         pair = getattr(timestamps, stage_name) or TimestampPair()
         updated_pairs[stage_name] = pair.model_copy(update={event: current_time})
     return timestamps.model_copy(update=updated_pairs)
+
+
+def _get_job_logger(job_supervisor_log: Path) -> logging.Logger:
+    """Gets the logger that writes to the job supervisor log, which it opens at its first
+    record"""
+    logger = logging.getLogger(f"bcc.job_supervisor.{job_supervisor_log}")
+    if not logger.handlers:
+        formatter = logging.Formatter(_JOB_LOG_FORMAT)
+        formatter.converter = time.gmtime
+        formatter.default_time_format = "%Y-%m-%dT%H:%M:%S"
+        formatter.default_msec_format = "%s.%03dZ"
+        handler = logging.FileHandler(job_supervisor_log, delay=True)
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        # the job supervisor log alone, not the application's
+        logger.propagate = False
+    return logger

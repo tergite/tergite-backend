@@ -93,12 +93,3 @@ class JobFile(BaseModel):
 
     job_id: str
     params: JobFileParams
-
-
-@unique
-class LogLevel(Enum):
-    """Log level of job supervisor log messages"""
-
-    INFO = 0
-    WARNING = 1
-    ERROR = 2
