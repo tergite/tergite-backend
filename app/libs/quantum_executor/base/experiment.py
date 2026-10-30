@@ -13,7 +13,6 @@
 #
 # Refactored by Martin Ahindura (2024)
 
-import abc
 import copy
 from dataclasses import dataclass
 from typing import Generic, TypeVar
@@ -24,7 +23,7 @@ T = TypeVar("T")
 
 
 @dataclass(frozen=True)
-class NativeExperiment(abc.ABC, Generic[T]):
+class NativeExperiment(Generic[T]):
     """The schema representing a single compiled experiment
 
     Attributes:

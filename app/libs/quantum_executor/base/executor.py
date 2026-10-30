@@ -35,6 +35,9 @@ from app.utils.compat import TUID, create_exp_folder, gen_tuid
 
 
 class QuantumExecutor(abc.ABC):
+    """The state a device's jobs run with, and the hooks that preprocess_qobj and run_job
+    call to compile and run them natively"""
+
     def __init__(
         self,
         data_dir: Path,
@@ -48,7 +51,7 @@ class QuantumExecutor(abc.ABC):
         self.backend_config = backend_config
 
     @abc.abstractmethod
-    def _to_native_experiments(
+    def to_native_experiments(
         self, qobj: PulseQobj, native_config: NativeQobjConfig, /
     ) -> List[NativeExperiment]:
         """Constructs native experiments from the PulseQobj instance
@@ -63,7 +66,7 @@ class QuantumExecutor(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def _run_native(
+    def run_native(
         self,
         experiment: NativeExperiment,
         /,
@@ -73,7 +76,6 @@ class QuantumExecutor(abc.ABC):
     ) -> QExperimentResult:
         """Runs the native experiments after they have been compiled from OpenPulse Qobjects
 
-        This method is internally called by the public run() method
         It returns an xarray.Dataset like ::
 
             <xarray.Dataset>
@@ -107,134 +109,9 @@ class QuantumExecutor(abc.ABC):
         """
         pass
 
-    def preprocess(
-        self, qobj: PulseQobj, job_id: str, results_folder: Path
-    ) -> Tuple[float, str]:
-        """Prepares a given qobj for execution but does not execute it yet
-
-        Args:
-            qobj: the Quantum object that is to be preprocessed
-            job_id: the ID of the job
-            results_folder: the folder to store the experiment resulting files
-
-        Returns:
-            tuple of the duration and the path to the pickle file containing the native experiments metadata
-        """
-        tuid = gen_tuid()
-        qobj_header = qobj.header.to_dict()
-        qobj_tag = qobj_header.get("tag", "")
-        # create the logger folder where to log messages etc.
-        create_exp_folder(tuid=tuid, name=qobj_tag, datadir=self.data_dir)
-        logger = ExperimentLogger(tuid, datadir=self.data_dir)
-        logger.info(f"Preprocessing job for tuid: {tuid} (not the same as job_id)")
-
-        try:
-            # unwrap pulse library
-            qobj.config.pulse_library = {
-                i.name: np.asarray(i.samples) for i in qobj.config.pulse_library
-            }
-
-            # translate qobj experiments to quantify schedules
-            logger.info(f"Started compilation for job id: {job_id} at {datetime.now()}")
-            native_config = to_native_qobj_config(qobj.config)
-            native_expts = self._to_native_experiments(qobj, native_config)
-            total_duration = sum([expt.duration for expt in native_expts])
-
-            data = NativeExptMetadata(
-                native_config=native_config,
-                tuid=tuid,
-                qobj=qobj,
-                qobj_tag=qobj_tag,
-            )
-
-            results_file_path = _get_preprocessed_expt_file(
-                job_id, folder=results_folder
-            )
-            with open(results_file_path, "wb") as file:
-                pickle.dump(data.to_dict(), file)
-
-            logger.info(f"Translated to {len(native_expts)} native experiments.")
-            return total_duration, str(results_file_path)
-        except Exception as e:
-            # log exceptions
-            logger.error(f"\nFailed job: {job_id}, tuid: {tuid}\n{format_exc()}")
-            raise e
-
     @abc.abstractmethod
     def recalibrate(self, **kwargs) -> DeviceCalibration | None:
         """Recalibrates the executor"""
-
-    def run(self, job_id: str, inputs_folder: Path) -> str:
-        """Runs the experiments and returns the results file path
-
-        Args:
-            job_id: the ID of the job
-            inputs_folder: the path to the folder where the input files for this run can be found
-
-        Returns:
-            the path to the results obtained after measurement
-        """
-        logger: Optional[ExperimentLogger] = None
-        try:
-            preprocessed_file = _get_preprocessed_expt_file(
-                job_id, folder=inputs_folder
-            )
-            with open(preprocessed_file, "rb") as file:
-                expt_metadata_dict = pickle.load(file)
-                expt_metadata = NativeExptMetadata.from_dict(expt_metadata_dict)
-
-            tuid = expt_metadata.tuid
-            qobj = expt_metadata.qobj
-            native_config = expt_metadata.native_config
-            qobj_tag = expt_metadata.qobj_tag
-
-            experiment_folder = Path(
-                create_exp_folder(tuid=tuid, name=qobj_tag, datadir=self.data_dir)
-            )
-            logger = ExperimentLogger(tuid, datadir=self.data_dir)
-            logger.info(f"Starting job: {tuid}")
-
-            logger.info(f"Running experiments for job id: {job_id}")
-
-            # we recompile these because pickling them seems to break the schedules
-            # FIXME: If compilation is expensive, removing this duplication is a good place to start
-            native_expts = self._to_native_experiments(qobj, native_config)
-            experiment_results = {
-                expt.header.name: self._run_native(
-                    expt, native_config=native_config, logger=logger
-                )
-                for expt in native_expts
-            }
-
-            job = QuantumJob(
-                job_id=job_id,
-                tuid=tuid,
-                meas_return=native_config.meas_return,
-                meas_return_cols=native_config.meas_return_cols,
-                meas_level=native_config.meas_level,
-                n_qubits=native_config.n_qubits,
-                memory_slot_size=qobj.config.memory_slot_size,
-                qobj=qobj,
-                raw_results=experiment_results,
-            )
-
-            results_file_path = experiment_folder / f"{job_id}.hdf5"
-            save_job_in_hdf5(job, results_file_path)
-
-            # cleanup
-            preprocessed_file.unlink(missing_ok=True)
-
-            logger.info(f"Stored measurement data at {results_file_path}")
-            logger.info(
-                f"Completed {job_id if job_id else 'local job'} with tuid {tuid}."
-            )
-        except Exception as e:
-            if logger:
-                # record exceptions
-                logger.error(f"\nFailed job: {job_id}\n{format_exc()}")
-            raise e
-
-        return str(results_file_path)
 
     @abc.abstractmethod
     def close(self):
@@ -245,6 +122,129 @@ class QuantumExecutor(abc.ABC):
 
     def __exit__(self, exc_type, exc_value, exc_tb):
         self.close()
+
+
+def preprocess_qobj(
+    executor: QuantumExecutor, qobj: PulseQobj, job_id: str, results_folder: Path
+) -> Tuple[float, str]:
+    """Prepares a given qobj for execution on the executor but does not execute it yet
+
+    Args:
+        executor: the executor the job is to run on
+        qobj: the Quantum object that is to be preprocessed
+        job_id: the ID of the job
+        results_folder: the folder to store the experiment resulting files
+
+    Returns:
+        tuple of the duration and the path to the pickle file containing the native experiments metadata
+    """
+    tuid = gen_tuid()
+    qobj_header = qobj.header.to_dict()
+    qobj_tag = qobj_header.get("tag", "")
+    # create the logger folder where to log messages etc.
+    create_exp_folder(tuid=tuid, name=qobj_tag, datadir=executor.data_dir)
+    logger = ExperimentLogger(tuid, datadir=executor.data_dir)
+    logger.info(f"Preprocessing job for tuid: {tuid} (not the same as job_id)")
+
+    try:
+        # unwrap pulse library
+        qobj.config.pulse_library = {
+            i.name: np.asarray(i.samples) for i in qobj.config.pulse_library
+        }
+
+        # translate qobj experiments to quantify schedules
+        logger.info(f"Started compilation for job id: {job_id} at {datetime.now()}")
+        native_config = to_native_qobj_config(qobj.config)
+        native_expts = executor.to_native_experiments(qobj, native_config)
+        total_duration = sum([expt.duration for expt in native_expts])
+
+        data = NativeExptMetadata(
+            native_config=native_config,
+            tuid=tuid,
+            qobj=qobj,
+            qobj_tag=qobj_tag,
+        )
+
+        results_file_path = _get_preprocessed_expt_file(job_id, folder=results_folder)
+        with open(results_file_path, "wb") as file:
+            pickle.dump(data.to_dict(), file)
+
+        logger.info(f"Translated to {len(native_expts)} native experiments.")
+        return total_duration, str(results_file_path)
+    except Exception as e:
+        # log exceptions
+        logger.error(f"\nFailed job: {job_id}, tuid: {tuid}\n{format_exc()}")
+        raise e
+
+
+def run_job(executor: QuantumExecutor, job_id: str, inputs_folder: Path) -> str:
+    """Runs the preprocessed job's experiments on the executor, and returns the results file path
+
+    Args:
+        executor: the executor the job was preprocessed for
+        job_id: the ID of the job
+        inputs_folder: the path to the folder where the input files for this run can be found
+
+    Returns:
+        the path to the results obtained after measurement
+    """
+    logger: Optional[ExperimentLogger] = None
+    try:
+        preprocessed_file = _get_preprocessed_expt_file(job_id, folder=inputs_folder)
+        with open(preprocessed_file, "rb") as file:
+            expt_metadata_dict = pickle.load(file)
+            expt_metadata = NativeExptMetadata.from_dict(expt_metadata_dict)
+
+        tuid = expt_metadata.tuid
+        qobj = expt_metadata.qobj
+        native_config = expt_metadata.native_config
+        qobj_tag = expt_metadata.qobj_tag
+
+        experiment_folder = Path(
+            create_exp_folder(tuid=tuid, name=qobj_tag, datadir=executor.data_dir)
+        )
+        logger = ExperimentLogger(tuid, datadir=executor.data_dir)
+        logger.info(f"Starting job: {tuid}")
+
+        logger.info(f"Running experiments for job id: {job_id}")
+
+        # we recompile these because pickling them seems to break the schedules
+        # FIXME: If compilation is expensive, removing this duplication is a good place to start
+        native_expts = executor.to_native_experiments(qobj, native_config)
+        experiment_results = {
+            expt.header.name: executor.run_native(
+                expt, native_config=native_config, logger=logger
+            )
+            for expt in native_expts
+        }
+
+        job = QuantumJob(
+            job_id=job_id,
+            tuid=tuid,
+            meas_return=native_config.meas_return,
+            meas_return_cols=native_config.meas_return_cols,
+            meas_level=native_config.meas_level,
+            n_qubits=native_config.n_qubits,
+            memory_slot_size=qobj.config.memory_slot_size,
+            qobj=qobj,
+            raw_results=experiment_results,
+        )
+
+        results_file_path = experiment_folder / f"{job_id}.hdf5"
+        save_job_in_hdf5(job, results_file_path)
+
+        # cleanup
+        preprocessed_file.unlink(missing_ok=True)
+
+        logger.info(f"Stored measurement data at {results_file_path}")
+        logger.info(f"Completed {job_id if job_id else 'local job'} with tuid {tuid}.")
+    except Exception as e:
+        if logger:
+            # record exceptions
+            logger.error(f"\nFailed job: {job_id}\n{format_exc()}")
+        raise e
+
+    return str(results_file_path)
 
 
 @dataclass(frozen=True)

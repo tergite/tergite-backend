@@ -25,7 +25,7 @@ class StubExecutor(qiskit_executor.QiskitDynamicsExecutor):
     """Preprocesses and postprocesses as the qiskit executor does, but measures every
     acquired qubit at zero at once instead of simulating it"""
 
-    def _run_native(
+    def run_native(
         self,
         experiment: NativeExperiment,
         /,

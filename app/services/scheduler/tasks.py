@@ -27,6 +27,7 @@ from app.libs.qiskit.qobj import PulseQobj
 
 from ...libs.device_parameters import DeviceCalibration
 from ...libs.qiskit_providers.utils import json_decoder
+from ...libs.quantum_executor.base.executor import preprocess_qobj, run_job
 from ...libs.quantum_executor.base.quantum_job import (
     MeasLvl,
     discriminate_results,
@@ -82,8 +83,8 @@ def preprocess(device: DeviceResources, job: Job, job_file: Path) -> Job:
         # [[a,b],[c,d],...] -> [a + ib,c + id,...]
         json_decoder.decode_pulse_qobj(qobj)
         with device.executor_lock:
-            executor = device.executor
-            duration, _ = executor.preprocess(
+            duration, _ = preprocess_qobj(
+                device.executor,
                 PulseQobj.from_dict(qobj),
                 job_id=job_id,
                 results_folder=results_folder,
@@ -122,8 +123,9 @@ def execute(device: DeviceResources, job: Job) -> str:
 
         # Just a locking mechanism to ensure jobs don't interfere with each other
         with device.executor_lock:
-            executor = device.executor
-            results_file = executor.run(job_id, inputs_folder=preprocessing_dir)
+            results_file = run_job(
+                device.executor, job_id, inputs_folder=preprocessing_dir
+            )
 
         job: Job = jobs_store.get_one(job_id)
         if job.status == JobStatus.CANCELLED:

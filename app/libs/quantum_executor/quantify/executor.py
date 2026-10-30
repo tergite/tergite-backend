@@ -235,7 +235,7 @@ class QuantifyExecutor(QuantumExecutor):
 
         return results
 
-    def _to_native_experiments(
+    def to_native_experiments(
         self, qobj: PulseQobj, native_config: NativeQobjConfig, /
     ) -> List[QuantifyExperiment]:
         native_experiments = [
@@ -252,7 +252,7 @@ class QuantifyExecutor(QuantumExecutor):
         ]
         return native_experiments
 
-    def _run_native(
+    def run_native(
         self,
         experiment: QuantifyExperiment,
         *,

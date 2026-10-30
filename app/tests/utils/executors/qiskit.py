@@ -10,15 +10,10 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 #
-import time
-from datetime import datetime
-from pathlib import Path
-from typing import Tuple
 
 import numpy as np
 from qiskit.pulse import Acquire
 
-from app.libs.qiskit.qobj import PulseQobj
 from app.libs.quantum_executor.base.experiment import NativeExperiment
 from app.libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
 from app.libs.quantum_executor.base.quantum_job.typing import QExperimentResult
@@ -30,41 +25,11 @@ from app.libs.quantum_executor.qiskit.executor import (
 from app.libs.quantum_executor.utils.logger import ExperimentLogger
 
 
-class MockQiskitDynamicsExecutor(QiskitDynamicsExecutor):
-    # how a job's estimated duration passes; the fake_clock fixture moves its clock instead
-    wait = staticmethod(time.sleep)
-    # each job's test_duration, from its preprocessing
-    _test_durations: dict[str, float] = {}
-
-    def preprocess(
-        self, qobj: PulseQobj, job_id: str, results_folder: Path
-    ) -> Tuple[float, str]:
-        results = super().preprocess(qobj, job_id, results_folder=results_folder)
-        qobj_header = qobj.header.to_dict()
-        duration = qobj_header.get("test_duration")
-        # run gets only the job's id, in the same worker
-        self._test_durations[job_id] = duration
-        return duration, results[1]
-
-    def run(self, job_id: str, inputs_folder: Path) -> str:
-        start_timestamp = datetime.now()
-        estimated_duration = self._test_durations.get(job_id) or 0
-
-        result = super().run(job_id, inputs_folder=inputs_folder)
-        end_timestamp = datetime.now()
-        actual_duration = (end_timestamp - start_timestamp).total_seconds()
-        sleep_duration = estimated_duration - actual_duration
-        if sleep_duration > 0:
-            self.wait(sleep_duration)
-
-        return result
-
-
-class StubQiskitDynamicsExecutor(MockQiskitDynamicsExecutor):
+class StubQiskitDynamicsExecutor(QiskitDynamicsExecutor):
     """Measures every acquired qubit at zero at once instead of simulating, which takes a
     2-qubit job about 9 seconds; for tests that do not check the measured counts"""
 
-    def _run_native(
+    def run_native(
         self,
         experiment: NativeExperiment,
         /,

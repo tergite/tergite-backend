@@ -56,7 +56,7 @@ class QiskitDynamicsExecutor(QuantumExecutor):
     def recalibrate(self, **kwargs) -> None:
         pass
 
-    def _run_native(
+    def run_native(
         self,
         experiment: NativeExperiment,
         /,
@@ -73,7 +73,7 @@ class QiskitDynamicsExecutor(QuantumExecutor):
         data: npt.NDArray[np.floating] = result.data()["memory"]
         return _to_xarray(data=data, meas_return=meas_return)
 
-    def _to_native_experiments(
+    def to_native_experiments(
         self, qobj: PulseQobj, native_config: NativeQobjConfig, /
     ) -> List[QiskitDynamicsExperiment]:
         """Constructs qiskit dynamics experiments from the PulseQobj instance

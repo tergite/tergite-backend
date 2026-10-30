@@ -37,6 +37,7 @@ from app.tests.utils.env import (
     TEST_SIMQ1_BACKEND_SETTINGS_FILE,
     TEST_SIMQ2_BACKEND_SETTINGS_FILE,
 )
+from app.tests.utils.executors.durations import use_test_durations
 
 
 @pytest.fixture
@@ -66,6 +67,8 @@ def quantify_rest_client(
     monkeypatch.setenv("BCC_CALIBRATION_SEED", quantify_seed_file)
 
     from app.tests.utils.executors.quantify import MockQuantifyExecutor
+
+    use_test_durations(mocker)
     from app.tests.utils.tuner import mock_run_node
 
     mocker.patch(
@@ -98,22 +101,15 @@ def qiskit_1q_rest_client(
     monkeypatch.setenv("BCC_BACKEND_SETTINGS", TEST_SIMQ1_BACKEND_SETTINGS_FILE)
     monkeypatch.setenv("BCC_CALIBRATION_SEED", TEST_QISKIT_1Q_SEED_FILE)
 
-    from app.tests.utils.executors.qiskit import (
-        MockQiskitDynamicsExecutor,
-        StubQiskitDynamicsExecutor,
-    )
+    from app.tests.utils.executors.qiskit import StubQiskitDynamicsExecutor
 
+    use_test_durations(mocker)
     # only a test that checks the measured counts pays for simulating
-    executor_class = (
-        MockQiskitDynamicsExecutor
-        if request.node.get_closest_marker("simulated")
-        else StubQiskitDynamicsExecutor
-    )
-
-    mocker.patch(
-        "app.libs.quantum_executor.qiskit.executor.QiskitDynamicsExecutor",
-        new=executor_class,
-    )
+    if not request.node.get_closest_marker("simulated"):
+        mocker.patch(
+            "app.libs.quantum_executor.qiskit.executor.QiskitDynamicsExecutor",
+            new=StubQiskitDynamicsExecutor,
+        )
     mocker.patch(
         "app.libs.quantum_executor.qiskit.backends.one_qubit.LinearDiscriminantAnalysis",
         return_value=MOCK_LDA_1Q,
@@ -140,22 +136,15 @@ def qiskit_2q_rest_client(
     monkeypatch.setenv("BCC_BACKEND_SETTINGS", TEST_SIMQ2_BACKEND_SETTINGS_FILE)
     monkeypatch.setenv("BCC_CALIBRATION_SEED", TEST_QISKIT_2Q_SEED_FILE)
 
-    from app.tests.utils.executors.qiskit import (
-        MockQiskitDynamicsExecutor,
-        StubQiskitDynamicsExecutor,
-    )
+    from app.tests.utils.executors.qiskit import StubQiskitDynamicsExecutor
 
+    use_test_durations(mocker)
     # only a test that checks the measured counts pays for simulating
-    executor_class = (
-        MockQiskitDynamicsExecutor
-        if request.node.get_closest_marker("simulated")
-        else StubQiskitDynamicsExecutor
-    )
-
-    mocker.patch(
-        "app.libs.quantum_executor.qiskit.executor.QiskitDynamicsExecutor",
-        new=executor_class,
-    )
+    if not request.node.get_closest_marker("simulated"):
+        mocker.patch(
+            "app.libs.quantum_executor.qiskit.executor.QiskitDynamicsExecutor",
+            new=StubQiskitDynamicsExecutor,
+        )
     mocker.patch(
         "app.libs.quantum_executor.qiskit.backends.two_qubit.LinearDiscriminantAnalysis",
         return_value=MOCK_LDA_2Q,
