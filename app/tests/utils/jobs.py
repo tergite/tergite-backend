@@ -145,6 +145,13 @@ def claim_job_long_ago(device: DeviceResources, job_id: str, stage: Stage) -> No
         session.commit()
 
 
+def is_booking_excluded(job_id: str) -> bool:
+    """Whether the test device's job waits for the time outside bookings"""
+    with Session(create_engine(TEST_BOOKING_DB_URL)) as session:
+        row = session.get(JobRow, (os.environ["BCC_DEFAULT_PREFIX"], job_id))
+    return row.is_booking_excluded
+
+
 def spy_on_mss_updates(mocker: MockerFixture) -> Mock:
     """Spies, with one mock, on the jobs the tasks and the dispatcher send MSS"""
     spy = Mock(side_effect=update_job_in_mss)

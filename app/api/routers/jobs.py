@@ -39,8 +39,10 @@ router = APIRouter()
 async def submit_job(
     device: DeviceResourcesDep,
     upload_file: Annotated[UploadFile, Depends(validate_job_file)] = File(...),
-    token_claims: MSSTokenClaims = Depends(get_mss_token_claims_dep(job_exists=False)),
-    force_normal_queue: bool = Query(default=False),
+    token_claims: MSSTokenClaims = Depends(
+        get_mss_token_claims_dep(should_job_exist=False)
+    ),
+    should_force_normal_queue: bool = Query(default=False, alias="force_normal_queue"),
 ) -> Job:
     """Receives quantum jobs to process. This can be done by any IP address
 
@@ -48,7 +50,7 @@ async def submit_job(
         device: what the device runs on
         upload_file: the quantum job file uploaded
         token_claims: the user_id and job_id associated with this request
-        force_normal_queue: whether to force the job to run on the normal queue or not
+        should_force_normal_queue: whether to force the job to run on the normal queue or not
 
     Returns:
         the submitted job
@@ -57,7 +59,7 @@ async def submit_job(
         device,
         upload_file=upload_file,
         credentials=token_claims,
-        should_force_normal_queue=force_normal_queue,
+        should_force_normal_queue=should_force_normal_queue,
     )
 
 

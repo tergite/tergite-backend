@@ -47,6 +47,7 @@ from app.tests.utils.jobs import (
     get_jobs_sent_to_mss,
     get_raw_jobs,
     get_stored_jobs,
+    is_booking_excluded,
     is_job_result_matching,
     save_job_file,
     spy_on_mss_updates,
@@ -1423,6 +1424,30 @@ def test_finished_job_is_sent_to_mss_with_its_results(
         assert {update["job_id"] for update in job_updates} == {job_info["job_id"]}
         assert job_updates[-1]["status"] == "successful"
         assert job_updates[-1]["result"]["memory"]
+
+
+@pytest.mark.parametrize(
+    "query, expected_is_excluded", [("?force_normal_queue=true", True), ("", False)]
+)
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+def test_job_forced_to_the_normal_queue_waits_outside_bookings(
+    client, jobs_folder, worker, job, mocker, query, expected_is_excluded
+):
+    with client as client:
+        users = create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_info = get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )[0]
+        with open(job_info["file_path"], "rb") as file:
+            response = client.post(
+                f"/jobs{query}",
+                files={"upload_file": file},
+                headers=job_info["headers"],
+            )
+
+        assert response.status_code == 200
+        assert is_booking_excluded(job_info["job_id"]) == expected_is_excluded
 
 
 @pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)

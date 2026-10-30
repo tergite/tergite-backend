@@ -274,7 +274,7 @@ def get_verified_mss_user_id(request: Request) -> str:
 
 
 def get_mss_token_claims_dep(
-    job_exists: bool = True,
+    should_job_exist: bool = True,
     job_id_field: str = "job_id",
 ):
     """Gets a dependency injector that gets the pair (user_id, job_id) from the request to allow job submission.
@@ -291,7 +291,7 @@ def get_mss_token_claims_dep(
         InvalidJobIdInUploadedFileError: The job does not have a valid UUID4 {job_id_field}
 
     Args:
-        job_exists: whether the job is expected to exist already or not
+        should_job_exist: whether the job is expected to exist already or not
         job_id_field: the name of the parameter or field that contains the job_id. Default is 'job_id'
 
     """
@@ -326,12 +326,12 @@ def get_mss_token_claims_dep(
 
         try:
             get_job(device, job_id=job_id, user_id=user_id)
-            if not job_exists:
+            if not should_job_exist:
                 raise ConflictError(f"job {job_id} already exists")
         except NotAuthenticatedError:
             raise NotAuthenticatedError(f"job {job_id} does not exist for current user")
         except ItemNotFoundError:
-            if job_exists:
+            if should_job_exist:
                 raise ItemNotFoundError(f"job {job_id} does not exist")
 
         return MSSTokenClaims(user_id=user_id, job_id=job_id)

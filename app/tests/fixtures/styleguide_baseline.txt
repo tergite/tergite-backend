@@ -1,7 +1,5 @@
 # Code that broke a style rule when app/tests/test_styleguide.py was added (step 1.9).
 # This list only shrinks: delete a line when its violation is fixed, never add one.
-boolean: app/api/dependencies.py::get_mss_token_claims_dep(job_exists)
-boolean: app/api/routers/jobs.py::submit_job(force_normal_queue)
 boolean: app/libs/device_parameters/dtos.py::Device.characterized
 boolean: app/libs/device_parameters/dtos.py::Device.open_pulse
 boolean: app/libs/device_parameters/dtos.py::_BackendGeneralConfig.characterized
