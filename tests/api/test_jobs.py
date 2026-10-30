@@ -263,6 +263,7 @@ def test_submit_jobs_no_booking(
         assert sql_engine_spy.call_count == sql_engines_at_start
 
 
+@pytest.mark.real_time
 @pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_submit_jobs_in_active_booking(
     client,
@@ -324,6 +325,7 @@ def test_submit_jobs_in_active_booking(
         )
 
 
+@pytest.mark.real_time
 @pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_submit_jobs_in_idle_booking(
     client,
@@ -380,6 +382,7 @@ def test_submit_jobs_in_idle_booking(
             assert first_non_booker_job_start < booking_end_timestamp
 
 
+@pytest.mark.real_time
 @pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_submit_jobs_in_idle_booking_before_another(
     client,
@@ -546,6 +549,7 @@ def test_job_whose_booking_ended_in_preprocessing_runs(
         assert get_stored_jobs()[0].status == JobStatus.SUCCESSFUL
 
 
+@pytest.mark.real_time
 @pytest.mark.skipif(
     not HAS_QUANTIFY,
     reason="the simulators compile for long enough to reorder the jobs before the booking",

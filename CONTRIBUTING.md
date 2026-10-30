@@ -134,12 +134,13 @@ pyflakes api libs services utils tests dev migrations main.py settings.py
 pre-commit install
 ```
 
-- Run the tests by running the command below at the root of the project.
-  `-n auto --dist=loadscope` runs them in parallel, but the booking tests count real
-  seconds, so they can fail on a busy machine.
+- Run the tests by running the commands below at the root of the project: the most of them
+  on 4 workers, then alone those marked `real_time`, whose outcome depends on how fast the
+  machine works through the jobs against bookings.
 
 ```shell
-pytest tests
+pytest tests -n 4 --dist=worksteal -m "not real_time"
+pytest tests -m real_time
 ```
 
 ## How to Install as a Service

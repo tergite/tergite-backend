@@ -737,7 +737,7 @@ first instance, and for Redis only when its executor is quantify. See
 
 | Level | Where | Command |
 | --- | --- | --- |
-| BCC unit/integration | `tests` — pytest, against SQLite and, for quantify, Redis | `pytest tests` |
+| BCC unit/integration | `tests` — pytest, against SQLite and, for quantify, Redis | `pytest tests -n 4 --dist=worksteal -m "not real_time"`, then `pytest tests -m real_time` |
 | e2e | tergite-frontend's [`dev/e2e_native_test.sh`](https://github.com/tergite/tergite-frontend/blob/main/dev/e2e_native_test.sh), MSS and its dashboard against this checkout | `BACKEND_PATH=../tergite-backend ./dev/e2e_native_test.sh`, from tergite-frontend |
 | Performance | `dev/perf/` — Locust on a simulator device with a stubbed MSS and simulation | `./dev/perf/record.sh <dir>`, then `python3 dev/perf/compare.py dev/perf/baselines <dir>` |
 
@@ -759,9 +759,12 @@ needing the other extra is skipped (`HAS_QUANTIFY`, `HAS_QISKIT_DYNAMICS` in
   executors and tasks; the files at the top test the rest.
 - The simulators' tests use a stub executor; `@pytest.mark.simulated` runs one for real, for
   tests that check measured counts.
-- Each pytest-xdist worker has its own temporary root, database and Redis database, so
-  `-n auto --dist=loadscope` works, but the booking tests count real seconds and can fail on a
-  busy machine.
+- The suite runs on 4 pytest-xdist workers, `--dist=worksteal`, as each has its own temporary
+  root, database and Redis database: about 3 times as fast as one. The tests marked
+  `real_time`, whose outcome depends on how fast the machine works through the jobs against
+  bookings, run alone after them: `pytest tests -n 4 --dist=worksteal -m "not real_time"`,
+  then `pytest tests -m real_time`. `worksteal`, not `loadscope`, as every fixture is built
+  per test and `test_jobs.py` alone would keep one worker busy the whole run.
 - `tests/test_styleguide.py` checks the style rules a parser can see: verbs, booleans,
   constants and private helpers in place, banners, licence headers, `__all__` strings, the
   import layers, facades, `HTTPException`'s home and type hints.
@@ -776,7 +779,8 @@ mirror — see §16).
 
 On every push and merge request, `tests` runs for each extra, `qiskit` and `quantify`, with uv
 from `uv.lock` on Python 3.13 and a Redis: `black --check`, `isort --check-only` and `pyflakes`
-over `api libs services utils tests dev migrations main.py settings.py`, then `pytest tests`.
+over `api libs services utils tests dev migrations main.py settings.py`, then the tests as §14
+runs them.
 
 On a `v*` tag, GitHub's `release.yml` and GitLab's `package linux`, `package macos` and
 `release` jobs build both binaries with Nuitka, package them as debs and macOS installers, install each and smoke-test an

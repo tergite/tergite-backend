@@ -137,6 +137,7 @@ timeout = 120
 timeout_method = "thread"
 markers = [
   "simulated: runs the qiskit simulator's jobs for real, for tests that check measured counts",
+  "real_time: its outcome depends on how fast the machine works through the jobs against bookings, so it runs alone, not beside other workers",
 ]
 filterwarnings = [
   "ignore:This package has reached its end of life\\.:DeprecationWarning:quantify_scheduler\\..*",
