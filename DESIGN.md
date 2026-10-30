@@ -61,7 +61,7 @@ flowchart LR
 ```
 
 The API and the workers share no memory: they meet in the SQL database and the storage root,
-and the API and the heavy worker wake the others over the loopback (§5.4). Redis is needed only
+and the API and the heavy worker wake the others over the loopback (§6). Redis is needed only
 by the quantify executor, whose tergite-tuner keeps its sessions there (`BCC_TUNER_REDIS_URL`);
 the simulators run without it.
 
@@ -78,10 +78,11 @@ BCC depends on MSS only through:
    [api/dependencies.py](api/dependencies.py) and [docs/auth.md](docs/auth.md).
 2. **Websocket events to MSS** — the workers report on `BCC_MSS_DEVICE_EVENTS_ENDPOINT`
    (`/devices/ws/{device}` on MSS): `initialized` with the device's properties and calibration,
-   `recalibrated`, `job_updated` at each change of a job, `switched_off` and `switched_on`. The
+   `recalibrated`, `job_updated` when a job fails, gets its results and ends (§6.1),
+   `switched_off` and `switched_on`. The
    connection is signed with BCC's private key (`BCC_PRIVATE_KEY_FILE`); MSS replies to each
    event by its id. See `MssClient` in
-   [services/external/mss/service.py](services/external/mss/service.py) (§7).
+   [services/external/mss/service.py](services/external/mss/service.py) (§8).
 3. **Job tokens** — `POST /token` gives MSS a JWT for one user and one job, encrypted with
    MSS's public key; MSS hands it, decrypted, to the user's SDK, which uploads the job with it.
 
@@ -117,8 +118,7 @@ sequenceDiagram
     L->>D: claim: PST_PROC_W
     L->>L: discriminate the shots into memory
     L->>D: FINAL_W, successful
-    H-->>M: job_updated events along the way
-    L-->>M: job_updated, with the results
+    L-->>M: job_updated, with the results, then at FINAL_W
 ```
 
 The upload is the only call a user makes to BCC, which is why it alone takes the job token
@@ -235,38 +235,215 @@ lock, and, in a heavy worker, the executor.
    `MssRejectedError` → 502, `MssTimeoutError` → 504, and `ValueError`, `TypeError` and the like
    → 500 with a generic message. **Raise domain errors from services; never `HTTPException`.**
 
-### 5.4 The job's life
+## 6. Queueing: the dispatcher
 
-A job is a row of the `job` table, with its `stage`. `Stage` runs `REG`, `PRE_PROC`, `EXEC`,
-`PST_PROC`, `FINAL`, each with a queued (`_Q`) and a working (`_W`) step; `JobStatus` is what
-MSS sees: `pending`, `executing`, `successful`, `failed`, `cancelled`.
+BCC has no queue. A job waits as a row of the SQL `job` table, and the workers decide what runs
+next by querying that table at the moment they look, with the bookings' rules in the query.
+RQ's queues did this before, with a waitlist and timers beside them, as a first-in-first-out
+queue cannot say "the booker's oldest job that fits what is left of their booking". The code is [services/scheduler/dispatcher.py](services/scheduler/dispatcher.py);
+the user-facing rules are in [docs/booking_and_queuing.md](docs/booking_and_queuing.md).
 
-The **`Dispatcher`** in [services/scheduler/dispatcher.py](services/scheduler/dispatcher.py)
-runs a worker's loop. A heavy worker claims, for its device, the job the bookings let execute,
-then its oldest job to preprocess, then its due recalibration; a light worker claims every
-device's oldest job to postprocess.
+### 6.1 A job's stages
 
-- **Claims** are one transaction that SQLite takes the write lock for as it begins
-  (`open_immediate_session`), so two workers never run the same stage of a job.
-- **Bookings** are times the claim compares with now. A booker's oldest job that fits what is
-  left of their booking runs first; once the booker has had no job executing for
-  `BCC_MAX_IDLE_TIME`, or outside bookings, the oldest job of anyone's that ends before the
-  next booking runs. The rules are in [docs/booking_and_queuing.md](docs/booking_and_queuing.md).
-- **Wake-ups.** A worker with nothing to claim waits on a UDP port on the loopback, which it
-  names in `<storage root>/<device>/wakeups/<kind>-<pid>.port`. Whatever frees or adds work
-  sends it an empty datagram (`wake_workers`): the API on a new job, a booking's change, a
-  scheduled recalibration or a device switched on, and the heavy worker on an executed job. It also wakes at the bookings' next change, and after 5 s at most.
-- **Timeouts.** A stage that outlives `BCC_MAX_PREPROCESSING_TIME`, `BCC_MAX_EXECUTION_TIME`
-  or `BCC_MAX_POSTPROCESSING_TIME` is failed by whichever worker next looks, as its worker died.
-- **Recalibration** is a `recalibration` row with a due time. A heavy worker runs it when its
-  device has no job to run, having first scheduled the next one interval later. Only the
-  quantify executor recalibrates; it sends MSS the calibration it finds as `recalibrated`.
-- **The executor lock**, a file lock in the device's executor data folder, keeps the device's
-  executions and recalibrations from interleaving on its instruments.
+A job's row holds the job as JSON (`data`) and the columns the dispatcher queries: `stage`,
+`status`, `user_id`, `created_at` (submission time, the queues' order), `estimated_duration`,
+`claimed_at`, `executed_at`, `is_booking_excluded` and `results_file`. Each stage has a queued
+step (`_Q`), which a claim takes, and a working step (`_W`), which the claim gives it.
 
-A failing stage fails its job, logs it to the device's job supervisor log and tells MSS.
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> PRE_PROC_Q: API, POST /jobs
+    PRE_PROC_Q --> PRE_PROC_W: heavy worker claims
+    PRE_PROC_W --> EXEC_Q: compiled, duration estimated
+    PRE_PROC_W --> failed: a booker's job longer than their booking's time left
+    EXEC_Q --> EXEC_W: heavy worker claims, by the booking rule (6.3)
+    EXEC_W --> PST_PROC_Q: executed, results file written
+    PST_PROC_Q --> PST_PROC_W: light worker claims
+    PST_PROC_W --> FINAL_W: memory computed, sent to MSS
+    FINAL_W --> [*]
+    PRE_PROC_W --> failed: error or timeout
+    EXEC_W --> failed: error or timeout
+    PST_PROC_W --> failed: error or timeout
+    failed --> [*]
+```
 
-## 6. Authentication and authorization
+| Stage | Status MSS sees | Moved on by |
+| --- | --- | --- |
+| `PRE_PROC_Q` | `pending` | the API, which inserts the job and wakes the device's heavy workers |
+| `PRE_PROC_W` | `executing` | a heavy worker's claim; it compiles the job under the executor lock and records `estimated_duration` |
+| `EXEC_Q` | `pending` | the same worker, at once, unless the job is a booker's that is too long for their booking's time left, which it fails |
+| `EXEC_W` | `executing` | a heavy worker's claim; it runs the job under the executor lock |
+| `PST_PROC_Q` | `executing` | the same worker, with `executed_at` and `results_file`; it wakes the light workers |
+| `PST_PROC_W` | `executing`, then `successful` | a light worker's claim; it moves the results to `logfile_download_pool`, computes the memory, marks the job `successful` and sends MSS `job_updated` with it |
+| `FINAL_Q` → `FINAL_W` | `successful` | the same worker, which sends MSS `job_updated` again |
+
+`REG_Q` and `REG_W` are no longer used: a job starts at `PRE_PROC_Q`. A job that fails at any
+stage is marked `failed` with its reason, logged to the job supervisor log, and sent to MSS as
+`job_updated`. Those are the only `job_updated` events: the stages in between are not reported.
+
+### 6.2 A worker's loop
+
+`Dispatcher.run` loops over the worker's devices, in the order the env files gave them. For
+each device it runs `_run_once`; as soon as one device runs something, it starts again from
+the first device, so the first device's work goes first. Only when no device had anything does
+it wait.
+
+```mermaid
+flowchart TD
+    start([next pass]) --> dev{{for each device, in order}}
+    dev --> overdue[fail the device's jobs whose working stage<br/>is older than its timeout: their worker died]
+    overdue --> light{light worker?}
+    light -- yes --> post[claim the oldest PST_PROC_Q job<br/>and postprocess it]
+    post -- claimed --> start
+    post -- none --> heavy
+    light -- no --> heavy{heavy worker?}
+    heavy -- no --> nextdev[next device]
+    heavy -- yes --> off{device switched off?}
+    off -- yes --> nextdev
+    off -- no --> exec[claim the EXEC_Q job the booking rule picks<br/>and execute it]
+    exec -- claimed --> start
+    exec -- none --> pre[claim the oldest PRE_PROC_Q job<br/>and preprocess it]
+    pre -- claimed --> start
+    pre -- none --> recal[start the earliest due recalibration,<br/>scheduling the next one interval later]
+    recal -- due --> start
+    recal -- none --> nextdev
+    nextdev --> dev
+    dev -- no device had work --> wait[wait for a wake-up datagram,<br/>or the timeout of 6.4]
+    wait --> start
+```
+
+So a heavy worker prefers executing to preprocessing, and preprocessing to recalibrating: a
+recalibration runs only when its device has no job it may execute and none to preprocess.
+While a device is switched off its heavy work stops, but its jobs still postprocess.
+
+**A claim** is one transaction (`_claim_job`): it picks the row, sets its `stage` to the
+working step and `claimed_at` to now, and commits. `open_immediate_session` begins it with
+SQLite's write lock (`BEGIN IMMEDIATE`), so no other process's claim can read the same row as
+waiting; on PostgreSQL the `SELECT … FOR UPDATE SKIP LOCKED` does the same. The worker then
+runs the stage outside the transaction.
+
+### 6.3 Which job executes next
+
+`_pick_next_execution` chooses among the device's `EXEC_Q` jobs that are not cancelled or
+failed, oldest first. Every job there has its `estimated_duration` from preprocessing.
+
+```mermaid
+flowchart TD
+    q([a heavy worker looks for a job to execute]) --> active{is a booking active now?}
+    active -- yes --> fits{does the booker have a job<br/>not marked force_normal_queue,<br/>with duration ≤ time left in the booking?}
+    fits -- yes --> booker[run the booker's oldest such job]
+    fits -- no --> idle{has the booker been idle for<br/>BCC_MAX_IDLE_TIME?}
+    idle -- no --> none[run nothing]
+    idle -- yes --> next
+    active -- no --> next{is a booking coming?}
+    next -- yes --> before[run the oldest job of anyone<br/>with duration ≤ time to that booking's start]
+    next -- no --> oldest[run the oldest job of anyone]
+```
+
+- **Idle** is measured from the later of the booking's start and the end of the booker's last
+  execution in it (`executed_at`); while a job of the booker's executes, they are not idle.
+- **Others' jobs during a booking** run only once the booker is idle, one at a time, each
+  checked again before it starts; they must end before the *next* booking starts, not before
+  the current one ends, and one under way when the booker submits again runs to completion.
+- **Outside bookings**, a job longer than the time to the next booking waits, and shorter, newer
+  jobs overtake it until it fits. Nothing ages a waiting job, so a long job can wait as long as
+  bookings keep leaving too little room.
+- **`force_normal_queue=true`** on `POST /jobs` sets `is_booking_excluded`: the booker's job is
+  treated as anyone's, and is not failed for being too long for their booking.
+- **Too long for the booking**: when preprocessing ends (`mark_preprocessed`), a job of the
+  active booking's booker, not marked `force_normal_queue`, whose `estimated_duration` exceeds
+  the booking's time left is failed at once, so that the booker can choose to book longer or
+  resubmit with `force_normal_queue`. A booker's job preprocessed before their booking starts is
+  not checked; if it does not fit once the booking is active, it waits like anyone's.
+- A job under way when its booking ends runs to completion.
+
+### 6.4 Waking the workers
+
+A worker with nothing to do blocks in `WakeUpListener.wait(timeout)`, a `select` on a UDP socket
+bound to a free port of `127.0.0.1`, which it names in each of its devices' folders as
+`<storage root>/<device>/wakeups/<kind>-<pid>.port` (a worker of both kinds writes two files).
+The wait ends on the first datagram or the timeout, and drains every datagram that came, so
+that a burst of wake-ups costs one pass.
+
+```mermaid
+sequenceDiagram
+    participant A as API
+    participant F as wakeups/ folder
+    participant H as heavy worker
+    participant L as light worker
+
+    H->>F: write heavy-PID.port
+    L->>F: write light-PID.port
+    H->>H: nothing to claim: wait(timeout)
+    A->>A: commit the new job
+    A->>F: read heavy-*.port
+    A-)H: empty datagram
+    H->>H: claim, preprocess, claim, execute
+    H->>F: read light-*.port
+    H-)L: empty datagram
+    L->>L: claim, postprocess
+```
+
+**Who sends one** (`wake_workers(device, kind)`), always after committing the change:
+
+| Event | Sender | Wakes |
+| --- | --- | --- |
+| a job submitted | API | heavy |
+| a booking created or cancelled | API | heavy |
+| a user's profile deleted, cancelling their jobs and bookings | API | heavy |
+| a recalibration scheduled, at API start or by `/recalibration/init` | API | heavy |
+| a device switched on | API | heavy |
+| a job executed | heavy worker | light |
+
+Cancelling a job wakes no one: it adds no work. A heavy worker that has just preprocessed needs
+no wake-up either, as it loops on at once.
+
+**The timeout** (`Dispatcher._get_wait_seconds`) is computed by the worker itself, as nothing
+sends a datagram when time passes:
+
+- A light worker always waits at most `_MAX_WAIT_SECONDS`, 5 s.
+- A heavy worker, for each of its devices that has a job in `EXEC_Q`, takes the earliest of
+  these that is still in the future (`get_next_change_at`): the active booking's end; the
+  moment its booker becomes idle (their last activity plus `BCC_MAX_IDLE_TIME`); the next
+  booking's start. It waits until the earliest over its devices, but at most 5 s.
+
+These are the moments the booking rule of 6.3 can start to pick a different job, so a waiting
+job starts on time instead of up to 5 s late. The 5 s cap bounds everything nothing announces:
+a due recalibration, a dead worker's job reaching its timeout, and a lost datagram (a port
+file read half written costs that worker its timeout).
+
+A worker deletes the port files of dead processes as it starts, and its own as it stops;
+`Dispatcher.stop`, which SIGTERM calls, sends the worker a datagram, so it stops after the
+stage under way without waiting out its timeout.
+
+### 6.5 Timeouts, cancellation and recalibration
+
+- **A stage's time limit**: preprocessing, execution and postprocessing run under a `SIGALRM`
+  timer of `BCC_MAX_PREPROCESSING_TIME`, `BCC_MAX_EXECUTION_TIME` and
+  `BCC_MAX_POSTPROCESSING_TIME` (`_raise_after`, which acts only in the main thread). A stage
+  past it fails its job: preprocessing and execution as "timed out", postprocessing as "error
+  during post processing". 0 means no limit.
+- **A dead worker's job**: every pass starts with `fail_overdue_jobs`, which fails the device's
+  jobs whose working stage was claimed longer ago than that stage's limit, as the worker that
+  claimed them can no longer be running it. Whichever worker looks first does it.
+- **Cancelling** a job sets its status to `cancelled`, which every claim's query excludes, so no
+  worker claims it again. A stage already running finishes, its status staying `cancelled`; an
+  execution's results are then dropped, so the job never reaches postprocessing.
+- **Deleting** a job cancels it if it has not ended, then deletes its row.
+- **Recalibration** is a `recalibration` row: `scheduled` with a `due_at`, then `started`, then
+  `finished` or `failed`. Scheduling one deletes the device's scheduled rows and stops the one
+  under way from repeating, then inserts a new one, due now unless given a time, repeating every
+  `BCC_DEFAULT_RECALIBRATION_INTERVAL` unless given an interval; the API does this at every
+  start. A heavy worker starts the earliest due row in one transaction, inserting the next one
+  interval later, then runs it under the executor lock and `BCC_MAX_RECALIBRATION_QUEUE_TIME`.
+- **The executor lock**, a file lock in the device's `executor_data` folder, keeps
+  preprocessing, executions and recalibrations of a device from running at once on its
+  instruments, should two heavy workers serve it.
+- **Expiry**: a job's row is deleted `BCC_JOBS_STORE_TTL` seconds after it was last written,
+  when another job is inserted.
+
+## 7. Authentication and authorization
 
 BCC has no login of its own: MSS authenticates users, and BCC trusts MSS's signature.
 
@@ -302,7 +479,7 @@ the first device.
 
 Interactive docs are at `/docs`.
 
-## 7. Talking to MSS
+## 8. Talking to MSS
 
 Each device's `MssClient` holds one blocking websocket to MSS, opened at its first event.
 `send_event` sends an event and waits for MSS's reply to its id, as one operation: a connection
@@ -313,7 +490,7 @@ or after `BCC_MSS_CONNECTION_MAX_ATTEMPTS` connections; a reply that is not a su
 `MssRejectedError`. The worker or route sending it waits meanwhile, so a dead MSS slows the
 stages, and the switch, that report to it.
 
-## 8. Devices
+## 9. Devices
 
 One process tree serves the devices of its env files: `main.py start --env-file loke.env
 --env-file thor.env`, or `BCC_ENV_FILE` naming them separated as in `PATH`. A device is named
@@ -329,7 +506,7 @@ accident of a common database or folder.
 - **Databases** may be shared: the `job` table is keyed by device and job, and the others carry
   the device's name where they need it.
 
-## 9. Data
+## 10. Data
 
 ### SQL
 
@@ -357,7 +534,7 @@ preprocessed ones (`job_preproc_pool`), the executor's experiment folders and lo
 lets devices share the folder of uploads, results and log. The start-up lock sits at the
 storage root.
 
-## 10. Executors
+## 11. Executors
 
 A `QuantumExecutor` ([libs/quantum_executor/base/executor.py](libs/quantum_executor/base/executor.py))
 holds the state a device's jobs run with — the instruments' coordinator, or the simulator — and
@@ -376,7 +553,7 @@ shot's register.
 `_init_executor` in `services/scheduler/utils.py` imports each only when it is chosen, so the
 rest of the code runs with either extra. Adding one: [docs/executors.md](docs/executors.md).
 
-## 11. Configuration
+## 12. Configuration
 
 Each device is an env file of `BCC_` variables; copy [.env.example](.env.example), which lists
 them all, and see [docs/configuration.md](docs/configuration.md). Beside it, the files the env
@@ -394,7 +571,7 @@ a missing key or file. From a checkout, `dev/start_bcc.sh` decrypts an env file 
 encrypted with a Hashicorp Vault key (`sops_hc_vault__`) into the environment, then runs
 `main.py start`.
 
-## 12. Deployment
+## 13. Deployment
 
 BCC installs from its release's deb (amd64) or macOS arm64 installer: Nuitka's standalone
 build, `bcc` from the quantify extra or `bcc.simulator` from the qiskit one, each in its own
@@ -405,7 +582,7 @@ macOS the paths are under `/usr/local/` and a LaunchDaemon runs it. The deb asks
 first instance, and for Redis only when its executor is quantify. See
 [CONTRIBUTING.md](CONTRIBUTING.md#how-to-install-as-a-service).
 
-## 13. Testing
+## 14. Testing
 
 | Level | Where | Command |
 | --- | --- | --- |
@@ -440,11 +617,11 @@ needing the other extra is skipped (`HAS_QUANTIFY`, `HAS_QISKIT_DYNAMICS` in
   `tests/fixtures/styleguide_baseline.txt` lists the code that broke a rule when the test was
   added; it only shrinks: a change that fixes a violation deletes its line, and none adds one.
 
-## 14. CI
+## 15. CI
 
 Both GitHub Actions ([.github/workflows](.github/workflows)) and GitLab CI
 ([.gitlab-ci.yml](.gitlab-ci.yml)) are maintained; GitLab is the source of truth (GitHub is a
-mirror — see §15).
+mirror — see §16).
 
 On every push and merge request, `tests` runs for each extra, `qiskit` and `quantify`, with uv
 from `uv.lock` on Python 3.13 and a Redis: `black --check`, `isort --check-only` and `pyflakes`
@@ -455,7 +632,7 @@ On a `v*` tag, GitHub's `release.yml` and GitLab's `package linux`, `package mac
 instance with it, and attach them to the release. GitLab's macOS job runs only where
 `PUBLISH_MACOS_ARM64` is `true`.
 
-## 15. Working on this repo
+## 16. Working on this repo
 
 ### Version control
 
@@ -543,7 +720,7 @@ rules, and code a change touches is brought in line with them.
     merge, `a | b` says it plainly.
 12. **A value that is only defined stays where it is used.** A function that does no more than
     return a literal makes the reader jump to it and back for nothing.
-13. **Every request, job and store is scoped to its device** (§8). One process serves several
+13. **Every request, job and store is scoped to its device** (§9). One process serves several
     devices, so whatever a device owns is keyed or held per device.
 
 ### Verifying a change
@@ -551,7 +728,7 @@ rules, and code a change touches is brought in line with them.
 **Every commit** runs `black` and `isort` with no flags and `pyflakes` over the source folders,
 then the tests the change can affect, serially, logged as [below](#slow-commands). A change
 that reaches executor code (`libs/quantum_executor/`, `services/scheduler/tasks.py`,
-`_init_executor`) runs them in both environments, `.venv` and `.venv-qiskit` (§13), as each
+`_init_executor`) runs them in both environments, `.venv` and `.venv-qiskit` (§14), as each
 extra skips the other's tests. A commit that fixes a style violation deletes its line from
 the styleguide baseline; none adds one.
 
@@ -610,12 +787,15 @@ On top of the [style guide](#style-guide):
 | New executor | [docs/executors.md](docs/executors.md) |
 | New domain error | a subclass in `utils/exc.py`, and its status in `api/errors.py` |
 
-## 16. Known rough edges
+## 17. Known rough edges
 
 Worth knowing before you are surprised by them:
 
 - **A dead MSS slows the workers.** Events are sent and waited for in the stage that sends them
-  (§7), so while MSS is unreachable each such stage waits up to `BCC_MSS_RESPONSE_TIMEOUT`.
+  (§8), so while MSS is unreachable each such stage waits up to `BCC_MSS_RESPONSE_TIMEOUT`.
+- **Nothing ages a waiting job.** Outside bookings, a job longer than the time to the next
+  booking waits while shorter ones overtake it, for as long as the bookings leave it no room
+  (§6.3).
 - **SQLite serialises every claim.** The workers' claims take its write lock; one database
   shared by many devices queues their claims behind each other.
 - **The simulators do not recalibrate**: `QiskitDynamicsExecutor.recalibrate` returns nothing,

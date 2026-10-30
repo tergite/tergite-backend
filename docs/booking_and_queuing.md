@@ -222,8 +222,11 @@ _Note: The user must specify the backend they are booking when submitting reques
   postprocesses the oldest executed job of every device.
 - A worker claims a job in one transaction, so no two workers run the same stage of a job.
 - A worker with nothing to claim waits until the API or the heavy worker wakes it, with a
-  datagram to the loopback port it names in `<storage root>/<device>/wakeups/`, or until the
-  bookings next change, for at most 5 seconds.
+  datagram to the loopback port it names in `<storage root>/<device>/wakeups/`. A heavy worker
+  with a job waiting to execute also wakes itself at the next moment the rules below could pick
+  a different job: the active booking's end, its booker turning idle, or the next booking's
+  start. No worker waits more than 5 seconds.
+- [DESIGN.md §6](../DESIGN.md#6-queueing-the-dispatcher) describes this in full, with diagrams.
 
 ### When there is no active booking:
 
@@ -233,13 +236,14 @@ _Note: The user must specify the backend they are booking when submitting reques
 ### When a booking is active:
 
 - The booker's oldest preprocessed job that ends before the booking does runs next.
-- A booker's job longer than what is left of the booking fails after preprocessing, and alerts
-  the user that the job is too long for the slot.  
+- A booker's job that finishes preprocessing during their booking, and is longer than what is
+  left of it, fails, and alerts the user that the job is too long for the slot.  
   _(The reason here is to allow the user to decide if they want to elongate 
   their time slot or just put the job on the normal queue.)_
 - A booker's job with `force_normal_queue=True`, and any other user's job, waits.
 - Once the booker has had no job executing for `MAX_IDLE_TIME`, the oldest job of anyone's
-  that ends before the next booking starts runs, one at a time, until the booker sends another.
+  that ends before the next booking starts runs, one at a time, until the booker has a job
+  ready to execute that fits what is left of their booking.
 - A job under way when the booking ends runs to completion; then the rules for no active
   booking apply.
 
