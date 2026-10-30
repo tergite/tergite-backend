@@ -37,14 +37,14 @@ except ImportError as e:
     logging.debug(f"import error: {e}. We will attempt to make a mock of that type")
     from typing import Any
 
-    from qiskit.pulse import Schedule
-
     ClusterConfig = Any
     SPIMode = Any
     MeasurementMode = Any
     CalibrationResults = Any
     _CouplerInRedis = Any
-    CompiledSchedule = Schedule
+    # stand-ins in annotations alone, which would otherwise import qiskit
+    Schedule = Any
+    CompiledSchedule = Any
     TUID = str
 
     def locate_experiment_container(tuid: TUID, datadir: Path | str, **kwargs):
