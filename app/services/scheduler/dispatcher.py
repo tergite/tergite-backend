@@ -299,6 +299,10 @@ def fail_overdue_jobs(device: DeviceResources) -> None:
         Stage.EXEC_W: device.settings.max_execution_time,
         Stage.PST_PROC_W: device.settings.max_postprocessing_time,
     }
+    # a timeout of 0 is none
+    timeouts = {stage: timeout for stage, timeout in timeouts.items() if timeout > 0}
+    if not timeouts:
+        return
     now = get_utc_now()
     with Session(device.bookings_db) as session:
         overdue_job_ids = session.exec(

@@ -12,6 +12,7 @@
 # that they have been altered from the originals.
 #
 """Tests for the API's job routes, and the jobs' way through the queues"""
+import dataclasses
 import os
 from datetime import datetime, timedelta, timezone
 from itertools import zip_longest
@@ -24,6 +25,7 @@ from pytest_mock import MockerFixture
 
 from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps
 from app.services.booking import Booking
+from app.services.scheduler.dispatcher import fail_overdue_jobs
 from app.tests.utils.api import (
     create_mss_headers,
     get_bearer_headers,
@@ -37,6 +39,7 @@ from app.tests.utils.env import (
 )
 from app.tests.utils.jobs import (
     cancel_job_via_mss,
+    claim_job_long_ago,
     get_job_submission_metadata,
     get_jobs_sent_to_mss,
     get_raw_jobs,
@@ -1475,6 +1478,46 @@ def test_cancelled_job_is_not_executed(
             JobStatus.CANCELLED,
             Stage.EXEC_Q,
         )
+
+
+@pytest.mark.parametrize(
+    "max_execution_time, expected_status",
+    [(600, JobStatus.FAILED), (0, JobStatus.EXECUTING)],
+)
+@pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+def test_job_whose_worker_died_fails_after_its_time_limit(
+    client,
+    redis_conn,
+    jobs_folder,
+    worker,
+    job,
+    mocker,
+    fake_clock,
+    max_execution_time,
+    expected_status,
+):
+    """A time limit of 0 is none, so it never fails a job"""
+    with client as client:
+        users = create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_info = get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )[0]
+        submit_jobs(client, data=[job_info])
+        worker.run(is_burst=True, max_jobs=1)
+        device = next(iter(worker.device_resources.values()))
+        claim_job_long_ago(device, job_id=job_info["job_id"], stage=Stage.EXEC_W)
+        device = dataclasses.replace(
+            device,
+            settings=device.settings.model_copy(
+                update={"max_execution_time": max_execution_time}
+            ),
+        )
+
+        fail_overdue_jobs(device)
+
+        [stored_job] = get_stored_jobs()
+        assert stored_job.status == expected_status
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)

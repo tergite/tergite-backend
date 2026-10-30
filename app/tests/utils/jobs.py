@@ -14,6 +14,7 @@ import copy
 import json
 import os
 from contextlib import suppress
+from datetime import timedelta
 from pathlib import Path
 from typing import (
     Any,
@@ -31,18 +32,21 @@ from httpx import Response
 from pydantic import ValidationError
 from pytest_mock import MockerFixture
 from sqlalchemy import create_engine
+from sqlmodel import Session
 
 import app.services.scheduler.dispatcher as scheduler_dispatcher
 import app.services.scheduler.tasks as scheduler_tasks
-from app.libs.queues.dtos import Job
-from app.services.scheduler import JobsStore
-from app.services.scheduler.utils import update_job_in_mss
+from app.libs.queues.dtos import Job, Stage
+from app.services.scheduler import DeviceResources, JobsStore
+from app.services.scheduler.store import JobRow
+from app.services.scheduler.utils import update_job_in_mss, update_job_stage
 from app.tests.utils.api import (
     create_mss_headers,
     get_bearer_headers,
     get_token,
 )
 from app.tests.utils.env import TEST_BOOKING_DB_URL
+from app.utils.datetime import get_utc_now
 
 
 def cancel_job_via_mss(
@@ -129,6 +133,16 @@ def get_stored_jobs() -> List[Job]:
         ttl=0,
     )
     return store.find()
+
+
+def claim_job_long_ago(device: DeviceResources, job_id: str, stage: Stage) -> None:
+    """Leaves the job at the stage, claimed a day ago by a worker that has since died"""
+    update_job_stage(device.jobs_store, job_id=job_id, stage=stage)
+    with Session(device.bookings_db) as session:
+        row = session.get(JobRow, (device.settings.default_prefix, job_id))
+        row.claimed_at = get_utc_now() - timedelta(days=1)
+        session.add(row)
+        session.commit()
 
 
 def spy_on_mss_updates(mocker: MockerFixture) -> Mock:
