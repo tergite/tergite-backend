@@ -17,7 +17,6 @@ from typing import Tuple
 
 import numpy as np
 from qiskit.pulse import Acquire
-from rq import get_current_job
 
 from app.libs.qiskit.qobj import PulseQobj
 from app.libs.quantum_executor.base.experiment import NativeExperiment
@@ -34,6 +33,8 @@ from app.libs.quantum_executor.utils.logger import ExperimentLogger
 class MockQiskitDynamicsExecutor(QiskitDynamicsExecutor):
     # how a job's estimated duration passes; the fake_clock fixture moves its clock instead
     wait = staticmethod(time.sleep)
+    # each job's test_duration, from its preprocessing
+    _test_durations: dict[str, float] = {}
 
     def preprocess(
         self, qobj: PulseQobj, job_id: str, results_folder: Path
@@ -41,14 +42,13 @@ class MockQiskitDynamicsExecutor(QiskitDynamicsExecutor):
         results = super().preprocess(qobj, job_id, results_folder=results_folder)
         qobj_header = qobj.header.to_dict()
         duration = qobj_header.get("test_duration")
+        # run gets only the job's id, in the same worker
+        self._test_durations[job_id] = duration
         return duration, results[1]
 
     def run(self, job_id: str, inputs_folder: Path) -> str:
         start_timestamp = datetime.now()
-        job = get_current_job().device_resources.jobs_store.get_one(job_id)
-        estimated_duration = 0
-        if job.estimated_duration:
-            estimated_duration = job.estimated_duration
+        estimated_duration = self._test_durations.get(job_id) or 0
 
         result = super().run(job_id, inputs_folder=inputs_folder)
         end_timestamp = datetime.now()
