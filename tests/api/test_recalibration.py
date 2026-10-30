@@ -12,9 +12,11 @@
 # that they have been altered from the originals.
 #
 """Tests for the API's recalibration routes"""
+import json
 import math
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -93,6 +95,42 @@ def test_recalibration_reaches_what_the_device_runs_and_serves(
             )
             for qubit in calibration_config.qubit
         }
+
+
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="the simulators do not recalibrate")
+@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
+def test_a_recalibration_starts_from_the_tuners_results_of_the_last(
+    client, worker, quantify_seed_file, mocker
+):
+    """The tuner keeps nothing between its sessions, and deletes its run's own results"""
+    from tests.utils.tuner import mock_run_node
+
+    calibration_options = []
+
+    def run_node(*args, **options):
+        # the tuner reads it as it creates the session, which the later nodes reuse
+        if options.get("session") is None:
+            calibration_options.append(options.get("calibration"))
+        return mock_run_node(*args, **options)
+
+    mocker.patch(
+        "libs.quantum_executor.quantify.utils.calibration.run_node",
+        side_effect=run_node,
+    )
+    results_file = Path(quantify_seed_file).with_suffix(".tuner.json")
+    with client as client:
+        worker.run(is_burst=True, max_jobs=1)
+        first_options = list(calibration_options)
+        is_results_file_kept = results_file.exists()
+        client.post("/recalibration/init", headers=create_mss_headers(is_admin=True))
+        calibration_options.clear()
+
+        worker.run(is_burst=True, max_jobs=1)
+
+    assert first_options == [None]
+    assert is_results_file_kept
+    assert calibration_options == [str(results_file)]
+    assert json.loads(results_file.read_text())["transmons"]
 
 
 @pytest.mark.skipif(

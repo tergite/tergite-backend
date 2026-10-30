@@ -255,6 +255,7 @@ class QuantifyExecutor(QuantumExecutor):
         logging.info(f"recalibrating {name} in {cluster_mode} mode...")
         return recalibrate(
             backend_config=backend_config,
+            results_file=Path(self.calib_seed_file).with_suffix(".tuner.json"),
             cluster_mode=cluster_mode,
             stdout_log_level=25,
             file_log_level=25,

@@ -9,6 +9,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- Added `<seed>.tuner.json` beside the calibration seed file, tergite-tuner's results of the last recalibration, which
+  the next one starts from once tergite-tuner keeps nothing between its sessions, as from its refactor
 - Added `BCC_MAX_EXECUTION_QUEUE_TIME`, a day by default and 0 for none: a preprocessed job waiting longer to execute,
   e.g. for room between bookings, is failed and its user told, where it waited indefinitely
 - Added `BCC_MAX_WORKER_WAIT_TIME`, the longest a worker with nothing to do waits before looking again, which bounds

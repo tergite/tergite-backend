@@ -11,6 +11,7 @@
 # that they have been altered from the originals.
 """Utils for running recalibration"""
 import enum
+from pathlib import Path
 from typing import Optional, Unpack
 
 from tergite_tuner import NodeEnum, SessionContext, read_result, run_node
@@ -58,20 +59,28 @@ _INITIAL_QUBITS_NODE_RUN_MAP = {
 
 
 def recalibrate(
-    backend_config: BackendConfig, **session_options: Unpack[SessionOptions]
+    backend_config: BackendConfig,
+    results_file: Path,
+    **session_options: Unpack[SessionOptions],
 ) -> DeviceCalibration:
     """Recalibrate the entire device and updates the calibration seed file
 
     Args:
         backend_config: The backend configuration
+        results_file: where the tuner's results of the last recalibration are kept, which this
+            one starts from and replaces, as the tuner keeps nothing between its sessions
         session_options: the options for creating the session
 
     Returns:
         the new device calibration
     """
+    if results_file.exists():
+        # a tuner from before its refactor ignores it, keeping its own in Redis
+        session_options["calibration"] = str(results_file)
     session = _recalibrate_all_qubits(**session_options)
     session = _recalibrate_all_couplers(session)
     results = read_result(session, session_only=False)
+    results_file.write_text(results.model_dump_json())
     coupler_index_map = {
         f"{q1}_{q2}": int(k.lstrip("u"))
         for k, (q1, q2) in backend_config.device_config.coupling_dict.items()
