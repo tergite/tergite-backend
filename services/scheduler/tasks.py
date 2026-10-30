@@ -39,8 +39,7 @@ from libs.quantum_executor.base.quantum_job.dtos import QuantumJob
 from libs.queues.dtos import Job, JobStatus, Memory, Stage
 from utils.exc import JobAlreadyCancelled, PostProcessingError
 
-from ..devices import get_device_calibration_info
-from ..external.mss import DeviceEvent, DeviceEventName, send_mss_event
+from ..devices import get_device_calibration_info, save_device_calibration
 from .dtos import JobFile
 from .resources import DeviceResources
 from .utils import (
@@ -145,12 +144,17 @@ def postprocess(device: DeviceResources, job: Job, results_file: str) -> str:
 
 
 def recalibrate(device: DeviceResources) -> None:
-    """Recalibrates the device, and sends MSS the calibration it found"""
+    """Recalibrates the device, and saves and sends MSS the calibration it found"""
     # ensure recalibration runs without interference
     with device.executor_lock:
         calibration = device.executor.recalibrate()
         if isinstance(calibration, DeviceCalibration):
-            _send_calibration_to_mss(device, calibration)
+            save_device_calibration(
+                device.bookings_db,
+                backend_name=device.executor_options.backend_name,
+                calibration=calibration,
+                mss_client=device.mss_client,
+            )
 
 
 @contextmanager
@@ -209,16 +213,6 @@ def _get_memory(
     if quantum_job.meas_level == MeasLvl.INTEGRATED:
         return xarray_to_list(quantum_job)
     raise NotImplementedError(f"meas_level {quantum_job.meas_level} is not supported")
-
-
-def _send_calibration_to_mss(
-    device: DeviceResources, calibration: DeviceCalibration
-) -> None:
-    send_mss_event(
-        device.bookings_db,
-        device.mss_client,
-        DeviceEvent(name=DeviceEventName.RECALIBRATED, data=calibration),
-    )
 
 
 def _fail_job(device: DeviceResources, job_id: str, reason: str) -> Job:

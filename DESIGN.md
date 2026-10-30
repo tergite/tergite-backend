@@ -456,6 +456,9 @@ stage under way without waiting out its timeout.
   `BCC_DEFAULT_RECALIBRATION_INTERVAL` unless given an interval; the API does this at every
   start. A heavy worker starts the earliest due row in one transaction, inserting the next one
   interval later, then runs it under the executor lock and `BCC_MAX_RECALIBRATION_QUEUE_TIME`.
+  The calibration it finds, quantify's alone, is saved as the device's, which the light
+  workers discriminate with and `/dynamic-properties` serves, and sent to MSS; the executor
+  takes its frequencies for the jobs after it, and the seed file keeps it for a restart.
   A heavy worker starting fails the device's rows left `started` by one that stopped before
   they ended (`fail_abandoned_recalibrations`), unless the executor lock is held, as by a
   recalibration another heavy worker is running.

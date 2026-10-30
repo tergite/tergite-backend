@@ -21,6 +21,7 @@ import pytest
 import toml
 
 from api.worker import preload_worker_globals
+from libs.device_parameters import DeviceCalibration
 from services.scheduler import close_device_resources
 from tests.utils.api import (
     create_mss_headers,
@@ -58,6 +59,40 @@ def test_recalibration_sends_the_calibration_to_mss(client, worker, mock_mss):
         [recalibrated] = mock_mss.sent_events[start_up_event_count:]
         assert recalibrated["name"] == "recalibrated"
         assert recalibrated["data"]["qubits"]
+
+
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="the simulators do not recalibrate")
+@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
+def test_recalibration_reaches_what_the_device_runs_and_serves(
+    client, worker, mock_mss
+):
+    """The light workers discriminate with what /dynamic-properties serves, and the
+    executor translates with its calibration's frequencies, so neither waits for a restart
+    """
+    with client as client:
+        before = client.get("/dynamic-properties", headers=create_mss_headers()).json()
+
+        worker.run(is_burst=True, max_jobs=1)
+
+        [*_, recalibrated] = [
+            event["data"]
+            for event in mock_mss.sent_events
+            if event["name"] == "recalibrated"
+        ]
+        after = client.get("/dynamic-properties", headers=create_mss_headers()).json()
+        executor = next(iter(worker.device_resources.values())).executor
+        calibration_config = DeviceCalibration.model_validate(
+            recalibrated
+        ).to_calibration_config()
+        assert before != recalibrated
+        assert after == recalibrated
+        assert executor.backend_config.calibration_config == calibration_config
+        assert executor.drive_frequencies == {
+            f"q{int(float(str(qubit['id']).lstrip('q'))):02d}.01": float(
+                qubit["frequency"]
+            )
+            for qubit in calibration_config.qubit
+        }
 
 
 @pytest.mark.skipif(

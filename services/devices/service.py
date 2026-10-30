@@ -92,6 +92,32 @@ def save_all_device_params(
     )
 
 
+def save_device_calibration(
+    db_engine: Engine,
+    backend_name: str,
+    calibration: DeviceCalibration,
+    mss_client: MssClient,
+) -> None:
+    """Saves the backend's new calibration, which the light workers discriminate with and the
+    API serves, and sends it to MSS, or keeps it for it while it cannot be reached
+
+    Raises:
+        ItemNotFoundError: '{backend_name}' not found
+    """
+    with Session(db_engine) as session:
+        row = session.get(DeviceParametersRow, backend_name)
+        if row is None:
+            raise ItemNotFoundError(f"'{backend_name}' not found")
+        row.calibration_info = calibration.model_dump_json()
+        session.add(row)
+        session.commit()
+    send_mss_event(
+        db_engine,
+        mss_client,
+        DeviceEvent(name=DeviceEventName.RECALIBRATED, data=calibration),
+    )
+
+
 def switch_off(db_engine: Engine, mss_client: MssClient, device_name: str) -> None:
     """Switches off the device, and tells MSS
 

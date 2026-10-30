@@ -15,6 +15,7 @@ from .service import (
     get_device_info,
     is_offline,
     save_all_device_params,
+    save_device_calibration,
     switch_off,
     switch_on,
 )
@@ -24,6 +25,7 @@ __all__ = [
     "get_device_info",
     "is_offline",
     "save_all_device_params",
+    "save_device_calibration",
     "switch_off",
     "switch_on",
 ]

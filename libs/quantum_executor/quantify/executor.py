@@ -152,6 +152,11 @@ class QuantifyExecutor(QuantumExecutor):
         if isinstance(results, DeviceCalibration):
             logging.info(f"calibration complete. Saving to {self.calib_seed_file}...")
             _save_calibration_seed(results, self.calib_seed_file)
+            # so that the jobs after it run on it, not on the calibration it started with
+            self.backend_config = self.backend_config.model_copy(
+                update={"calibration_config": results.to_calibration_config()}
+            )
+            self.drive_frequencies = _extract_drive_frequencies(self.backend_config)
         return results
 
     def to_native_experiments(

@@ -67,6 +67,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- Fixed a recalibration's results reaching only MSS and the seed file: jobs ran on the old qubit frequencies and were
+  discriminated with the old calibration, which `/dynamic-properties` still served, until the heavy worker restarted
 - Fixed a light worker serving several devices postprocessing the first device's jobs before any other's; it now
   takes the devices in turn
 - Fixed a recalibration whose worker died or was killed showing as under way in `/recalibration/info` from then on;
