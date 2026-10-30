@@ -108,33 +108,24 @@ class DeviceSettings(BaseSettings):
     redis_user: Optional[str] = None
     redis_password: Optional[str] = None
     redis_db: int = 0
-    # tergite-tuner's, by default the one of the redis_* settings; RQ's, by its old name
+    # tergite-tuner's, by default the one of the redis_* settings, read by its old name too
     tuner_redis_url: Optional[str] = Field(
         None, validation_alias=AliasChoices("BCC_TUNER_REDIS_URL", "BCC_RQ_REDIS_URL")
     )
 
-    # default: 6 hours
-    max_time_slot_length: float = 21600
-    # default: 2 minutes
-    min_time_slot_length: float = 120
+    max_time_slot_length: float = 6 * 60 * 60
+    min_time_slot_length: float = 2 * 60
     max_slots_per_day: int = 1
-    # default: 15 minutes
-    max_idle_time: int = 900
-    # default: 10 minutes
-    max_execution_time: int = 600
-    # default: 5 minutes
-    max_preprocessing_time: int = 300
-    # default: 3 minutes
-    max_postprocessing_time: int = 180
-    # default: 1.5 hours
-    max_recalibration_queue_time: int = 5400
-    # default: 1 day
-    default_recalibration_interval: float = 86_400
+    max_idle_time: int = 15 * 60
+    max_execution_time: int = 10 * 60
+    max_preprocessing_time: int = 5 * 60
+    max_postprocessing_time: int = 3 * 60
+    max_recalibration_queue_time: int = 90 * 60
+    default_recalibration_interval: float = 24 * 60 * 60
     booking_db_url: str = "sqlite:///booking_db.db"
 
     jwt_secret: str
-    # default: 15 minutes
-    jwt_ttl: float = 900
+    jwt_ttl: float = 15 * 60
     cors_origins: Annotated[List[str], NoDecode] = []
     log_level: str = "ERROR"
     # a mock current date to make bookings act as if the date now is a given static value;
