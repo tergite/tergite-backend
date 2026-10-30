@@ -507,6 +507,8 @@ TTLs, pagination and a Lua script, used by three stores of which only one needs 
      overwrites two fields (`:817`), which become computed; `_get_local_phases`' rule that the even qubit is the
      control (`:604`) moves to the calibration conversion; `model_dump_unit` and `model_dump_scalar` (`:190, 227`),
      two near-identical walkers, become `to_units` and `to_scalars` over one helper
+     *Done*, but the seed file is written by the quantify executor, whose file it is and which alone wrote it,
+     not the devices service; `_to_units` and `_to_scalars` are module functions, `to_toml`'s only callers.
    - `scheduler` (after 3.5): `Job.validate_model` sets `actual_duration` and `storage_id`, the latter twice
      (`queues/dtos.py:457-482`), which become computed; `Timestamps.with_updates` (`:258`) moves into its caller.
      (`Job.current_eta` and `Timestamps.current_time_used` went in step 0.4, whose queue keeps the running job's end

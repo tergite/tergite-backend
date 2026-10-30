@@ -21,6 +21,7 @@ from os import PathLike
 from typing import (
     TYPE_CHECKING,
     Any,
+    Callable,
     Dict,
     Generic,
     List,
@@ -120,16 +121,6 @@ class CalibrationModel(BaseModel, ABC):
 
     model_config = ConfigDict(extra="allow")
 
-    @abstractmethod
-    def model_dump_scalar(self, **kwargs) -> Any:
-        """Returns the calibration value as a scalar"""
-        ...
-
-    @abstractmethod
-    def model_dump_unit(self, **kwargs) -> Any:
-        """Returns the unit of the value"""
-        ...
-
 
 class CalibrationValue(CalibrationModel, Generic[_CalibValueType]):
     """A calibration value"""
@@ -137,14 +128,6 @@ class CalibrationValue(CalibrationModel, Generic[_CalibValueType]):
     value: _CalibValueType
     unit: str = ""
     date: Optional[str] = None
-
-    def model_dump_scalar(self, **kwargs) -> _CalibValueType:
-        """Returns the calibration value as a scalar"""
-        return self.value
-
-    def model_dump_unit(self, **kwargs) -> str:
-        """Returns the unit of the value"""
-        return self.unit
 
     @classmethod
     def from_scalar(
@@ -185,83 +168,6 @@ class CalibrationValueSet(CalibrationModel, ABC):
             the list of new instances of calibration value sets
         """
         ...
-
-    def model_dump_unit(
-        self,
-        exclude_none: bool = False,
-        **kwargs,
-    ) -> Dict[str, _CalibValueType]:
-        """Generates a dict with all the calibration values' units
-
-        Args:
-            exclude_none: whether to exclude none values or not
-
-        Returns:
-            A dictionary representation of the units of the model.
-        """
-        data = {}
-        fields = self.__class__.model_fields
-        for k in fields.keys():
-            v = copy.copy(getattr(self, k))
-            if v is None and exclude_none:
-                continue
-
-            data[k] = v
-            if isinstance(v, CalibrationModel):
-                data[k] = v.model_dump_unit(exclude_none=exclude_none, **kwargs)
-            elif isinstance(v, (list, tuple)):
-                for idx, item in enumerate(v):
-                    if isinstance(item, CalibrationModel):
-                        data[k][idx] = item.model_dump_unit(
-                            exclude_none=exclude_none, **kwargs
-                        )
-            elif isinstance(v, Mapping):
-                for key, item in v.items():
-                    if isinstance(item, CalibrationModel):
-                        data[k][key] = item.model_dump_unit(
-                            exclude_none=exclude_none, **kwargs
-                        )
-        return data
-
-    def model_dump_scalar(
-        self,
-        exclude_none: bool = False,
-        **kwargs,
-    ) -> Dict[str, _CalibValueType]:
-        """Generates a dict with all the calibration values converted to scalars
-
-        Args:
-            exclude_none: whether to exclude none values or not
-
-        Returns:
-            A dictionary representation of the model.
-        """
-        data = {}
-        fields = self.__class__.model_fields
-        for k in fields.keys():
-            v = copy.copy(getattr(self, k))
-            if v is None and exclude_none:
-                continue
-
-            data[k] = v
-            if isinstance(v, CalibrationModel):
-                data[k] = v.model_dump_scalar(exclude_none=exclude_none, **kwargs)
-            elif isinstance(v, (list, tuple)):
-                for idx, item in enumerate(v):
-                    if isinstance(item, CalibrationModel):
-                        data[k][idx] = item.model_dump_scalar(
-                            exclude_none=exclude_none, **kwargs
-                        )
-            elif isinstance(v, Mapping):
-                for key, item in v.items():
-                    if isinstance(item, CalibrationModel):
-                        data[k][key] = item.model_dump_scalar(
-                            exclude_none=exclude_none, **kwargs
-                        )
-
-        for k in self.__class__.model_computed_fields:
-            data[k] = copy.copy(getattr(self, k))
-        return data
 
 
 class QubitCalibration(CalibrationValueSet):
@@ -567,7 +473,7 @@ class CouplerCalibration(CalibrationValueSet):
                 # ignore couplers missing in the map
                 continue
 
-            control_phase, target_phase = cls._get_local_phases(
+            control_phase, target_phase = _get_local_phases(
                 coupler, item, reverse_phase_qubits
             )
 
@@ -599,44 +505,6 @@ class CouplerCalibration(CalibrationValueSet):
 
         return results
 
-    @classmethod
-    def _get_local_phases(
-        cls,
-        coupler: str,
-        data: "_CouplerInRedis",
-        reverse_phase_qubits: Tuple[str, ...],
-    ) -> Tuple[float, float]:
-        """Gets the local phases in radians for given the data from redis
-
-        Args:
-            coupler: the coupler name
-            data: the data of the coupler as obtained from the redis
-            reverse_phase_qubits: the qubits that have the reverse phase of what they sh
-                should have phase on their couplers
-
-        Returns:
-            tuple of (control_qubit_local_phase, target_qubit_local_phase)
-        """
-        control_phase = data.cz_dynamic_control
-        target_phase = data.cz_dynamic_target
-
-        q1, q2 = coupler.split("_")
-        affected_qubits = set(reverse_phase_qubits) & {q1, q2}
-
-        # flip phases of the affected qubits
-        for q in affected_qubits:
-            # FIXME: Major assumption: the even qubit is the control one,
-            #  and the odd is target
-            idx = int(q.lstrip("q"))
-            is_even = idx % 2 == 0
-            if is_even:
-                control_phase = -control_phase
-            else:
-                target_phase = -target_phase
-
-        # convert to radians
-        return np.deg2rad(control_phase), np.deg2rad(target_phase)
-
 
 class DeviceCalibration(CalibrationValueSet):
     """Schema for the calibration data of a given device"""
@@ -649,14 +517,10 @@ class DeviceCalibration(CalibrationValueSet):
     discriminators: Optional[Dict[str, Any]] = None
     last_calibrated: str
 
-    def to_toml(self, file_path: PathLike[str]):
-        """Persists the calibration data to a TOML file
-
-        Args:
-            file_path: the path to the TOML file to persist to
-        """
-        units = self.model_dump_unit(exclude_none=True)
-        scalars = self.model_dump_scalar(exclude_none=True)
+    def to_calibration_config(self) -> "_BackendCalibrationConfig":
+        """Gets the calibration config of a calibration seed file, with each value's unit"""
+        units = _to_units(self)
+        scalars = _to_scalars(self)
 
         qubit_units = {}
         coupler_units = {}
@@ -671,7 +535,7 @@ class DeviceCalibration(CalibrationValueSet):
         with suppress(KeyError, IndexError, TypeError):
             resonator_units = units["resonators"][0]
             resonator_units.pop("id")
-        conf = _BackendCalibrationConfig(
+        return _BackendCalibrationConfig(
             units={
                 "qubit": qubit_units,
                 "coupler": coupler_units,
@@ -683,12 +547,6 @@ class DeviceCalibration(CalibrationValueSet):
             readout_resonator=scalars["resonators"],
             discriminators=self.discriminators,
         )
-
-        file_data = {
-            "calibration_config": conf.model_dump(mode="json"),
-        }
-        with open(file_path, "w") as file:
-            toml.dump(file_data, file)
 
     @classmethod
     def from_config(cls, conf: "BackendConfig") -> "DeviceCalibration":
@@ -790,18 +648,9 @@ class _BackendDeviceConfig(BaseModel):
     discriminators: List[str] = ["lda", "thresholded_acquisition"]
     # unidirectional map of coupler to qubit pair e.g. {u1: (q1,q2), u3: (q2,q3)}
     coupling_dict: Dict[str, Tuple[str, str]] = {}
-
-    # `qubit_ids_coupler_map` is a list of tuples of qubit couplings and their respective
-    # couplers, with the qubits represented by their ids in integer form
-    # e.g. [((1,2), 1), ((2,3), 3)]
-    qubit_ids_coupler_map: List[Tuple[Tuple[int, int], int]] = []
     # the [x, y] coordinates of the qubits
     coordinates: List[Tuple[int, int]] = []
 
-    # `coupling_map` is a list of bi-directional couplings with the qubits represented
-    # by their indexes in the list of qubit_ids available
-    # e.g. 1-to-2 coupling is represented by two tuples [1, 2], [2, 1]
-    coupling_map: Optional[List[Tuple[int, int]]] = None
     meas_map: List[List[int]] = []
     qubit_parameters: List[str] = []
     resonator_parameters: List[str] = []
@@ -810,44 +659,30 @@ class _BackendDeviceConfig(BaseModel):
     fixed_duration_couplers: Tuple[str, ...] = ()
     reverse_phase_qubits: Tuple[str, ...] = ()
 
-    @model_validator(mode="after")
-    def set_coupling_map(self):
-        coupling_dict = self.coupling_dict
-        qubit_ids: List[str] = self.qubit_ids
+    @computed_field
+    @property
+    def coupling_map(self) -> List[Tuple[int, int]]:
+        """The bi-directional couplings, each qubit by its index in qubit_ids, e.g. 1-to-2 as
+        (1, 2) and (2, 1); or, with no couplers, each qubit coupled with itself"""
+        if len(self.coupling_dict) == 0:
+            return [(idx, idx) for idx, _ in enumerate(self.qubit_ids)]
 
-        if len(coupling_dict) == 0:
-            # special case when technically there is no coupler but there might be some qubits,
-            # let each qubit be seen to couple with itself
-            self.coupling_map = [(idx, idx) for idx, _ in enumerate(qubit_ids)]
-        else:
-            qubit_index = {_id: psn for psn, _id in enumerate(qubit_ids)}
+        qubit_index = {_id: psn for psn, _id in enumerate(self.qubit_ids)}
+        index_couplings = [
+            (qubit_index[q1], qubit_index[q2]) for q1, q2 in self.coupling_dict.values()
+        ]
+        return index_couplings + [(q2, q1) for q1, q2 in index_couplings]
 
-            def get_index(str_id) -> int:
-                return qubit_index[str_id]
-
-            def get_id(str_id: str) -> int:
-                return int(str_id.strip("q").strip("u"))
-
-            # coupling_map is a list of bi-directional couplings with the qubits represented
-            # by their indexes in the list of qubit_ids available
-            index_couplings = [
-                (get_index(q1), get_index(q2)) for q1, q2 in coupling_dict.values()
-            ]
-            reverse_index_couplings = [(q2, q1) for q1, q2 in index_couplings]
-            self.coupling_map = index_couplings + reverse_index_couplings
-
-            # qubit_ids_coupler_map is a list of tuples of qubit couplings and their respective
-            # couplers, with the qubits represented by their ids in integer form
-            id_coupling_items = [
-                ((get_id(q1), get_id(q2)), get_id(c))
-                for c, (q1, q2) in coupling_dict.items()
-            ]
-            reverse_id_coupling_items = [
-                ((q2, q1), c) for (q1, q2), c in id_coupling_items
-            ]
-            self.qubit_ids_coupler_map = id_coupling_items + reverse_id_coupling_items
-
-        return self
+    @computed_field
+    @property
+    def qubit_ids_coupler_map(self) -> List[Tuple[Tuple[int, int], int]]:
+        """The bi-directional couplings, each with its coupler, the qubits and couplers by
+        the numbers in their ids, e.g. [((1, 2), 1), ((2, 1), 1)]"""
+        id_coupling_items = [
+            ((_get_number(q1), _get_number(q2)), _get_number(c))
+            for c, (q1, q2) in self.coupling_dict.items()
+        ]
+        return id_coupling_items + [((q2, q1), c) for (q1, q2), c in id_coupling_items]
 
 
 class _BackendCalibrationConfig(BaseModel):
@@ -906,3 +741,92 @@ class BackendConfig(BaseModel):
         """Sets the name basing on the general config"""
         self.name = self.general_config.name
         return self
+
+
+def _get_local_phases(
+    coupler: str,
+    data: "_CouplerInRedis",
+    reverse_phase_qubits: Tuple[str, ...],
+) -> Tuple[float, float]:
+    """Gets the local phases in radians for given the data from redis
+
+    Args:
+        coupler: the coupler name
+        data: the data of the coupler as obtained from the redis
+        reverse_phase_qubits: the qubits that have the reverse phase of what they sh
+            should have phase on their couplers
+
+    Returns:
+        tuple of (control_qubit_local_phase, target_qubit_local_phase)
+    """
+    control_phase = data.cz_dynamic_control
+    target_phase = data.cz_dynamic_target
+
+    q1, q2 = coupler.split("_")
+    affected_qubits = set(reverse_phase_qubits) & {q1, q2}
+
+    # flip phases of the affected qubits
+    for q in affected_qubits:
+        # FIXME: Major assumption: the even qubit is the control one,
+        #  and the odd is target
+        idx = int(q.lstrip("q"))
+        is_even = idx % 2 == 0
+        if is_even:
+            control_phase = -control_phase
+        else:
+            target_phase = -target_phase
+
+    # convert to radians
+    return np.deg2rad(control_phase), np.deg2rad(target_phase)
+
+
+def _to_units(calibration: CalibrationValueSet) -> Dict[str, Any]:
+    """Gets the calibration as a dict of the units of its values, leaving out the None"""
+    return _map_calibration_values(calibration, lambda value: value.unit, False)
+
+
+def _to_scalars(calibration: CalibrationValueSet) -> Dict[str, Any]:
+    """Gets the calibration as a dict of its values' scalars and its computed fields, leaving
+    out the None"""
+    return _map_calibration_values(calibration, lambda value: value.value, True)
+
+
+def _map_calibration_values(
+    item: Any,
+    get_leaf: Callable[[CalibrationValue], Any],
+    should_include_computed: bool,
+) -> Any:
+    """Copies the item, with each calibration value in it, however deep, replaced by what
+    get_leaf gets of it, and each calibration value set by a dict of its fields but the None
+    """
+    if isinstance(item, CalibrationValue):
+        return get_leaf(item)
+    if isinstance(item, CalibrationValueSet):
+        data = {
+            name: _map_calibration_values(
+                getattr(item, name), get_leaf, should_include_computed
+            )
+            for name in type(item).model_fields
+            if getattr(item, name) is not None
+        }
+        if should_include_computed:
+            data.update(
+                {name: getattr(item, name) for name in type(item).model_computed_fields}
+            )
+        return data
+    if isinstance(item, (list, tuple)):
+        return [
+            _map_calibration_values(value, get_leaf, should_include_computed)
+            for value in item
+        ]
+    if isinstance(item, Mapping):
+        return {
+            key: _map_calibration_values(value, get_leaf, should_include_computed)
+            for key, value in item.items()
+        }
+    return copy.copy(item)
+
+
+def _get_number(_id: str) -> int:
+    """Gets the number in a qubit's or coupler's id, e.g. 2 of q2"""
+    return int(_id.strip("q").strip("u"))

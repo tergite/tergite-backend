@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Union
 
 import qblox_instruments
+import toml
 from pydantic import RedisDsn
 from qcodes import Instrument
 from quantify_core.data.handling import set_datadir
@@ -231,7 +232,7 @@ class QuantifyExecutor(QuantumExecutor):
         if isinstance(results, DeviceCalibration):
             calib_seed_file = self.calib_seed_file
             logging.info(f"calibration complete. Saving to {calib_seed_file}...")
-            results.to_toml(calib_seed_file)
+            _save_calibration_seed(results, calib_seed_file)
 
         return results
 
@@ -334,3 +335,14 @@ def _extract_drive_frequencies(backend_config: BackendConfig) -> Dict[str, float
 def _to_drive_clock(qubit_id: Any) -> str:
     stripped = str(qubit_id).strip().lstrip("q")
     return f"q{int(float(stripped)):02d}.01"
+
+
+def _save_calibration_seed(calibration: DeviceCalibration, file: Path) -> None:
+    """Writes the calibration to the seed file, which the backend config is read with"""
+    data = {
+        "calibration_config": calibration.to_calibration_config().model_dump(
+            mode="json"
+        )
+    }
+    with open(file, "w") as seed_file:
+        toml.dump(data, seed_file)
