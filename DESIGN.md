@@ -481,15 +481,120 @@ Interactive docs are at `/docs`.
 
 ## 8. Talking to MSS
 
-Each device's `MssClient` holds one blocking websocket to MSS, opened at its first event.
-`send_event` sends an event and waits for MSS's reply to its id, as one operation: a connection
-lost before the reply is reopened, after a delay that doubles up to
-`BCC_MSS_MAX_RECONNECTION_DELAY`, and the event sent again, as the reply on the old connection is
-lost with it. It gives up after `BCC_MSS_RESPONSE_TIMEOUT` seconds, raising `MssTimeoutError`,
-or after `BCC_MSS_CONNECTION_MAX_ATTEMPTS` connections; a reply that is not a success raises
-`MssRejectedError`. The worker or route sending it waits meanwhile, so a dead MSS slows the
-stages, and the switch, that report to it.
+BCC talks to MSS on two channels, one each way. MSS calls BCC over HTTP, signed (§3.1, §7).
+BCC tells MSS what happened over a websocket of MSS's, `/devices/ws/{device}`, which this
+section describes. The code is [services/external/mss/](services/external/mss).
 
+### 8.1 The connections
+
+```mermaid
+flowchart LR
+    subgraph bcc ["one BCC process tree serving device loke"]
+      API["API process(es)<br/>MssClient for loke"]
+      Heavy["heavy worker<br/>MssClient for loke"]
+      Light1["light worker 1<br/>MssClient for loke"]
+      Light2["light worker 2<br/>MssClient for loke"]
+    end
+    MSS["MSS<br/>/devices/ws/loke"]
+    API -. "socket, opened on a switch" .-> MSS
+    Heavy -- "socket, opened at start" --> MSS
+    Light1 -- "socket, opened at first results" --> MSS
+    Light2 -- "socket" --> MSS
+```
+
+- **One socket per device per process.** Every process builds a `DeviceResources` for each of
+  its devices, and with it an `MssClient`. So the API (each of its `--workers` processes), the
+  heavy worker and every light worker each hold their own socket for a device. MSS keeps them
+  all in a list; they do not displace each other.
+- **Opened lazily.** A client connects when it first sends: the heavy worker at start, a light
+  worker at its first results, the API at its first switch. The library pings every 20 s and
+  drops a connection whose ping goes unanswered for 20 s; the next event reconnects. The
+  resources close it at shutdown.
+- **The URL** is `BCC_MSS_DEVICE_EVENTS_ENDPOINT`, by default `ws://` (or `wss://` for an
+  `https` MSS) on `BCC_MSS_MACHINE_ROOT_URL`'s host and port, path `/devices/ws/<prefix>`.
+- **The handshake** carries `x-id` (the device's name), `x-request-id` (a fresh UUID),
+  `x-timestamp` and `x-signature`, BCC's private key's signature of
+  `<x-id>-<x-request-id>-<x-timestamp>`. MSS checks it against the backend's `public_key_path`,
+  checks the source IP unless the backend's `is_strict_ip` is false, rejects a timestamp older
+  than its `bcc_nonce_ttl` and a request id seen before, and refuses a path naming another
+  device. A refused handshake counts as a failed connection attempt (8.3).
+- **Online and offline in MSS.** MSS marks the device online when one of its sockets connects,
+  and offline, with `last_online`, when *any* one disconnects, even while the device's other
+  sockets stay open.
+- **One way.** MSS never sends BCC requests on the socket; it only answers BCC's events. BCC
+  reads nothing but the reply to the event it sent.
+
+### 8.2 The messages
+
+Each event is one JSON text frame, `{"id": <uuid>, "name": <event>, "data": <object>}`
+(`DeviceEvent`), which `DeviceEvent` validates: `data` must be the type its `name` expects. MSS
+answers each with `{"id": <the event's id>, "status": "success" | "error", "detail": <reason>}`.
+A frame that fails MSS's validation, or names another device's record, gets an `error` reply;
+the socket stays open.
+
+| Event | `data` | Sent by | When |
+| --- | --- | --- | --- |
+| `initialized` | `Device`: the device's properties | heavy worker | at start, after loading the executor |
+| `recalibrated` | `DeviceCalibration` | heavy worker | at start, right after `initialized`; after each recalibration that returns one (quantify only) |
+| `job_updated` | `Job`, whole | the worker running the job | when it fails; when postprocessing has its results; at `FINAL_W` (§6.1) |
+| `switched_off` | `{"date"}` | API | on `POST /switch/off`, after recording it |
+| `switched_on` | `{"date"}` | API | on `POST /switch/on`, after recording it |
+
+### 8.3 Sending an event
+
+`MssClient.send_event` sends and waits for the reply as one operation, so that a reply lost
+with a dropped connection makes it send again:
+
+```mermaid
+sequenceDiagram
+    participant W as BCC process
+    participant M as MSS
+
+    Note over W: deadline = now + BCC_MSS_RESPONSE_TIMEOUT
+    W->>M: connect, if not connected (signed handshake)
+    W->>M: event {id: E1, ...}
+    M-->>W: other frames, skipped
+    Note over W,M: the connection drops before the reply
+    W->>W: sleep 1 s, then 2, 4, … up to BCC_MSS_MAX_RECONNECTION_DELAY
+    W->>M: connect again
+    W->>M: event {id: E1, ...} again
+    M-->>W: {id: E1, status: "success"}
+    Note over W: returns the reply
+```
+
+- **The deadline** is `BCC_MSS_RESPONSE_TIMEOUT` (120 s) from the first send, for the whole
+  operation; each wait for the reply gets only what is left of it.
+- **Connection attempts** are at most `BCC_MSS_CONNECTION_MAX_ATTEMPTS` + 1 (6) per event, each
+  opening within `BCC_MSS_CONNECTION_TIMEOUT` (5 s).
+- **Errors**: past the deadline, or out of attempts, `MssTimeoutError`; a reply whose status is
+  not `success`, `MssRejectedError`.
+- **At least once.** If MSS handled an event but its reply was lost with the connection, BCC
+  sends the event again, with the same id, so MSS can receive one twice. Each event carries the
+  whole job, device or calibration, so handling it twice leaves the same state.
+- **Order** is kept within a process, which sends one event at a time and waits for its reply;
+  there is none across processes.
+- **Blocking.** The sending worker or route waits for the reply, up to the deadline.
+
+### 8.4 When MSS cannot be reached
+
+What the code does today, by sender, when MSS does not answer or rejects the event:
+
+- **The heavy worker at start** cannot send `initialized`, so it exits; under `bcc start`, the
+  whole backend then stops and the service manager restarts it (systemd after 10 s), until MSS
+  answers.
+- **A job failing in preprocessing or execution** is marked `failed` in BCC. When the task's own
+  error handling failed it, the error telling MSS is logged and the heavy worker goes on. When
+  the dispatcher failed it, as too long for its booking, past its time limit, or overdue, the
+  error ends the worker, and under `bcc start` the whole backend restarts. MSS keeps the job's
+  last state either way.
+- **A light worker** that cannot send a job's results fails the job ("error during post
+  processing"), replacing its `successful` status, and then cannot send that failure either:
+  the error ends the light worker, and under `bcc start` the whole backend restarts. The same
+  happens if the final `job_updated` cannot be sent, which leaves the job at `FINAL_Q`.
+- **A switch** is recorded, and the route answers 504.
+
+Nothing sends a lost event again later: MSS learns of a job's state only from its next event.
+These are listed under §17.
 ## 9. Devices
 
 One process tree serves the devices of its env files: `main.py start --env-file loke.env
@@ -791,8 +896,26 @@ On top of the [style guide](#style-guide):
 
 Worth knowing before you are surprised by them:
 
-- **A dead MSS slows the workers.** Events are sent and waited for in the stage that sends them
-  (§8), so while MSS is unreachable each such stage waits up to `BCC_MSS_RESPONSE_TIMEOUT`.
+- **An unreachable MSS stops the backend.** A heavy worker cannot start without sending
+  `initialized`; a worker that cannot report a job the dispatcher failed ends; a light worker
+  that cannot report a job's results ends, turning the job, which succeeded, into `failed`.
+  Under `bcc start` each restarts the whole backend. Events
+  lost meanwhile are not sent again (§8.4).
+- **MSS's online flag follows any one socket.** BCC holds a socket per device per process, and
+  MSS marks the device offline when any of them closes, such as an idle one that missed its
+  pings, until another connects (§8.1).
+- **A stuck heavy worker is not noticed.** A stage's time limit is a `SIGALRM`, which interrupts
+  it only once Python code runs again; a C call that never returns, in an instrument driver or
+  a simulation, keeps the worker stuck. Another worker fails the job when its time is up
+  (`fail_overdue_jobs`), but the device runs nothing more until the backend restarts: the
+  process is alive, so neither `bcc start` nor the service manager restarts it, and there is no
+  health check of the workers.
+- **A worker that dies during a recalibration leaves its row `started`**, so
+  `/recalibration/info` reports it as under way from then on; the next recalibration was
+  scheduled when it started, so they go on.
+- **A light worker favours the first device.** After any work its pass starts again from the
+  first device, so the first device's postprocessing always goes before the others' (§6.2).
+- **The 5 s wait is a constant**, `_MAX_WAIT_SECONDS` in the dispatcher, not a setting.
 - **Nothing ages a waiting job.** Outside bookings, a job longer than the time to the next
   booking waits while shorter ones overtake it, for as long as the bookings leave it no room
   (§6.3).
