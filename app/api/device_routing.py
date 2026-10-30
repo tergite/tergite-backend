@@ -53,4 +53,5 @@ class DeviceRoutingMiddleware:
 
 def _get_scope_with_device_name(scope: Scope, device: str) -> Scope:
     """Gets the scope with the device's name in its state, where request.state reads it"""
-    return {**scope, "state": {**scope.get("state", {}), "device_name": device}}
+    state = scope.get("state", {}) | {"device_name": device}
+    return scope | {"state": state}
