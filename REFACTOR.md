@@ -492,15 +492,18 @@ TTLs, pagination and a Lua script, used by three stores of which only one needs 
    inheritance; they become module functions taking the executor, which stays a class for the state it owns.
    `NativeExperiment(ABC, Generic)` (`base/experiment.py:27`), with no abstract members, becomes a plain generic
    dataclass.
+   *Done:* `preprocess_qobj` and `run_job`; the test executors' durations wrap the two instead of overriding them.
 2. **Simulator backends.** `QiskitPulseBackend(DynamicsBackend)` and its `QiskitPulse1Q`/`QiskitPulse2Q`
    (`qiskit/backends/`) vary a library class through a dozen `generate_*` class-method hooks, four of which only
    return a literal or `None` (`two_qubit.py:63-83`, `one_qubit.py:76`). They become functions returning a
    `DynamicsBackend`, sharing `_get_transmon_params(backend_config)`, which replaces the extraction written twice in
    `two_qubit.py` (97-120, 190-239), and `_get_lo_range(freq)`, written four times.
+   *Done:* `get_one_qubit_backend`/`get_two_qubit_backend`; `get_lo_range` is shared in `qiskit/functions.py`.
 3. **Quantify instructions.** `BaseInstruction` and its ten subclasses (`quantify/instruction.py:62`) set attributes
    in a loop over `**kwargs` and compare through `filter(lambda)` over `__slots__` (97-121): dataclasses, keeping
    the polymorphic `to_operation`. `register` (`:155`) becomes the registry's `add`; `QuantifyChannelRegistry(dict)`
    (`quantify/channel.py:21`) uses `__missing__` instead of overriding `__getitem__` and `get`.
+   *Done*, keyword-only; the square pulse's `ResetClockPhase`, never registered and so never scheduled, went.
 4. **Behaviour off DTOs**, one package per commit; `from_*`/`to_*` conversions stay (rule 5):
    - `device_parameters/dtos.py`: `DeviceCalibration.to_toml` writes a file (`:655`), so a pure
      `to_calibration_config()` stays and the write moves to the devices service; the `set_coupling_map` validator
@@ -522,6 +525,9 @@ TTLs, pagination and a Lua script, used by three stores of which only one needs 
    - `quantify`: `QuantifyMetadata.get_clusters` opens hardware connections (`quantify/utils/config.py:192`) and moves
      to the executor
    - class-level dunder maps become module constants: `DeviceEvent.__status_data_map__` (`mss/dtos.py:50`)
+   *Done*, but for these: `Job` drops the computed fields from its input, which a dumped job carries; `Booking`
+   keeps `total_duration` stored, for sorting by it, filled from `NewBookingInfo`'s computed one; and the clusters
+   are created by the quantify executor's `_create_clusters`.
 5. **Long functions become compositions**, one per commit, with unit tests for the pure steps (P).
 
 | Function | Lines | Composed of |
@@ -542,6 +548,12 @@ TTLs, pagination and a Lua script, used by three stores of which only one needs 
 | `tasks.py` `preprocess`, `execute`, `recalibrate`, `postprocess` | 41-44 | `_read_job_file`, `_estimate_duration`; `_send_calibration_to_mss`, `_schedule_next_recalibration`; `_get_memory` P; one `_fail_job` for the log-and-fail blocks repeated across them |
 | `main.py` `_start` | 42 | `_get_worker_processes` P, `_wait_for_first_stop` |
 
+*Done*, but the `DeviceSettings.__init__` row went in 4.7 and `_try_enqueue_on_booked_queue` with RQ in 5.5;
+`_get_cluster_modes` is `_get_recalibration_cluster`, tergite-tuner recalibrating through one cluster; there is no
+`_schedule_next_recalibration`, the dispatcher scheduling it; and the tasks' log-and-fail blocks are one
+`_fail_on_error` context manager. `_construct_schedule`'s schedules and the two-qubit solver's operators were
+compared with the old ones' and are the same.
+
 6. **Flatten the hierarchies.** The calibration models, `CalibrationModel(ABC)` → `CalibrationValue`/
    `CalibrationValueSet(ABC)` → qubit, resonator and coupler, plus `DeviceCalibration(Schema, CalibrationValueSet)`,
    with an abstract `from_calib_results` whose signature differs in each subclass: plain models, fields spelled out,
@@ -549,13 +561,20 @@ TTLs, pagination and a Lua script, used by three stores of which only one needs 
    the input (`base/quantum_job/typing.py:69, 96`): type aliases. `PartialMeta`/`create_partial_schema`
    (`app/utils/model.py:34`), which make `Job.validate_model` branch on `isinstance(self, PartialMeta)`, go with the
    partial updates step 5 removes.
+   *Done*; the partial schema had gone in step 5. The calibration models each spell out `extra="allow"`, which
+   keeps the seed's values beyond the fields, so their JSON is byte for byte the same.
 7. **The MSS client.** `MssClient` stays a class for its live websocket; its hand-written backoff loops in `send` and
    `recv` (`mss/service.py`) use `tenacity`, or `websockets`' reconnecting `connect`; `recv` waits the time left, not
    a fresh timeout per call (`:207`).
+   *Done*, but with neither: websockets reconnects only in its asyncio client, and tenacity would be a dependency
+   for one loop, which `_run_connected` now holds once. `send_event` sends and awaits the reply in it, so an event
+   whose connection drops before MSS replies is sent again on the new one, MSS's handlers updating in place.
 8. **Job logs.** `log_job_msg` (`scheduler/utils.py:138`, with its FIXME "Why a custom logger") writes ANSI to a file
    by hand: a standard `logging.FileHandler`.
+   *Done:* `log_job_error`, ERROR being the only level ever logged.
 9. **Last:** remove the `model_dump` overrides that flip defaults (`PaginatedListResponse`, `app/utils/api.py:110`)
    and pass the flags at the call sites. Step 1.1's body tests catch a missed one.
+   *Done:* only `/jobs` dumped it; FastAPI's serialiser never called the override for the others.
 
 ## Step 7: names, comments and layout
 
