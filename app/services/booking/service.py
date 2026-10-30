@@ -28,6 +28,7 @@ from sqlmodel import Session, delete, select
 from ...utils.datetime import get_day_range, get_utc_now
 from ...utils.exc import (
     ConflictError,
+    InvalidBookingError,
     ItemNotFoundError,
     MaxBookingsError,
     NotAuthenticatedError,
@@ -36,6 +37,7 @@ from ...utils.sql_db import open_immediate_session
 from ...utils.strings import get_random_name
 from .dtos import (
     Booking,
+    BookingsConfig,
     NewBookingInfo,
     NewUserInfo,
     User,
@@ -46,7 +48,11 @@ _Filter = _ColumnExpressionArgument[bool] | bool
 
 
 def create_booking(
-    db_engine: Engine, user_id: str, data: NewBookingInfo, max_slots_per_day: int
+    db_engine: Engine,
+    user_id: str,
+    data: NewBookingInfo,
+    config: BookingsConfig,
+    now: datetime,
 ) -> Booking:
     """Creates a new booking for the given user and returns it
 
@@ -54,22 +60,25 @@ def create_booking(
         db_engine: the SQL engine to save new job in
         user_id: the id of the User who is making the booking
         data: the booking info
-        max_slots_per_day: the most bookings a user may hold in a day
+        config: the device's limits on bookings
+        now: the time the booking is made at
 
     Returns:
         the created booking
 
     Raises:
+        InvalidBookingError: the booking starts in the past, or its duration is out of the limits
         ConflictError: booking conflicts with another booking at {start_utc} to {end_utc}
         MaxBookingsError: you have exceeded the maximum {max_slots_per_day} bookings per day for {day_start}-{day_end}
     """
+    _validate_times(data, config=config, now=now)
     with open_immediate_session(db_engine) as session:
         _validate_no_overlap(session, data)
         _validate_max_slots(
             session,
             user_id=user_id,
             booking_info=data,
-            max_slots_per_day=max_slots_per_day,
+            max_slots_per_day=config.max_slots_per_day,
         )
 
         booking = Booking(user_id=user_id, **data.model_dump())
@@ -478,4 +487,31 @@ def _validate_max_slots(
     if len(user_bookings) >= max_slots_per_day:
         raise MaxBookingsError(
             f"you have exceeded the maximum {max_slots_per_day} bookings per day for {day_start}-{day_end}"
+        )
+
+
+def _validate_times(
+    booking_info: NewBookingInfo, config: BookingsConfig, now: datetime
+) -> None:
+    """Validates that the booking starts no earlier than a second ago and lasts within the
+    device's limits
+
+    Raises:
+        InvalidBookingError: start_utc ({start_utc}) is in the past
+        InvalidBookingError: duration is beyond the limit of {max_time_slot_length} seconds
+        InvalidBookingError: duration is too short compared to the minimum of {min_time_slot_length} seconds
+    """
+    if booking_info.start_utc < now - timedelta(seconds=1):
+        raise InvalidBookingError(
+            f"start_utc ({booking_info.start_utc}) is in the past"
+        )
+
+    duration = booking_info.total_duration
+    if duration > config.max_time_slot_length:
+        raise InvalidBookingError(
+            f"duration is beyond the limit of {config.max_time_slot_length} seconds"
+        )
+    if duration < config.min_time_slot_length:
+        raise InvalidBookingError(
+            f"duration is too short compared to the minimum of {config.min_time_slot_length} seconds"
         )

@@ -14,11 +14,18 @@ import threading
 import time
 from datetime import timedelta
 
-from app.services.booking import Booking, NewBookingInfo, User
+from app.services.booking import Booking, BookingsConfig, NewBookingInfo, User
 from app.services.booking import service as booking_service
 from app.utils.datetime import get_utc_now
 from app.utils.exc import ConflictError
 from app.utils.sql_db import get_sql_engine
+
+_BOOKINGS_CONFIG = BookingsConfig(
+    max_time_slot_length=3600,
+    min_time_slot_length=2,
+    max_slots_per_day=1,
+    max_idle_time=900,
+)
 
 
 def test_concurrent_overlapping_bookings_book_the_slot_once(tmp_path, mocker):
@@ -42,7 +49,11 @@ def test_concurrent_overlapping_bookings_book_the_slot_once(tmp_path, mocker):
     def book(user_id: str):
         try:
             booking_service.create_booking(
-                db_engine, user_id, data=booking_info, max_slots_per_day=1
+                db_engine,
+                user_id,
+                data=booking_info,
+                config=_BOOKINGS_CONFIG,
+                now=get_utc_now(),
             )
         except ConflictError as exp:
             errors.append(exp)

@@ -24,6 +24,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- Changed the 422 for a booking that starts in the past or lasts outside the device's limits to give its message
+  as `detail`, as the other errors do, instead of pydantic's list of errors
 - Changed the arguments the RQ tasks are queued with: jobs, bookings' timers and recalibrations queued before an
   upgrade to this version fail, so let the queues empty first
 - Changed the settings to be read with pydantic-settings: the `BCC_` names are the same, but now match whatever their

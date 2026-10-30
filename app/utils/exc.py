@@ -37,6 +37,10 @@ class ConflictError(BaseBccException):
     """Error when an item conflicts with another"""
 
 
+class InvalidBookingError(BaseBccException):
+    """Error when a booking starts in the past or lasts outside the device's limits"""
+
+
 class MaxBookingsError(BaseBccException):
     """Error when there are too many bookings in a given period"""
 

@@ -510,7 +510,9 @@ def _try_enqueue_on_booked_queue(
 
     active_booking = get_booking(device.bookings_db, Booking.id == booking_id)
     # its end has drained the waitlist already, so nothing would release the job from it
-    if active_booking is None or active_booking.is_complete:
+    if active_booking is None or active_booking.is_complete_at(
+        device.settings.get_utc_now()
+    ):
         return _try_enqueue_on_normal_queue(device, job)
 
     queue = device.queues.booked_execution

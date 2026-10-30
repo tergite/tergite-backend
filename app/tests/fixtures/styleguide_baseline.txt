@@ -53,9 +53,6 @@ boolean: app/utils/sql_db.py::get_sql_engine(checkfirst)
 constant-position: app/libs/quantum_executor/quantify/utils/calibration.py::_FIXED_DURATION_COUPLER_NODES
 constant-position: app/libs/quantum_executor/quantify/utils/calibration.py::_NON_FIXED_DURATION_COUPLER_NODES
 constant-position: settings.py::_CURRENT_DEVICE
-import-layering: app/services/booking/dtos.py::import settings
-import-layering: app/services/booking/dtos.py::import settings
-import-layering: app/services/booking/dtos.py::import settings
 license-header: app/libs/__init__.py
 license-header: app/libs/qiskit/__init__.py
 license-header: app/libs/qiskit_providers/__init__.py
@@ -273,7 +270,6 @@ type-hints: app/services/booking/dtos.py::Booking.validate_start_utc
 type-hints: app/services/booking/dtos.py::Booking.validate_total_duration
 type-hints: app/services/booking/dtos.py::NewBookingInfo.validate_end_utc
 type-hints: app/services/booking/dtos.py::NewBookingInfo.validate_start_utc
-type-hints: app/services/booking/dtos.py::NewBookingInfo.validate_total_duration
 type-hints: app/services/booking/service.py::_validate_max_slots
 type-hints: app/services/booking/service.py::_validate_no_overlap
 type-hints: app/services/booking/service.py::delete_bookings

@@ -43,6 +43,7 @@ from ...utils.messages import GeneralMessage
 from ...utils.rq import cancel_rq_job
 from ..booking import (
     Booking,
+    BookingsConfig,
     MSSTokenClaims,
     NewBookingInfo,
     User,
@@ -101,7 +102,8 @@ def submit_booking(
         device.bookings_db,
         user_id=user_id,
         data=booking_info,
-        max_slots_per_day=device.settings.max_slots_per_day,
+        config=BookingsConfig.from_settings(device.settings),
+        now=device.settings.get_utc_now(),
     )
 
     # at the start_utc, reset the idle time tracker
@@ -161,12 +163,13 @@ def cancel_booking(
     if booking is None:
         raise ItemNotFoundError(f"the booking of id {booking_id} was not found")
 
-    if booking.is_active:
+    now = device.settings.get_utc_now()
+    if booking.is_active_at(now):
         raise BookingAlreadyActiveError(
             f"the booking of id {booking_id} is already active"
         )
 
-    if booking.is_complete:
+    if booking.is_complete_at(now):
         raise BookingAlreadyCompleteError(
             f"the booking of id {booking_id} is already complete"
         )
@@ -447,7 +450,7 @@ def delete_user_profile(device: DeviceResources, user_id: str) -> None:
     for booking in user_incomplete_bookings:
         booking_ids.append(booking.id)
         _cancel_booking_from_queues(device.queues, booking=booking)
-        if booking.is_active:
+        if booking.is_active_at(device.settings.get_utc_now()):
             # its end, now cancelled, would have released the waitlist
             device.queues.general.enqueue(
                 f"{_TASKS_MODULE}.post_booking_cleanup",

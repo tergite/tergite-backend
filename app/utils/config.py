@@ -28,6 +28,8 @@ from pydantic import Field, field_validator, model_validator
 from pydantic_core.core_schema import ValidationInfo
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from .datetime import get_utc_now
+
 # found, not imported, as importing it takes seconds and hundreds of MB
 HAS_QUANTIFY = importlib.util.find_spec("quantify_scheduler") is not None
 # the project's root, beside settings.py, where the default files are
@@ -214,6 +216,10 @@ class DeviceSettings(BaseSettings):
         if self.app_settings == "production":
             self.current_date = None
         return self
+
+    def get_utc_now(self) -> datetime:
+        """Gets the time now, which BCC_CURRENT_DATE stands in for where set"""
+        return self.current_date or get_utc_now()
 
     @property
     def executor_data_dir(self) -> Path:

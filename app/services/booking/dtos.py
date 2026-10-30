@@ -26,8 +26,8 @@ from pydantic import (
 )
 from sqlmodel import Field, Relationship, SQLModel
 
-import settings
-from app.utils.datetime import get_relative_time, get_utc_now, to_utc
+from app.utils.config import DeviceSettings
+from app.utils.datetime import to_utc
 from app.utils.strings import uuid_str
 
 
@@ -98,10 +98,7 @@ class NewBookingInfo(BaseModel):
     @classmethod
     def validate_start_utc(cls, v: datetime):
         """Validate start_utc"""
-        v = to_utc(v)
-        if v < get_relative_time(seconds=-1, baseline=settings.CURRENT_DATE):
-            raise ValueError(f"start_utc ({v}) is in the past")
-        return v
+        return to_utc(v)
 
     @field_validator("end_utc", mode="after")
     @classmethod
@@ -113,24 +110,13 @@ class NewBookingInfo(BaseModel):
             raise ValueError(
                 f"end_utc ({v}) comes earlier than start_utc ({start_utc})"
             )
-        if v < get_relative_time(seconds=-1, baseline=settings.CURRENT_DATE):
-            raise ValueError(f"end_utc ({v}) is in the past")
         return v
 
     @model_validator(mode="after")
-    def validate_total_duration(self):
-        """Generate and validate the total duration of this booking"""
-        duration = (self.end_utc - self.start_utc).total_seconds()
-        if duration > settings.MAX_TIME_SLOT_LENGTH:
-            raise ValueError(
-                f"duration is beyond the limit of {settings.MAX_TIME_SLOT_LENGTH} seconds"
-            )
-        if duration < settings.MIN_TIME_SLOT_LENGTH:
-            raise ValueError(
-                f"duration is too short compared to the minimum of {settings.MIN_TIME_SLOT_LENGTH} seconds"
-            )
-
-        self._total_duration = duration
+    def generate_total_duration(self) -> Self:
+        """Generate the total duration of this booking; the booking service checks it
+        against the device's limits"""
+        self._total_duration = (self.end_utc - self.start_utc).total_seconds()
         return self
 
 
@@ -206,29 +192,18 @@ class Booking(SQLModel, table=True):
     def validate_total_duration(cls, v: Any, info: ValidationInfo):
         """Generate the total duration of this booking"""
         try:
-            # Proper validation against MIN_TIME_SLOT_LENGTH and MAX_TIME_SLOT_LENGTH
-            # is done in NewBookingInfo
+            # the booking service checks it against the device's limits
             duration = (info.data["end_utc"] - info.data["start_utc"]).total_seconds()
             return duration
         except KeyError:
             return 0
 
-    @property
-    def is_active(self) -> bool:
-        """Whether this booking must be running or not"""
-        now = settings.CURRENT_DATE
-        if not now:
-            now = get_utc_now()
-
+    def is_active_at(self, now: datetime) -> bool:
+        """Whether this booking must be running at the given time"""
         return self.start_utc <= now <= self.end_utc
 
-    @property
-    def is_complete(self) -> bool:
-        """Whether this booking must have completed or not"""
-        now = settings.CURRENT_DATE
-        if not now:
-            now = get_utc_now()
-
+    def is_complete_at(self, now: datetime) -> bool:
+        """Whether this booking must have completed by the given time"""
         return self.end_utc < now
 
 
@@ -248,11 +223,11 @@ class BookingsConfig(BaseModel):
     max_idle_time: int
 
     @classmethod
-    def from_settings(cls) -> "BookingsConfig":
-        """Creates this configuration from the settings"""
+    def from_settings(cls, device_settings: DeviceSettings) -> Self:
+        """Creates this configuration from the device's settings"""
         return cls(
-            max_time_slot_length=settings.MAX_TIME_SLOT_LENGTH,
-            min_time_slot_length=settings.MIN_TIME_SLOT_LENGTH,
-            max_slots_per_day=settings.MAX_SLOTS_PER_DAY,
-            max_idle_time=settings.MAX_IDLE_TIME,
+            max_time_slot_length=device_settings.max_time_slot_length,
+            min_time_slot_length=device_settings.min_time_slot_length,
+            max_slots_per_day=device_settings.max_slots_per_day,
+            max_idle_time=device_settings.max_idle_time,
         )

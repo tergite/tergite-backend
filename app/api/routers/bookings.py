@@ -121,10 +121,13 @@ async def view_bookings(
 
 
 @router.get("/bookings/config", dependencies=[Depends(get_verified_mss_user_id)])
-async def view_bookings_config() -> BookingsConfig:
+async def view_bookings_config(device: DeviceResourcesDep) -> BookingsConfig:
     """Views the configurations for the bookings service
+
+    Args:
+        device: what the device runs on
 
     Returns:
         the instance of the bookings configurations
     """
-    return BookingsConfig.from_settings()
+    return BookingsConfig.from_settings(device.settings)
