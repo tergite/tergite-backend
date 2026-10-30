@@ -19,10 +19,11 @@ from sqlmodel import Session
 
 import settings
 from app.libs.queues.dtos import Job, JobStatus, Stage
-from app.services.booking import Booking, User, get_bookings_sql_engine
+from app.services.booking import Booking, User
 from app.services.scheduler import get_jobs_store
 from app.utils.datetime import get_utc_now, utc_now_str
 from app.utils.redis import get_redis_connection
+from app.utils.sql_db import get_sql_engine, migrate_sql_db
 from app.utils.strings import uuid_str
 
 JOB_COUNT = 500
@@ -56,9 +57,10 @@ def store_jobs(user_id: str) -> None:
 def store_bookings(user_id: str) -> None:
     """Stores hourly bookings from tomorrow on, so that none is under way during the run"""
     first_start = get_utc_now() + timedelta(days=1)
-    with Session(
-        get_bookings_sql_engine(settings.get_device_settings().booking_db_url)
-    ) as session:
+    db_url = settings.get_device_settings().booking_db_url
+    # seeded before the API starts, which would migrate it
+    migrate_sql_db(db_url)
+    with Session(get_sql_engine(db_url)) as session:
         session.add(User(id=user_id, name="Perf", email="perf@example.com"))
         for index in range(BOOKING_COUNT):
             start_utc = first_start + timedelta(hours=index)

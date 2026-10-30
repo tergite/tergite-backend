@@ -24,6 +24,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- Changed the bookings database to be created and upgraded with Alembic as the API starts, instead of by SQLModel;
+  an existing one is kept as it is, but for its unused `user.password` column, which is dropped
 - Changed the 422 for a booking that starts in the past or lasts outside the device's limits to give its message
   as `detail`, as the other errors do, instead of pydantic's list of errors
 - Changed the arguments the RQ tasks are queued with: jobs, bookings' timers and recalibrations queued before an

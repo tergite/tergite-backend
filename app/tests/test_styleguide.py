@@ -112,6 +112,7 @@ VERBS = frozenset(
         "mark",
         "match",
         "merge",
+        "migrate",
         "move",
         "notify",
         "open",

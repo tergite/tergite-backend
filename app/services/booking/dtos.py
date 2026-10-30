@@ -71,8 +71,6 @@ class NewUserInfo(SQLModel, table=False):
 class User(NewUserInfo, table=True):
     """Schema for users"""
 
-    # read by nothing; kept, empty, as existing databases have it NOT NULL until a migration drops it
-    password: str = Field(default="")
     bookings: List["Booking"] = Relationship(
         back_populates="user", passive_deletes="all"
     )

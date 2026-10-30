@@ -13,7 +13,8 @@
 """Module the SQL store"""
 
 from contextlib import contextmanager
-from typing import Iterable, Iterator, List, Type
+from pathlib import Path
+from typing import Iterable, Iterator, Type
 
 from sqlalchemy import Engine
 from sqlalchemy.pool import NullPool
@@ -21,31 +22,34 @@ from sqlmodel import Session, SQLModel, col, create_engine, desc
 
 from .exc import InvalidRequestError
 
+# beside main.py, as in the Nuitka build
+_ALEMBIC_CONFIG_FILE = Path(__file__).parents[2] / "alembic.ini"
 
-def get_sql_engine(
-    url: str, models: List[Type[SQLModel]] = (), checkfirst: bool = True
-) -> Engine:
-    """Gets a new sql engine for the given url, with the tables of the given models
 
-    Args:
-        url: the database URL for the store
-        models: the models that are in that engine
-        checkfirst: Defaults to True, don't issue CREATEs for tables already present in the target database
-
-    Returns:
-        the engine of the given URL
-    """
+def get_sql_engine(url: str) -> Engine:
+    """Gets a new SQL engine for the given URL; migrate_sql_db creates its tables"""
     url = str(url)
-    tables = [v.__table__ for v in models if hasattr(v, "__table__")]
     kwargs = {}
     if url.startswith("sqlite"):
         # to avoid prefork-errors with sqlite since we are running in multiple processes,
         # we use NullPool
         kwargs["poolclass"] = NullPool
 
-    engine = create_engine(url, **kwargs)
-    SQLModel.metadata.create_all(engine, tables=tables, checkfirst=checkfirst)
-    return engine
+    return create_engine(url, **kwargs)
+
+
+def migrate_sql_db(url: str) -> None:
+    """Migrates the database at the URL to the models' schema, with Alembic"""
+    # imported here, as only the API migrates
+    from alembic import command
+    from alembic.config import Config
+
+    config = Config(
+        str(_ALEMBIC_CONFIG_FILE), attributes={"should_configure_logging": False}
+    )
+    # the config interpolates %, as a URL's escapes have it
+    config.set_main_option("sqlalchemy.url", str(url).replace("%", "%%"))
+    command.upgrade(config, "head")
 
 
 @contextmanager

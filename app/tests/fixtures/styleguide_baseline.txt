@@ -49,7 +49,6 @@ boolean: app/utils/redis_store.py::Schema.model_dump(exclude_unset)
 boolean: app/utils/redis_store.py::Schema.model_dump(round_trip)
 boolean: app/utils/redis_store.py::Schema.model_dump(serialize_as_any)
 boolean: app/utils/rq.py::cancel_rq_job(ignore_errors)
-boolean: app/utils/sql_db.py::get_sql_engine(checkfirst)
 constant-position: app/libs/quantum_executor/quantify/utils/calibration.py::_FIXED_DURATION_COUPLER_NODES
 constant-position: app/libs/quantum_executor/quantify/utils/calibration.py::_NON_FIXED_DURATION_COUPLER_NODES
 license-header: app/libs/__init__.py

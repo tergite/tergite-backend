@@ -26,6 +26,10 @@
 # nuitka-project: --include-package=rq
 # nuitka-project: --include-package=jwt
 # nuitka-project: --include-package=pydantic
+# nuitka-project: --include-package=alembic
+# nuitka-project: --include-data-files={MAIN_DIRECTORY}/alembic.ini=alembic.ini
+# nuitka-project: --include-data-files={MAIN_DIRECTORY}/migrations/env.py=migrations/env.py
+# nuitka-project: --include-data-files={MAIN_DIRECTORY}/migrations/versions/*.py=migrations/versions/
 # uvicorn imports the app by name, which Nuitka cannot follow
 # nuitka-project: --include-module=app.api
 

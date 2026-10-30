@@ -180,3 +180,5 @@ def _clear_test_db(url: str = TEST_BOOKING_DB_URL):
     """
     db = create_engine(url)
     SQLModel.metadata.drop_all(db)
+    with db.begin() as connection:
+        connection.exec_driver_sql("DROP TABLE IF EXISTS alembic_version")

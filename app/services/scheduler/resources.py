@@ -23,7 +23,7 @@ from ...utils.config import DeviceSettings
 from ...utils.logging import err_logger
 from ...utils.redis import get_redis_connection
 from ...utils.redis_store import Collection
-from ..booking import get_bookings_sql_engine
+from ...utils.sql_db import get_sql_engine
 from ..external.mss import MssClient, get_mss_public_key, get_private_key
 from .queues import QueuePool
 from .store import get_jobs_store
@@ -62,7 +62,7 @@ class DeviceResources:
         return cls(
             settings=device_settings,
             redis=redis,
-            bookings_db=get_bookings_sql_engine(device_settings.booking_db_url),
+            bookings_db=get_sql_engine(device_settings.booking_db_url),
             jobs_store=get_jobs_store(redis, device_settings),
             queues=QueuePool.from_settings(device_settings, redis),
             mss_client=MssClient.from_settings(device_settings, private_key),

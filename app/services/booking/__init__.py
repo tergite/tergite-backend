@@ -36,7 +36,6 @@ from .service import (
     get_user_job_id_pair_from_token,
     get_user_profile,
 )
-from .store import get_bookings_sql_engine
 
 __all__ = [
     "Booking",
@@ -53,7 +52,6 @@ __all__ = [
     "delete_users",
     "get_active_booking",
     "get_booking",
-    "get_bookings_sql_engine",
     "get_many_bookings",
     "get_many_user_profiles",
     "get_next_booking",

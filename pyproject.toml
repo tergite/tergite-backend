@@ -65,6 +65,7 @@ dependencies = [
     "pandas~=2.3.3",
     "pydantic-settings~=2.16.2",
     "python-dotenv~=1.2.2",
+    "alembic~=1.16",
 ]
 
 [project.optional-dependencies]

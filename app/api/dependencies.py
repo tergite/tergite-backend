@@ -53,6 +53,7 @@ from ..utils.exc import (
 )
 from ..utils.logging import set_up_logging
 from ..utils.redis import get_redis_connection
+from ..utils.sql_db import migrate_sql_db
 from ..utils.strings import validate_uuid4_str
 
 # how long a device's start-up lock outlasts an API worker that stopped holding it
@@ -70,7 +71,7 @@ async def lifespan(app: FastAPI):
         create_device_folders(device_settings)
         lock_connection = get_redis_connection(device_settings.rq_redis_url)
         try:
-            # one API worker at a time, as starting a device creates its tables and
+            # one API worker at a time, as starting a device migrates its database and
             # restarts its recalibration
             # a start-up longer than the lock outlives it unharmed
             with lock_connection.lock(
@@ -78,6 +79,7 @@ async def lifespan(app: FastAPI):
                 timeout=_START_UP_LOCK_SECONDS,
                 raise_on_release_error=False,
             ):
+                migrate_sql_db(device_settings.booking_db_url)
                 resources = DeviceResources.from_settings(device_settings)
                 app.state.device_resources[device] = resources
                 _start_device(resources)

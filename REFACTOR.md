@@ -407,6 +407,9 @@ TTLs, pagination and a Lua script, used by three stores of which only one needs 
    `model_dump` override go.
 4. **Schema changes by migration.** `get_sql_engine` stops calling `create_all` on first use (`sql_db.py:52`);
    Alembic owns the bookings and users tables, as it does MSS's.
+   *Done:* unlike MSS, which migrates in `start` or `migrate`, the API migrates each device's database as it
+   starts, under the start-up lock that `create_all` ran under, as `serve` runs alone in the e2e test. The first
+   revision skips a database from before Alembic, whose tables it finds; the second drops `user.password`.
 5. **Queues: RQ, or a dispatcher over the jobs.** Both are built, behind the few operations the scheduler needs (claim
    a device's next job, mark its stage, schedule a timed event, cancel), each in commits of its own, and compared;
    the better one stays.

@@ -14,11 +14,11 @@ import threading
 import time
 from datetime import timedelta
 
-from app.services.booking import Booking, BookingsConfig, NewBookingInfo, User
+from app.services.booking import BookingsConfig, NewBookingInfo
 from app.services.booking import service as booking_service
 from app.utils.datetime import get_utc_now
 from app.utils.exc import ConflictError
-from app.utils.sql_db import get_sql_engine
+from app.utils.sql_db import get_sql_engine, migrate_sql_db
 
 _BOOKINGS_CONFIG = BookingsConfig(
     max_time_slot_length=3600,
@@ -29,7 +29,9 @@ _BOOKINGS_CONFIG = BookingsConfig(
 
 
 def test_concurrent_overlapping_bookings_book_the_slot_once(tmp_path, mocker):
-    db_engine = get_sql_engine(f"sqlite:///{tmp_path}/bookings.db", [Booking, User])
+    db_url = f"sqlite:///{tmp_path}/bookings.db"
+    migrate_sql_db(db_url)
+    db_engine = get_sql_engine(db_url)
     start_utc = get_utc_now() + timedelta(minutes=5)
     booking_info = NewBookingInfo(
         start_utc=start_utc, end_utc=start_utc + timedelta(minutes=10)
