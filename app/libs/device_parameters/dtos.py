@@ -14,7 +14,6 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 import copy
-from abc import ABC, abstractmethod
 from contextlib import suppress
 from functools import cached_property
 from os import PathLike
@@ -116,14 +115,10 @@ class Device(BaseModel):
         )
 
 
-class CalibrationModel(BaseModel, ABC):
-    """The base class of calibration model"""
+class CalibrationValue(BaseModel, Generic[_CalibValueType]):
+    """A calibration value"""
 
     model_config = ConfigDict(extra="allow")
-
-
-class CalibrationValue(CalibrationModel, Generic[_CalibValueType]):
-    """A calibration value"""
 
     value: _CalibValueType
     unit: str = ""
@@ -148,30 +143,10 @@ class CalibrationValue(CalibrationModel, Generic[_CalibValueType]):
         return cls(value=value, unit=unit, **kwargs)
 
 
-class CalibrationValueSet(CalibrationModel, ABC):
-    """A collection of calibration values"""
+class QubitCalibration(BaseModel):
+    """Schema for the calibration data of the qubit"""
 
     model_config = ConfigDict(extra="allow")
-
-    @classmethod
-    @abstractmethod
-    def from_calib_results(
-        cls, data: "CalibrationResults", name_id_map: Dict[str, Any], **kwargs: Any
-    ) -> List[Self]:
-        """Generates new instances of this calibration value set from the calibration results
-
-        Args:
-            data: the for the qubit in redis
-            name_id_map: the map of the names in the data to the identifier used in BCC
-
-        Returns:
-            the list of new instances of calibration value sets
-        """
-        ...
-
-
-class QubitCalibration(CalibrationValueSet):
-    """Schema for the calibration data of the qubit"""
 
     t1_decoherence: Optional[CalibrationValue[float]] = None
     t2_decoherence: Optional[CalibrationValue[float]] = None
@@ -268,8 +243,10 @@ class QubitCalibration(CalibrationValueSet):
         return results
 
 
-class ResonatorCalibration(CalibrationValueSet):
+class ResonatorCalibration(BaseModel):
     """Schema for the calibration data of the resonator"""
+
+    model_config = ConfigDict(extra="allow")
 
     acq_delay: Optional[CalibrationValue[float]] = None
     acq_integration_time: Optional[CalibrationValue[float]] = None
@@ -361,8 +338,10 @@ class ResonatorCalibration(CalibrationValueSet):
         return results
 
 
-class CouplerCalibration(CalibrationValueSet):
+class CouplerCalibration(BaseModel):
     """Schema for the calibration data of the coupler"""
+
+    model_config = ConfigDict(extra="allow")
 
     frequency: Optional[CalibrationValue[float]] = None
     frequency_detuning: Optional[CalibrationValue[float]] = None
@@ -506,8 +485,10 @@ class CouplerCalibration(CalibrationValueSet):
         return results
 
 
-class DeviceCalibration(CalibrationValueSet):
+class DeviceCalibration(BaseModel):
     """Schema for the calibration data of a given device"""
+
+    model_config = ConfigDict(extra="allow")
 
     name: str
     version: str
@@ -780,12 +761,12 @@ def _get_local_phases(
     return np.deg2rad(control_phase), np.deg2rad(target_phase)
 
 
-def _to_units(calibration: CalibrationValueSet) -> Dict[str, Any]:
+def _to_units(calibration: BaseModel) -> Dict[str, Any]:
     """Gets the calibration as a dict of the units of its values, leaving out the None"""
     return _map_calibration_values(calibration, lambda value: value.unit, False)
 
 
-def _to_scalars(calibration: CalibrationValueSet) -> Dict[str, Any]:
+def _to_scalars(calibration: BaseModel) -> Dict[str, Any]:
     """Gets the calibration as a dict of its values' scalars and its computed fields, leaving
     out the None"""
     return _map_calibration_values(calibration, lambda value: value.value, True)
@@ -797,11 +778,11 @@ def _map_calibration_values(
     should_include_computed: bool,
 ) -> Any:
     """Copies the item, with each calibration value in it, however deep, replaced by what
-    get_leaf gets of it, and each calibration value set by a dict of its fields but the None
+    get_leaf gets of it, and each other model by a dict of its fields but the None
     """
     if isinstance(item, CalibrationValue):
         return get_leaf(item)
-    if isinstance(item, CalibrationValueSet):
+    if isinstance(item, BaseModel):
         data = {
             name: _map_calibration_values(
                 getattr(item, name), get_leaf, should_include_computed
