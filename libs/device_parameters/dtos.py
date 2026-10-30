@@ -401,15 +401,22 @@ class CouplerCalibration(BaseModel):
 
     @classmethod
     def from_calib_config(
-        cls, conf: "_BackendCalibrationConfig"
+        cls,
+        conf: "_BackendCalibrationConfig",
+        coupling_dict: Dict[str, Tuple[str, str]],
     ) -> List["CouplerCalibration"]:
-        """Generates new instances of CouplerCalibration from the backend calibration config
+        """Generates new instances of CouplerCalibration from the backend calibration config,
+        each named for its qubits in the device config's coupling_dict unless the seed names it
 
         Args:
             conf: the backend calibration config
+            coupling_dict: the device config's map of each coupler to its qubits
 
         Returns:
             the list of new instance of CouplerCalibration
+
+        Raises:
+            ValueError: coupler {name} is in neither the seed's names nor the coupling_dict
         """
         coupler_units = conf.units.get("coupler", {})
         coupler_data = attach_units_many(conf.coupler, coupler_units)
@@ -417,6 +424,10 @@ class CouplerCalibration(BaseModel):
         results: List[CouplerCalibration] = []
         for coupler_conf in coupler_data:
             coupler_conf["id"] = coupler_conf["id"]["value"]
+            if not coupler_conf.get("full_name"):
+                coupler_conf["full_name"] = _get_coupler_name(
+                    coupler_conf["id"], coupling_dict
+                )
             results.append(CouplerCalibration.model_validate(coupler_conf))
 
         return results
@@ -551,7 +562,9 @@ class DeviceCalibration(BaseModel):
             version=conf.general_config.version,
             qubits=QubitCalibration.from_calib_config(calib_config),
             resonators=ResonatorCalibration.from_calib_config(calib_config),
-            couplers=CouplerCalibration.from_calib_config(calib_config),
+            couplers=CouplerCalibration.from_calib_config(
+                calib_config, coupling_dict=conf.device_config.coupling_dict
+            ),
             discriminators=calib_config.discriminators,
             last_calibrated=utc_now_str(),
         )
@@ -809,3 +822,20 @@ def _map_calibration_values(
 def _get_number(_id: str) -> int:
     """Gets the number in a qubit's or coupler's id, e.g. 2 of q2"""
     return int(_id.strip("q").strip("u"))
+
+
+def _get_coupler_name(
+    coupler_id: Union[str, int], coupling_dict: Dict[str, Tuple[str, str]]
+) -> str:
+    """Gets the coupler's name, {control_qubit}_{target_qubit}, from the coupling_dict
+
+    Raises:
+        ValueError: coupler {name} is in neither the seed's names nor the coupling_dict
+    """
+    short_name = f"u{int(str(coupler_id).lstrip('u'))}"
+    if short_name not in coupling_dict:
+        raise ValueError(
+            f"coupler {short_name} is in neither the seed's names nor the device config's"
+            " coupling_dict"
+        )
+    return "_".join(coupling_dict[short_name])

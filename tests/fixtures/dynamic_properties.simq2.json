@@ -6,7 +6,7 @@
         "unit": "Hz",
         "value": -170000000.0
       },
-      "control_qubit": null,
+      "control_qubit": "q0",
       "control_rz_lambda": {
         "date": "NOW-PLACEHOLDER",
         "unit": "rad",
@@ -62,7 +62,7 @@
         "unit": "Hz",
         "value": -15000000.0
       },
-      "full_name": null,
+      "full_name": "q0_q1",
       "id": 0,
       "pulse_type": {
         "date": "NOW-PLACEHOLDER",
@@ -70,7 +70,7 @@
         "value": "wacqt_cz_gate_pulse"
       },
       "short_name": "u0",
-      "target_qubit": null,
+      "target_qubit": "q1",
       "target_rz_lambda": {
         "date": "NOW-PLACEHOLDER",
         "unit": "rad",

@@ -12,9 +12,12 @@
 """Tests for the device parameters"""
 from datetime import datetime, timezone
 
+import pytest
 import time_machine
 
+from libs.device_parameters import BackendConfig, DeviceCalibration
 from libs.device_parameters.dtos import _BackendGeneralConfig
+from tests.utils.fixtures import get_fixture_path
 
 
 def test_online_date_defaults_to_when_the_config_is_made():
@@ -24,3 +27,44 @@ def test_online_date_defaults_to_when_the_config_is_made():
         )
 
     assert config.online_date.startswith("2030-01-01")
+
+
+@pytest.mark.parametrize(
+    "backend_config_file, seed_file",
+    [
+        ("backend_config.simq2.toml", "qiskit_pulse_2q.seed.toml"),
+        ("backend_config.toml", "dummy_quantify.seed.toml"),
+    ],
+)
+def test_couplers_of_a_config_take_their_qubits_from_its_coupling_dict(
+    backend_config_file, seed_file
+):
+    """So that the calibration published at start names them, and can be a seed again"""
+    config = BackendConfig.from_toml(
+        get_fixture_path(backend_config_file), get_fixture_path(seed_file)
+    )
+
+    calibration = DeviceCalibration.from_config(config)
+
+    for coupler in calibration.couplers:
+        assert [coupler.control_qubit, coupler.target_qubit] == list(
+            config.device_config.coupling_dict[coupler.short_name]
+        )
+    assert calibration.to_calibration_config().coupler
+
+
+def test_a_coupler_missing_from_the_coupling_dict_is_refused():
+    config = BackendConfig.from_toml(
+        get_fixture_path("backend_config.simq2.toml"),
+        get_fixture_path("qiskit_pulse_2q.seed.toml"),
+    )
+    config = config.model_copy(
+        update={
+            "device_config": config.device_config.model_copy(
+                update={"coupling_dict": {}}
+            )
+        }
+    )
+
+    with pytest.raises(ValueError, match="u0"):
+        DeviceCalibration.from_config(config)

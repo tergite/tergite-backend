@@ -6,7 +6,7 @@
         "unit": "Hz",
         "value": 0.0
       },
-      "control_qubit": null,
+      "control_qubit": "q12",
       "control_rz_lambda": {
         "date": "NOW-PLACEHOLDER",
         "unit": "",
@@ -58,11 +58,11 @@
         "unit": "Hz",
         "value": 0.0
       },
-      "full_name": null,
+      "full_name": "q12_q13",
       "id": 0,
       "pulse_type": { "date": "NOW-PLACEHOLDER", "unit": "", "value": "" },
       "short_name": "u0",
-      "target_qubit": null,
+      "target_qubit": "q13",
       "target_rz_lambda": {
         "date": "NOW-PLACEHOLDER",
         "unit": "",
@@ -75,7 +75,7 @@
         "unit": "Hz",
         "value": 0.0
       },
-      "control_qubit": null,
+      "control_qubit": "q12",
       "control_rz_lambda": {
         "date": "NOW-PLACEHOLDER",
         "unit": "",
@@ -127,11 +127,11 @@
         "unit": "Hz",
         "value": 0.0
       },
-      "full_name": null,
+      "full_name": "q12_q14",
       "id": 1,
       "pulse_type": { "date": "NOW-PLACEHOLDER", "unit": "", "value": "" },
       "short_name": "u1",
-      "target_qubit": null,
+      "target_qubit": "q14",
       "target_rz_lambda": {
         "date": "NOW-PLACEHOLDER",
         "unit": "",

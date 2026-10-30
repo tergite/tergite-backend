@@ -962,5 +962,3 @@ Worth knowing before you are surprised by them:
   shared by many devices queues their claims behind each other.
 - **The simulators do not recalibrate**: `QiskitDynamicsExecutor.recalibrate` returns nothing,
   and MSS keeps the calibration the heavy worker published at start.
-- **A `DeviceCalibration` made from a config cannot be written to a seed file when its couplers
-  have no names.**
