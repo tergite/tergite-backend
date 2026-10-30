@@ -206,72 +206,97 @@ def _get_configuration(
 
 
 def _get_solver(dt: float, params: _TransmonParams, r: float, dim: int) -> Solver:
-    f0, alpha0, f1, alpha1 = params.f0, params.alpha0, params.f1, params.alpha1
-    f2, alpha2, g02, g12 = params.f2, params.alpha2, params.g02, params.g12
-    coupler0_conf = params.coupler
-
-    a = np.diag(np.sqrt(np.arange(1, dim)), 1)  # annihilation operator
-    adag = np.diag(np.sqrt(np.arange(1, dim)), -1)  # creation operator
-    N = np.diag(np.arange(dim))  # number operator
-
-    # Define tensor products for two-qubit system
-    I = np.eye(dim)
-
-    # Order of modes: coupler (mode 3), qubit 2 (mode 2), qubit 1 (mode 1)
-    a0 = np.kron(I, np.kron(I, a))
-    a1 = np.kron(I, np.kron(a, I))
-    a2 = np.kron(a, np.kron(I, I))
-
-    adag0 = np.kron(I, np.kron(I, adag))
-    adag1 = np.kron(I, np.kron(adag, I))
-    adag2 = np.kron(adag, np.kron(I, I))
-
-    N0 = np.kron(I, np.kron(I, N))
-    N1 = np.kron(I, np.kron(N, I))
-    N2 = np.kron(N, np.kron(I, I))
-
-    ident = np.eye(dim**3, dtype=complex)
-
-    # Create static Hamiltonian
-    coupler_f_vs_t = omega_c(
-        0,
-        delta_0=coupler0_conf["cz_pulse_amplitude"],  # Maximum delta value
-        theta=coupler0_conf["cz_pulse_dc_bias"],  # DC bias term
-        omega_c0=2 * np.pi * f2,  # Maximum frequency in Hz
-        omega_phi=coupler0_conf["frequency_detuning"]
-        + 2 * np.pi * (f1 - f0 - alpha0),  # Transition frequency in Hz
-        phi=coupler0_conf["cz_pulse_phase_offset"],  # Phase offset
-        t_w=coupler0_conf["cz_pulse_duration_before"],  # s, duration before pulse
-        t_rf=coupler0_conf["cz_pulse_duration_rise"],  # s, rise time
-        t_p=coupler0_conf["cz_pulse_duration_constant"],  # s, constant pulse duration
-    )
-
-    static_ham = (
-        2 * np.pi * f0 * N0
-        + np.pi * alpha0 * N0 @ (N0 - ident)
-        + 2 * np.pi * f1 * N1
-        + np.pi * alpha1 * N1 @ (N1 - ident)
-        + coupler_f_vs_t * N2
-        + np.pi * alpha2 * N2 @ (N2 - ident)
-        + 2 * np.pi * g02 * ((a0 + adag0) @ (a2 + adag2))
-        + 2 * np.pi * g12 * ((a1 + adag1) @ (a2 + adag2))
-    )
-
-    # Create drive operators
-    drive_op1 = 2 * np.pi * r * (a0 + adag0)
-    drive_op2 = 2 * np.pi * r * (a1 + adag1)
-    drive_op3 = N2
-
+    operators = _get_ladder_operators(dim)
+    static_ham = _get_static_hamiltonian(params, operators)
     return Solver(
         static_hamiltonian=static_ham,
-        hamiltonian_operators=[drive_op1, drive_op2, drive_op3],
+        hamiltonian_operators=_get_drive_operators(operators, r=r),
         hamiltonian_channels=["d0", "d1", "u0"],
-        channel_carrier_freqs={"d0": f0, "d1": f1, "u0": 0},
+        channel_carrier_freqs={"d0": params.f0, "d1": params.f1, "u0": 0},
         dt=dt,
         array_library="numpy",
         rotating_frame=static_ham,
         in_frame_basis=False,
     )
+
+
+@dataclass(frozen=True)
+class _LadderOperators:
+    """The annihilation, creation and number operators of qubit 0, qubit 1 and the
+    coupler, in that order, on their joint space"""
+
+    annihilators: tuple[np.ndarray, np.ndarray, np.ndarray]
+    creators: tuple[np.ndarray, np.ndarray, np.ndarray]
+    numbers: tuple[np.ndarray, np.ndarray, np.ndarray]
+
+
+def _get_ladder_operators(dim: int) -> _LadderOperators:
+    """Gets the ladder operators of the two qubits and the coupler, dim levels each"""
+    annihilator = np.diag(np.sqrt(np.arange(1, dim)), 1)
+    creator = np.diag(np.sqrt(np.arange(1, dim)), -1)
+    number = np.diag(np.arange(dim))
+    modes = range(3)
+    return _LadderOperators(
+        annihilators=tuple(
+            _get_mode_operator(annihilator, mode, dim) for mode in modes
+        ),
+        creators=tuple(_get_mode_operator(creator, mode, dim) for mode in modes),
+        numbers=tuple(_get_mode_operator(number, mode, dim) for mode in modes),
+    )
+
+
+def _get_static_hamiltonian(
+    params: _TransmonParams, operators: _LadderOperators
+) -> np.ndarray:
+    """Gets the Hamiltonian of the two transmons and the coupler, at the coupler's
+    frequency at the start of its CZ pulse"""
+    a0, a1, a2 = operators.annihilators
+    adag0, adag1, adag2 = operators.creators
+    n0, n1, n2 = operators.numbers
+    ident = np.eye(n0.shape[0], dtype=complex)
+    coupler = params.coupler
+    coupler_frequency = omega_c(
+        0,
+        delta_0=coupler["cz_pulse_amplitude"],  # Maximum delta value
+        theta=coupler["cz_pulse_dc_bias"],  # DC bias term
+        omega_c0=2 * np.pi * params.f2,  # Maximum frequency in Hz
+        omega_phi=coupler["frequency_detuning"]
+        + 2 * np.pi * (params.f1 - params.f0 - params.alpha0),  # Transition frequency
+        phi=coupler["cz_pulse_phase_offset"],  # Phase offset
+        t_w=coupler["cz_pulse_duration_before"],  # s, duration before pulse
+        t_rf=coupler["cz_pulse_duration_rise"],  # s, rise time
+        t_p=coupler["cz_pulse_duration_constant"],  # s, constant pulse duration
+    )
+    return (
+        2 * np.pi * params.f0 * n0
+        + np.pi * params.alpha0 * n0 @ (n0 - ident)
+        + 2 * np.pi * params.f1 * n1
+        + np.pi * params.alpha1 * n1 @ (n1 - ident)
+        + coupler_frequency * n2
+        + np.pi * params.alpha2 * n2 @ (n2 - ident)
+        + 2 * np.pi * params.g02 * ((a0 + adag0) @ (a2 + adag2))
+        + 2 * np.pi * params.g12 * ((a1 + adag1) @ (a2 + adag2))
+    )
+
+
+def _get_drive_operators(operators: _LadderOperators, r: float) -> list[np.ndarray]:
+    """Gets the operators that the channels d0, d1 and u0 drive: the two qubits at the
+    Rabi rate r, in Hz, and the coupler's number"""
+    a0, a1, _ = operators.annihilators
+    adag0, adag1, _ = operators.creators
+    return [
+        2 * np.pi * r * (a0 + adag0),
+        2 * np.pi * r * (a1 + adag1),
+        operators.numbers[2],
+    ]
+
+
+def _get_mode_operator(operator: np.ndarray, mode: int, dim: int) -> np.ndarray:
+    """Gets the operator of one mode on the joint space of the three, whose coupler, mode
+    2, is the most significant"""
+    factors = [np.eye(dim)] * 3
+    factors[2 - mode] = operator
+    return np.kron(factors[0], np.kron(factors[1], factors[2]))
 
 
 def _get_basis_statevector(qubit_index: int, level: int, dim: int) -> Statevector:
