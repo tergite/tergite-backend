@@ -175,7 +175,7 @@ def _run_command(args: argparse.Namespace) -> None:
             args.port or settings.get_device_settings().port,
             args.forwarded_allow_ips,
             args.env_files,
-            args.reload,
+            args.should_reload,
             args.workers,
         )
     else:
@@ -230,6 +230,7 @@ def _get_argument_parser() -> argparse.ArgumentParser:
     )
     serve_parser.add_argument(
         "--reload",
+        dest="should_reload",
         default=False,
         action="store_true",
         help="Enable reload (not recommended for production binaries).",
@@ -252,7 +253,7 @@ def _serve(
     port: int,
     forwarded_allow_ips: str | None,
     env_files: list[str],
-    reload: bool,
+    should_reload: bool,
     workers: int | None,
 ) -> None:
     _load_devices(env_files)
@@ -260,7 +261,7 @@ def _serve(
     uvicorn.run(
         "app.api:app",
         host=host,
-        reload=reload,
+        reload=should_reload,
         port=port,
         workers=workers,
         proxy_headers=True,
