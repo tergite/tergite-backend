@@ -47,7 +47,7 @@ from app.libs.quantum_executor.quantify.utils.config import (
     QuantifyMetadata,
     load_quantify_config,
 )
-from app.libs.quantum_executor.quantify.utils.portclock import generate_hardware_map
+from app.libs.quantum_executor.quantify.utils.portclock import get_hardware_map
 from app.libs.quantum_executor.utils.logger import ExperimentLogger
 from app.utils.compat import MeasurementMode, SPIMode
 
@@ -113,10 +113,8 @@ class QuantifyExecutor(QuantumExecutor):
         qubit_ids = backend_config.device_config.qubit_ids
         coupling_dict = backend_config.device_config.coupling_dict
 
-        self.hardware_map = generate_hardware_map(
-            qubit_ids=qubit_ids,
-            coupling_dict=coupling_dict,
-            quantify_config=self.quantify_config,
+        self.hardware_map = get_hardware_map(
+            qubit_ids=qubit_ids, coupling_dict=coupling_dict
         )
 
         set_datadir(data_dir)

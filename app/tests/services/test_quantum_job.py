@@ -28,7 +28,7 @@ from ...libs.quantum_executor.base.quantum_job.dtos import MeasLvl, MeasRet, Qua
 from ...libs.quantum_executor.base.quantum_job.typing import QDataset
 
 
-def _make_qdataset(channels: Dict[int, np.ndarray]) -> QDataset:
+def _get_qdataset(channels: Dict[int, np.ndarray]) -> QDataset:
     """
     Build a QDataset with one or more acquisition channels.
     `channels` maps channel-index → 1-D array of discriminator bits.
@@ -107,7 +107,7 @@ def _dummy_calibration(qubits: List[int]):
 )
 def test_discriminate_various_subsets(mem_slots, channels, byteorder, expected_hex):
     # build raw xarray dataset with one experiment called "exp"
-    ds = _make_qdataset(channels)
+    ds = _get_qdataset(channels)
     raw_results = {"exp~0": ds}
 
     qubits = sorted(channels.keys())
@@ -143,7 +143,7 @@ def test_discriminate_compacted_mapping():
     # slot 0 contains bits for qubit 1, slot 1 contains bits for qubit 3
     # NB: we changed behavior of discriminated output to return only consecutive registers
     # and metadata in qobj will help SDK to decode acq indexes back to circuit-level measurement registers
-    ds = _make_qdataset({12: np.array([0, 1]), 14: np.array([1, 0])})
+    ds = _get_qdataset({12: np.array([0, 1]), 14: np.array([1, 0])})
     raw_results = {"exp~0": ds}
     qubits = [1, 3]
 

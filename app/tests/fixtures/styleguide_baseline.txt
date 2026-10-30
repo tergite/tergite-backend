@@ -12,10 +12,8 @@ boolean: app/libs/quantum_executor/qiskit/executor.py::QiskitDynamicsExecutor.ne
 boolean: app/libs/quantum_executor/qiskit/instruction.py::GaussianPlay.__init__(limit_amplitude)
 boolean: app/libs/quantum_executor/quantify/executor.py::QuantifyExecutor.__init__(are_clusters_resettable)
 boolean: app/libs/quantum_executor/quantify/executor.py::QuantifyExecutor.__init__(reset)
-boolean: app/libs/quantum_executor/quantify/experiment.py::QuantifyExperiment.from_qobj_expt(include_dynamic_frequency_ops)
 boolean: app/libs/quantum_executor/quantify/experiment.py::_ChannelPlan.had_any_instructions
 boolean: app/libs/quantum_executor/quantify/experiment.py::_State.has_emitted
-boolean: app/libs/quantum_executor/quantify/experiment.py::_construct_schedule(include_dynamic_frequency_ops)
 boolean: app/libs/queues/dtos.py::ExecutorOptions.are_clusters_resettable
 boolean: app/services/scheduler/utils.py::_init_executor(reset)
 constant-position: app/libs/quantum_executor/quantify/utils/calibration.py::_FIXED_DURATION_COUPLER_NODES
@@ -158,7 +156,6 @@ type-hints: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.error
 type-hints: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.info
 type-hints: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.log_Q1ASM_programs
 type-hints: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.log_schedule
-type-hints: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.make_logger
 type-hints: app/libs/quantum_executor/utils/logger.py::ExperimentLogger.warning
 type-hints: app/libs/queues/dtos.py::JobStatus.is_terminal
 type-hints: app/libs/queues/dtos.py::TimestampPair.set_finish_timestamp

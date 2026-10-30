@@ -13,13 +13,10 @@
 
 from typing import Dict, List, Tuple
 
-from quantify_scheduler.backends.qblox_backend import QbloxHardwareCompilationConfig
 
-
-def generate_hardware_map(
+def get_hardware_map(
     qubit_ids: List[str],
     coupling_dict: Dict[str, Tuple[str, str]],
-    quantify_config: QbloxHardwareCompilationConfig,
 ) -> Dict[str, Tuple[str, str]]:
     """
     Create a mapping from the qobj channel convention to the QBLOX port-clock instrument configuration.
@@ -27,7 +24,6 @@ def generate_hardware_map(
     Parameters:
       qubit_ids: List of qubit id strings, e.g. ["q6", "q7", "q8"].
       coupling_dict: Dictionary of coupling channels, e.g. { "u0": ("q6", "q7"), "u1": ("q6", "q8") }.
-      quantify_config: QbloxHardwareCompilationConfig instance.
                        (Currently not parsed and future implementation will extract port/clock links.)
 
     Returns:

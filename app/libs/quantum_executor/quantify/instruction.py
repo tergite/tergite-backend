@@ -561,7 +561,7 @@ class PulseLibInstruction(BaseInstruction):
         try:
             # FIXME: pulse_library seems to be a list but is accessed here as a dict
             waveform = config.pulse_library[self.name]
-            return _generate_numerical_pulse(
+            return _get_numerical_pulse(
                 channel=self.channel, instruction=self, waveform=waveform
             )
         except KeyError:
@@ -623,7 +623,7 @@ class WacqtCZPulseInstruction(BaseInstruction):
         )
 
 
-def _generate_numerical_pulse(
+def _get_numerical_pulse(
     channel: QuantifyChannel, instruction: BaseInstruction, waveform: np.ndarray
 ) -> Operation:
     """Generates a numerical pulse on the given channel for the given instruction given a particular waveform

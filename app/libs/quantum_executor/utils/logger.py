@@ -58,7 +58,7 @@ class ExperimentLogger:
         self.tuid = tuid
         self.formatter = formatter
         self.folder = abspath(locate_experiment_container(self.tuid, datadir=datadir))
-        self.logger = self.make_logger(__name__, self.folder, self.formatter)
+        self.logger = self.get_file_logger(__name__, self.folder, self.formatter)
         self.logger.propagate = False
 
         # --- Default state
@@ -78,14 +78,11 @@ class ExperimentLogger:
         self.logger.info(message, **kwargs)
 
     @staticmethod
-    def make_logger(module_name, output_folder, formatter, /):
-        """Create a logging instance for the Python interpreter which is using QuantumExecutor.
-        Module name is the name of the logging module, usually __file__.
-        The output folder is the storage location for the data of the experiment.
-        The logging formatter specifies how messages appear in the log, the default formatter is:
-            "%(asctime)s ▪ %(levelname)s ▪ %(message)s"
-        Log files have the name "log.txt" and are stored in the output folder.
-        """
+    def get_file_logger(
+        module_name: str, output_folder: str, formatter: logging.Formatter, /
+    ) -> logging.Logger:
+        """Gets the logger of the module name, which logs to log.txt in the experiment's
+        output folder alone, with the formatter"""
         logger = logging.getLogger(module_name)
         logger.setLevel(logging.INFO)
         file_handler = logging.FileHandler(

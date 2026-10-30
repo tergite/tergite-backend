@@ -153,7 +153,7 @@ def _compile_schedule_from_qobj(qobj_dict: dict, quantify_config_path: Path):
 
     from app.libs.quantum_executor.quantify.experiment import QuantifyExperiment
     from app.libs.quantum_executor.quantify.utils.config import load_quantify_config
-    from app.libs.quantum_executor.quantify.utils.portclock import generate_hardware_map
+    from app.libs.quantum_executor.quantify.utils.portclock import get_hardware_map
 
     # 1) Load config into QuantumDevice
     qcfg = load_quantify_config(quantify_config_path)
@@ -165,7 +165,7 @@ def _compile_schedule_from_qobj(qobj_dict: dict, quantify_config_path: Path):
     # 2) Hardware map for 2 qubits (q0, q1) + coupler u0
     qubit_ids = ["q0", "q1"]
     coupling_dict = {"u0": ("q0", "q1")}
-    hardware_map = generate_hardware_map(qubit_ids, coupling_dict, qcfg)
+    hardware_map = get_hardware_map(qubit_ids, coupling_dict)
 
     # 3) Build PulseQobj from dict – use the INNER object if wrapped under params.qobj
     qdict = qobj_dict.get("params", {}).get("qobj", qobj_dict)

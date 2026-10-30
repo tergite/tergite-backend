@@ -118,13 +118,9 @@ def _build_experiment(
     phase_reference_data: Dict[str, Any],
 ):
     from app.libs.quantum_executor.quantify.experiment import QuantifyExperiment
-    from app.libs.quantum_executor.quantify.utils.portclock import generate_hardware_map
+    from app.libs.quantum_executor.quantify.utils.portclock import get_hardware_map
 
-    hardware_map = generate_hardware_map(
-        [qubit_id],
-        {},
-        phase_reference_data["quantify_config"],
-    )
+    hardware_map = get_hardware_map([qubit_id], {})
     qobj = _build_qobj(instructions)
 
     return QuantifyExperiment.from_qobj_expt(

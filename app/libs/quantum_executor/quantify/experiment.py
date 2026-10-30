@@ -114,7 +114,7 @@ class QuantifyExperiment(NativeExperiment[Schedule]):
         hardware_map: Optional[Dict[str, Tuple[str, str]]],
         lo_frequencies: Optional[Dict[str, float]] = None,
         drive_frequencies: Optional[Dict[str, float]] = None,
-        include_dynamic_frequency_ops: bool = False,
+        should_include_frequency_ops: bool = False,
     ) -> "QuantifyExperiment":
         """Converts PulseQobjExperiment to native experiment
 
@@ -142,11 +142,11 @@ class QuantifyExperiment(NativeExperiment[Schedule]):
                 drive_frequencies=drive_frequencies,
             )
 
-        schedule = _construct_schedule(
+        schedule = _get_schedule(
             channel_registry=channel_registry,
             header=header,
             config=qobj_config,
-            include_dynamic_frequency_ops=include_dynamic_frequency_ops,
+            should_include_frequency_ops=should_include_frequency_ops,
         )
         duration = 0
         if isinstance(schedule.duration, (float, int)):
@@ -200,13 +200,13 @@ def _add_instruction_to_channel_registry(
         channel_registry.add(instruction)
 
 
-def _construct_schedule(
+def _get_schedule(
     channel_registry: "QuantifyChannelRegistry",
     header: "QobjExperimentHeader",
     config: "PulseQobjConfig",
     timegrid_interval: float = QBLOX_TIMEGRID_INTERVAL,
     *,
-    include_dynamic_frequency_ops: bool = False,
+    should_include_frequency_ops: bool = False,
 ) -> Schedule:
     """
     Build a Quantify Schedule.
@@ -221,12 +221,12 @@ def _construct_schedule(
     - If no setf exists, use placeholder.
 
     Feature flag:
-    - include_dynamic_frequency_ops=False keeps dynamic frequency commands in playback
+    - should_include_frequency_ops=False keeps dynamic frequency commands in playback
       but excludes them from schedule operations.
     """
     schedule = Schedule(name=header.name, repetitions=config.shots)
     timegrid_interval = float(timegrid_interval)
-    channel_plans = _get_channel_plans(channel_registry, include_dynamic_frequency_ops)
+    channel_plans = _get_channel_plans(channel_registry, should_include_frequency_ops)
 
     _add_clock_resources(schedule, _get_initial_clock_frequencies(channel_registry))
     drive_clocks = [
