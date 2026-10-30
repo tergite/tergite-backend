@@ -608,6 +608,11 @@ One package per commit; the style-guide baseline (1.9) shrinks with each.
    that defines a new property (`queues/dtos.py:226, 243`).
 7. **Layout**: constants to the top (`queues/dtos.py:604`, `redis_store.py:145`); private helpers to the bottom
    (`base/quantum_job/__init__.py:155-273`, `quantify/experiment.py:75-107`, `quantify/utils/calibration.py:28`).
+8. **Last: no `app/`.** Its packages, `api`, `libs`, `services`, `utils` and `tests`, move to the root beside
+   `main.py`, `settings.py`, `migrations` and `dev`, in one commit that changes only paths and imports
+   (`app.x` becomes `x`): the 78 files that name `app.`, Nuitka's `--include-module=app.api`, the Alembic env, the
+   packaging and the docs. Checked first, again: no dependency in either extra installs a top-level module of those
+   names, which the root's would then shadow or be shadowed by.
 
 ## Step 8: close out
 
