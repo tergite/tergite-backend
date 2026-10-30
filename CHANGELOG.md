@@ -9,6 +9,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- Added `BCC_MAX_EXECUTION_QUEUE_TIME`, a day by default and 0 for none: a preprocessed job waiting longer to execute,
+  e.g. for room between bookings, is failed and its user told, where it waited indefinitely
 - Added `BCC_MAX_WORKER_WAIT_TIME`, the longest a worker with nothing to do waits before looking again, which bounds
   how late a lost wake-up, a due recalibration or a dead worker's job is noticed; default 5 seconds, as before
 - Added GitLab jobs that, on a `v*` tag, build the debs and macOS packages, upload them to the package registry and

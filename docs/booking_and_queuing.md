@@ -232,6 +232,8 @@ _Note: The user must specify the backend they are booking when submitting reques
 
 - The oldest preprocessed job that ends before the next booking starts runs next.
   A longer job waits, and shorter ones run before it, until it fits.
+- A job that has waited longer than `MAX_EXECUTION_QUEUE_TIME`, a day by default, is failed, and its
+  user told, rather than left to wait.
 
 ### When a booking is active:
 

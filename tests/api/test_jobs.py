@@ -29,7 +29,10 @@ from libs.queues.dtos import Job, JobStatus, Stage, Timestamps
 from services.booking import Booking
 from services.scheduler import WorkerDeadline
 from services.scheduler import tasks as scheduler_tasks
-from services.scheduler.dispatcher import fail_overdue_jobs
+from services.scheduler.dispatcher import (
+    fail_jobs_queued_too_long,
+    fail_overdue_jobs,
+)
 from tests.utils.api import (
     create_mss_headers,
     get_bearer_headers,
@@ -1604,6 +1607,53 @@ def test_cancelled_job_is_not_executed(
         assert (stored_job.status, stored_job.stage) == (
             JobStatus.CANCELLED,
             Stage.EXEC_Q,
+        )
+
+
+@pytest.mark.parametrize(
+    "max_execution_queue_time, expected_status, expected_reason",
+    [
+        (60, JobStatus.FAILED, "waited longer than 60 s to execute"),
+        (0, JobStatus.PENDING, None),
+    ],
+)
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+def test_job_waiting_to_execute_past_the_limit_fails(
+    client,
+    jobs_folder,
+    worker,
+    job,
+    mocker,
+    fake_clock,
+    max_execution_queue_time,
+    expected_status,
+    expected_reason,
+):
+    """A job that finds no room to execute, e.g. between bookings, is failed rather than
+    left to wait; a limit of 0 is none"""
+    with client as client:
+        users = create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_info = get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )[0]
+        submit_jobs(client, data=[job_info])
+        worker.run(is_burst=True, max_jobs=1)
+        device = next(iter(worker.device_resources.values()))
+        device = dataclasses.replace(
+            device,
+            settings=device.settings.model_copy(
+                update={"max_execution_queue_time": max_execution_queue_time}
+            ),
+        )
+        fake_clock.shift(61)
+
+        fail_jobs_queued_too_long(device)
+
+        [stored_job] = get_stored_jobs()
+        assert (stored_job.status, stored_job.failure_reason) == (
+            expected_status,
+            expected_reason,
         )
 
 

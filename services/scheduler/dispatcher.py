@@ -170,6 +170,7 @@ class Dispatcher:
             )
         self._send_kept_mss_events(device)
         fail_overdue_jobs(device)
+        fail_jobs_queued_too_long(device)
         if self._should_run_light and run_next_postprocessing(device, self._deadline):
             return True
         if not self._should_run_heavy:
@@ -446,6 +447,31 @@ def fail_overdue_jobs(device: DeviceResources) -> None:
         ).all()
     for job_id in overdue_job_ids:
         _fail_job(device, job_id, reason="timed out")
+
+
+def fail_jobs_queued_too_long(device: DeviceResources) -> None:
+    """Fails the device's preprocessed jobs that have waited past BCC_MAX_EXECUTION_QUEUE_TIME
+    to execute, e.g. finding no room between bookings, rather than leave them waiting; it
+    counts from when each was last written, as nothing writes a waiting job before its claim
+    """
+    max_wait_seconds = device.settings.max_execution_queue_time
+    # a limit of 0 is none
+    if max_wait_seconds <= 0:
+        return
+    with Session(device.bookings_db) as session:
+        waited_job_ids = session.exec(
+            select(JobRow.job_id).where(
+                col(JobRow.device_name) == device.settings.default_prefix,
+                col(JobRow.stage) == Stage.EXEC_Q.name,
+                col(JobRow.status).not_in(_TERMINAL_STATUSES),
+                col(JobRow.updated_at)
+                < get_utc_now() - timedelta(seconds=max_wait_seconds),
+            )
+        ).all()
+    for job_id in waited_job_ids:
+        _fail_job(
+            device, job_id, reason=f"waited longer than {max_wait_seconds} s to execute"
+        )
 
 
 def fail_abandoned_recalibrations(device: DeviceResources) -> None:

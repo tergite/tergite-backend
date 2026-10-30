@@ -121,6 +121,7 @@ class DeviceSettings(BaseSettings):
     max_preprocessing_time: int = 5 * 60
     max_postprocessing_time: int = 3 * 60
     max_recalibration_queue_time: int = 90 * 60
+    max_execution_queue_time: int = 24 * 60 * 60
     # above 0, as a worker with nothing to claim would otherwise never stop looking
     max_worker_wait_time: float = Field(default=5, gt=0)
     default_recalibration_interval: float = 24 * 60 * 60
@@ -171,6 +172,7 @@ class DeviceSettings(BaseSettings):
         "max_preprocessing_time",
         "max_postprocessing_time",
         "max_recalibration_queue_time",
+        "max_execution_queue_time",
         "jwt_ttl",
     )
     @classmethod

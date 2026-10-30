@@ -349,8 +349,8 @@ flowchart TD
   checked again before it starts; they must end before the *next* booking starts, not before
   the current one ends, and one under way when the booker submits again runs to completion.
 - **Outside bookings**, a job longer than the time to the next booking waits, and shorter, newer
-  jobs overtake it until it fits. Nothing ages a waiting job, so a long job can wait as long as
-  bookings keep leaving too little room.
+  jobs overtake it until it fits. Nothing ages a waiting job, so a long job waits as long as
+  bookings keep leaving too little room, until `BCC_MAX_EXECUTION_QUEUE_TIME` (§6.5) fails it.
 - **`force_normal_queue=true`** on `POST /jobs` sets `is_booking_excluded`: the booker's job is
   treated as anyone's, and is not failed for being too long for their booking.
 - **Too long for the booking**: when preprocessing ends (`mark_preprocessed`), a job of the
@@ -439,6 +439,10 @@ stage under way without waiting out its timeout.
   (`DEADLINE_CHECK_SECONDS` in `main.py`), and kills, with `SIGKILL`, as its `SIGTERM` handler
   could not run, a worker past it; then it stops the rest, and the service manager restarts the
   backend. The killed worker's job is then failed as overdue.
+- **A job that waits too long to execute**: every pass also fails the device's jobs in
+  `EXEC_Q` last written longer ago than `BCC_MAX_EXECUTION_QUEUE_TIME`, a day by default, 0 for
+  no limit (`fail_jobs_queued_too_long`), with the reason that they waited that long, and tells
+  MSS. Nothing writes a job waiting there before its claim, so that is when it was preprocessed.
 - **A dead worker's job**: every pass starts with `fail_overdue_jobs`, which fails the device's
   jobs whose working stage was claimed longer ago than that stage's limit, as the worker that
   claimed them can no longer be running it. Whichever worker looks first does it.
@@ -945,8 +949,8 @@ Worth knowing before you are surprised by them:
   so a worker run alone with `bcc worker` is not; nor is a worker stuck while it starts, before
   its first pass sets a deadline, nor the API (§6.5).
 - **Nothing ages a waiting job.** Outside bookings, a job longer than the time to the next
-  booking waits while shorter ones overtake it, for as long as the bookings leave it no room
-  (§6.3).
+  booking waits while shorter ones overtake it, for as long as the bookings leave it no room;
+  `BCC_MAX_EXECUTION_QUEUE_TIME` fails it after a day, rather than run it sooner (§6.3).
 - **SQLite serialises every claim.** The workers' claims take its write lock; one database
   shared by many devices queues their claims behind each other.
 - **The simulators do not recalibrate**: `QiskitDynamicsExecutor.recalibrate` returns nothing,
