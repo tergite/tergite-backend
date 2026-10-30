@@ -141,31 +141,6 @@ def save_job_in_hdf5(job: QuantumJob, file: Path):
         _save_results_to_hdf5(hdf5_file, job.raw_results)
 
 
-def _collect_from_obj(acq_instrs: Sequence["PulseQobjInstruction"]) -> AcqParams:
-    """Gather qubits / memory_slots from a sequence of `object` instructions."""
-    qubits: List[int] = []
-    memory_slots: List[int] = []
-
-    for inst in acq_instrs:
-        if not hasattr(inst, "qubits") or not hasattr(inst, "memory_slot"):
-            raise ValueError(
-                f"Acquire instruction @t0={getattr(inst, 't0', '-')} "
-                "is missing 'qubits' or 'memory_slot'."
-            )
-
-        if len(inst.qubits) != len(inst.memory_slot):
-            raise ValueError(
-                f"Acquire instruction @t0={getattr(inst, 't0', '-')} "
-                "has mismatched list lengths "
-                f"(qubits={len(inst.qubits)}, memory_slot={len(inst.memory_slot)})."
-            )
-
-        qubits.extend(inst.qubits)
-        memory_slots.extend(inst.memory_slot)
-
-    return AcqParams(qubits=qubits, memory_slots=memory_slots)
-
-
 def get_acquisition_parameters_from_experiment(
     exp_index: int,
     qobj: "PulseQobj",
@@ -198,20 +173,6 @@ def get_acquisition_parameters_from_experiment(
     if not acq_instrs:
         raise ValueError(f"Experiment {exp_index} contains no 'acquire' instruction.")
     return _collect_from_obj(acq_instrs)
-
-
-def _parse_exp_index_from_name(expt_name: str, delimiter: str = "~") -> Optional[int]:
-    """
-    Your backend uses get_experiment_name(name, idx) => f"{name}~{idx}"
-    This extracts that trailing idx. Returns None if parsing fails.
-    """
-    if delimiter not in expt_name:
-        return None
-    try:
-        _, idx_str = expt_name.rsplit(delimiter, 1)
-        return int(idx_str)
-    except Exception:
-        return None
 
 
 def discriminate_results(
@@ -750,3 +711,42 @@ def _get_experiment_order(expt_name: str) -> Tuple[int, int, str]:
     after, by name; an index and a name never compare, as an int and a str do not"""
     index = _parse_exp_index_from_name(expt_name)
     return (0, index, "") if index is not None else (1, 0, expt_name)
+
+
+def _collect_from_obj(acq_instrs: Sequence["PulseQobjInstruction"]) -> AcqParams:
+    """Gather qubits / memory_slots from a sequence of `object` instructions."""
+    qubits: List[int] = []
+    memory_slots: List[int] = []
+
+    for inst in acq_instrs:
+        if not hasattr(inst, "qubits") or not hasattr(inst, "memory_slot"):
+            raise ValueError(
+                f"Acquire instruction @t0={getattr(inst, 't0', '-')} "
+                "is missing 'qubits' or 'memory_slot'."
+            )
+
+        if len(inst.qubits) != len(inst.memory_slot):
+            raise ValueError(
+                f"Acquire instruction @t0={getattr(inst, 't0', '-')} "
+                "has mismatched list lengths "
+                f"(qubits={len(inst.qubits)}, memory_slot={len(inst.memory_slot)})."
+            )
+
+        qubits.extend(inst.qubits)
+        memory_slots.extend(inst.memory_slot)
+
+    return AcqParams(qubits=qubits, memory_slots=memory_slots)
+
+
+def _parse_exp_index_from_name(expt_name: str, delimiter: str = "~") -> Optional[int]:
+    """
+    Your backend uses get_experiment_name(name, idx) => f"{name}~{idx}"
+    This extracts that trailing idx. Returns None if parsing fails.
+    """
+    if delimiter not in expt_name:
+        return None
+    try:
+        _, idx_str = expt_name.rsplit(delimiter, 1)
+        return int(idx_str)
+    except Exception:
+        return None

@@ -19,6 +19,18 @@ from tergite_tuner.config.session import SessionOptions
 from app.libs.device_parameters import BackendConfig, DeviceCalibration
 from app.utils.datetime import utc_now_str
 
+_FIXED_DURATION_COUPLER_NODES = (
+    NodeEnum.CZ_CHEVRON,
+    NodeEnum.CZ_CALIBRATION,
+    NodeEnum.CZ_LOCAL_PHASES,
+    NodeEnum.CZ_RB,
+)
+_NON_FIXED_DURATION_COUPLER_NODES = (
+    NodeEnum.CZ_CALIBRATION,
+    NodeEnum.CZ_LOCAL_PHASES,
+    NodeEnum.CZ_RB,
+)
+
 
 class _RunMode(enum.Enum):
     ALL_QUBITS = 0
@@ -43,18 +55,6 @@ _INITIAL_QUBITS_NODE_RUN_MAP = {
     NodeEnum.RO_AMPLITUDE_THREE_STATE_OPTIMIZATION: _RunMode.ALL_QUBITS,
     NodeEnum.RANDOMIZED_BENCHMARKING: _RunMode.ALL_QUBITS,
 }
-
-_FIXED_DURATION_COUPLER_NODES = (
-    NodeEnum.CZ_CHEVRON,
-    NodeEnum.CZ_CALIBRATION,
-    NodeEnum.CZ_LOCAL_PHASES,
-    NodeEnum.CZ_RB,
-)
-_NON_FIXED_DURATION_COUPLER_NODES = (
-    NodeEnum.CZ_CALIBRATION,
-    NodeEnum.CZ_LOCAL_PHASES,
-    NodeEnum.CZ_RB,
-)
 
 
 def recalibrate(

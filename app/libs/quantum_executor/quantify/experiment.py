@@ -72,35 +72,6 @@ FREQ_CONTROL_INSTRUCTIONS = (SetFreqInstruction, ShiftFreqInstruction)
 PLACEHOLDER_CLOCK_FREQ_HZ = 0.0
 
 
-def _is_drive_clock(clock: str) -> bool:
-    # qXX.01 or qXX.12
-    parts = clock.split(".")
-    return len(parts) == 2 and parts[1] in {"01", "12"}
-
-
-def _is_baseband_clock(clock: str) -> bool:
-    # baseband clock can be 0
-    return clock.endswith(".baseband") or clock == "cl0.baseband"
-
-
-@dataclass(frozen=True)
-class _ChannelPlan:
-    clock: str
-    schedulable: List[BaseInstruction]
-    # whether the channel has no instructions, even ones left out of the schedule
-    is_empty: bool
-
-
-@dataclass
-class _State:
-    dispatch_tick: (
-        int  # how many timing instructions have been "issued" on this channel
-    )
-    sync_tick: int  # accumulated global wait applied to this channel
-    last_label: str  # last EMITTED op label (for tail idle)
-    is_any_emitted: bool
-
-
 @dataclass(frozen=True)
 class QuantifyExperiment(NativeExperiment[Schedule]):
     channel_registry: QuantifyChannelRegistry
@@ -160,6 +131,24 @@ class QuantifyExperiment(NativeExperiment[Schedule]):
             schedule=schedule,
             duration=duration,
         )
+
+
+@dataclass(frozen=True)
+class _ChannelPlan:
+    clock: str
+    schedulable: List[BaseInstruction]
+    # whether the channel has no instructions, even ones left out of the schedule
+    is_empty: bool
+
+
+@dataclass
+class _State:
+    dispatch_tick: (
+        int  # how many timing instructions have been "issued" on this channel
+    )
+    sync_tick: int  # accumulated global wait applied to this channel
+    last_label: str  # last EMITTED op label (for tail idle)
+    is_any_emitted: bool
 
 
 def _add_instruction_to_channel_registry(
@@ -432,3 +421,14 @@ def _add_tail_idles(
 def _to_tick(t: float, timegrid_interval: float) -> int:
     """Gets the grid tick nearest the time in seconds"""
     return int(math.floor(t / timegrid_interval + 0.5 + 1e-12))
+
+
+def _is_drive_clock(clock: str) -> bool:
+    # qXX.01 or qXX.12
+    parts = clock.split(".")
+    return len(parts) == 2 and parts[1] in {"01", "12"}
+
+
+def _is_baseband_clock(clock: str) -> bool:
+    # baseband clock can be 0
+    return clock.endswith(".baseband") or clock == "cl0.baseband"
