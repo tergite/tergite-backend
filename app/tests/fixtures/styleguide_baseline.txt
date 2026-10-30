@@ -1,12 +1,6 @@
 # Code that broke a style rule when app/tests/test_styleguide.py was added (step 1.9).
 # This list only shrinks: delete a line when its violation is fixed, never add one.
 boolean: app/api/dependencies.py::get_mss_token_claims_dep(job_exists)
-boolean: app/api/dtos.py::PaginatedListResponse.model_dump(by_alias)
-boolean: app/api/dtos.py::PaginatedListResponse.model_dump(exclude_data_none_fields)
-boolean: app/api/dtos.py::PaginatedListResponse.model_dump(exclude_defaults)
-boolean: app/api/dtos.py::PaginatedListResponse.model_dump(exclude_unset)
-boolean: app/api/dtos.py::PaginatedListResponse.model_dump(round_trip)
-boolean: app/api/dtos.py::PaginatedListResponse.model_dump(serialize_as_any)
 boolean: app/api/routers/jobs.py::submit_job(force_normal_queue)
 boolean: app/libs/device_parameters/dtos.py::Device.characterized
 boolean: app/libs/device_parameters/dtos.py::Device.open_pulse
@@ -64,7 +58,6 @@ type-hints: app/api/dependencies.py::get_job_id_dependency
 type-hints: app/api/dependencies.py::get_mss_token_claims_dep
 type-hints: app/api/dependencies.py::lifespan
 type-hints: app/api/device_routing.py::DeviceRoutingMiddleware.__call__
-type-hints: app/api/dtos.py::PaginatedListResponse.model_dump
 type-hints: app/api/routers/devices.py::get_dynamic_properties
 type-hints: app/api/routers/devices.py::get_static_properties
 type-hints: app/api/routers/logfiles.py::download_logfile
@@ -194,7 +187,6 @@ type-hints: app/utils/strings.py::validate_uuid_str
 verb: app/api/__init__.py::root
 verb: app/api/dependencies.py::get_mss_token_claims_dep.dependency_injector
 verb: app/api/dependencies.py::lifespan
-verb: app/api/dtos.py::PaginatedListResponse.model_dump
 verb: app/libs/device_parameters/dtos.py::CouplerCalibration.prep_id
 verb: app/libs/device_parameters/dtos.py::QubitCalibration.prep_id
 verb: app/libs/device_parameters/dtos.py::ResonatorCalibration.prep_id

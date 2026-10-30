@@ -30,7 +30,7 @@ from ..dependencies import (
     get_verified_mss_user_id,
     validate_job_file,
 )
-from ..dtos import CancellationDetails, PaginatedListResponse
+from ..dtos import CancellationDetails
 
 router = APIRouter()
 
@@ -166,5 +166,6 @@ async def view_jobs(
     data = scheduler.get_many_jobs(
         device, user_id=user_id, status=status, skip=skip, limit=limit
     )
-    results = PaginatedListResponse[Job](skip=skip, limit=limit, data=data)
-    return results.model_dump(mode="json")
+    # each job without its fields that are None, as /jobs has always listed them
+    jobs = [job.model_dump(mode="json", exclude_none=True) for job in data]
+    return {"skip": skip, "limit": limit, "data": jobs}
