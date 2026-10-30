@@ -135,7 +135,7 @@ async def create_user(
     Returns:
         the created user
     """
-    user = booking.create_user(db_engine, data=data)
+    user = booking.create_user(db_engine, user_info=data)
     return UserProfile.from_user(user)
 
 

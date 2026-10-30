@@ -50,7 +50,7 @@ _Filter = _ColumnExpressionArgument[bool] | bool
 def create_booking(
     db_engine: Engine,
     user_id: str,
-    data: NewBookingInfo,
+    booking_info: NewBookingInfo,
     config: BookingsConfig,
     now: datetime,
 ) -> Booking:
@@ -59,7 +59,7 @@ def create_booking(
     Args:
         db_engine: the SQL engine to save new job in
         user_id: the id of the User who is making the booking
-        data: the booking info
+        booking_info: the booking info
         config: the device's limits on bookings
         now: the time the booking is made at
 
@@ -71,17 +71,17 @@ def create_booking(
         ConflictError: booking conflicts with another booking at {start_utc} to {end_utc}
         MaxBookingsError: you have exceeded the maximum {max_slots_per_day} bookings per day for {day_start}-{day_end}
     """
-    _validate_times(data, config=config, now=now)
+    _validate_times(booking_info, config=config, now=now)
     with open_immediate_session(db_engine) as session:
-        _validate_no_overlap(session, data)
+        _validate_no_overlap(session, booking_info)
         _validate_max_slots(
             session,
             user_id=user_id,
-            booking_info=data,
+            booking_info=booking_info,
             max_slots_per_day=config.max_slots_per_day,
         )
 
-        booking = Booking(user_id=user_id, **data.model_dump())
+        booking = Booking(user_id=user_id, **booking_info.model_dump())
         session.add(booking)
         session.commit()
         session.refresh(booking)
@@ -233,12 +233,12 @@ def get_or_create_user(db_engine: Engine, user_id: str) -> User:
         return user
 
 
-def create_user(db_engine: Engine, data: NewUserInfo) -> User:
+def create_user(db_engine: Engine, user_info: NewUserInfo) -> User:
     """Creates a new user and returns it
 
     Args:
         db_engine: the SQL engine to save new job in
-        data: the user info
+        user_info: the user info
 
     Returns:
         the created user
@@ -247,13 +247,13 @@ def create_user(db_engine: Engine, data: NewUserInfo) -> User:
         ConflictError: a user with the id {id} or the email {email} already exists
     """
     with Session(db_engine) as session:
-        user = User(**data.model_dump())
+        user = User(**user_info.model_dump())
         session.add(user)
         try:
             session.commit()
         except IntegrityError:
             raise ConflictError(
-                f"a user with the id {data.id} or the email {data.email} already exists"
+                f"a user with the id {user_info.id} or the email {user_info.email} already exists"
             )
         session.refresh(user)
         session.expunge_all()

@@ -53,7 +53,7 @@ def test_concurrent_overlapping_bookings_book_the_slot_once(tmp_path, mocker):
             booking_service.create_booking(
                 db_engine,
                 user_id,
-                data=booking_info,
+                booking_info=booking_info,
                 config=_BOOKINGS_CONFIG,
                 now=get_utc_now(),
             )

@@ -263,24 +263,17 @@ def apply_linear_discriminator(
         Discriminated 0 and 1 states as numpy array
 
     """
-    discriminator_ = device_calibration.discriminators["lda"]
     # TODO: We are having two "qubit_id" (e.g. q12 = 0, q13 = 1)
     #  and we should have some more meaningful representation
-    qubit_id_ = f"q{qubit_idx}"
+    lda = device_calibration.discriminators["lda"][f"q{qubit_idx}"]
+    coefficients = np.array([lda["coef_0"], lda["coef_1"]])
+    intercept = np.array(lda["intercept"])
 
-    coefficients = np.array(
-        [
-            discriminator_[qubit_id_]["coef_0"],
-            discriminator_[qubit_id_]["coef_1"],
-        ]
-    )
-    intercept = np.array(discriminator_[qubit_id_]["intercept"])
+    iq_pairs = np.zeros((iq_points.shape[0], 2))
+    iq_pairs[:, 0] = iq_points.real
+    iq_pairs[:, 1] = iq_points.imag
 
-    data = np.zeros((iq_points.shape[0], 2))
-    data[:, 0] = iq_points.real
-    data[:, 1] = iq_points.imag
-
-    scores = data @ coefficients.T + intercept
+    scores = iq_pairs @ coefficients.T + intercept
 
     return (scores.ravel() > 0).astype(np.int_)
 

@@ -73,7 +73,7 @@ def submit_booking(
     booking = create_booking(
         device.bookings_db,
         user_id=user_id,
-        data=booking_info,
+        booking_info=booking_info,
         config=BookingsConfig.from_settings(device.settings),
         now=device.settings.get_utc_now(),
     )
