@@ -157,7 +157,7 @@ def preprocess_qobj(
         native_expts = executor.to_native_experiments(qobj, native_config)
         total_duration = sum([expt.duration for expt in native_expts])
 
-        data = NativeExptMetadata(
+        expt_metadata = NativeExptMetadata(
             native_config=native_config,
             tuid=tuid,
             qobj=qobj,
@@ -166,7 +166,7 @@ def preprocess_qobj(
 
         results_file_path = _get_preprocessed_expt_file(job_id, folder=results_folder)
         with open(results_file_path, "wb") as file:
-            pickle.dump(data.to_dict(), file)
+            pickle.dump(expt_metadata.to_dict(), file)
 
         logger.info(f"Translated to {len(native_expts)} native experiments.")
         return total_duration, str(results_file_path)

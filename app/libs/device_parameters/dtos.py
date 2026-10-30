@@ -204,18 +204,18 @@ class QubitCalibration(BaseModel):
 
     @classmethod
     def from_calib_results(
-        cls, data: "CalibrationResults", **kwargs
+        cls, calib_results: "CalibrationResults", **kwargs
     ) -> List["QubitCalibration"]:
         """Generates new instances of QubitCalibration from the calibration results
 
         Args:
-            data: the for the qubit in redis
+            calib_results: the for the qubit in redis
 
         Returns:
             the list of new instances of QubitCalibration
         """
         results: List[QubitCalibration] = []
-        for qubit, qubit_data in data.transmons.items():
+        for qubit, qubit_data in calib_results.transmons.items():
             results.append(
                 QubitCalibration(
                     id=qubit,
@@ -299,18 +299,18 @@ class ResonatorCalibration(BaseModel):
 
     @classmethod
     def from_calib_results(
-        cls, data: "CalibrationResults", **kwargs
+        cls, calib_results: "CalibrationResults", **kwargs
     ) -> List["ResonatorCalibration"]:
         """Generates new instances of ResonatorCalibration from the calibration results
 
         Args:
-            data: the calibration results
+            calib_results: the calibration results
 
         Returns:
             the list of new instances of ResonatorCalibration
         """
         results: List[ResonatorCalibration] = []
-        for qubit, item in data.transmons.items():
+        for qubit, item in calib_results.transmons.items():
             results.append(
                 ResonatorCalibration(
                     id=qubit,
@@ -424,7 +424,7 @@ class CouplerCalibration(BaseModel):
     @classmethod
     def from_calib_results(
         cls,
-        data: "CalibrationResults",
+        calib_results: "CalibrationResults",
         name_id_map: Dict[str, int],
         reverse_phase_qubits: Tuple[str, ...] = (),
         **kwargs,
@@ -432,7 +432,7 @@ class CouplerCalibration(BaseModel):
         """Generates new instances of CouplerCalibration from the calibration results
 
         Args:
-            data: the calibration results
+            calib_results: the calibration results
             name_id_map: the map for the names of couplers
                     in calibration to their index in BCC
             reverse_phase_qubits: the qubits that have the reverse phase of what
@@ -445,7 +445,7 @@ class CouplerCalibration(BaseModel):
             the list of new instances of CouplerCalibration
         """
         results: List[CouplerCalibration] = []
-        for coupler, item in data.couplers.items():
+        for coupler, item in calib_results.couplers.items():
             try:
                 bcc_coupler_idx = name_id_map[coupler]
             except KeyError:
@@ -559,7 +559,7 @@ class DeviceCalibration(BaseModel):
     @classmethod
     def from_calib_results(
         cls,
-        data: "CalibrationResults",
+        calib_results: "CalibrationResults",
         name_id_map: Dict[str, int],
         reverse_phase_qubits: Tuple[str, ...] = (),
         **kwargs: Any,
@@ -567,9 +567,9 @@ class DeviceCalibration(BaseModel):
         """Generates a new instance of DeviceCalibration from the calibration results
 
         Args:
-            data: the calibration results
+            calib_results: the calibration results
             name_id_map: the map for the names of couplers/qubits
-                    in calibration data to their identifier in BCC
+                    in calibration calib_results to their identifier in BCC
             reverse_phase_qubits: the qubits that have their phases reversed on couplers
             kwargs: extra args like:
 
@@ -584,10 +584,10 @@ class DeviceCalibration(BaseModel):
 
         return DeviceCalibration(
             **kwargs,
-            qubits=QubitCalibration.from_calib_results(data),
-            resonators=ResonatorCalibration.from_calib_results(data),
+            qubits=QubitCalibration.from_calib_results(calib_results),
+            resonators=ResonatorCalibration.from_calib_results(calib_results),
             couplers=CouplerCalibration.from_calib_results(
-                data,
+                calib_results,
                 name_id_map=name_id_map,
                 reverse_phase_qubits=reverse_phase_qubits,
             ),
@@ -598,7 +598,7 @@ class DeviceCalibration(BaseModel):
                         "coef_1": item.lda_coef_1,
                         "intercept": item.lda_intercept,
                     }
-                    for qubit, item in data.transmons.items()
+                    for qubit, item in calib_results.transmons.items()
                 }
             },
         )
@@ -692,7 +692,7 @@ class BackendConfig(BaseModel):
     @classmethod
     def from_toml(cls, file: PathLike, seed_file: PathLike):
         """Creates a BackendConfig instance from a TOML file"""
-        data = toml.load(file)
+        config = toml.load(file)
 
         calibration_config = None
         try:
@@ -704,9 +704,9 @@ class BackendConfig(BaseModel):
             pass
 
         return cls(
-            general_config=_BackendGeneralConfig(**data.get("general_config", {})),
-            device_config=_BackendDeviceConfig(**data.get("device_config", {})),
-            gates={k: {**v} for k, v in data.get("gates", {}).items()},
+            general_config=_BackendGeneralConfig(**config.get("general_config", {})),
+            device_config=_BackendDeviceConfig(**config.get("device_config", {})),
+            gates={k: {**v} for k, v in config.get("gates", {}).items()},
             calibration_config=calibration_config,
         )
 
@@ -726,22 +726,22 @@ class BackendConfig(BaseModel):
 
 def _get_local_phases(
     coupler: str,
-    data: "_CouplerInRedis",
+    coupler_results: "_CouplerInRedis",
     reverse_phase_qubits: Tuple[str, ...],
 ) -> Tuple[float, float]:
-    """Gets the local phases in radians for given the data from redis
+    """Gets the local phases in radians for given the coupler_results from redis
 
     Args:
         coupler: the coupler name
-        data: the data of the coupler as obtained from the redis
+        coupler_results: the coupler_results of the coupler as obtained from the redis
         reverse_phase_qubits: the qubits that have the reverse phase of what they sh
             should have phase on their couplers
 
     Returns:
         tuple of (control_qubit_local_phase, target_qubit_local_phase)
     """
-    control_phase = data.cz_dynamic_control
-    target_phase = data.cz_dynamic_target
+    control_phase = coupler_results.cz_dynamic_control
+    target_phase = coupler_results.cz_dynamic_target
 
     q1, q2 = coupler.split("_")
     affected_qubits = set(reverse_phase_qubits) & {q1, q2}
@@ -783,7 +783,7 @@ def _map_calibration_values(
     if isinstance(item, CalibrationValue):
         return get_leaf(item)
     if isinstance(item, BaseModel):
-        data = {
+        fields = {
             name: _map_calibration_values(
                 getattr(item, name), get_leaf, should_include_computed
             )
@@ -791,10 +791,10 @@ def _map_calibration_values(
             if getattr(item, name) is not None
         }
         if should_include_computed:
-            data.update(
+            fields.update(
                 {name: getattr(item, name) for name in type(item).model_computed_fields}
             )
-        return data
+        return fields
     if isinstance(item, (list, tuple)):
         return [
             _map_calibration_values(value, get_leaf, should_include_computed)

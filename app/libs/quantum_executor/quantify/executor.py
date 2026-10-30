@@ -331,13 +331,13 @@ def _to_drive_clock(qubit_id: Any) -> str:
 
 def _save_calibration_seed(calibration: DeviceCalibration, file: Path) -> None:
     """Writes the calibration to the seed file, which the backend config is read with"""
-    data = {
+    seed = {
         "calibration_config": calibration.to_calibration_config().model_dump(
             mode="json"
         )
     }
     with open(file, "w") as seed_file:
-        toml.dump(data, seed_file)
+        toml.dump(seed, seed_file)
 
 
 def _create_clusters(metadata: QuantifyMetadata) -> List[qblox_instruments.Cluster]:

@@ -68,8 +68,8 @@ class QiskitDynamicsExecutor(QuantumExecutor):
             experiment.schedule, shots=shots, meas_return=meas_return
         )
         result: qiskitResult = job.result()
-        data: npt.NDArray[np.floating] = result.data()["memory"]
-        return _to_xarray(data=data, meas_return=meas_return)
+        memory: npt.NDArray[np.floating] = result.data()["memory"]
+        return _to_xarray(data=memory, meas_return=meas_return)
 
     def to_native_experiments(
         self, qobj: PulseQobj, native_config: NativeQobjConfig, /

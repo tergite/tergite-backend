@@ -127,9 +127,9 @@ class QuantifyMetadata(RootModel[Dict[str, InstrumentConfig]]):
             the QuantifyMetadata represented in the YAML file
         """
         with open(file_path, "r") as file:
-            data = yaml.safe_load(file)
+            metadata = yaml.safe_load(file)
 
-        return cls.model_validate(data)
+        return cls.model_validate(metadata)
 
     @property
     def experiment_delay(self) -> float:
@@ -152,7 +152,6 @@ def load_quantify_config(
         the QbloxHardwareCompilationConfig got from the quantify json file
     """
     with open(file_path) as file:
-        data = json.load(file)
+        config = json.load(file)
 
-    # new_config = QbloxHardwareCompilationConfig.from_old_style_hardware_config(data)
-    return QbloxHardwareCompilationConfig.model_validate(data)
+    return QbloxHardwareCompilationConfig.model_validate(config)
