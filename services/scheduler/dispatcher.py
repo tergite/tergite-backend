@@ -48,9 +48,6 @@ from .store import JobRow, RecalibrationRow
 from .utils import mark_job_failed, update_job_in_mss, update_job_stage
 from .wakeups import WakeUpListener, WorkerKind, wake_workers
 
-# the longest wait, in seconds, of a worker with nothing to claim: the delay of a lost
-# wake-up, a due recalibration, or the failure of a job whose worker died
-_MAX_WAIT_SECONDS = 5.0
 # what a worker may take past the time its step is allowed, MSS's response timeout aside,
 # before the process that started it takes it to be stuck
 _DEADLINE_MARGIN_SECONDS = 60.0
@@ -148,7 +145,12 @@ class Dispatcher:
 
     def _get_wait_seconds(self) -> float:
         """Gets the seconds to the bookings' next change in which jobs may execute, at most
-        the longest wait"""
+        the shortest of its devices' BCC_MAX_WORKER_WAIT_TIME: the delay of a lost wake-up, a
+        due recalibration, or the failure of a job whose worker died"""
+        max_wait_seconds = min(
+            device.settings.max_worker_wait_time
+            for device in self.device_resources.values()
+        )
         change_times = []
         if self._should_run_heavy:
             change_times = [
@@ -156,9 +158,9 @@ class Dispatcher:
             ]
         next_change_at = min(filter(None, change_times), default=None)
         if next_change_at is None:
-            return _MAX_WAIT_SECONDS
+            return max_wait_seconds
         seconds_to_change = (next_change_at - get_utc_now()).total_seconds()
-        return min(seconds_to_change, _MAX_WAIT_SECONDS)
+        return min(seconds_to_change, max_wait_seconds)
 
     def _run_once(self, device: DeviceResources) -> bool:
         if self._deadline is not None:

@@ -28,7 +28,6 @@ from pytest_mock import MockerFixture
 from libs.queues.dtos import Job, JobStatus, Stage, Timestamps
 from services.booking import Booking
 from services.scheduler import WorkerDeadline
-from services.scheduler import dispatcher as scheduler_dispatcher
 from services.scheduler import tasks as scheduler_tasks
 from services.scheduler.dispatcher import fail_overdue_jobs
 from tests.utils.api import (
@@ -1653,8 +1652,13 @@ def test_waiting_workers_are_woken_for_a_new_job(
     client, jobs_folder, worker, job, mocker
 ):
     """Workers that would otherwise wait a minute run a new job through at once"""
-    mocker.patch.object(scheduler_dispatcher, "_MAX_WAIT_SECONDS", 60)
-    devices = worker.device_resources
+    devices = {
+        name: dataclasses.replace(
+            device,
+            settings=device.settings.model_copy(update={"max_worker_wait_time": 60}),
+        )
+        for name, device in worker.device_resources.items()
+    }
     workers = [
         TestWorker(devices, should_run_heavy=True, should_run_light=False),
         TestWorker(devices, should_run_heavy=False, should_run_light=True),

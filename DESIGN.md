@@ -404,14 +404,17 @@ no wake-up either, as it loops on at once.
 **The timeout** (`Dispatcher._get_wait_seconds`) is computed by the worker itself, as nothing
 sends a datagram when time passes:
 
-- A light worker always waits at most `_MAX_WAIT_SECONDS`, 5 s.
+- A light worker always waits at most `BCC_MAX_WORKER_WAIT_TIME`, 5 s by default, the shortest
+  of its devices'.
 - A heavy worker, for each of its devices that has a job in `EXEC_Q`, takes the earliest of
   these that is still in the future (`get_next_change_at`): the active booking's end; the
   moment its booker becomes idle (their last activity plus `BCC_MAX_IDLE_TIME`); the next
-  booking's start. It waits until the earliest over its devices, but at most 5 s.
+  booking's start. It waits until the earliest over its devices, but at most
+  `BCC_MAX_WORKER_WAIT_TIME`.
 
 These are the moments the booking rule of 6.3 can start to pick a different job, so a waiting
-job starts on time instead of up to 5 s late. The 5 s cap bounds everything nothing announces:
+job starts on time instead of up to `BCC_MAX_WORKER_WAIT_TIME` late. That cap bounds everything
+nothing announces:
 a due recalibration, a dead worker's job reaching its timeout, and a lost datagram (a port
 file read half written costs that worker its timeout).
 
@@ -941,7 +944,6 @@ Worth knowing before you are surprised by them:
 - **Some stuck processes are not noticed.** A worker's deadline is checked only by `bcc start`,
   so a worker run alone with `bcc worker` is not; nor is a worker stuck while it starts, before
   its first pass sets a deadline, nor the API (§6.5).
-- **The 5 s wait is a constant**, `_MAX_WAIT_SECONDS` in the dispatcher, not a setting.
 - **Nothing ages a waiting job.** Outside bookings, a job longer than the time to the next
   booking waits while shorter ones overtake it, for as long as the bookings leave it no room
   (§6.3).

@@ -225,7 +225,7 @@ _Note: The user must specify the backend they are booking when submitting reques
   datagram to the loopback port it names in `<storage root>/<device>/wakeups/`. A heavy worker
   with a job waiting to execute also wakes itself at the next moment the rules below could pick
   a different job: the active booking's end, its booker turning idle, or the next booking's
-  start. No worker waits more than 5 seconds.
+  start. No worker waits more than `BCC_MAX_WORKER_WAIT_TIME`, 5 seconds by default.
 - [DESIGN.md §6](../DESIGN.md#6-queueing-the-dispatcher) describes this in full, with diagrams.
 
 ### When there is no active booking:

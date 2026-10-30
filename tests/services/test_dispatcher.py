@@ -43,10 +43,38 @@ def test_a_light_worker_takes_its_devices_in_turn(mocker):
     assert postprocessed == ["alpha", "beta", "alpha", "beta"]
 
 
-def _get_device(name: str) -> SimpleNamespace:
+def test_a_worker_with_nothing_to_do_waits_the_shortest_of_its_devices_settings(
+    mocker,
+):
+    wait_timeouts = []
+    mocker.patch.object(dispatcher, "send_kept_mss_events", return_value=True)
+    mocker.patch.object(dispatcher, "fail_overdue_jobs")
+    mocker.patch.object(dispatcher, "run_next_postprocessing", return_value=False)
+    listener = mocker.patch.object(dispatcher, "WakeUpListener").return_value
+    devices = {
+        "alpha": _get_device("alpha", max_worker_wait_time=2.5),
+        "beta": _get_device("beta", max_worker_wait_time=0.5),
+    }
+    worker = Dispatcher(devices, should_run_heavy=False, should_run_light=True)
+
+    def record_timeout(timeout: float) -> None:
+        wait_timeouts.append(timeout)
+        worker.stop()
+
+    listener.wait.side_effect = record_timeout
+
+    worker.run()
+
+    assert wait_timeouts == [0.5]
+
+
+def _get_device(name: str, max_worker_wait_time: float = 5) -> SimpleNamespace:
     return SimpleNamespace(
         settings=SimpleNamespace(
-            default_prefix=name, mss_response_timeout=1, mss_max_reconnection_delay=1
+            default_prefix=name,
+            mss_response_timeout=1,
+            mss_max_reconnection_delay=1,
+            max_worker_wait_time=max_worker_wait_time,
         ),
         bookings_db=None,
         mss_client=None,

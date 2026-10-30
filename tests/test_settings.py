@@ -167,6 +167,15 @@ def test_executor_options_allow_resetting_the_clusters_when_set(monkeypatch):
     assert get_executor_options(settings.get_device_settings()).is_cluster_reset_allowed
 
 
+@pytest.mark.parametrize("max_worker_wait_time", ["0", "-1"])
+def test_max_worker_wait_time_must_be_above_zero(monkeypatch, max_worker_wait_time):
+    """A worker waiting no time would look for work without pause"""
+    monkeypatch.setenv("BCC_MAX_WORKER_WAIT_TIME", max_worker_wait_time)
+
+    with pytest.raises(ValidationError, match="max_worker_wait_time"):
+        _reload_settings()
+
+
 def _reload_settings() -> None:
     """Re-reads the settings from the env variables, as the app reads them at run time"""
     import settings
