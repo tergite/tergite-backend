@@ -15,14 +15,14 @@ of PERF_BACKLOG_USER_ID, on the device that BCC_ENV_FILE names; dev/perf/record.
 import os
 from datetime import timedelta
 
+from sqlalchemy import Engine
 from sqlmodel import Session
 
 import settings
 from app.libs.queues.dtos import Job, JobStatus, Stage
 from app.services.booking import Booking, User
-from app.services.scheduler import get_jobs_store
+from app.services.scheduler import JobsStore
 from app.utils.datetime import get_utc_now, utc_now_str
-from app.utils.redis import get_redis_connection
 from app.utils.sql_db import get_sql_engine, migrate_sql_db
 from app.utils.strings import uuid_str
 
@@ -32,15 +32,17 @@ BOOKING_COUNT = 200
 
 def main() -> None:
     user_id = os.environ["PERF_BACKLOG_USER_ID"]
-    store_jobs(user_id)
-    store_bookings(user_id)
+    db_url = settings.get_device_settings().booking_db_url
+    # seeded before the API starts, which would migrate it
+    migrate_sql_db(db_url)
+    db_engine = get_sql_engine(db_url)
+    store_jobs(db_engine, user_id)
+    store_bookings(db_engine, user_id)
 
 
-def store_jobs(user_id: str) -> None:
+def store_jobs(db_engine: Engine, user_id: str) -> None:
     device_settings = settings.get_device_settings()
-    jobs_store = get_jobs_store(
-        get_redis_connection(device_settings.rq_redis_url), device_settings
-    )
+    jobs_store = JobsStore.from_settings(db_engine, device_settings)
     for _ in range(JOB_COUNT):
         jobs_store.insert(
             Job(
@@ -54,13 +56,10 @@ def store_jobs(user_id: str) -> None:
         )
 
 
-def store_bookings(user_id: str) -> None:
+def store_bookings(db_engine: Engine, user_id: str) -> None:
     """Stores hourly bookings from tomorrow on, so that none is under way during the run"""
     first_start = get_utc_now() + timedelta(days=1)
-    db_url = settings.get_device_settings().booking_db_url
-    # seeded before the API starts, which would migrate it
-    migrate_sql_db(db_url)
-    with Session(get_sql_engine(db_url)) as session:
+    with Session(db_engine) as session:
         session.add(User(id=user_id, name="Perf", email="perf@example.com"))
         for index in range(BOOKING_COUNT):
             start_utc = first_start + timedelta(hours=index)

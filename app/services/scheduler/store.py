@@ -1,6 +1,7 @@
 # This code is part of Tergite
 #
 # (C) Chalmers Next Labs 2025
+# (C) Copyright Chalmers Next Labs AB 2026
 #
 # This code is licensed under the Apache License, Version 2.0. You may
 # obtain a copy of this license in the LICENSE.txt file in the root directory
@@ -10,23 +11,134 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 #
-"""Module containing the store for the scheduler service"""
+"""The jobs of a device, in its SQL database"""
+from datetime import datetime, timedelta
+from typing import List, Optional, Self
 
+from sqlalchemy import Engine
+from sqlmodel import Field, Session, SQLModel, col, delete, select
 
-from redis import Redis
-
-from ...libs.queues.dtos import Job
+from ...libs.queues.dtos import Job, JobStatus
 from ...utils.config import DeviceSettings
-from ...utils.redis_store import Collection
+from ...utils.datetime import get_utc_now
+from ...utils.exc import ItemNotFoundError
+from ...utils.sql_db import open_immediate_session
 
 
-def get_jobs_store(redis: Redis, device_settings: DeviceSettings) -> Collection[Job]:
-    """Gets the device's store for the jobs, on the given Redis, which several devices may
-    share, as the device's settings say to keep them"""
-    return Collection(
-        connection=redis,
-        schema=Job,
-        default_ttl=device_settings.jobs_store_ttl,
-        cleanup_interval=device_settings.jobs_store_clean_interval,
-        name=f"{device_settings.default_prefix}:jobs",
-    )
+class JobRow(SQLModel, table=True):
+    """A job, in the jobs table that the devices sharing a database share"""
+
+    __tablename__ = "job"
+
+    device_name: str = Field(primary_key=True)
+    job_id: str = Field(primary_key=True)
+    user_id: Optional[str] = Field(default=None, index=True)
+    status: str = Field(index=True)
+    # when the store last wrote it, which its expiry counts from
+    updated_at: datetime = Field(index=True)
+    # the job, as JSON
+    data: str
+
+
+class JobsStore:
+    """The jobs of one device, which expire `ttl` seconds after they were last written"""
+
+    def __init__(self, db_engine: Engine, device_name: str, ttl: float):
+        self._db_engine = db_engine
+        self._device_name = device_name
+        self._ttl = timedelta(seconds=ttl)
+
+    @classmethod
+    def from_settings(cls, db_engine: Engine, device_settings: DeviceSettings) -> Self:
+        """Gets the store of the device of these settings, in the given database"""
+        return cls(
+            db_engine,
+            device_name=device_settings.default_prefix,
+            ttl=device_settings.jobs_store_ttl,
+        )
+
+    def is_stored(self, job_id: str) -> bool:
+        """Checks whether the device has the job"""
+        with Session(self._db_engine) as session:
+            return session.get(JobRow, (self._device_name, job_id)) is not None
+
+    def insert(self, job: Job) -> Job:
+        """Inserts the job, replacing any of the same id, and deletes the expired ones"""
+        now = get_utc_now()
+        with open_immediate_session(self._db_engine) as session:
+            session.exec(
+                delete(JobRow).where(
+                    col(JobRow.device_name) == self._device_name,
+                    col(JobRow.updated_at) < now - self._ttl,
+                )
+            )
+            session.merge(self._to_row(job, now=now))
+            session.commit()
+        return job
+
+    def get_one(self, job_id: str) -> Job:
+        """Gets the job of the given id
+
+        Raises:
+            ItemNotFoundError: '{job_id}' not found
+        """
+        with Session(self._db_engine) as session:
+            row = session.get(JobRow, (self._device_name, job_id))
+            if row is None:
+                raise ItemNotFoundError(f"'{job_id}' not found")
+            return Job.model_validate_json(row.data)
+
+    def update(self, job_id: str, updates: dict) -> Job:
+        """Sets the given fields of the job, and returns it
+
+        Raises:
+            ItemNotFoundError: '{job_id}' not found
+        """
+        # immediate, so that no other process writes the job between the read and the write
+        with open_immediate_session(self._db_engine) as session:
+            row = session.get(JobRow, (self._device_name, job_id))
+            if row is None:
+                raise ItemNotFoundError(f"'{job_id}' not found")
+            job = Job.model_validate_json(row.data)
+            updated_job = Job.model_validate({**job.model_dump(), **updates})
+            session.merge(self._to_row(updated_job, now=get_utc_now()))
+            session.commit()
+        return updated_job
+
+    def delete(self, job_id: str) -> None:
+        """Deletes the job of the given id, if the device has it"""
+        with Session(self._db_engine) as session:
+            session.exec(
+                delete(JobRow).where(
+                    col(JobRow.device_name) == self._device_name,
+                    col(JobRow.job_id) == job_id,
+                )
+            )
+            session.commit()
+
+    def find(
+        self,
+        user_id: Optional[str] = None,
+        status: Optional[JobStatus] = None,
+        skip: int = 0,
+        limit: Optional[int] = None,
+    ) -> List[Job]:
+        """Finds the jobs of the user, or of the status, or all, least recently written first"""
+        query = select(JobRow).where(col(JobRow.device_name) == self._device_name)
+        if user_id is not None:
+            query = query.where(col(JobRow.user_id) == user_id)
+        if status is not None:
+            query = query.where(col(JobRow.status) == status.value)
+        query = query.order_by(col(JobRow.updated_at)).offset(skip).limit(limit)
+        with Session(self._db_engine) as session:
+            return [Job.model_validate_json(row.data) for row in session.exec(query)]
+
+    def _to_row(self, job: Job, now: datetime) -> JobRow:
+        return JobRow(
+            device_name=self._device_name,
+            job_id=job.job_id,
+            user_id=job.user_id,
+            status=job.status.value,
+            updated_at=now,
+            data=job.model_dump_json(),
+        )

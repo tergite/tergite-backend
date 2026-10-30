@@ -33,8 +33,8 @@ from app.tests.utils.env import (
 )
 from app.tests.utils.jobs import (
     get_job_submission_metadata,
-    get_jobs_in_redis,
     get_raw_jobs,
+    get_stored_jobs,
     submit_jobs,
 )
 from app.tests.utils.params import (
@@ -220,12 +220,10 @@ def test_delete_profile(
         # Run the queue; try to wait for waitlist to transfer things to execution queue
         wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
-        jobs_in_redis = get_jobs_in_redis(redis_conn)
+        stored_jobs = get_stored_jobs()
 
-        deleted_user_jobs = [
-            job for job in jobs_in_redis if job.user_id == curr_user_id
-        ]
-        other_user_jobs = [job for job in jobs_in_redis if job.user_id != curr_user_id]
+        deleted_user_jobs = [job for job in stored_jobs if job.user_id == curr_user_id]
+        other_user_jobs = [job for job in stored_jobs if job.user_id != curr_user_id]
         cancellation_reason = "Cancelled on user deletion"
 
         assert all([v.status == JobStatus.CANCELLED for v in deleted_user_jobs])
@@ -248,11 +246,11 @@ def test_delete_profile_cancels_executing_jobs(
         submit_jobs(client, data=[job_info])
         # preprocessed and executed, waiting for postprocessing
         worker.work(burst=True, max_jobs=2)
-        assert get_jobs_in_redis(redis_conn)[0].status == JobStatus.EXECUTING
+        assert get_stored_jobs()[0].status == JobStatus.EXECUTING
 
         delete_own_profile(client, user_id=job_info["user_id"])
 
-        assert get_jobs_in_redis(redis_conn)[0].status == JobStatus.CANCELLED
+        assert get_stored_jobs()[0].status == JobStatus.CANCELLED
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
@@ -279,7 +277,7 @@ def test_delete_profile_during_booking_releases_the_waitlist(
         delete_own_profile(client, user_id=booker["id"])
         worker.work(burst=True)
 
-        assert get_jobs_in_redis(redis_conn)[0].status == JobStatus.SUCCESSFUL
+        assert get_stored_jobs()[0].status == JobStatus.SUCCESSFUL
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
@@ -326,12 +324,10 @@ def test_admin_remove_user(
         # Run the queue; try to wait for waitlist to transfer things to execution queue
         wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
-        jobs_in_redis = get_jobs_in_redis(redis_conn)
+        stored_jobs = get_stored_jobs()
 
-        deleted_user_jobs = [
-            job for job in jobs_in_redis if job.user_id == curr_user_id
-        ]
-        other_user_jobs = [job for job in jobs_in_redis if job.user_id != curr_user_id]
+        deleted_user_jobs = [job for job in stored_jobs if job.user_id == curr_user_id]
+        other_user_jobs = [job for job in stored_jobs if job.user_id != curr_user_id]
         cancellation_reason = "Cancelled on user deletion"
 
         assert all([v.status == JobStatus.CANCELLED for v in deleted_user_jobs])
@@ -377,5 +373,5 @@ def test_non_admin_remove_user(
         # Run the queue; try to wait for waitlist to transfer things to execution queue
         wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
-        jobs_in_redis = get_jobs_in_redis(redis_conn)
-        assert all([v.status == JobStatus.SUCCESSFUL for v in jobs_in_redis])
+        stored_jobs = get_stored_jobs()
+        assert all([v.status == JobStatus.SUCCESSFUL for v in stored_jobs])

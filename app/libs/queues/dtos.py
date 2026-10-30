@@ -40,8 +40,6 @@ from pydantic import (
 from pydantic_core import CoreSchema, core_schema
 
 from ...utils.datetime import to_utc, utc_now_str
-from ...utils.model import PartialMeta
-from ...utils.redis_store import Schema
 from ...utils.strings import uuid_str
 from ..device_parameters import BackendConfig
 
@@ -273,7 +271,7 @@ class JobResult(BaseModel):
     memory: Memory = Field(default_factory=list)
 
 
-class Job(Schema):
+class Job(BaseModel):
     """Representation of the job to be executed by this application
 
     Attributes:
@@ -286,9 +284,6 @@ class Job(Schema):
         failure_reason: the reason why the job has failed; default = None
         etc.
     """
-
-    __primary_key_fields__ = ("job_id",)
-    __index_fields__ = ("user_id", "status")
 
     model_config = ConfigDict(
         extra="allow", arbitrary_types_allowed=True, validate_assignment=True
@@ -337,22 +332,8 @@ class Job(Schema):
         except AttributeError:
             pass
 
-        # set the storage id
+        # set the storage id, or keep it to the job_id and estimated_duration
         if self.storage_id is None:
-            # we don't want to automatically reset this say on a partial model
-            # that may have no duration or job_id.
-            # We should update it however if either job_id or estimated_duration is updated
-            if (
-                not isinstance(self, PartialMeta)
-                or self.job_id
-                or self.estimated_duration
-            ):
-                self.storage_id = StorageID.from_job(self)
-
-        # we don't want to automatically reset this say on a partial model
-        # that may have no duration or job_id.
-        # We should update it however if either job_id or estimated_duration is updated
-        if self.storage_id is None and not isinstance(self, PartialMeta):
             self.storage_id = StorageID.from_job(self)
         elif isinstance(self.storage_id, StorageID):
             new_storage_id = self.storage_id.clone_with(

@@ -42,9 +42,9 @@ from app.tests.utils.env import (
 from app.tests.utils.jobs import (
     cancel_job_via_mss,
     get_job_submission_metadata,
-    get_jobs_in_redis,
     get_jobs_sent_to_mss,
     get_raw_jobs,
+    get_stored_jobs,
     is_job_result_matching,
     save_job_file,
     submit_jobs,
@@ -194,10 +194,10 @@ def test_submit_jobs_no_booking(
         # Run the queue
         worker.work(burst=True)
 
-        jobs_in_redis = get_jobs_in_redis(redis_conn)
-        jobs_in_redis.sort(key=lambda v: v.timestamps.execution.start_timestamp)
+        stored_jobs = get_stored_jobs()
+        stored_jobs.sort(key=lambda v: v.timestamps.execution.start_timestamp)
 
-        expected_jobs_in_redis = [
+        expected_stored_jobs = [
             Job(
                 job_id=job_id,
                 user_id=job_in_db.user_id,
@@ -215,15 +215,15 @@ def test_submit_jobs_no_booking(
                 storage_id=f"{job_id}:::{job_in_db.estimated_duration}",
             )
             for job_id, job_in_db in zip_longest(
-                job_ids_in_fifo, jobs_in_redis, fillvalue=None
+                job_ids_in_fifo, stored_jobs, fillvalue=None
             )
         ]
 
         # Assert that they are all complete and their timestamp of completion is in FIFO order
-        assert jobs_in_redis == expected_jobs_in_redis
+        assert stored_jobs == expected_stored_jobs
 
         user_count = len(users)
-        for idx, job_in_db in enumerate(jobs_in_redis):
+        for idx, job_in_db in enumerate(stored_jobs):
             user = users[idx % user_count]
 
             assert job_in_db.user_id == user["id"]
@@ -299,11 +299,11 @@ def test_submit_jobs_in_active_booking(
         # Run the queue; try to wait for waitlist to transfer things to execution queue
         wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
-        jobs_in_redis = get_jobs_in_redis(redis_conn)
-        jobs_in_redis.sort(key=lambda v: v.timestamps.execution.start_timestamp)
+        stored_jobs = get_stored_jobs()
+        stored_jobs.sort(key=lambda v: v.timestamps.execution.start_timestamp)
 
-        booker_jobs = [job for job in jobs_in_redis if job.user_id == booker_id]
-        non_booker_jobs = [job for job in jobs_in_redis if job.user_id != booker_id]
+        booker_jobs = [job for job in stored_jobs if job.user_id == booker_id]
+        non_booker_jobs = [job for job in stored_jobs if job.user_id != booker_id]
         last_booker_job = booker_jobs[-1]
         first_non_booker_job = non_booker_jobs[0]
 
@@ -316,7 +316,7 @@ def test_submit_jobs_in_active_booking(
             first_non_booker_job.timestamps.execution.start_timestamp
         )
 
-        assert all([v.status == JobStatus.SUCCESSFUL for v in jobs_in_redis])
+        assert all([v.status == JobStatus.SUCCESSFUL for v in stored_jobs])
         assert last_booker_job_start < booking.end_utc
         assert drop_microseconds(first_non_booker_job_start) >= drop_microseconds(
             booking_end_timestamp
@@ -359,11 +359,11 @@ def test_submit_jobs_in_idle_booking(
         # Run the queue; try to wait for waitlist to transfer things to execution queue
         wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
-        jobs_in_redis = get_jobs_in_redis(redis_conn)
+        stored_jobs = get_stored_jobs()
 
-        jobs_in_redis.sort(key=lambda v: v.timestamps.execution.start_timestamp)
-        booker_jobs = [job for job in jobs_in_redis if job.user_id == booker_id]
-        non_booker_jobs = [job for job in jobs_in_redis if job.user_id != booker_id]
+        stored_jobs.sort(key=lambda v: v.timestamps.execution.start_timestamp)
+        booker_jobs = [job for job in stored_jobs if job.user_id == booker_id]
+        non_booker_jobs = [job for job in stored_jobs if job.user_id != booker_id]
         last_booker_job = booker_jobs[-1]
         first_non_booker_job = non_booker_jobs[0]
 
@@ -374,7 +374,7 @@ def test_submit_jobs_in_idle_booking(
         last_booker_job_start = last_booker_job.start_utc
         first_non_booker_job_start = first_non_booker_job.start_utc
 
-        assert all([v.status == JobStatus.SUCCESSFUL for v in jobs_in_redis])
+        assert all([v.status == JobStatus.SUCCESSFUL for v in stored_jobs])
         assert last_booker_job_start < booking_end_timestamp
         if last_booker_job.actual_duration < booking.total_duration:
             assert first_non_booker_job_start < booking_end_timestamp
@@ -427,7 +427,7 @@ def test_submit_jobs_in_idle_booking_before_another(
         mss_update_spy = mocker.spy(scheduler_tasks, "update_job_in_mss")
         wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
-        jobs_in_db = get_jobs_in_redis(redis_conn)
+        jobs_in_db = get_stored_jobs()
 
         booker_jobs = [v for v in jobs_in_db if v.user_id == booker_id]
         non_booker_jobs = [v for v in jobs_in_db if v.user_id != booker_id]
@@ -513,7 +513,7 @@ def test_booker_job_longer_than_the_time_left_fails(
         fake_clock.shift(2.5)
         worker.work(burst=True, max_jobs=1)
 
-        job_in_db = get_jobs_in_redis(redis_conn)[0]
+        job_in_db = get_stored_jobs()[0]
         assert job_in_db.status == JobStatus.FAILED
         assert (
             job_in_db.failure_reason == "job too long for the time left in the booking"
@@ -544,7 +544,7 @@ def test_job_whose_booking_ended_in_preprocessing_runs(
         # the booking's end runs before the preprocessing, as the general queue is first
         worker.work(burst=True, with_scheduler=True)
 
-        assert get_jobs_in_redis(redis_conn)[0].status == JobStatus.SUCCESSFUL
+        assert get_stored_jobs()[0].status == JobStatus.SUCCESSFUL
 
 
 @pytest.mark.skipif(
@@ -588,7 +588,7 @@ def test_submit_long_jobs_before_booking(
         # Run the queue; try to wait for waitlist to transfer things to execution queue
         wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
-        jobs_in_db = get_jobs_in_redis(redis_conn)
+        jobs_in_db = get_stored_jobs()
         jobs_in_db.sort(key=lambda v: v.start_utc)
         job_estimated_durations = [v.estimated_duration for v in jobs_in_db]
 
@@ -656,7 +656,7 @@ def test_upload_invalid_job(
         assert got["detail"].startswith("Invalid file: ")
 
         worker.work(burst=True)
-        jobs_in_db = get_jobs_in_redis(redis_conn)
+        jobs_in_db = get_stored_jobs()
         assert jobs_in_db == []
 
 
@@ -729,7 +729,7 @@ def test_remove_job(client, redis_conn, jobs_folder, worker, job, mocker, fake_c
         # run the rest of the tasks
         worker.work(burst=True)
 
-        jobs_in_db = get_jobs_in_redis(redis_conn)
+        jobs_in_db = get_stored_jobs()
         job_ids_in_db = sorted([v.job_id for v in jobs_in_db])
         expected_ids = sorted([v["job_id"] for v in job_metadata_list[1:]])
         assert deletion_response.status_code == 200
@@ -764,7 +764,7 @@ def test_remove_another_users_job(
         # run the rest of the tasks
         worker.work(burst=True)
 
-        jobs_in_db = get_jobs_in_redis(redis_conn)
+        jobs_in_db = get_stored_jobs()
         job_ids_in_db = sorted([v.job_id for v in jobs_in_db])
         expected_ids = sorted([v["job_id"] for v in job_metadata_list])
         assert deletion_response.status_code == 404
@@ -801,7 +801,7 @@ def test_admin_remove_job(
         # run the rest of the tasks
         worker.work(burst=True)
 
-        jobs_in_db = get_jobs_in_redis(redis_conn)
+        jobs_in_db = get_stored_jobs()
         job_ids_in_db = sorted([v.job_id for v in jobs_in_db])
         expected_ids = sorted([v["job_id"] for v in job_metadata_list[1:]])
         assert deletion_response.status_code == 200
@@ -843,7 +843,7 @@ def test_unauthenticated_remove_job(
         # run the rest of the tasks
         worker.work(burst=True)
 
-        jobs_in_db = get_jobs_in_redis(redis_conn)
+        jobs_in_db = get_stored_jobs()
         job_ids_in_db = sorted([v.job_id for v in jobs_in_db])
         expected_ids = sorted([v["job_id"] for v in job_metadata_list])
         assert job_ids_in_db == expected_ids
@@ -1042,7 +1042,7 @@ def test_view_jobs(
                 user_id=user_id,
                 stage=Stage.PRE_PROC_Q,
                 status=JobStatus.PENDING,
-            ).model_dump(mode="json")
+            ).model_dump(mode="json", exclude_none=True)
             for idx, job_id in enumerate(job_ids)
             if idx % user_count == 0
         ]
@@ -1148,7 +1148,7 @@ def test_view_jobs_by_status(
                 user_id=user_id,
                 stage=Stage.PRE_PROC_Q,
                 status=JobStatus.PENDING,
-            ).model_dump(mode="json")
+            ).model_dump(mode="json", exclude_none=True)
             for idx, job_id in enumerate(pending_job_ids)
             if idx % user_count == 0
         ]
@@ -1185,7 +1185,7 @@ def test_view_jobs_by_status(
                 actual_duration=jobs_in_resp[job_id]["actual_duration"],
                 download_url=jobs_in_resp[job_id]["download_url"],
                 storage_id=f"{job_id}:::{jobs_in_resp[job_id]["estimated_duration"]}",
-            ).model_dump(mode="json")
+            ).model_dump(mode="json", exclude_none=True)
             for idx, job_id in enumerate(completed_job_ids)
             if idx % user_count == 0
         ]
@@ -1293,7 +1293,7 @@ def test_cancel_job_via_mss(
         assert response.status_code == 200
         assert got == expected
 
-        job_in_db = get_jobs_in_redis(redis_conn)[0]
+        job_in_db = get_stored_jobs()[0]
         preprocess_start = job_in_db.timestamps.pre_processing.started
         preprocess_end = job_in_db.timestamps.pre_processing.finished
 
@@ -1365,7 +1365,7 @@ def test_cancel_job_directly(
         assert response.status_code == 200
         assert got == expected
 
-        job_in_db = get_jobs_in_redis(redis_conn)[0]
+        job_in_db = get_stored_jobs()[0]
         preprocess_start = job_in_db.timestamps.pre_processing.started
         preprocess_end = job_in_db.timestamps.pre_processing.finished
 
@@ -1427,7 +1427,7 @@ def test_failed_job_is_marked_failed_and_sent_to_mss(
 
         worker.work(burst=True)
 
-        job_in_db = get_jobs_in_redis(redis_conn)[0]
+        job_in_db = get_stored_jobs()[0]
         assert job_in_db.status == JobStatus.FAILED
         assert get_jobs_sent_to_mss(mss_update_spy)[-1].status == JobStatus.FAILED
 
@@ -1524,7 +1524,7 @@ def test_cancel_finished_job(
         )
 
         assert response.status_code == 406
-        assert get_jobs_in_redis(redis_conn)[0].status == JobStatus.SUCCESSFUL
+        assert get_stored_jobs()[0].status == JobStatus.SUCCESSFUL
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
@@ -1546,7 +1546,7 @@ def test_remove_cancelled_job(
         response = client.delete(f"/jobs/{job_id}", headers=create_mss_headers(user_id))
 
         assert response.status_code == 200
-        assert get_jobs_in_redis(redis_conn) == []
+        assert get_stored_jobs() == []
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
@@ -1587,7 +1587,7 @@ def test_cancel_another_users_job(
         assert response.status_code == 404
         assert got == expected
 
-        job_in_db = get_jobs_in_redis(redis_conn)[0]
+        job_in_db = get_stored_jobs()[0]
 
         expected_job = original_job.model_copy(
             update={
@@ -1646,7 +1646,7 @@ def test_admin_cancel_job(
         assert response.status_code == 200
         assert got == expected
 
-        job_in_db = get_jobs_in_redis(redis_conn)[0]
+        job_in_db = get_stored_jobs()[0]
         preprocess_start = job_in_db.timestamps.pre_processing.started
         preprocess_end = job_in_db.timestamps.pre_processing.finished
 

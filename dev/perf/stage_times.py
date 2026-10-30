@@ -20,8 +20,8 @@ from typing import List, Optional
 
 import settings
 from app.libs.queues.dtos import Job, TimestampPair
-from app.services.scheduler import get_jobs_store
-from app.utils.redis import get_redis_connection
+from app.services.scheduler import JobsStore
+from app.utils.sql_db import get_sql_engine
 
 DRAIN_TIMEOUT_SECONDS = 300
 POLL_INTERVAL_SECONDS = 2
@@ -41,9 +41,9 @@ def wait_for_jobs(user_id: str) -> List[Job]:
     deadline = time.time() + DRAIN_TIMEOUT_SECONDS
     device_settings = settings.get_device_settings()
     while True:
-        jobs = get_jobs_store(
-            get_redis_connection(device_settings.rq_redis_url), device_settings
-        ).find_by_index({"user_id": user_id})
+        jobs = JobsStore.from_settings(
+            get_sql_engine(device_settings.booking_db_url), device_settings
+        ).find(user_id=user_id)
         is_drained = all(job.status.is_terminal() for job in jobs)
         if is_drained or time.time() > deadline:
             return jobs

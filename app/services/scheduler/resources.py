@@ -18,15 +18,14 @@ from filelock import FileLock
 from redis import Redis
 from sqlalchemy import Engine
 
-from ...libs.queues.dtos import ExecutorOptions, Job
+from ...libs.queues.dtos import ExecutorOptions
 from ...utils.config import DeviceSettings
 from ...utils.logging import err_logger
 from ...utils.redis import get_redis_connection
-from ...utils.redis_store import Collection
 from ...utils.sql_db import get_sql_engine
 from ..external.mss import MssClient, get_mss_public_key, get_private_key
 from .queues import QueuePool
-from .store import get_jobs_store
+from .store import JobsStore
 from .utils import get_executor_options
 
 if TYPE_CHECKING:
@@ -41,7 +40,7 @@ class DeviceResources:
     settings: DeviceSettings
     redis: Redis
     bookings_db: Engine
-    jobs_store: Collection[Job]
+    jobs_store: JobsStore
     queues: QueuePool
     mss_client: MssClient
     executor_options: ExecutorOptions
@@ -59,11 +58,12 @@ class DeviceResources:
         private_key = get_private_key(
             device_settings.private_key_file, device_settings.private_key_password
         )
+        sql_db = get_sql_engine(device_settings.booking_db_url)
         return cls(
             settings=device_settings,
             redis=redis,
-            bookings_db=get_sql_engine(device_settings.booking_db_url),
-            jobs_store=get_jobs_store(redis, device_settings),
+            bookings_db=sql_db,
+            jobs_store=JobsStore.from_settings(sql_db, device_settings),
             queues=QueuePool.from_settings(device_settings, redis),
             mss_client=MssClient.from_settings(device_settings, private_key),
             executor_options=get_executor_options(device_settings),

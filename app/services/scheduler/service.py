@@ -16,7 +16,6 @@
 # - Martin Ahindura, 2023, 2025
 #
 """Module containing service for scheduling jobs"""
-import logging
 import shutil
 from contextlib import suppress
 from datetime import datetime
@@ -226,7 +225,7 @@ def submit_job_file(
 
     job_id = credentials.job_id
     user_id = credentials.user_id
-    if jobs_store.exists(job_id):
+    if jobs_store.is_stored(job_id):
         raise ConflictError(f"job_id {job_id} already exists")
 
     # save job file
@@ -330,14 +329,7 @@ def delete_job(
             device, job_id=job_id, user_id=user_id, is_mss_admin=is_mss_admin
         )
 
-    job_store = device.jobs_store
-
-    try:
-        job_store.delete_many((job_id,))
-    except ValidationError as exp:
-        logging.error(f"error deleting job {job_id}: {exp}")
-        raise ItemNotFoundError(f"Job {job_id} not found")
-
+    device.jobs_store.delete(job_id)
     return job
 
 
@@ -396,14 +388,9 @@ def get_many_jobs(
     Returns:
         the list of job
     """
-    job_store = device.jobs_store
-    filters = {}
-    if status:
-        filters["status"] = status
-    if user_id:
-        filters["user_id"] = user_id
-
-    return job_store.find_by_index(filters, skip=skip, limit=limit)
+    return device.jobs_store.find(
+        user_id=user_id or None, status=status or None, skip=skip, limit=limit
+    )
 
 
 def delete_user_profile(device: DeviceResources, user_id: str) -> None:
@@ -425,7 +412,7 @@ def delete_user_profile(device: DeviceResources, user_id: str) -> None:
 
     # cancel the user's jobs that have not finished, queued or running
     job_store = device.jobs_store
-    user_jobs: List[Job] = job_store.find_by_index({"user_id": user_id})
+    user_jobs = job_store.find(user_id=user_id)
     for job in user_jobs:
         if job.status.is_terminal():
             continue

@@ -209,26 +209,25 @@ def test_heavy_worker_waits_while_its_device_is_off(
     beta_worker.check_for_suspension(True)
 
 
-def test_each_device_has_its_own_jobs(tmp_path, monkeypatch, redis_client):
-    """A job stored for one device is not another's, though they share a Redis"""
+def test_each_device_has_its_own_jobs(tmp_path, monkeypatch):
+    """A job stored for one device is not another's, though they share a database"""
     import settings
     from app.libs.queues.dtos import Job
-    from app.services.scheduler.store import get_jobs_store
-    from app.utils.redis import get_redis_connection
+    from app.services.scheduler import JobsStore
+    from app.utils.sql_db import get_sql_engine, migrate_sql_db
 
     load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
+    db_url = f"sqlite:///{tmp_path}/shared.db"
+    migrate_sql_db(db_url)
+    db_engine = get_sql_engine(db_url)
     job = Job(device="Beta", calibration_date="")
-    beta_settings = settings.get_device_settings("Beta")
-    beta_jobs = get_jobs_store(
-        get_redis_connection(beta_settings.rq_redis_url), beta_settings
-    )
+    beta_jobs = JobsStore.from_settings(db_engine, settings.get_device_settings("Beta"))
     beta_jobs.insert(job)
 
-    alpha_settings = settings.get_device_settings("Alpha")
-    alpha_jobs = get_jobs_store(
-        get_redis_connection(alpha_settings.rq_redis_url), alpha_settings
+    alpha_jobs = JobsStore.from_settings(
+        db_engine, settings.get_device_settings("Alpha")
     )
-    assert not alpha_jobs.exists(job.job_id)
+    assert not alpha_jobs.is_stored(job.job_id)
 
 
 def test_each_device_has_its_own_executor_lock(tmp_path, monkeypatch):

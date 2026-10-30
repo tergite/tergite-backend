@@ -35,9 +35,9 @@ from ...utils.config import DeviceSettings
 from ...utils.datetime import utc_now_str
 from ...utils.exc import MssRejectedError
 from ...utils.logging import err_logger
-from ...utils.redis_store import Collection
 from ..external.mss import DeviceEvent, DeviceEventName, EventResponse, MssClient
 from .dtos import LogLevel
+from .store import JobsStore
 
 if TYPE_CHECKING:
     from ...libs.quantum_executor.base.executor import QuantumExecutor
@@ -158,21 +158,20 @@ def get_rq_job_id(quantum_job_id: str, stage: Stage) -> str:
     return f"{quantum_job_id}_{stage.name}"
 
 
-def update_job_stage(jobs_db: Collection[Job], job_id: str, stage: Stage) -> Job:
+def update_job_stage(jobs_db: JobsStore, job_id: str, stage: Stage) -> Job:
     """Updates the job's stage in the database
 
     This also updates the timestamps and the status of the job
 
     Args:
-        jobs_db: the collection containing jobs
+        jobs_db: the device's jobs
         job_id: the unique identifier of jobs
         stage: the stage to set on the job
 
     Returns:
         the updated job
     """
-    key = (job_id,)
-    job: Job = jobs_db.get_one(key)
+    job = jobs_db.get_one(job_id)
 
     current_timestamp = utc_now_str()
     timestamps = _get_next_timestamps(
@@ -181,7 +180,7 @@ def update_job_stage(jobs_db: Collection[Job], job_id: str, stage: Stage) -> Job
     status = _get_next_status(job, next_stage=stage)
 
     return jobs_db.update(
-        key,
+        job_id,
         {
             "status": status,
             "stage": stage,
@@ -192,12 +191,12 @@ def update_job_stage(jobs_db: Collection[Job], job_id: str, stage: Stage) -> Job
 
 
 def log_job_failure(
-    jobs_db: Collection[Job], job_id: str, reason: str, job_supervisor_log: Path
+    jobs_db: JobsStore, job_id: str, reason: str, job_supervisor_log: Path
 ) -> Job:
     """Logs the job in the db as failed
 
     Args:
-        jobs_db: the collection containing job items
+        jobs_db: the device's jobs
         job_id: the unique identifier of the job
         reason: the failure reason
         job_supervisor_log: the device's job supervisor log file
@@ -206,7 +205,7 @@ def log_job_failure(
         the updated job with its failure status
     """
     job = jobs_db.update(
-        (job_id,),
+        job_id,
         {
             "status": JobStatus.FAILED,
             "failure_reason": reason,
@@ -224,7 +223,7 @@ def log_job_failure(
 
 
 def update_job_results(
-    jobs_db: Collection[Job],
+    jobs_db: JobsStore,
     job_id: str,
     data: List[List[str]],
     machine_root_url: str,
@@ -232,7 +231,7 @@ def update_job_results(
     """Updates the results of the job and returns the updated job
 
     Args:
-        jobs_db: the collection containing job items
+        jobs_db: the device's jobs
         job_id: the unique identifier of the job
         data: the discriminated results from the quantum job
         machine_root_url: the URL this device's API is reached at
@@ -241,7 +240,7 @@ def update_job_results(
         the updated job
     """
     return jobs_db.update(
-        (job_id,),
+        job_id,
         {
             "status": JobStatus.SUCCESSFUL,
             "result": JobResult(memory=data),

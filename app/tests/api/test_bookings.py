@@ -40,8 +40,8 @@ from app.tests.utils.env import (
 )
 from app.tests.utils.jobs import (
     get_job_submission_metadata,
-    get_jobs_in_redis,
     get_raw_jobs,
+    get_stored_jobs,
     submit_jobs,
 )
 from app.tests.utils.params import (
@@ -329,12 +329,12 @@ def test_cancel_future_booking(
         # Run the queue
         worker.work(burst=True)
 
-        jobs_in_redis = get_jobs_in_redis(redis_conn)
+        stored_jobs = get_stored_jobs()
 
-        jobs_in_redis.sort(key=lambda v: v.start_utc)
-        job_ids = [job.job_id for job in jobs_in_redis]
+        stored_jobs.sort(key=lambda v: v.start_utc)
+        job_ids = [job.job_id for job in stored_jobs]
 
-        assert all([v.status == JobStatus.SUCCESSFUL for v in jobs_in_redis])
+        assert all([v.status == JobStatus.SUCCESSFUL for v in stored_jobs])
         assert job_ids == expected_job_ids
 
 
@@ -553,10 +553,10 @@ def test_cancel_active_booking(
         # Run the queue; try to wait for waitlist to transfer things to execution queue
         wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
-        jobs_in_redis = get_jobs_in_redis(redis_conn)
+        stored_jobs = get_stored_jobs()
 
-        jobs_in_redis.sort(key=lambda v: v.timestamps.execution.start_timestamp)
-        booker_jobs = [job for job in jobs_in_redis if job.user_id == booker_user_id]
+        stored_jobs.sort(key=lambda v: v.timestamps.execution.start_timestamp)
+        booker_jobs = [job for job in stored_jobs if job.user_id == booker_user_id]
         last_booker_job = booker_jobs[-1]
 
         # Assert that they are all complete and their booker jobs started before booking end_utc
@@ -565,7 +565,7 @@ def test_cancel_active_booking(
         booking_end_timestamp = booking.end_utc
         last_booker_job_start = last_booker_job.timestamps.execution.start_timestamp
 
-        assert all([v.status == JobStatus.SUCCESSFUL for v in jobs_in_redis])
+        assert all([v.status == JobStatus.SUCCESSFUL for v in stored_jobs])
         assert last_booker_job_start < booking_end_timestamp
 
 

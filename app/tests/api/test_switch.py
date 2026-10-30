@@ -24,8 +24,8 @@ from app.tests.utils.api import (
 )
 from app.tests.utils.jobs import (
     get_job_submission_metadata,
-    get_jobs_in_redis,
     get_raw_jobs,
+    get_stored_jobs,
 )
 from app.tests.utils.params import (
     FASTAPI_CLIENTS,
@@ -83,8 +83,8 @@ def test_switch_off(client, redis_conn, jobs_folder, worker, job, mocker, fake_c
 
         worker.work(burst=True)
 
-        jobs_in_redis = get_jobs_in_redis(redis_conn)
-        assert jobs_in_redis == []
+        stored_jobs = get_stored_jobs()
+        assert stored_jobs == []
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
@@ -124,8 +124,8 @@ def test_switch_on(client, redis_conn, jobs_folder, worker, job, mocker, fake_cl
 
         worker.work(burst=True)
 
-        jobs_in_redis = get_jobs_in_redis(redis_conn)
-        assert len(jobs_in_redis) == 1
+        stored_jobs = get_stored_jobs()
+        assert len(stored_jobs) == 1
 
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)

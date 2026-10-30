@@ -21,11 +21,14 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
+from sqlmodel import SQLModel
 
 from app.services.booking import Booking
+from app.services.scheduler.store import JobRow
 
-# User's table shares Booking's metadata, as does every model's once imported
-target_metadata = Booking.metadata
+# the models whose tables Alembic migrates, User's coming with Booking's module
+_MODELS = (Booking, JobRow)
+target_metadata = SQLModel.metadata
 # a URL set in Alembic's config, as the API and the tests set one, stands in for the env file's
 database_url = context.config.get_main_option("sqlalchemy.url")
 if database_url is None:

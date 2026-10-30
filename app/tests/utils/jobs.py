@@ -30,14 +30,16 @@ from fastapi.testclient import TestClient
 from httpx import Response
 from pydantic import ValidationError
 from pytest_mock import MockerFixture
-from redis import Redis
+from sqlalchemy import create_engine
 
 from app.libs.queues.dtos import Job
+from app.services.scheduler import JobsStore
 from app.tests.utils.api import (
     create_mss_headers,
     get_bearer_headers,
     get_token,
 )
+from app.tests.utils.env import TEST_BOOKING_DB_URL
 
 
 def cancel_job_via_mss(
@@ -114,18 +116,16 @@ def get_raw_jobs(job_template: dict, durations: List[float]) -> List[dict]:
     return raw_jobs
 
 
-def get_jobs_in_redis(redis_client: Redis) -> List[Job]:
-    """Gets the jobs that are in redis
-
-    Args:
-        redis_client: the client for accessing redis
-
-    Returns:
-        the list of jobs in redis
-    """
-    jobs_hash_name = f"{os.environ['BCC_DEFAULT_PREFIX']}:jobs"
-    raw_jobs_in_redis = redis_client.hgetall(jobs_hash_name)
-    return [Job.model_validate_json(item) for item in raw_jobs_in_redis.values()]
+def get_stored_jobs() -> List[Job]:
+    """Gets the jobs the test device has stored, least recently written first"""
+    # an engine of the test's own, not the app's, which tests count
+    store = JobsStore(
+        create_engine(TEST_BOOKING_DB_URL),
+        device_name=os.environ["BCC_DEFAULT_PREFIX"],
+        # only read, so never expiring any
+        ttl=0,
+    )
+    return store.find()
 
 
 def get_jobs_sent_to_mss(mss_update_spy: Mock) -> List[Job]:

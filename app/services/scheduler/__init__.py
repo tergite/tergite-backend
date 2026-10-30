@@ -27,7 +27,7 @@ from .service import (
     submit_booking,
     submit_job_file,
 )
-from .store import get_jobs_store
+from .store import JobsStore
 from .utils import (
     get_executor,
 )
@@ -35,6 +35,7 @@ from .utils import (
 __all__ = [
     "DeviceResources",
     "JobFile",
+    "JobsStore",
     "QueuePool",
     "RecalibrationInfo",
     "cancel_booking",
@@ -44,7 +45,6 @@ __all__ = [
     "delete_user_profile",
     "get_executor",
     "get_job",
-    "get_jobs_store",
     "get_many_jobs",
     "get_recalibration_info",
     "init_recalibration",

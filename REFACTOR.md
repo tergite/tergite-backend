@@ -405,6 +405,11 @@ TTLs, pagination and a Lua script, used by three stores of which only one needs 
    `redis_store.py`, `test_store.py`, `Schema` with its `__primary_key_fields__`/`__index_fields__` dunders
    (`redis_store.py:79-113`, `device_parameters/dtos.py:47, 61, 645, 873`, `queues/dtos.py:56, 396`) and its
    `model_dump` override go.
+   *Decided:* SQL. *Done* after 5.4, so the table comes by migration: `job`, keyed on the device's prefix and
+   the job id, holds the `Job` as JSON beside indexed `user_id`, `status` and `updated_at` columns, as `Job`'s
+   validators and nested models do not survive an SQLModel table. `JobsStore` keeps the Redis store's few
+   operations; a job expires `BCC_JOBS_STORE_TTL` after its last write, deleted as another is inserted, and
+   jobs list least recently written first, as Redis's expiry order had them. Jobs in Redis are not copied over.
 4. **Schema changes by migration.** `get_sql_engine` stops calling `create_all` on first use (`sql_db.py:52`);
    Alembic owns the bookings and users tables, as it does MSS's.
    *Done:* unlike MSS, which migrates in `start` or `migrate`, the API migrates each device's database as it

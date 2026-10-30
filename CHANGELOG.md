@@ -24,6 +24,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- Changed the jobs to be kept in the bookings database, `BCC_BOOKING_DB_URL`, instead of Redis; jobs stored in
+  Redis before upgrading are no longer listed, so let the queues empty first
 - Changed the bookings database to be created and upgraded with Alembic as the API starts, instead of by SQLModel;
   an existing one is kept as it is, but for its unused `user.password` column, which is dropped
 - Changed the 422 for a booking that starts in the past or lasts outside the device's limits to give its message
@@ -101,6 +103,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Removed
 
+- Removed `BCC_JOBS_STORE_CLEAN_INTERVAL`: a job older than `BCC_JOBS_STORE_TTL` is deleted as another is stored
 - Removed `BCC_REQUEST_LOG_TTL` and `BCC_REQUEST_LOG_CLEAN_INTERVAL`, with the two weeks of requests the BCC kept in
   Redis and read nowhere; MSS's nonces are still kept for `MSS_NONCE_TTL`
 - Removed `BCC_IS_ASYNC`, which ran each job inside the API request that queued it; the jobs run on the workers only

@@ -45,7 +45,6 @@ from pydantic import (
 )
 
 from app.utils.datetime import utc_now_str
-from app.utils.redis_store import Schema
 
 from .utils import attach_units_many
 
@@ -56,10 +55,9 @@ _CalibValueType = TypeVar("_CalibValueType", int, float, str)
 _DOWNCONVERT_FREQUENCY = 4.4e9
 
 
-class Device(Schema):
+class Device(BaseModel):
     """The schema for device information"""
 
-    __primary_key_fields__ = ("name",)
     model_config = ConfigDict(extra="allow")
 
     name: str
@@ -640,10 +638,8 @@ class CouplerCalibration(CalibrationValueSet):
         return np.deg2rad(control_phase), np.deg2rad(target_phase)
 
 
-class DeviceCalibration(Schema, CalibrationValueSet):
+class DeviceCalibration(CalibrationValueSet):
     """Schema for the calibration data of a given device"""
-
-    __primary_key_fields__ = ("name",)
 
     name: str
     version: str
@@ -868,10 +864,8 @@ class _BackendCalibrationConfig(BaseModel):
     coupler: List[Dict[str, Union[float, str]]] = []
 
 
-class BackendConfig(Schema):
+class BackendConfig(BaseModel):
     """The configration as read from the file"""
-
-    __primary_key_fields__ = ("name",)
 
     name: Optional[str] = None
     general_config: _BackendGeneralConfig

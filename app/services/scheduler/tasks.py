@@ -241,7 +241,7 @@ def execute(device: DeviceResources, job: Job) -> Tuple[str, str]:
             executor = device.executor
             results_file = executor.run(job_id, inputs_folder=preprocessing_dir)
 
-        job: Job = jobs_store.get_one((job_id,))
+        job: Job = jobs_store.get_one(job_id)
         if job.status == JobStatus.CANCELLED:
             raise JobAlreadyCancelled("cancelled")
 
