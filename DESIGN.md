@@ -543,9 +543,11 @@ flowchart LR
   checks the source IP unless the backend's `is_strict_ip` is false, rejects a timestamp older
   than its `bcc_nonce_ttl` and a request id seen before, and refuses a path naming another
   device. A refused handshake counts as a failed connection attempt (8.3).
-- **Online and offline in MSS.** MSS marks the device online when one of its sockets connects,
-  and offline, with `last_online`, when *any* one disconnects, even while the device's other
-  sockets stay open.
+- **Online and offline in MSS.** MSS keeps each socket as a connection in its database, which
+  the MSS process holding it renews every 30 s and which lapses 90 s after it stops. A device is
+  online while any of its connections is live, whichever MSS process holds it, and it is not
+  switched off; a backend or MSS process that dies without closing its sockets leaves the device
+  offline within 90 s. See tergite-frontend's DESIGN.md §7.
 - **One way.** MSS never sends BCC requests on the socket; it only answers BCC's events. BCC
   reads nothing but the reply to the event it sent.
 
@@ -949,16 +951,9 @@ Worth knowing before you are surprised by them:
 - **MSS learns late of what happened while it was unreachable.** The kept events reach it once
   it is back, at a worker's next pass (§8.4); until then it shows the jobs' and the device's
   last state it had. A switch made meanwhile reaches it only when switched again.
-- **MSS's online flag follows any one socket.** BCC holds a socket per device per process, and
-  MSS marks the device offline when any of them closes, such as an idle one that missed its
-  pings, until another connects (§8.1).
 - **Some stuck processes are not noticed.** A worker's deadline is checked only by `bcc start`,
   so a worker run alone with `bcc worker` is not; nor is a worker stuck while it starts, before
   its first pass sets a deadline, nor the API (§6.5).
 - **Nothing ages a waiting job.** Outside bookings, a job longer than the time to the next
   booking waits while shorter ones overtake it, for as long as the bookings leave it no room;
   `BCC_MAX_EXECUTION_QUEUE_TIME` fails it after a day, rather than run it sooner (§6.3).
-- **SQLite serialises every claim.** The workers' claims take its write lock; one database
-  shared by many devices queues their claims behind each other.
-- **The simulators do not recalibrate**: `QiskitDynamicsExecutor.recalibrate` returns nothing,
-  and MSS keeps the calibration the heavy worker published at start.
