@@ -9,6 +9,7 @@
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
+import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import inspect
@@ -17,6 +18,7 @@ import settings
 from app.api.worker import preload_worker_globals
 from app.services.booking import get_user_profile
 from app.services.scheduler import close_device_resources
+from app.tests.utils.params import FASTAPI_CLIENTS
 from app.utils import sql_db
 from app.utils.sql_db import get_sql_engine, migrate_sql_db
 
@@ -47,7 +49,9 @@ def test_a_database_from_before_alembic_is_upgraded_with_its_rows(tmp_path):
     assert get_user_profile(db_engine, "u1").email == "ada@example.com"
 
 
-def test_a_worker_migrates_the_database_it_starts_on(tmp_path, mock_mss):
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_a_worker_migrates_the_database_it_starts_on(client, tmp_path):
+    """The client loads its device's settings, which the worker starts with"""
     url = f"sqlite:///{tmp_path}/bcc.db"
     device_settings = settings.get_device_settings().model_copy(
         update={"booking_db_url": url, "storage_root": tmp_path}
