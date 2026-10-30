@@ -20,6 +20,7 @@ a wake-up, the next change in the bookings, or the fallback wait, whichever come
 pass first sends MSS the events kept while it could not be reached.
 """
 import logging
+import math
 import signal
 import threading
 import time
@@ -39,6 +40,7 @@ from utils.sql_db import open_immediate_session
 from ..booking import Booking, get_active_booking, get_next_booking
 from ..devices import is_offline
 from ..external.mss import send_kept_mss_events
+from .deadlines import WorkerDeadline
 from .dtos import RecalibrationInfo, RecalibrationStatus
 from .resources import DeviceResources
 from .store import JobRow, RecalibrationRow
@@ -48,6 +50,9 @@ from .wakeups import WakeUpListener, WorkerKind, wake_workers
 # the longest wait, in seconds, of a worker with nothing to claim: the delay of a lost
 # wake-up, a due recalibration, or the failure of a job whose worker died
 _MAX_WAIT_SECONDS = 5.0
+# what a worker may take past the time its step is allowed, MSS's response timeout aside,
+# before the process that started it takes it to be stuck
+_DEADLINE_MARGIN_SECONDS = 60.0
 # picks, in the session, a waiting job of the device at the stage, or none
 _RowPicker = Callable[[Session, DeviceResources, Stage], Optional[JobRow]]
 _TERMINAL_STATUSES = tuple(status.value for status in JobStatus if status.is_terminal())
@@ -65,12 +70,22 @@ class Dispatcher:
         devices: dict[str, DeviceResources],
         should_run_heavy: bool,
         should_run_light: bool,
+        deadline: Optional[WorkerDeadline] = None,
     ):
+        """
+        Args:
+            devices: the resources of the devices whose work it runs, by name
+            should_run_heavy: whether it runs the heavy work
+            should_run_light: whether it runs the light work
+            deadline: the deadline it sets itself as it goes, for the process that
+                started it to check; default: none
+        """
         self.device_resources = devices
         self._should_run_heavy = should_run_heavy
         self._should_run_light = should_run_light
         self._is_stopped = False
         self._listener: Optional[WakeUpListener] = None
+        self._deadline = deadline
         # by device, the monotonic time before which MSS, found unreachable, is not tried
         self._mss_retry_times: dict[str, float] = {}
 
@@ -100,7 +115,10 @@ class Dispatcher:
                 if not has_run:
                     if is_burst:
                         break
-                    self._listener.wait(timeout=self._get_wait_seconds())
+                    wait_seconds = self._get_wait_seconds()
+                    if self._deadline is not None:
+                        self._deadline.set_in(wait_seconds + _DEADLINE_MARGIN_SECONDS)
+                    self._listener.wait(timeout=wait_seconds)
         finally:
             if self._listener is not None:
                 self._listener.close()
@@ -136,9 +154,14 @@ class Dispatcher:
         return min(seconds_to_change, _MAX_WAIT_SECONDS)
 
     def _run_once(self, device: DeviceResources) -> bool:
+        if self._deadline is not None:
+            # for telling MSS of the kept events and of overdue jobs
+            self._deadline.set_in(
+                device.settings.mss_response_timeout + _DEADLINE_MARGIN_SECONDS
+            )
         self._send_kept_mss_events(device)
         fail_overdue_jobs(device)
-        if self._should_run_light and run_next_postprocessing(device):
+        if self._should_run_light and run_next_postprocessing(device, self._deadline):
             return True
         if not self._should_run_heavy:
             return False
@@ -150,9 +173,9 @@ class Dispatcher:
             return False
         # recalibration last, when the device has no job to run
         return (
-            run_next_execution(device)
-            or run_next_preprocessing(device)
-            or run_due_recalibration(device)
+            run_next_execution(device, self._deadline)
+            or run_next_preprocessing(device, self._deadline)
+            or run_due_recalibration(device, self._deadline)
         )
 
     def _send_kept_mss_events(self, device: DeviceResources) -> None:
@@ -233,8 +256,14 @@ def mark_postprocessed(device: DeviceResources, job_id: str) -> None:
     update_job_in_mss(device.bookings_db, device.mss_client, payload=job)
 
 
-def run_next_preprocessing(device: DeviceResources) -> bool:
+def run_next_preprocessing(
+    device: DeviceResources, deadline: Optional[WorkerDeadline] = None
+) -> bool:
     """Preprocesses the device's oldest job waiting for it
+
+    Args:
+        device: what the device runs on
+        deadline: the worker's deadline, which preprocessing's time limit sets
 
     Returns:
         whether there was one
@@ -253,14 +282,21 @@ def run_next_preprocessing(device: DeviceResources) -> bool:
         job,
         job_file=job_file,
         timeout=device.settings.max_preprocessing_time,
+        deadline=deadline,
     )
     if preprocessed_job is not None:
         mark_preprocessed(device, preprocessed_job)
     return True
 
 
-def run_next_execution(device: DeviceResources) -> bool:
+def run_next_execution(
+    device: DeviceResources, deadline: Optional[WorkerDeadline] = None
+) -> bool:
     """Executes the job the bookings let run next on the device
+
+    Args:
+        device: what the device runs on
+        deadline: the worker's deadline, which execution's time limit sets
 
     Returns:
         whether there was one
@@ -272,15 +308,25 @@ def run_next_execution(device: DeviceResources) -> bool:
         return False
     job = Job.model_validate_json(row.data)
     results_file = _run_logged(
-        execute, device, job, timeout=device.settings.max_execution_time
+        execute,
+        device,
+        job,
+        timeout=device.settings.max_execution_time,
+        deadline=deadline,
     )
     if results_file is not None:
         mark_executed(device, job.job_id, results_file=results_file)
     return True
 
 
-def run_next_postprocessing(device: DeviceResources) -> bool:
+def run_next_postprocessing(
+    device: DeviceResources, deadline: Optional[WorkerDeadline] = None
+) -> bool:
     """Postprocesses the device's oldest executed job
+
+    Args:
+        device: what the device runs on
+        deadline: the worker's deadline, which postprocessing's time limit sets
 
     Returns:
         whether there was one
@@ -292,7 +338,9 @@ def run_next_postprocessing(device: DeviceResources) -> bool:
         return False
     job = Job.model_validate_json(row.data)
     try:
-        with _raise_after(device.settings.max_postprocessing_time):
+        with _raise_after(
+            device.settings.max_postprocessing_time, device=device, deadline=deadline
+        ):
             postprocess(device, job, results_file=row.results_file)
     except PostProcessingError as exp:
         logging.error(exp.exp)
@@ -302,8 +350,14 @@ def run_next_postprocessing(device: DeviceResources) -> bool:
     return True
 
 
-def run_due_recalibration(device: DeviceResources) -> bool:
+def run_due_recalibration(
+    device: DeviceResources, deadline: Optional[WorkerDeadline] = None
+) -> bool:
     """Recalibrates the device if one is due, having first scheduled the next
+
+    Args:
+        device: what the device runs on
+        deadline: the worker's deadline, which recalibration's time limit sets
 
     Returns:
         whether one was due
@@ -340,7 +394,11 @@ def run_due_recalibration(device: DeviceResources) -> bool:
 
     status, error = RecalibrationStatus.FINISHED, None
     try:
-        with _raise_after(device.settings.max_recalibration_queue_time):
+        with _raise_after(
+            device.settings.max_recalibration_queue_time,
+            device=device,
+            deadline=deadline,
+        ):
             recalibrate(device)
     except Exception as exp:
         logging.error(f"recalibration failed: {exp}")
@@ -623,6 +681,7 @@ def _run_logged(
     device: DeviceResources,
     *args: Any,
     timeout: float,
+    deadline: Optional[WorkerDeadline],
     **kwargs: Any,
 ) -> Optional[Any]:
     """Runs the task, which fails its job itself, logging what it raised
@@ -631,7 +690,7 @@ def _run_logged(
         what the task returned, or None if it raised
     """
     try:
-        with _raise_after(timeout):
+        with _raise_after(timeout, device=device, deadline=deadline):
             return task(device, *args, **kwargs)
     except TimeoutError:
         job: Job = args[0]
@@ -642,9 +701,21 @@ def _run_logged(
 
 
 @contextmanager
-def _raise_after(seconds: float) -> Iterator[None]:
+def _raise_after(
+    seconds: float,
+    device: DeviceResources,
+    deadline: Optional[WorkerDeadline] = None,
+) -> Iterator[None]:
     """Raises TimeoutError in the block once it has run the seconds, from the main thread only,
-    which alone receives signals"""
+    which alone receives signals; 0 seconds are no limit. It sets the worker's deadline past
+    them by MSS's response timeout, for telling MSS of the step, and a margin, in case the
+    block is stuck where the signal's handler cannot run."""
+    if deadline is not None:
+        deadline.set_in(
+            seconds + device.settings.mss_response_timeout + _DEADLINE_MARGIN_SECONDS
+            if seconds > 0
+            else math.inf
+        )
     if threading.current_thread() is not threading.main_thread():
         yield
         return

@@ -11,6 +11,7 @@
 # that they have been altered from the originals.
 #
 """Runs the jobs on the device: their stages, the bookings' hold on them, and recalibration"""
+from .deadlines import WorkerDeadline
 from .dtos import JobFile, RecalibrationInfo
 from .resources import DeviceResources, close_device_resources
 from .service import (
@@ -51,4 +52,5 @@ __all__ = [
     "submit_booking",
     "submit_job_file",
     "wake_workers",
+    "WorkerDeadline",
 ]

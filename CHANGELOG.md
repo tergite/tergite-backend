@@ -63,6 +63,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- Fixed a worker stuck in a call its time limit cannot interrupt, e.g. an instrument driver's, stalling its device until
+  someone restarted the backend; `bcc start` now kills a worker past its deadline, which restarts the backend
 - Fixed an unreachable MSS stopping the workers, and failing a job that had succeeded when its results could not be
   sent; the workers keep the events MSS cannot take, in order, and send them once it can
 - Fixed a reply from MSS being awaited past `BCC_MSS_RESPONSE_TIMEOUT` while other messages kept arriving, each of

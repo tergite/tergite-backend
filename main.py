@@ -65,10 +65,16 @@ import signal
 import sys
 from multiprocessing.connection import wait
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import uvicorn
 
+if TYPE_CHECKING:
+    from services.scheduler import WorkerDeadline
+
 COMMANDS = ("start", "serve", "worker")
+# how often bcc start checks that no worker is past its deadline
+DEADLINE_CHECK_SECONDS = 5.0
 
 
 def main() -> None:
@@ -93,22 +99,21 @@ def _start(
     platform's way: macOS cannot fork a process that has loaded its frameworks."""
     import settings
 
-    processes = _get_worker_processes(
+    worker_deadlines = _get_worker_processes(
         env_files, devices=settings.get_device_names(), light_workers=light_workers
     )
-    processes.append(
-        multiprocessing.Process(
-            target=_serve,
-            args=(host, port, forwarded_allow_ips, env_files, False, workers),
-            name="api",
-        )
+    api_process = multiprocessing.Process(
+        target=_serve,
+        args=(host, port, forwarded_allow_ips, env_files, False, workers),
+        name="api",
     )
+    processes = [*worker_deadlines, api_process]
     for process in processes:
         process.start()
 
     # after the children start, which keep the handlers uvicorn and the workers install
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    stopped = _wait_for_first_stop(processes)
+    stopped = _wait_for_first_stop(processes, deadlines=worker_deadlines)
     sys.exit(
         f"bcc: the {stopped.name} process stopped with exit code {stopped.exitcode}"
     )
@@ -116,39 +121,62 @@ def _start(
 
 def _get_worker_processes(
     env_files: list[str], devices: list[str], light_workers: int
-) -> list[multiprocessing.Process]:
+) -> dict[multiprocessing.Process, "WorkerDeadline"]:
     """Gets the processes, not yet started, of a heavy worker for each device and of the
-    light workers"""
-    processes = [
-        multiprocessing.Process(
+    light workers, each with the deadline it sets itself"""
+    from services.scheduler import WorkerDeadline
+
+    deadlines = {}
+    for device in devices:
+        deadline = WorkerDeadline()
+        process = multiprocessing.Process(
             target=_run_worker,
-            args=("heavy", env_files, device),
+            args=("heavy", env_files, device, deadline),
             name=f"heavy worker of {device}",
         )
-        for device in devices
-    ]
-    processes.extend(
-        multiprocessing.Process(
+        deadlines[process] = deadline
+    for number in range(1, light_workers + 1):
+        deadline = WorkerDeadline()
+        process = multiprocessing.Process(
             target=_run_worker,
-            args=("light", env_files),
+            args=("light", env_files, None, deadline),
             name=f"light worker {number}",
         )
-        for number in range(1, light_workers + 1)
-    )
-    return processes
+        deadlines[process] = deadline
+    return deadlines
 
 
 def _wait_for_first_stop(
     processes: list[multiprocessing.Process],
+    deadlines: dict[multiprocessing.Process, "WorkerDeadline"],
 ) -> multiprocessing.Process:
-    """Waits for any of the processes to stop, then stops the rest
+    """Waits for any of the processes to stop, or a worker to pass its deadline, which it
+    kills, as one stuck where no signal handler runs would not stop otherwise; then stops
+    the rest
 
     Returns:
-        the first that stopped
+        the first that stopped, or the one killed
     """
     try:
-        wait([process.sentinel for process in processes])
-        return next(process for process in processes if not process.is_alive())
+        while True:
+            wait(
+                [process.sentinel for process in processes],
+                timeout=DEADLINE_CHECK_SECONDS,
+            )
+            for process in processes:
+                if not process.is_alive():
+                    return process
+            for process, deadline in deadlines.items():
+                seconds_past = -deadline.get_seconds_left()
+                if seconds_past > 0:
+                    print(
+                        f"bcc: the {process.name} process is {seconds_past:.0f}s past"
+                        " its deadline, so stuck; killing it",
+                        flush=True,
+                    )
+                    process.kill()
+                    process.join()
+                    return process
     finally:
         for process in processes:
             process.terminate()
@@ -269,7 +297,12 @@ def _serve(
     )
 
 
-def _run_worker(kind: str, env_files: list[str], device: str | None = None) -> None:
+def _run_worker(
+    kind: str,
+    env_files: list[str],
+    device: str | None = None,
+    deadline: "WorkerDeadline | None" = None,
+) -> None:
     _load_devices(env_files)
     import settings
     from api.worker import preload_worker_globals
@@ -290,7 +323,10 @@ def _run_worker(kind: str, env_files: list[str], device: str | None = None) -> N
         for name in devices
     }
     dispatcher = Dispatcher(
-        resources, should_run_heavy=is_heavy, should_run_light=not is_heavy
+        resources,
+        should_run_heavy=is_heavy,
+        should_run_light=not is_heavy,
+        deadline=deadline,
     )
     # as RQ's warm shutdown did, after the stage under way
     signal.signal(signal.SIGTERM, lambda *_: dispatcher.stop())

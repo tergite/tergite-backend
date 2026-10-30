@@ -194,7 +194,8 @@ result. SQL, MSS's protocol and the executors live below it.
 device and `--light-workers` light workers (default 1), and stops them all when any stops, so
 that the service manager restarts the backend whole. `serve` and `worker --kind heavy|light`
 run one alone. The children start the platform's way, as macOS cannot fork a process that has
-loaded its frameworks.
+loaded its frameworks. `start` also kills a worker that is past its deadline, as stuck (§6.5),
+which stops the rest the same way.
 
 | Process | Runs |
 | --- | --- |
@@ -425,6 +426,16 @@ stage under way without waiting out its timeout.
   `BCC_MAX_POSTPROCESSING_TIME` (`_raise_after`, which acts only in the main thread). A stage
   past it fails its job: preprocessing and execution as "timed out", postprocessing as "error
   during post processing". 0 means no limit.
+- **A stuck worker**: a stage's `SIGALRM` interrupts it only once Python code runs again, so a
+  worker stuck in a call that never returns, in an instrument driver or a simulation, would stay
+  stuck. Each worker therefore sets itself a deadline (`WorkerDeadline`, shared memory on the
+  monotonic clock) as it goes: before a stage, its time limit plus `BCC_MSS_RESPONSE_TIMEOUT`,
+  for telling MSS of it, plus a minute (`_DEADLINE_MARGIN_SECONDS`), or none for a stage without
+  a limit; at the start of a pass, `BCC_MSS_RESPONSE_TIMEOUT` plus the minute; before a wait,
+  the wait plus the minute. `bcc start` checks every worker's deadline every 5 s
+  (`DEADLINE_CHECK_SECONDS` in `main.py`), and kills, with `SIGKILL`, as its `SIGTERM` handler
+  could not run, a worker past it; then it stops the rest, and the service manager restarts the
+  backend. The killed worker's job is then failed as overdue.
 - **A dead worker's job**: every pass starts with `fail_overdue_jobs`, which fails the device's
   jobs whose working stage was claimed longer ago than that stage's limit, as the worker that
   claimed them can no longer be running it. Whichever worker looks first does it.
@@ -924,12 +935,9 @@ Worth knowing before you are surprised by them:
 - **MSS's online flag follows any one socket.** BCC holds a socket per device per process, and
   MSS marks the device offline when any of them closes, such as an idle one that missed its
   pings, until another connects (§8.1).
-- **A stuck heavy worker is not noticed.** A stage's time limit is a `SIGALRM`, which interrupts
-  it only once Python code runs again; a C call that never returns, in an instrument driver or
-  a simulation, keeps the worker stuck. Another worker fails the job when its time is up
-  (`fail_overdue_jobs`), but the device runs nothing more until the backend restarts: the
-  process is alive, so neither `bcc start` nor the service manager restarts it, and there is no
-  health check of the workers.
+- **Some stuck processes are not noticed.** A worker's deadline is checked only by `bcc start`,
+  so a worker run alone with `bcc worker` is not; nor is a worker stuck while it starts, before
+  its first pass sets a deadline, nor the API (§6.5).
 - **A worker that dies during a recalibration leaves its row `started`**, so
   `/recalibration/info` reports it as under way from then on; the next recalibration was
   scheduled when it started, so they go on.

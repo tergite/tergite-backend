@@ -10,9 +10,14 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests for the bcc command's arguments and the processes bcc start runs"""
+import multiprocessing
+import signal
+import time
+
 import pytest
 
 import main
+from services.scheduler import WorkerDeadline
 
 
 def test_worker_takes_its_kind_and_each_env_file():
@@ -58,3 +63,35 @@ def test_each_device_gets_a_heavy_worker_and_shares_the_light_ones():
         "light worker 2",
     ]
     assert all(process.pid is None for process in processes)
+
+
+@pytest.mark.timeout(60)
+def test_a_worker_past_its_deadline_is_killed_and_stops_the_rest():
+    """A worker stuck where no signal handler runs is killed, as SIGTERM would not stop it"""
+    stuck_deadline = WorkerDeadline()
+    stuck = multiprocessing.Process(
+        target=_get_stuck, args=(stuck_deadline,), name="heavy worker of Alpha"
+    )
+    idle = multiprocessing.Process(target=_wait_forever, name="light worker 1")
+    for process in (stuck, idle):
+        process.start()
+
+    stopped = main._wait_for_first_stop(
+        [stuck, idle], deadlines={stuck: stuck_deadline, idle: WorkerDeadline()}
+    )
+
+    assert stopped is stuck
+    assert stuck.exitcode == -signal.SIGKILL
+    assert not idle.is_alive()
+
+
+def _get_stuck(deadline: WorkerDeadline) -> None:
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    deadline.set_in(0.5)
+    while True:
+        time.sleep(1)
+
+
+def _wait_forever() -> None:
+    while True:
+        time.sleep(1)

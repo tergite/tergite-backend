@@ -27,7 +27,9 @@ from pytest_mock import MockerFixture
 
 from libs.queues.dtos import Job, JobStatus, Stage, Timestamps
 from services.booking import Booking
+from services.scheduler import WorkerDeadline
 from services.scheduler import dispatcher as scheduler_dispatcher
+from services.scheduler import tasks as scheduler_tasks
 from services.scheduler.dispatcher import fail_overdue_jobs
 from tests.utils.api import (
     create_mss_headers,
@@ -1424,6 +1426,40 @@ def test_finished_job_is_sent_to_mss_with_its_results(
         assert {update["job_id"] for update in job_updates} == {job_info["job_id"]}
         assert job_updates[-1]["status"] == "successful"
         assert job_updates[-1]["result"]["memory"]
+
+
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+def test_worker_deadline_covers_the_whole_time_limit_of_its_stage(
+    client, jobs_folder, worker, job, mocker
+):
+    """So that the process that started the worker takes it to be stuck only past it"""
+    deadline = WorkerDeadline()
+    worker_with_deadline = TestWorker(
+        worker.device_resources,
+        should_run_heavy=True,
+        should_run_light=True,
+        deadline=deadline,
+    )
+    seconds_left_in_execution = []
+    execute = scheduler_tasks.execute
+
+    def record_seconds_left(*args, **kwargs):
+        seconds_left_in_execution.append(deadline.get_seconds_left())
+        return execute(*args, **kwargs)
+
+    mocker.patch.object(scheduler_tasks, "execute", side_effect=record_seconds_left)
+    with client as client:
+        users = create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_info = get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )[0]
+        submit_jobs(client, data=[job_info])
+
+        worker_with_deadline.run(is_burst=True)
+
+    device = next(iter(worker.device_resources.values()))
+    assert seconds_left_in_execution[0] > device.settings.max_execution_time
 
 
 @pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
