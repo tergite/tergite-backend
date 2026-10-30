@@ -166,9 +166,10 @@ sudo bcc-provision lab1
 # sudo bcc.simulator-provision sim1 --executor qiskit_pulse_2q --port 8002
 ```
 
-- Edit the instance's configs in `/etc/bcc/<name>/` for the device, copy MSS's
-  `public-mss-key.pem` there unless MSS runs on the same machine, and give MSS the
-  `[[backends]]` entry and `public-bcc-key.pem` that provisioning printed.
+- Edit the instance's configs in `/etc/bcc/<name>/` for the device, and its starting
+  calibration in `/var/lib/bcc/<name>/calibration.seed.toml`, which recalibrations rewrite;
+  copy MSS's `public-mss-key.pem` to `/etc/bcc/<name>/` unless MSS runs on the same machine,
+  and give MSS the `[[backends]]` entry and `public-bcc-key.pem` that provisioning printed.
 
 - Start the instance, and on every boot. Its data is in `/var/lib/bcc/<name>/`.
 

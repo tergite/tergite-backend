@@ -719,7 +719,9 @@ file names:
 
 - `backend_config.toml` — the device's qubits, resonators, couplers and gates, and for a
   simulator its `simulator_config`;
-- `calibration.seed.toml` — the calibration a device starts with;
+- `calibration.seed.toml` — the calibration a device starts with, which each quantify
+  recalibration rewrites, keeping tergite-tuner's own results beside it as
+  `calibration.seed.tuner.json`;
 - `quantify-config.json` and `quantify-metadata.yml` — the clusters, for quantify;
 - the tergite-tuner configs (`BCC_CALIBRATION_*_CONFIG_FILE`), for quantify's recalibration;
 - `private-bcc-key.pem` and MSS's `public-mss-key.pem`.
@@ -734,8 +736,9 @@ encrypted with a Hashicorp Vault key (`sops_hc_vault__`) into the environment, t
 BCC installs from its release's deb (amd64) or macOS arm64 installer: Nuitka's standalone
 build, `bcc` from the quantify extra or `bcc.simulator` from the qiskit one, each in its own
 package so they install side by side. Each instance is a device: `bcc-provision <name>` writes
-`/etc/bcc/<name>/` (its `backend.env`, a key pair and the example configs) and the
-`bcc@<name>` systemd service runs it from `/var/lib/bcc/<name>/`, logging to the journal; on
+`/etc/bcc/<name>/` (its `backend.env`, a key pair and the example configs) and its calibration
+seed into `/var/lib/bcc/<name>/`, which recalibrations rewrite while `/etc` is read-only to the
+service; the `bcc@<name>` systemd service runs it from there, logging to the journal; on
 macOS the paths are under `/usr/local/` and a LaunchDaemon runs it. The deb asks debconf for a
 first instance, and for Redis only when its executor is quantify. See
 [CONTRIBUTING.md](CONTRIBUTING.md#how-to-install-as-a-service).

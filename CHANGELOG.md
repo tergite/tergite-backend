@@ -71,6 +71,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- Fixed a packaged instance's quantify recalibration failing to rewrite its calibration seed, which provisioning put
+  in the service's read-only `/etc/bcc/<name>/`; it now goes in `/var/lib/bcc/<name>/`, so move an existing one there
+  and point `BCC_CALIBRATION_SEED` at it
 - Fixed the calibration a heavy worker publishes at start giving its couplers no control or target qubit; they are
   named from the device config's `coupling_dict`, and a coupler missing from it is refused at start
 - Fixed a recalibration's results reaching only MSS and the seed file: jobs ran on the old qubit frequencies and were

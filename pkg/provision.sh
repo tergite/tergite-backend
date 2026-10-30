@@ -104,7 +104,7 @@ main() {
 		BCC_MSS_PUBLIC_KEY_PATH=$dir/public-mss-key.pem
 
 		BCC_BACKEND_SETTINGS=$dir/backend_config.toml
-		BCC_CALIBRATION_SEED=$dir/calibration.seed.toml
+		BCC_CALIBRATION_SEED=$data/calibration.seed.toml
 		BCC_QUANTIFY_CONFIG_FILE=$dir/quantify-config.json
 		BCC_QUANTIFY_METADATA_FILE=$dir/quantify-metadata.yml
 		BCC_CALIBRATION_DEVICE_CONFIG_FILE=$dir/device_config.calib.toml
@@ -131,7 +131,8 @@ main() {
 		  url = "http://$host:$port"
 		  public_key_path = "<where you copied public-bcc-key.pem>"
 		- Copy MSS's public-mss-key.pem to $dir/public-mss-key.pem, unless it is there already.
-		- Edit the configs in $dir for the device, then start it: $start
+		- Edit the configs in $dir for the device, and its starting calibration in
+		  $data/calibration.seed.toml, which recalibrations rewrite; then start it: $start
 	EOF
 }
 
@@ -139,7 +140,7 @@ copy_examples() {
 	case $1 in
 		quantify)
 			install -m 0640 "$examples/backend_config.example.toml" "$dir/backend_config.toml"
-			install -m 0640 "$examples/calibration.seed.example.toml" "$dir/calibration.seed.toml"
+			install_seed "$examples/calibration.seed.example.toml"
 			install -m 0640 "$examples/quantify-config.example.json" "$dir/quantify-config.json"
 			install -m 0640 "$examples/quantify-metadata.example.yml" "$dir/quantify-metadata.yml"
 			install -m 0640 "$examples/calib_device_config.example.toml" "$dir/device_config.calib.toml"
@@ -148,14 +149,20 @@ copy_examples() {
 			;;
 		qiskit_pulse_1q)
 			install -m 0640 "$examples/backend_config.simq1.toml" "$dir/backend_config.toml"
-			install -m 0640 "$examples/qiskit_pulse_1q.seed.toml" "$dir/calibration.seed.toml"
+			install_seed "$examples/qiskit_pulse_1q.seed.toml"
 			;;
 		qiskit_pulse_2q)
 			install -m 0640 "$examples/backend_config.simq2.toml" "$dir/backend_config.toml"
-			install -m 0640 "$examples/qiskit_pulse_2q.seed.toml" "$dir/calibration.seed.toml"
+			install_seed "$examples/qiskit_pulse_2q.seed.toml"
 			;;
 		*) fail "@BINARY@ runs no executor '$1'" ;;
 	esac
+}
+
+# the seed in the data folder, the service's own, as each recalibration rewrites it and
+# writes the tuner's results beside it, where /etc is read-only to the service
+install_seed() {
+	install -m 0640 -o "$group" -g "$group" "$1" "$data/calibration.seed.toml"
 }
 
 add_password() {
