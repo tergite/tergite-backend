@@ -674,6 +674,11 @@ The SQL database at `BCC_BOOKING_DB_URL` (SQLite by default) holds, as SQLModel 
 | `mss_nonce` | MSS's nonces, until they expire |
 | `mss_event` | the events MSS could not be reached for, until a worker has sent them (§8.4) |
 
+Every process makes its own engine, which pools its connections, and on SQLite writes ahead to a
+log (`journal_mode=WAL`, `synchronous=NORMAL`), so that a commit, as of each request's nonce,
+does not wait for a full sync, and reads go on while another process writes; the database
+keeps `-wal` and `-shm` files beside it, and wants a local disk.
+
 Alembic migrates it ([migrations/](migrations)): the API and the workers both migrate at start,
 under the start-up lock, and `tests/test_migrations.py` fails when a model changed without a
 revision.

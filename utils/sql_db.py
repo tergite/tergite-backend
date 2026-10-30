@@ -14,11 +14,11 @@
 
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterable, Iterator, Type
+from typing import Any, Iterable, Iterator, Type
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import Engine
+from sqlalchemy import Engine, event
 from sqlmodel import Session, SQLModel, col, create_engine, desc
 
 from .exc import InvalidRequestError
@@ -30,7 +30,10 @@ _ALEMBIC_CONFIG_FILE = Path(__file__).parents[1] / "alembic.ini"
 def get_sql_engine(url: str) -> Engine:
     """Gets a new SQL engine for the given URL, which pools its connections, as every process
     makes its own engine and none forks; migrate_sql_db creates its tables"""
-    return create_engine(str(url))
+    engine = create_engine(str(url))
+    if engine.dialect.name == "sqlite":
+        event.listen(engine, "connect", _write_ahead)
+    return engine
 
 
 def migrate_sql_db(url: str) -> None:
@@ -93,3 +96,13 @@ def _get_field(model: Type[SQLModel], field: str):
         return getattr(model, field)
     except AttributeError as exp:
         raise InvalidRequestError(f"field {field} does not exist") from exp
+
+
+def _write_ahead(dbapi_connection: Any, _: Any) -> None:
+    """Has SQLite write ahead to a log, synced at checkpoints rather than at every commit, as
+    each request's nonce commits, and lets reads go on beside a write from another process
+    """
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.close()
