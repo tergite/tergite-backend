@@ -240,6 +240,10 @@ Tests and tooling only. After this step, a refactor commit that changes behaviou
     `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES`, as `start_bcc.sh` and the macOS package's launchd plist do: without
     it the Objective-C runtime kills every forked work horse, so `main.py start` or `rq` run directly on macOS
     finishes no job's postprocessing.
+    *Re-recorded at step 4's sign-off*, of step 4's code: RQ's scheduler runs in a spawned process that re-imports
+    the main module, and `dev/perf/stub_worker.py` imported qiskit at the top, so the heavy worker's peak counted
+    about 300 MiB that `main.py` does not load. The stub executor now lives in `dev/perf/stub_executor.py`, imported
+    under the `__main__` guard; later steps compare with step 4.
 11. **Tooling out of the app.** `start_bcc.sh` moves to `dev/`; nothing writes into the working directory or under
     `app/tests/` (`tmp/`, `tmp.*`, `test_booking.db`); `settings.FIXTURES_DIR` (`settings.py:44`) stops pointing
     into the tests.

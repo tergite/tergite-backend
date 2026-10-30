@@ -16,46 +16,13 @@ with it
 The qiskit executor is swapped before main.py builds one, so BCC_ENV_FILE must name the
 device's env file: settings is read on import, before main.py could set it.
 """
-import numpy as np
-from qiskit.pulse import Acquire
-
-import app.libs.quantum_executor.qiskit.executor as qiskit_executor
-from app.libs.quantum_executor.base.experiment import NativeExperiment
-from app.libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
-from app.libs.quantum_executor.base.quantum_job.typing import QExperimentResult
-from app.libs.quantum_executor.utils.logger import ExperimentLogger
-
-
-class StubExecutor(qiskit_executor.QiskitDynamicsExecutor):
-    """Preprocesses and postprocesses as the qiskit executor does, but measures every
-    acquired qubit at zero at once instead of simulating it"""
-
-    def _run_native(
-        self,
-        experiment: NativeExperiment,
-        /,
-        *,
-        native_config: NativeQobjConfig,
-        logger: ExperimentLogger,
-    ) -> QExperimentResult:
-        meas_return = qiskit_executor._QiskitDynMeasReturn.from_native_qobj_config(
-            native_config
-        )
-        channels = {
-            instruction.channel
-            for _, instruction in experiment.schedule.instructions
-            if isinstance(instruction, Acquire)
-        }
-        if meas_return == qiskit_executor._QiskitDynMeasReturn.AVG:
-            shape = (len(channels), 2)
-        else:
-            shape = (native_config.shots, len(channels), 2)
-        return qiskit_executor._to_xarray(data=np.zeros(shape), meas_return=meas_return)
-
-
-qiskit_executor.QiskitDynamicsExecutor = StubExecutor
 
 if __name__ == "__main__":
+    # not at the top: RQ's scheduler runs in a spawned process that re-imports this module,
+    # and would load the whole qiskit stack for nothing
+    import app.libs.quantum_executor.qiskit.executor as qiskit_executor
     import main
+    from dev.perf.stub_executor import StubExecutor
 
+    qiskit_executor.QiskitDynamicsExecutor = StubExecutor
     main.main()
