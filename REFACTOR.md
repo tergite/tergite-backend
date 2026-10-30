@@ -583,22 +583,32 @@ One package per commit; the style-guide baseline (1.9) shrinks with each.
 1. **Builders become constructors or getters**: about 22 `generate_*`/`construct_*`/`make_*`, e.g.
    `generate_hardware_map` (`portclock.py:19`, whose `quantify_config` argument is unused), `construct_redis_key`,
    `make_logger`, `_generate_numerical_pulse` (`quantify/instruction.py:744`).
+   *Done:* five were left after step 6; they are getters, and `get_hardware_map` lost its unused argument.
 2. **Nouns that say what they hold**: about 25 `data`/`out`/`kind`, e.g. `scheduler/utils.py:254` (the memory),
    `base/quantum_job/__init__.py:312`, `main.py:250` and its `--kind` option (`:136`); and `discriminator_`,
    `qubit_id__`-style names (`scheduler/utils.py:319, 322`, `two_qubit.py:308`).
+   *Done*, but `kind` stays, the parameter and `bcc worker --kind`: it names the worker's kind exactly, and the
+   option is the command line's; `data=` stays where it is an API's field, of `DeviceEvent` or the paginated list.
 3. **Names that do not mislead**: `jobs_db`, a Redis collection (`scheduler/utils.py:192, 225, 254`);
    `log_job_failure`, which sets `FAILED` (`fail_job`); `_get_preprocessed_expt_file`, a pickle named `.json`
    (`base/executor.py:285`); `get_executor_and_options`, whose pair `get_quantum_executor` pulls apart (`:115`);
    `_read_devices`, returning (default, all) (`settings.py:413`); `BCC_RQ_REDIS_URL`, now tergite-tuner's Redis, with
    the old name read as well, as the packages' provisioning writes it.
+   *Done*, but `log_job_failure` is `mark_job_failed`, as `_fail_job` already names failing and telling MSS;
+   `_read_devices` returns the devices alone, the default first; `get_executor_and_options` had gone; and the
+   setting is `BCC_TUNER_REDIS_URL`.
 4. **Booleans** start with `is_`/`should_`: about 35, e.g. `reset`, `noise`, `ignore_errors`, `local`, `job_exists`
    (`dependencies.py:275`), `force_normal_queue`, `emit`, `empty_queues`, `reload`, `desc`.
+   *Done*, but names others read keep theirs: the device parameters' `characterized`, `open_pulse` and `simulator`
+   are the backend config's and MSS's, and `limit_amplitude` is qiskit's; `?force_normal_queue=` and `--reload`
+   keep theirs by alias and `dest`.
 5. **Comments**: the 7 banners (`settings.py:212-214, 243-245`, `quantify/executor.py:119`, `utils/logger.py:62`,
    `tasks.py:115`, `scheduler/utils.py:355`; the vendored files' "ALTERATION NOTICE" is licence text and stays), about
    100 phase labels left after step 6, docstrings that restate their function ("Validate start_utc",
    `booking/models.py:101`; "Converts current to dictionary", `base/quantum_job/dtos.py:168`), the twelve
    `# default: …` comments beside the default (`settings.py:255-306`), string literals in `except` blocks
    (`queues/dtos.py:294, 313, 449`) and a docstring under an assignment (`base/quantum_job/__init__.py:80`).
+   *Done*; of the phase labels, those that explain an expression, as the Q1ASM clean-up's do, stay.
 6. **Clever constructs spelled out**: the `{**…}` merges (`device_parameters/dtos.py:100`, `base/executor.py:277`,
    `base/quantum_job/dtos.py:135`); the dict used as an ordered set (`redis_store.py:194-196`, if it survives step
    5); the symmetric difference filtered by a lambda (`utils/logger.py:241-245`); `dict([(q, i) for …])`
@@ -606,13 +616,17 @@ One package per commit; the style-guide baseline (1.9) shrinks with each.
    (`:673-682`); `interval` overwritten three times in order (`scheduler/dtos.py:65-91`); a comprehension that rebinds
    `conf` while reading it (`quantify/utils/config.py:238`); `data = data` (`queues/types.py:460`); a property setter
    that defines a new property (`queues/dtos.py:226, 243`).
+   *Done*; the ones in modules steps 5 and 6 deleted or rewrote went with them.
 7. **Layout**: constants to the top (`queues/dtos.py:604`, `redis_store.py:145`); private helpers to the bottom
    (`base/quantum_job/__init__.py:155-273`, `quantify/experiment.py:75-107`, `quantify/utils/calibration.py:28`).
+   *Done*, but the vendored qiskit qobj module keeps upstream's order.
 8. **Last: no `app/`.** Its packages, `api`, `libs`, `services`, `utils` and `tests`, move to the root beside
    `main.py`, `settings.py`, `migrations` and `dev`, in one commit that changes only paths and imports
    (`app.x` becomes `x`): the 78 files that name `app.`, Nuitka's `--include-module=app.api`, the Alembic env, the
    packaging and the docs. Checked first, again: no dependency in either extra installs a top-level module of those
    names, which the root's would then shadow or be shadowed by.
+   *Done*; the relative imports that climbed to `app` are absolute, and `import app` with its reload, of a
+   docstring alone, went from the tests.
 
 ## Step 8: close out
 
