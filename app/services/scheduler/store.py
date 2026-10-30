@@ -127,7 +127,7 @@ class JobsStore:
             if row is None:
                 raise ItemNotFoundError(f"'{job_id}' not found")
             job = Job.model_validate_json(row.data)
-            updated_job = Job.model_validate({**job.model_dump(), **updates})
+            updated_job = Job.model_validate(job.model_dump() | updates)
             _write_job(row, updated_job, now=get_utc_now())
             session.add(row)
             session.commit()

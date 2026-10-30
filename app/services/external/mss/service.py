@@ -96,7 +96,7 @@ class MssClient:
         auth_headers = create_headers(
             private_key=self._private_key, device=self._device
         )
-        options = {**self._kwargs, **kwargs}
+        options = self._kwargs | kwargs
         return connect(
             self._uri,
             open_timeout=self._open_timeout,
