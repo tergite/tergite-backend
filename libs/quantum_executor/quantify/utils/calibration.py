@@ -71,7 +71,7 @@ def recalibrate(
     """
     session = _recalibrate_all_qubits(**session_options)
     session = _recalibrate_all_couplers(session)
-    results = read_result(session)
+    results = read_result(session, session_only=False)
     coupler_index_map = {
         f"{q1}_{q2}": int(k.lstrip("u"))
         for k, (q1, q2) in backend_config.device_config.coupling_dict.items()

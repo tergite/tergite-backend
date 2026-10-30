@@ -2,6 +2,7 @@
 [[calibration_config.coupler]]
 control_qubit = "q12"
 control_rz_lambda = 2.111848394913139
+cz_pulse_amplitude = 0.92
 cz_pulse_duration_constant = 3.8e-7
 frequency = 4176200000.0
 full_name = "q12_q13"
@@ -88,6 +89,7 @@ pulse_type = "Square"
 
 [calibration_config.units.coupler]
 control_rz_lambda = "rad"
+cz_pulse_amplitude = ""
 cz_pulse_duration_constant = "s"
 frequency = "Hz"
 full_name = "q12_q13"

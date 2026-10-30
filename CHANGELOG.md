@@ -29,6 +29,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 ### Changed
 
 - Changed the job supervisor log to plain lines, as Python's logging writes them, without the ANSI colour codes
+- Changed a recalibration's calibration to hold every stored value, not only those the run set, so it no longer
+  fails on values the run leaves alone, such as `acq_delay`, with tergite-tuner's exact `read_result` matching
 - Changed the jobs to be kept in the bookings database, `BCC_BOOKING_DB_URL`, instead of Redis; jobs stored in
   Redis before upgrading are no longer listed, so let the queues empty first
 - Changed whether a device is switched off to be kept in the bookings database instead of Redis; a device switched
