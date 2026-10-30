@@ -36,13 +36,14 @@ def main() -> None:
 
 
 def store_jobs(user_id: str) -> None:
+    device_settings = settings.get_device_settings()
     jobs_store = get_jobs_store(
-        get_redis_connection(settings.RQ_REDIS_URL), settings.get_device_settings()
+        get_redis_connection(device_settings.rq_redis_url), device_settings
     )
     for _ in range(JOB_COUNT):
         jobs_store.insert(
             Job(
-                device=settings.DEFAULT_PREFIX,
+                device=device_settings.default_prefix,
                 calibration_date=utc_now_str(),
                 user_id=user_id,
                 estimated_duration=0.001,
@@ -55,7 +56,9 @@ def store_jobs(user_id: str) -> None:
 def store_bookings(user_id: str) -> None:
     """Stores hourly bookings from tomorrow on, so that none is under way during the run"""
     first_start = get_utc_now() + timedelta(days=1)
-    with Session(get_bookings_sql_engine(settings.BOOKING_DB_URL)) as session:
+    with Session(
+        get_bookings_sql_engine(settings.get_device_settings().booking_db_url)
+    ) as session:
         session.add(User(id=user_id, name="Perf", email="perf@example.com"))
         for index in range(BOOKING_COUNT):
             start_utc = first_start + timedelta(hours=index)

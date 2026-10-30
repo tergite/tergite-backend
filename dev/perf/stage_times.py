@@ -39,9 +39,10 @@ def main(path: str) -> None:
 def wait_for_jobs(user_id: str) -> List[Job]:
     """Gets the user's jobs once none is pending or executing, or once the wait times out"""
     deadline = time.time() + DRAIN_TIMEOUT_SECONDS
+    device_settings = settings.get_device_settings()
     while True:
         jobs = get_jobs_store(
-            get_redis_connection(settings.RQ_REDIS_URL), settings.get_device_settings()
+            get_redis_connection(device_settings.rq_redis_url), device_settings
         ).find_by_index({"user_id": user_id})
         is_drained = all(job.status.is_terminal() for job in jobs)
         if is_drained or time.time() > deadline:

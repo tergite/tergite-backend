@@ -19,7 +19,6 @@ import numpy as np
 from qiskit.pulse import Acquire
 from rq import get_current_job
 
-import settings
 from app.libs.qiskit.qobj import PulseQobj
 from app.libs.quantum_executor.base.experiment import NativeExperiment
 from app.libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
@@ -30,7 +29,6 @@ from app.libs.quantum_executor.qiskit.executor import (
     _to_xarray,
 )
 from app.libs.quantum_executor.utils.logger import ExperimentLogger
-from app.services.scheduler.store import get_jobs_store
 
 
 class MockQiskitDynamicsExecutor(QiskitDynamicsExecutor):
@@ -47,10 +45,7 @@ class MockQiskitDynamicsExecutor(QiskitDynamicsExecutor):
 
     def run(self, job_id: str, inputs_folder: Path) -> str:
         start_timestamp = datetime.now()
-        jobs_store = get_jobs_store(
-            get_current_job().connection, settings.get_device_settings()
-        )
-        job = jobs_store.get_one(job_id)
+        job = get_current_job().device_resources.jobs_store.get_one(job_id)
         estimated_duration = 0
         if job.estimated_duration:
             estimated_duration = job.estimated_duration

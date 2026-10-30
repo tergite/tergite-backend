@@ -14,6 +14,7 @@
 """Tests for the API's device property routes and what start-up sends MSS"""
 import pytest
 
+import settings
 from app.api.worker import preload_worker_globals
 from app.services.scheduler import close_device_resources
 from app.tests.utils.api import (
@@ -42,7 +43,9 @@ def test_only_the_heavy_worker_publishes_the_device_and_its_calibration(
         assert response.status_code == 404
         assert mock_mss.sent_events == []
 
-        device = preload_worker_globals(should_load_executor=True)
+        device = preload_worker_globals(
+            settings.get_device_settings(), should_load_executor=True
+        )
         try:
             static_properties = client.get(
                 "/static-properties", headers=create_mss_headers()
@@ -66,7 +69,11 @@ def test_get_static_properties(client, expected):
     # using context manager to ensure on_startup runs
     with client as client:
         # the heavy worker publishes the device's properties once the API has started
-        close_device_resources(preload_worker_globals(should_load_executor=True))
+        close_device_resources(
+            preload_worker_globals(
+                settings.get_device_settings(), should_load_executor=True
+            )
+        )
         user_id, _ = create_user(client, USERS[0])
         headers = create_mss_headers(user_id)
 
@@ -94,7 +101,11 @@ def test_get_dynamic_properties(client, expected):
     with client as client:
         # the heavy worker publishes its executor's calibration, e.g. the simulators'
         # trained discriminators, once the API has started
-        close_device_resources(preload_worker_globals(should_load_executor=True))
+        close_device_resources(
+            preload_worker_globals(
+                settings.get_device_settings(), should_load_executor=True
+            )
+        )
         user_id, _ = create_user(client, USERS[0])
         headers = create_mss_headers(user_id)
 

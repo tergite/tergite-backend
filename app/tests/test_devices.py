@@ -15,7 +15,7 @@ from app.tests.utils.params import USERS
 
 
 def test_load_devices_serves_each_device_settings(tmp_path, monkeypatch):
-    """settings.X is the current device's X: the one using_device names, or else the first"""
+    """A device's settings are got by its name, the first device's by default"""
     import settings
 
     assert load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"]) == [
@@ -23,11 +23,12 @@ def test_load_devices_serves_each_device_settings(tmp_path, monkeypatch):
         "Beta",
     ]
 
-    assert settings.DEFAULT_PREFIX == "Alpha"
-    with settings.using_device("Beta"):
-        assert settings.DEFAULT_PREFIX == "Beta"
-        assert settings.BOOKING_DB_URL == f"sqlite:///{tmp_path}/Beta.db"
-    assert settings.DEFAULT_PREFIX == "Alpha"
+    assert settings.get_device_settings().default_prefix == "Alpha"
+    beta = settings.get_device_settings("Beta")
+    assert (beta.default_prefix, beta.booking_db_url) == (
+        "Beta",
+        f"sqlite:///{tmp_path}/Beta.db",
+    )
 
 
 def test_bcc_env_file_names_each_device_an_api_worker_serves(tmp_path):
@@ -179,7 +180,6 @@ def test_heavy_worker_waits_while_its_device_is_off(
     from rq import Queue
     from rq.worker import StopRequested
 
-    import settings
     from app.api import app
     from app.api.worker import PreloadedRqWorker
     from app.services.scheduler import DeviceResources
@@ -189,8 +189,8 @@ def test_heavy_worker_waits_while_its_device_is_off(
     # the worker's start-up, but for building the executor and publishing the device
     mocker.patch(
         "app.api.worker.preload_worker_globals",
-        side_effect=lambda should_load_executor: DeviceResources.from_settings(
-            settings.get_device_settings()
+        side_effect=lambda device_settings, should_load_executor: (
+            DeviceResources.from_settings(device_settings)
         ),
     )
     alpha_worker = PreloadedRqWorker(
@@ -218,19 +218,17 @@ def test_each_device_has_its_own_jobs(tmp_path, monkeypatch, redis_client):
 
     load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
     job = Job(device="Beta", calibration_date="")
-    with settings.using_device("Beta"):
-        beta_jobs = get_jobs_store(
-            get_redis_connection(settings.get_device_settings().rq_redis_url),
-            settings.get_device_settings(),
-        )
-        beta_jobs.insert(job)
+    beta_settings = settings.get_device_settings("Beta")
+    beta_jobs = get_jobs_store(
+        get_redis_connection(beta_settings.rq_redis_url), beta_settings
+    )
+    beta_jobs.insert(job)
 
-    with settings.using_device("Alpha"):
-        alpha_jobs = get_jobs_store(
-            get_redis_connection(settings.get_device_settings().rq_redis_url),
-            settings.get_device_settings(),
-        )
-        assert not alpha_jobs.exists(job.job_id)
+    alpha_settings = settings.get_device_settings("Alpha")
+    alpha_jobs = get_jobs_store(
+        get_redis_connection(alpha_settings.rq_redis_url), alpha_settings
+    )
+    assert not alpha_jobs.exists(job.job_id)
 
 
 def test_each_device_has_its_own_executor_lock(tmp_path, monkeypatch):
@@ -238,10 +236,8 @@ def test_each_device_has_its_own_executor_lock(tmp_path, monkeypatch):
     from app.services.scheduler import DeviceResources
 
     load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
-    with settings.using_device("Alpha"):
-        alpha = DeviceResources.from_settings(settings.get_device_settings())
-    with settings.using_device("Beta"):
-        beta = DeviceResources.from_settings(settings.get_device_settings())
+    alpha = DeviceResources.from_settings(settings.get_device_settings("Alpha"))
+    beta = DeviceResources.from_settings(settings.get_device_settings("Beta"))
 
     assert alpha.executor_lock.lock_file != beta.executor_lock.lock_file
 
@@ -262,9 +258,9 @@ def test_each_device_has_its_own_executor_lock(tmp_path, monkeypatch):
 def test_each_route_group_reaches_the_device_its_path_names(
     tmp_path, monkeypatch, mocker, redis_client, path
 ):
-    import settings
     from app.api import app
     from app.api.dependencies import (
+        DeviceResourcesDep,
         get_bearer_token,
         get_verified_mss_admin_user_id,
         get_verified_mss_user_id,
@@ -274,8 +270,8 @@ def test_each_route_group_reaches_the_device_its_path_names(
     load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
     reached_devices = []
 
-    def record_device():
-        reached_devices.append(settings.DEFAULT_PREFIX)
+    def record_device(device: DeviceResourcesDep):
+        reached_devices.append(device.settings.default_prefix)
         raise NotAuthenticatedError("only recording the device")
 
     monkeypatch.setitem(

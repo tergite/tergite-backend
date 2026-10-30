@@ -359,11 +359,17 @@ the connections. This step makes the device explicit.
 5. **No `param or settings.X`**, one package per commit: `utils/redis.py:32`, `utils/api.py:275`,
    `utils/compat.py:53, 67`, `base/executor.py:296`, `quantify/executor.py:100-107`, `booking/store.py:29`,
    `booking/service.py:349-354, 377, 461`, `scheduler/store.py:44-52`, `scheduler/utils.py:158, 271`.
+   *Done* with 4.6, a commit per package: the executors hold the data directory they are given, and `preprocess`
+   and `run` require their folders.
 6. **`libs` stops reading `settings`**: `queues/dtos.py:49`, `base/executor.py:24`, `quantify/executor.py:38`, and
    through `utils/compat.py:17` and `utils/logging.py:3`. `ExecutorOptions.from_settings` (`queues/dtos.py:546`)
    moves to the composition root. The booking validators that read `settings` and the clock
    (`booking/models.py:98-137, 220-235, 254-263`) become checks in the booking service, given `BookingsConfig` and
    `now`.
+   *Done otherwise for `ExecutorOptions.from_settings`:* it stays on the DTO, given the device's `DeviceSettings`, as
+   `libs` may import `utils` and the conversions stay on the DTOs. The booking checks raise `InvalidBookingError`,
+   answered with 422 as the validators' errors were; `DeviceSettings.get_utc_now` gives the time `BCC_CURRENT_DATE`
+   stands in for, and `Booking.is_active_at` and `is_complete_at` take it.
 7. **Settings without the indirection.** **Decided:** a `pydantic-settings` model, as below. `DeviceSettings` (`settings.py:47`, its `__init__` 276 lines)
    becomes a `pydantic-settings` `BaseSettings` with a source for the `BCC_<PREFIX>_` overrides
    (`settings.py:373-410`), or stays hand-written and split per rule 1. Either way it reads only: the folders it
@@ -378,6 +384,8 @@ the connections. This step makes the device explicit.
    `__getattr__` reads `settings.X` as the current device's `x`.
    The folders are created by the lifespan and the worker, per device; `set_up_logging` runs in `main.py`'s workers
    and in the lifespan too, as uvicorn's `--workers` import the app without running `main.py`'s commands.
+   With the shim gone, `get_device_settings()` without a name is the default device's; the worker and the routes
+   are handed theirs, and `preload_worker_globals` takes the settings of the device it loads.
 
 ## Step 5: storage
 

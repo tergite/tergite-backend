@@ -15,10 +15,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from fastapi.responses import FileResponse
 
-import settings
-
 from ...utils.exc import ItemNotFoundError
-from ..dependencies import get_mss_token_claims_dep
+from ..dependencies import DeviceResourcesDep, get_mss_token_claims_dep
 
 router = APIRouter()
 
@@ -27,16 +25,17 @@ router = APIRouter()
     "/logfiles/{logfile_id}",
     dependencies=[Depends(get_mss_token_claims_dep(job_id_field="logfile_id"))],
 )
-async def download_logfile(logfile_id: UUID):
+async def download_logfile(device: DeviceResourcesDep, logfile_id: UUID):
     """Downloads the job logfile
 
     Args:
+        device: what the device runs on
         logfile_id: the id of the logfile usually the job id
 
     Raises:
         ItemNotFoundError: logfile {logfile_id} not found
     """
-    file = (settings.LOG_FILE_POOL / str(logfile_id)).with_suffix(".hdf5")
+    file = (device.settings.log_file_pool / str(logfile_id)).with_suffix(".hdf5")
     if file.exists():
         return FileResponse(file)
     raise ItemNotFoundError(f"logfile {logfile_id} not found")

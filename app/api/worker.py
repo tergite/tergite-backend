@@ -27,7 +27,7 @@ from ..services.scheduler import (
     DeviceResources,
     get_executor,
 )
-from ..utils.config import create_device_folders
+from ..utils.config import DeviceSettings, create_device_folders
 
 
 class DeviceJob(Job):
@@ -52,19 +52,15 @@ class PreloadedRqWorker(Worker):
         super().__init__(*args, job_class=DeviceJob, **kwargs)
         self.device_resources: dict[str, DeviceResources] = {}
         for device in {_get_device_of_queue(queue.name) for queue in self.queues}:
-            with settings.using_device(device):
-                self.device_resources[device] = preload_worker_globals(
-                    should_load_executor=self.should_preload_executor
-                )
+            self.device_resources[device] = preload_worker_globals(
+                settings.get_device_settings(device),
+                should_load_executor=self.should_preload_executor,
+            )
 
     def execute_job(self, job: DeviceJob, queue: Queue) -> None:
         # before a forking worker forks, as the work horse's death runs the callbacks here
         job.device_resources = self.device_resources[_get_device_of_queue(queue.name)]
         super().execute_job(job, queue)
-
-    def perform_job(self, job: DeviceJob, queue: Queue) -> bool:
-        with settings.using_device(_get_device_of_queue(queue.name)):
-            return super().perform_job(job, queue)
 
     def check_for_suspension(self, is_burst: bool) -> None:
         """Also waits, as rq's own suspension does, while the worker's device is switched off"""
@@ -88,18 +84,20 @@ class LightRqWorker(PreloadedRqWorker):
     should_wait_while_offline = False
 
 
-def preload_worker_globals(should_load_executor: bool) -> DeviceResources:
-    """Initializes the current device's resources and other globals, so that the jobs,
-    forked or run in process, find them cached
+def preload_worker_globals(
+    device_settings: DeviceSettings, should_load_executor: bool
+) -> DeviceResources:
+    """Initializes the device's resources and other globals, so that the jobs, forked or
+    run in process, find them loaded
 
     Returns:
-        the current device's resources
+        the device's resources
     """
-    create_device_folders(settings.get_device_settings())
+    create_device_folders(device_settings)
     # so that the jobs need not import it
     import_module("app.services.scheduler.tasks")
 
-    device = DeviceResources.from_settings(settings.get_device_settings())
+    device = DeviceResources.from_settings(device_settings)
     if should_load_executor:
         executor = get_executor(device.executor_options)
         # published here alone, as the executor may refine the backend config, e.g. the

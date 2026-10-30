@@ -41,15 +41,14 @@ class DeviceRoutingMiddleware:
             )
             return
 
-        with settings.using_device(device):
-            await self.app(
-                {
-                    **_get_scope_with_device_name(scope, device),
-                    "root_path": f"{root_path}/{device}",
-                },
-                receive,
-                send,
-            )
+        await self.app(
+            {
+                **_get_scope_with_device_name(scope, device),
+                "root_path": f"{root_path}/{device}",
+            },
+            receive,
+            send,
+        )
 
 
 def _get_scope_with_device_name(scope: Scope, device: str) -> Scope:

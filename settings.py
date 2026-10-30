@@ -15,16 +15,13 @@
 #
 """The settings of each device this process serves, read from its env file
 
-`settings.X` is X of the current device: the one using_device names for the request or
-job at hand, or else the default device, the first loaded. One process serves several
-devices when load_devices is given several env files.
+One process serves several devices when load_devices is given several env files, the
+first being the default one.
 """
 import importlib.util
 import os
-from contextlib import contextmanager
-from contextvars import ContextVar
 from pathlib import Path
-from typing import Iterator, List, Optional
+from typing import List, Optional
 
 from app.utils.config import DeviceSettings, read_device_settings
 
@@ -32,12 +29,6 @@ from app.utils.config import DeviceSettings, read_device_settings
 HAS_QISKIT_DYNAMICS = importlib.util.find_spec("qiskit_dynamics") is not None
 
 _ROOT_PATH = Path(__file__).parent
-
-
-# FIXME: This __getattr__ indirection will confuse readers of the code base. Better if explicitly got.
-def __getattr__(name: str):
-    # settings.X is the current device's x, until step 4 hands each its settings
-    return getattr(get_device_settings(), name.lower())
 
 
 def load_devices(env_files: List[Path]) -> List[str]:
@@ -57,19 +48,8 @@ def get_device_names() -> List[str]:
 
 
 def get_device_settings(name: Optional[str] = None) -> DeviceSettings:
-    """Gets the settings of the named device, or else of the current one"""
-    name = name or _CURRENT_DEVICE.get()
+    """Gets the settings of the named device, or else of the default one"""
     return _DEVICES[name] if name else _DEFAULT_DEVICE
-
-
-@contextmanager
-def using_device(name: str) -> Iterator[DeviceSettings]:
-    """Makes the named device the current one within the block"""
-    token = _CURRENT_DEVICE.set(name)
-    try:
-        yield _DEVICES[name]
-    finally:
-        _CURRENT_DEVICE.reset(token)
 
 
 def _read_devices(
@@ -84,4 +64,3 @@ def _read_devices(
 _DEFAULT_DEVICE, _DEVICES = _read_devices(
     [_ROOT_PATH / v for v in os.environ.get("BCC_ENV_FILE", ".env").split(os.pathsep)]
 )
-_CURRENT_DEVICE: ContextVar[Optional[str]] = ContextVar("current_device", default=None)

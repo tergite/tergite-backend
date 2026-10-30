@@ -74,14 +74,11 @@ async def lifespan(app: FastAPI):
         try:
             # one API worker at a time, as starting a device creates its tables and
             # restarts its recalibration
-            with (
-                settings.using_device(device),
-                # a start-up longer than the lock outlives it unharmed
-                lock_connection.lock(
-                    f"{device}:start-up",
-                    timeout=_START_UP_LOCK_SECONDS,
-                    raise_on_release_error=False,
-                ),
+            # a start-up longer than the lock outlives it unharmed
+            with lock_connection.lock(
+                f"{device}:start-up",
+                timeout=_START_UP_LOCK_SECONDS,
+                raise_on_release_error=False,
             ):
                 resources = DeviceResources.from_settings(device_settings)
                 app.state.device_resources[device] = resources
@@ -95,9 +92,8 @@ async def lifespan(app: FastAPI):
     logging.info(f"starting app at {get_utc_now()}")
     yield
 
-    for device in settings.get_device_names():
-        with settings.using_device(device):
-            stop_recalibration(app.state.device_resources[device], ignore_errors=True)
+    for device_resources in app.state.device_resources.values():
+        stop_recalibration(device_resources, ignore_errors=True)
     for device_resources in app.state.device_resources.values():
         close_device_resources(device_resources)
     app.state.device_resources.clear()

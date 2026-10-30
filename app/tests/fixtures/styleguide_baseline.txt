@@ -52,7 +52,6 @@ boolean: app/utils/rq.py::cancel_rq_job(ignore_errors)
 boolean: app/utils/sql_db.py::get_sql_engine(checkfirst)
 constant-position: app/libs/quantum_executor/quantify/utils/calibration.py::_FIXED_DURATION_COUPLER_NODES
 constant-position: app/libs/quantum_executor/quantify/utils/calibration.py::_NON_FIXED_DURATION_COUPLER_NODES
-constant-position: settings.py::_CURRENT_DEVICE
 license-header: app/libs/__init__.py
 license-header: app/libs/qiskit/__init__.py
 license-header: app/libs/qiskit_providers/__init__.py
@@ -310,7 +309,6 @@ type-hints: app/utils/sql_db.py::_get_field
 type-hints: app/utils/sql_db.py::convert_http_sort_to_db_sort
 type-hints: app/utils/strings.py::validate_uuid4_str
 type-hints: app/utils/strings.py::validate_uuid_str
-type-hints: settings.py::__getattr__
 verb: app/api/__init__.py::root
 verb: app/api/dependencies.py::get_mss_token_claims_dep.dependency_injector
 verb: app/api/dependencies.py::lifespan
@@ -351,4 +349,3 @@ verb: app/utils/model.py::_as_optional
 verb: app/utils/redis_store.py::Collection.exists
 verb: app/utils/redis_store.py::Schema.model_dump
 verb: app/utils/strings.py::uuid_str
-verb: settings.py::using_device
