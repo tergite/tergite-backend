@@ -17,6 +17,7 @@ from .auth import (
     verify_mss_signature,
 )
 from .dtos import DeviceEvent, DeviceEventName, DeviceSwitchData, EventResponse
+from .nonces import claim_mss_nonce
 from .service import MssClient
 
 __all__ = [
@@ -25,6 +26,7 @@ __all__ = [
     "DeviceSwitchData",
     "EventResponse",
     "MssClient",
+    "claim_mss_nonce",
     "encrypt_mss_jwt_token",
     "get_mss_public_key",
     "get_private_key",

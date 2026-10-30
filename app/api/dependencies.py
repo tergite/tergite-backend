@@ -13,7 +13,7 @@
 import json
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Annotated, Optional
 
 from cryptography.exceptions import InvalidSignature
@@ -31,6 +31,7 @@ from ..services.booking import (
 )
 from ..services.devices import is_offline
 from ..services.external.mss import (
+    claim_mss_nonce,
     verify_mss_signature,
 )
 from ..services.scheduler import (
@@ -257,11 +258,11 @@ def get_verified_mss_user_id(request: Request) -> str:
             raise ValueError(f"timestamp {timestamp} is in the future")
 
         # claimed before the route runs, so it cannot be replayed while in flight or after a crash
-        is_nonce_new = device.redis.set(
-            f"{device.settings.default_prefix}:mss-nonce:{nonce}",
-            timestamp,
-            nx=True,
-            px=timedelta(seconds=nonce_ttl),
+        is_nonce_new = claim_mss_nonce(
+            device.bookings_db,
+            device_name=device.settings.default_prefix,
+            nonce=nonce,
+            ttl=nonce_ttl,
         )
         if not is_nonce_new:
             raise ValueError(f"duplicate request nonce: '{nonce}'")
