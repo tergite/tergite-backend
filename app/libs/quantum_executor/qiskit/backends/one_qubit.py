@@ -19,13 +19,15 @@ import numpy as np
 from qiskit.providers import QubitProperties
 from qiskit.providers.models import GateConfig, PulseBackendConfiguration, PulseDefaults
 from qiskit.pulse import Acquire, AcquireChannel, MemorySlot, Schedule
-from qiskit.quantum_info import Statevector
 from qiskit.transpiler import Target
 from qiskit_dynamics import DynamicsBackend, Solver
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
 from app.libs.device_parameters import BackendConfig
-from app.libs.quantum_executor.qiskit.functions import get_lo_range
+from app.libs.quantum_executor.qiskit.functions import (
+    fit_lda,
+    get_basis_statevector,
+    get_lo_range,
+)
 
 # configure jax to use 64 bit mode
 jax.config.update("jax_enable_x64", True)
@@ -107,31 +109,20 @@ def train_one_qubit_discriminator(
     Returns:
         Discriminator object as json in the format to store it in the database
     """
-    # Generate the iq values
     schedule = Schedule((0, Acquire(1, AcquireChannel(0), MemorySlot(0))))
-
-    job_0 = backend.run([schedule], shots=shots)
-    i_q_values_0 = job_0.result().data()["memory"].reshape(shots, 2)
-    job_1 = backend.run(
-        [schedule], shots=shots, initial_state=Statevector([0, 1, 0, 0])
-    )
-    i_q_values_1 = job_1.result().data()["memory"].reshape(shots, 2)
-
-    # Train scikit learn discriminator
-    combined_i_q_values = np.vstack((i_q_values_0, i_q_values_1))
-    labels = np.append(np.zeros(shots), np.ones(shots))
-
-    lda_model = LinearDiscriminantAnalysis()
-    lda_model.fit(combined_i_q_values, labels)
-
-    lda_intercepts = lda_model.intercept_.tolist()
-    lda_coefs = lda_model.coef_.tolist()
-
-    lda_result = {}
-    for i in range(len(lda_intercepts)):
-        lda_result["intercept"] = lda_intercepts[i]
-        lda_result["coef_0"] = lda_coefs[i][0]
-        lda_result["coef_1"] = lda_coefs[i][1]
+    dims = backend.options.subsystem_dims
+    iq_values = [
+        backend.run(
+            [schedule],
+            shots=shots,
+            initial_state=get_basis_statevector(dims, mode=0, level=level),
+        )
+        .result()
+        .data()["memory"]
+        .reshape(shots, 2)
+        for level in (0, 1)
+    ]
+    lda_result = fit_lda(*iq_values)
 
     # Bring it to the right format
     return {

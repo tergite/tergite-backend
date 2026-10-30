@@ -21,6 +21,7 @@ from app.libs.quantum_executor.qiskit.backends.two_qubit import (
     _get_static_hamiltonian,
     _TransmonParams,
 )
+from app.libs.quantum_executor.qiskit.functions import fit_lda, get_basis_statevector
 
 _DIM = 3
 _PARAMS = _TransmonParams(
@@ -80,3 +81,28 @@ def test_drive_operators_drive_the_qubits_and_number_the_coupler():
         drive_1, 2 * np.pi * 1e9 * (operators.annihilators[1] + operators.creators[1])
     )
     assert np.allclose(coupler_drive, operators.numbers[2])
+
+
+def test_lda_tells_the_excited_points_from_the_ground_ones():
+    rng = np.random.default_rng(0)
+    iq_0 = rng.normal(loc=(0.0, 0.0), scale=0.1, size=(50, 2))
+    iq_1 = rng.normal(loc=(1.0, 1.0), scale=0.1, size=(50, 2))
+
+    lda = fit_lda(iq_0, iq_1)
+
+    def score(point):
+        return lda["intercept"] + lda["coef_0"] * point[0] + lda["coef_1"] * point[1]
+
+    assert set(lda) == {"intercept", "coef_0", "coef_1"}
+    assert score((0.0, 0.0)) < 0 < score((1.0, 1.0))
+
+
+@pytest.mark.parametrize(
+    "dims, mode, level, expected_index",
+    [([4], 0, 1, 1), ([3, 3, 3], 0, 1, 1), ([3, 3, 3], 1, 1, 3), ([3, 3, 3], 2, 2, 18)],
+)
+def test_basis_state_excites_only_its_mode(dims, mode, level, expected_index):
+    state = get_basis_statevector(dims, mode=mode, level=level)
+
+    assert np.flatnonzero(state.data).tolist() == [expected_index]
+    assert len(state.data) == int(np.prod(dims))

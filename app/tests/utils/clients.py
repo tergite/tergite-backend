@@ -111,7 +111,7 @@ def qiskit_1q_rest_client(
             new=StubQiskitDynamicsExecutor,
         )
     mocker.patch(
-        "app.libs.quantum_executor.qiskit.backends.one_qubit.LinearDiscriminantAnalysis",
+        "app.libs.quantum_executor.qiskit.functions.LinearDiscriminantAnalysis",
         return_value=MOCK_LDA_1Q,
     )
 
@@ -146,7 +146,7 @@ def qiskit_2q_rest_client(
             new=StubQiskitDynamicsExecutor,
         )
     mocker.patch(
-        "app.libs.quantum_executor.qiskit.backends.two_qubit.LinearDiscriminantAnalysis",
+        "app.libs.quantum_executor.qiskit.functions.LinearDiscriminantAnalysis",
         return_value=MOCK_LDA_2Q,
     )
 

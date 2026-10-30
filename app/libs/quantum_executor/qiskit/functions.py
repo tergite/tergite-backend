@@ -10,7 +10,11 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 
+from typing import Dict, List
+
 import numpy as np
+from qiskit.quantum_info import Statevector
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
 
 def omega_c(
@@ -64,6 +68,31 @@ def omega_c(
 def get_lo_range(frequency: float) -> list[float]:
     """Gets the range, in GHz, of a local oscillator 0.1 GHz either side of the frequency in Hz"""
     return [frequency / 1e9 - 0.1, frequency / 1e9 + 0.1]
+
+
+def fit_lda(iq_0: np.ndarray, iq_1: np.ndarray) -> Dict[str, float]:
+    """Fits a linear discriminator that tells the IQ points measured in |1> from those in
+    |0>, each an (shots, 2) array
+
+    Returns:
+        the discriminator's intercept and coefficients, as the backend config keeps them
+    """
+    model = LinearDiscriminantAnalysis()
+    labels = np.concatenate((np.zeros(len(iq_0)), np.ones(len(iq_1))))
+    model.fit(np.vstack((iq_0, iq_1)), labels)
+    # a binary discriminator has one; a mock may have more, of which the last is kept
+    intercept = model.intercept_.tolist()[-1]
+    coef_0, coef_1 = model.coef_.tolist()[-1]
+    return {"intercept": intercept, "coef_0": coef_0, "coef_1": coef_1}
+
+
+def get_basis_statevector(dims: List[int], mode: int, level: int) -> Statevector:
+    """Gets the state of the modes, of the given dims and the first least significant, in
+    which all are in their ground state but the one of the index, which is at the level
+    """
+    vector = np.zeros(int(np.prod(dims)), dtype=complex)
+    vector[level * int(np.prod(dims[:mode]))] = 1
+    return Statevector(vector)
 
 
 def _delta_t_function(t: float, t_w: float, t_rf: float, t_p: float, delta_0: float):

@@ -85,6 +85,7 @@ VERBS = frozenset(
         "fetch",
         "filter",
         "find",
+        "fit",
         "forget",
         "format",
         "from",

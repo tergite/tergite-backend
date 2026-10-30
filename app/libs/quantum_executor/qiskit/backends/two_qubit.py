@@ -19,12 +19,15 @@ from typing import Any
 import numpy as np
 from qiskit.providers.models import GateConfig, PulseBackendConfiguration
 from qiskit.pulse import Acquire, AcquireChannel, MemorySlot, Schedule
-from qiskit.quantum_info import Statevector
 from qiskit_dynamics import DynamicsBackend, Solver
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 
 from app.libs.device_parameters import BackendConfig
-from app.libs.quantum_executor.qiskit.functions import get_lo_range, omega_c
+from app.libs.quantum_executor.qiskit.functions import (
+    fit_lda,
+    get_basis_statevector,
+    get_lo_range,
+    omega_c,
+)
 
 # a qubit's anharmonicity, in Hz, where its calibration has none
 _DEFAULT_ANHARMONICITY = -0.17e9
@@ -61,54 +64,32 @@ def get_two_qubit_backend(
     )
 
 
-def train_two_qubit_discriminator(
-    backend: DynamicsBackend, shots: int = 1024, dim: int = 3
-) -> dict:
+def train_two_qubit_discriminator(backend: DynamicsBackend, shots: int = 1024) -> dict:
     """Generates |0> and |1> states for each qubit, and trains a linear discriminator on them
 
     Args:
         backend: the backend to simulate the states on
         shots: number of shots for generating data
-        dim: the dimension of the Hilbert space for each qubit, as the backend has it
 
     Returns:
         Discriminator object as json in the format to store it in the database
     """
-    # Generate the iq values for each qubit
-    qubit_indexes = [x[0] for x in backend.configuration().meas_map]
-
+    dims = backend.options.subsystem_dims
     lda_results = {}
-    for qubit_idx in qubit_indexes:
+    for qubit_idx in [x[0] for x in backend.configuration().meas_map]:
         schedule = Schedule((0, Acquire(1, AcquireChannel(qubit_idx), MemorySlot(0))))
-
-        # For |0> state
-        y0 = _get_basis_statevector(qubit_idx, level=0, dim=dim)
-        job_0 = backend.run([schedule], shots=shots, initial_state=y0)
-        i_q_values_0 = job_0.result().data()["memory"].reshape(shots, 2)
-
-        # For |1> state
-        y0 = _get_basis_statevector(qubit_idx, level=1, dim=dim)
-        job_1 = backend.run([schedule], shots=shots, initial_state=y0)
-        i_q_values_1 = job_1.result().data()["memory"].reshape(shots, 2)
-
-        # Combine IQ values and labels
-        combined_i_q_values = np.vstack((i_q_values_0, i_q_values_1))
-        labels = np.concatenate((np.zeros(shots), np.ones(shots)))
-
-        lda_model = LinearDiscriminantAnalysis()
-        lda_model.fit(combined_i_q_values, labels)
-
-        lda_intercepts = lda_model.intercept_.tolist()
-        lda_coefs = lda_model.coef_.tolist()
-
-        lda_result = {}
-        for i in range(len(lda_intercepts)):
-            lda_result["intercept"] = lda_intercepts[i]
-            lda_result["coef_0"] = lda_coefs[i][0]
-            lda_result["coef_1"] = lda_coefs[i][1]
-
-        lda_results[f"q{qubit_idx}"] = lda_result
-    # Return the discriminator configuration
+        iq_values = [
+            backend.run(
+                [schedule],
+                shots=shots,
+                initial_state=get_basis_statevector(dims, mode=qubit_idx, level=level),
+            )
+            .result()
+            .data()["memory"]
+            .reshape(shots, 2)
+            for level in (0, 1)
+        ]
+        lda_results[f"q{qubit_idx}"] = fit_lda(*iq_values)
     return {"lda": lda_results}
 
 
@@ -297,11 +278,3 @@ def _get_mode_operator(operator: np.ndarray, mode: int, dim: int) -> np.ndarray:
     factors = [np.eye(dim)] * 3
     factors[2 - mode] = operator
     return np.kron(factors[0], np.kron(factors[1], factors[2]))
-
-
-def _get_basis_statevector(qubit_index: int, level: int, dim: int) -> Statevector:
-    """Gets the state of the qubits and coupler, dim levels each, in which all are in their
-    ground state but the qubit of the index, which is at the level"""
-    vector = np.zeros(dim**3, dtype=complex)
-    vector[level * dim**qubit_index] = 1
-    return Statevector(vector)
