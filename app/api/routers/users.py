@@ -122,20 +122,20 @@ async def get_mss_token(
 
 @router.post("/users", dependencies=[Depends(get_verified_mss_admin_user_id)])
 async def create_user(
-    data: NewUserInfo, db_engine: Engine = Depends(get_booking_db)
+    user_info: NewUserInfo, db_engine: Engine = Depends(get_booking_db)
 ) -> UserProfile:
     """Creates a user given the name and email
 
     Only MSS admin users can create users here
 
     Args:
-        data: the information about the new user
+        user_info: the information about the new user
         db_engine: the SQL database to query
 
     Returns:
         the created user
     """
-    user = booking.create_user(db_engine, user_info=data)
+    user = booking.create_user(db_engine, user_info=user_info)
     return UserProfile.from_user(user)
 
 
@@ -186,5 +186,5 @@ async def view_users(
     Returns:
         the paginated list of the available users
     """
-    data = booking.get_many_user_profiles(db_engine, skip=skip, limit=limit)
-    return PaginatedListResponse(skip=skip, limit=limit, data=data)
+    users = booking.get_many_user_profiles(db_engine, skip=skip, limit=limit)
+    return PaginatedListResponse(skip=skip, limit=limit, data=users)

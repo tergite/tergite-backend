@@ -163,9 +163,9 @@ async def view_jobs(
     Returns:
         the paginated list of the available bookings
     """
-    data = scheduler.get_many_jobs(
+    stored_jobs = scheduler.get_many_jobs(
         device, user_id=user_id, status=status, skip=skip, limit=limit
     )
     # each job without its fields that are None, as /jobs has always listed them
-    jobs = [job.model_dump(mode="json", exclude_none=True) for job in data]
+    jobs = [job.model_dump(mode="json", exclude_none=True) for job in stored_jobs]
     return {"skip": skip, "limit": limit, "data": jobs}

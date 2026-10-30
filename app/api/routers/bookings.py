@@ -36,7 +36,7 @@ router = APIRouter()
 @router.post("/bookings", dependencies=[Depends(check_device_is_online)])
 async def create_booking(
     device: DeviceResourcesDep,
-    data: NewBookingInfo,
+    booking_info: NewBookingInfo,
     user_id: str = Depends(get_verified_mss_user_id),
 ) -> Booking:
     """Creates a booking for the user of the given token
@@ -44,14 +44,14 @@ async def create_booking(
     Args:
         device: what the device runs on
         user_id: the MSS user_id as sent by MSS
-        data: the information about the new booking
+        booking_info: the information about the new booking
 
     Returns:
         the newly created booking
     """
     booking.get_or_create_user(device.bookings_db, user_id)
 
-    return scheduler.submit_booking(device, user_id=user_id, booking_info=data)
+    return scheduler.submit_booking(device, user_id=user_id, booking_info=booking_info)
 
 
 @router.post(
@@ -114,10 +114,10 @@ async def view_bookings(
         filters.append(Booking.user_id == user_id)
 
     sort = convert_http_sort_to_db_sort(Booking, http_sort=sort)
-    data = booking.get_many_bookings(
+    bookings = booking.get_many_bookings(
         db_engine, *filters, skip=skip, limit=limit, sort=sort
     )
-    return PaginatedListResponse(skip=skip, limit=limit, data=data)
+    return PaginatedListResponse(skip=skip, limit=limit, data=bookings)
 
 
 @router.get("/bookings/config", dependencies=[Depends(get_verified_mss_user_id)])
