@@ -21,14 +21,14 @@ HAS_QISKIT_DYNAMICS = importlib.util.find_spec("qiskit_dynamics") is not None
 HAS_QUANTIFY = importlib.util.find_spec("quantify_scheduler") is not None
 
 FASTAPI_CLIENTS = []
-CLIENT_AND_RQ_WORKER_TUPLES = []
+CLIENT_AND_WORKER_TUPLES = []
 if HAS_QUANTIFY:
     FASTAPI_CLIENTS += [lazy_fixture("quantify_rest_client")]
-    CLIENT_AND_RQ_WORKER_TUPLES += [
+    CLIENT_AND_WORKER_TUPLES += [
         (
             lazy_fixture("quantify_rest_client"),
             lazy_fixture("redis_client"),
-            lazy_fixture("rq_worker"),
+            lazy_fixture("quantify_worker"),
         ),
     ]
 if HAS_QISKIT_DYNAMICS:
@@ -36,16 +36,16 @@ if HAS_QISKIT_DYNAMICS:
         lazy_fixture("qiskit_1q_rest_client"),
         lazy_fixture("qiskit_2q_rest_client"),
     ]
-    CLIENT_AND_RQ_WORKER_TUPLES += [
+    CLIENT_AND_WORKER_TUPLES += [
         (
             lazy_fixture("qiskit_1q_rest_client"),
             lazy_fixture("redis_client"),
-            lazy_fixture("rq_worker_for_simulator_1q"),
+            lazy_fixture("qiskit_1q_worker"),
         ),
         (
             lazy_fixture("qiskit_2q_rest_client"),
             lazy_fixture("redis_client"),
-            lazy_fixture("rq_worker_for_simulator_2q"),
+            lazy_fixture("qiskit_2q_worker"),
         ),
     ]
 
@@ -81,7 +81,7 @@ if HAS_QUANTIFY:
         (
             lazy_fixture("quantify_rest_client"),
             lazy_fixture("redis_client"),
-            lazy_fixture("rq_worker"),
+            lazy_fixture("quantify_worker"),
             job,
         )
         for job in QUANTIFY_JOBS_FOR_UPLOAD
@@ -98,7 +98,7 @@ if HAS_QISKIT_DYNAMICS:
         (
             lazy_fixture("qiskit_1q_rest_client"),
             lazy_fixture("redis_client"),
-            lazy_fixture("rq_worker_for_simulator_1q"),
+            lazy_fixture("qiskit_1q_worker"),
             job,
         )
         for job in SIM_1Q_JOBS_FOR_UPLOAD
@@ -108,7 +108,7 @@ if HAS_QISKIT_DYNAMICS:
         (
             lazy_fixture("qiskit_2q_rest_client"),
             lazy_fixture("redis_client"),
-            lazy_fixture("rq_worker_for_simulator_2q"),
+            lazy_fixture("qiskit_2q_worker"),
             job,
         )
         for job in SIM_2Q_JOBS_FOR_UPLOAD
@@ -163,9 +163,9 @@ VIEW_JOB_PARAMS = [
 ]
 
 ALL_INVALID_UPLOAD_JOB_PARAMS = [
-    (client, redis, rq_worker, job)
+    (client, redis, worker, job)
     for job in INVALID_JOBS_FOR_UPLOAD
-    for client, redis, rq_worker in CLIENT_AND_RQ_WORKER_TUPLES
+    for client, redis, worker in CLIENT_AND_WORKER_TUPLES
 ]
 
 VIEW_MANY_PARAMS = [

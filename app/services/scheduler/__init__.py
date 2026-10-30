@@ -10,9 +10,8 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 #
-"""Runs the jobs on the device: their queues, the bookings' hold on them, and recalibration"""
+"""Runs the jobs on the device: their stages, the bookings' hold on them, and recalibration"""
 from .dtos import JobFile, RecalibrationInfo
-from .queues import QueuePool
 from .resources import DeviceResources, close_device_resources
 from .service import (
     cancel_booking,
@@ -36,7 +35,6 @@ __all__ = [
     "DeviceResources",
     "JobFile",
     "JobsStore",
-    "QueuePool",
     "RecalibrationInfo",
     "cancel_booking",
     "cancel_job",

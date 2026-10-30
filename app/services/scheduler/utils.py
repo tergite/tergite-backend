@@ -145,19 +145,6 @@ def move_file(file: Path, new_folder: Path, ext: str = "") -> Path:
     return file.replace(new_file_path)
 
 
-def get_rq_job_id(quantum_job_id: str, stage: Stage) -> str:
-    """Constructs an rq job id given the quantum job id and job stage
-
-    Args:
-        quantum_job_id: the job id of the quantum job
-        stage: the stage at which we are at in the processing chain
-
-    Returns:
-        a string to be used as rq job id
-    """
-    return f"{quantum_job_id}_{stage.name}"
-
-
 def update_job_stage(jobs_db: JobsStore, job_id: str, stage: Stage) -> Job:
     """Updates the job's stage in the database
 

@@ -21,13 +21,9 @@ from uuid import uuid4
 import pytest
 import time_machine
 from pytest_mock import MockerFixture
-from rq.job import Job as RqJob
-from rq.timeouts import JobTimeoutException
 
-import app.services.scheduler.tasks as scheduler_tasks
 from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps
 from app.services.booking import Booking
-from app.services.scheduler.utils import get_rq_job_id
 from app.tests.utils.api import (
     create_mss_headers,
     get_bearer_headers,
@@ -47,6 +43,7 @@ from app.tests.utils.jobs import (
     get_stored_jobs,
     is_job_result_matching,
     save_job_file,
+    spy_on_mss_updates,
     submit_jobs,
     view_job,
 )
@@ -61,11 +58,11 @@ from app.tests.utils.params import (
     VIEW_JOBS_PARAMS,
 )
 from app.tests.utils.records import drop_microseconds, order_by, paginate
-from app.tests.utils.rq import set_worker_executor, wait_on_rq_worker
 from app.tests.utils.users import (
     create_many_users,
     create_user,
 )
+from app.tests.utils.workers import set_worker_executor, wait_on_worker
 
 # (patch target, patch kwargs) making one stage of a job fail; "executor" is the worker's
 _FAILING_STAGE_PATCHES = [
@@ -86,23 +83,23 @@ _FAILING_STAGE_PATCHES = [
         "app.services.scheduler.tasks.read_job_from_hdf5",
         {"side_effect": OSError("unreadable results")},
     ),
-    # RQ kills a job past its queue's timeout by raising this inside it
+    # the dispatcher stops a stage past its time limit by raising this inside it
     (
         "app.services.scheduler.tasks.decompress_qobj",
-        {"side_effect": JobTimeoutException("preprocessing timed out")},
+        {"side_effect": TimeoutError("preprocessing timed out")},
     ),
     (
         "executor",
         {
             "return_value": Mock(
                 preprocess=Mock(return_value=(0.2, None)),
-                run=Mock(side_effect=JobTimeoutException("execution timed out")),
+                run=Mock(side_effect=TimeoutError("execution timed out")),
             )
         },
     ),
     (
         "app.services.scheduler.tasks.read_job_from_hdf5",
-        {"side_effect": JobTimeoutException("postprocessing timed out")},
+        {"side_effect": TimeoutError("postprocessing timed out")},
     ),
 ]
 
@@ -192,7 +189,7 @@ def test_submit_jobs_no_booking(
         job_ids_in_fifo = submit_jobs(client, data=job_metadata_list)
 
         # Run the queue
-        worker.work(burst=True)
+        worker.run(is_burst=True)
 
         stored_jobs = get_stored_jobs()
         stored_jobs.sort(key=lambda v: v.timestamps.execution.start_timestamp)
@@ -212,7 +209,6 @@ def test_submit_jobs_no_booking(
                 calibration_date=job_in_db.calibration_date,
                 estimated_duration=job_in_db.estimated_duration,
                 actual_duration=job_in_db.actual_duration,
-                storage_id=f"{job_id}:::{job_in_db.estimated_duration}",
             )
             for job_id, job_in_db in zip_longest(
                 job_ids_in_fifo, stored_jobs, fillvalue=None
@@ -297,7 +293,7 @@ def test_submit_jobs_in_active_booking(
         submit_jobs(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
+        wait_on_worker(worker, clock=fake_clock)
 
         stored_jobs = get_stored_jobs()
         stored_jobs.sort(key=lambda v: v.timestamps.execution.start_timestamp)
@@ -357,7 +353,7 @@ def test_submit_jobs_in_idle_booking(
         submit_jobs(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
+        wait_on_worker(worker, clock=fake_clock)
 
         stored_jobs = get_stored_jobs()
 
@@ -424,8 +420,8 @@ def test_submit_jobs_in_idle_booking_before_another(
         submit_jobs(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        mss_update_spy = mocker.spy(scheduler_tasks, "update_job_in_mss")
-        wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
+        mss_update_spy = spy_on_mss_updates(mocker)
+        wait_on_worker(worker, clock=fake_clock)
 
         jobs_in_db = get_stored_jobs()
 
@@ -511,7 +507,7 @@ def test_booker_job_longer_than_the_time_left_fails(
         submit_jobs(client, data=[job_info])
 
         fake_clock.shift(2.5)
-        worker.work(burst=True, max_jobs=1)
+        worker.run(is_burst=True, max_jobs=1)
 
         job_in_db = get_stored_jobs()[0]
         assert job_in_db.status == JobStatus.FAILED
@@ -542,7 +538,7 @@ def test_job_whose_booking_ended_in_preprocessing_runs(
 
         fake_clock.shift(3)
         # the booking's end runs before the preprocessing, as the general queue is first
-        worker.work(burst=True, with_scheduler=True)
+        worker.run(is_burst=True)
 
         assert get_stored_jobs()[0].status == JobStatus.SUCCESSFUL
 
@@ -561,7 +557,8 @@ def test_submit_long_jobs_before_booking(
     mocker,
     fake_clock,
 ):
-    """POST long jobs to '/jobs' before booking starts waitlists them but runs the shorter ones"""
+    """POST long jobs to '/jobs' before booking starts runs the shorter ones before it, and the
+    booker's long one in it"""
     with client as client:
         # create many users and their tokens
         users = create_many_users(client)
@@ -586,16 +583,16 @@ def test_submit_long_jobs_before_booking(
         submit_jobs(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
+        wait_on_worker(worker, clock=fake_clock)
 
         jobs_in_db = get_stored_jobs()
         jobs_in_db.sort(key=lambda v: v.start_utc)
         job_estimated_durations = [v.estimated_duration for v in jobs_in_db]
 
         assert all([job.status == JobStatus.SUCCESSFUL for job in jobs_in_db])
-        # the small-enough first (0.3, 0.9, 0.2, 0.1),
-        # then the bigger ones (3.0, 4.0, 2.9) in original order
-        assert job_estimated_durations == [0.3, 0.9, 0.2, 0.1, 3.0, 4.0, 2.9]
+        # the small-enough first (0.3, 0.9, 0.2, 0.1), then, in the booking, the booker's
+        # 2.9, then the others' bigger ones (3.0, 4.0) in original order
+        assert job_estimated_durations == [0.3, 0.9, 0.2, 0.1, 2.9, 3.0, 4.0]
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
@@ -655,7 +652,7 @@ def test_upload_invalid_job(
         assert response.status_code == 400
         assert got["detail"].startswith("Invalid file: ")
 
-        worker.work(burst=True)
+        worker.run(is_burst=True)
         jobs_in_db = get_stored_jobs()
         assert jobs_in_db == []
 
@@ -679,7 +676,7 @@ def test_duplicate_job_upload(
                 "/jobs", files={"upload_file": file}, headers=job_info["headers"]
             )
 
-            worker.work(burst=True)
+            worker.run(is_burst=True)
 
             second_response = client.post(
                 "/jobs", files={"upload_file": file}, headers=job_info["headers"]
@@ -718,7 +715,7 @@ def test_remove_job(client, redis_conn, jobs_folder, worker, job, mocker, fake_c
         submit_jobs(client, data=job_metadata_list)
 
         # start the worker
-        worker.work(burst=True)
+        worker.run(is_burst=True)
 
         # initiate delete
         job_info = job_metadata_list[0]
@@ -727,7 +724,7 @@ def test_remove_job(client, redis_conn, jobs_folder, worker, job, mocker, fake_c
             f"/jobs/{job_info["job_id"]}", headers=headers
         )
         # run the rest of the tasks
-        worker.work(burst=True)
+        worker.run(is_burst=True)
 
         jobs_in_db = get_stored_jobs()
         job_ids_in_db = sorted([v.job_id for v in jobs_in_db])
@@ -753,7 +750,7 @@ def test_remove_another_users_job(
         submit_jobs(client, data=job_metadata_list)
 
         # start the worker
-        worker.work(burst=True)
+        worker.run(is_burst=True)
 
         # initiate delete
         another_user = users[1]
@@ -762,7 +759,7 @@ def test_remove_another_users_job(
         headers = create_mss_headers(user_id=another_user["id"])
         deletion_response = client.delete(f"/jobs/{job_id}", headers=headers)
         # run the rest of the tasks
-        worker.work(burst=True)
+        worker.run(is_burst=True)
 
         jobs_in_db = get_stored_jobs()
         job_ids_in_db = sorted([v.job_id for v in jobs_in_db])
@@ -789,7 +786,7 @@ def test_admin_remove_job(
         submit_jobs(client, data=job_metadata_list)
 
         # start the job registration but stop there
-        worker.work(burst=True)
+        worker.run(is_burst=True)
 
         # initiate delete
         another_user = users[1]
@@ -799,7 +796,7 @@ def test_admin_remove_job(
             f"/jobs/{job_info["job_id"]}", headers=headers
         )
         # run the rest of the tasks
-        worker.work(burst=True)
+        worker.run(is_burst=True)
 
         jobs_in_db = get_stored_jobs()
         job_ids_in_db = sorted([v.job_id for v in jobs_in_db])
@@ -825,7 +822,7 @@ def test_unauthenticated_remove_job(
         submit_jobs(client, data=job_metadata_list)
 
         # start the job registration but stop there
-        worker.work(burst=True)
+        worker.run(is_burst=True)
 
         # initiate delete
         job_info = job_metadata_list[0]
@@ -841,7 +838,7 @@ def test_unauthenticated_remove_job(
         assert response.json() == {"detail": "user not authenticated"}
 
         # run the rest of the tasks
-        worker.work(burst=True)
+        worker.run(is_burst=True)
 
         jobs_in_db = get_stored_jobs()
         job_ids_in_db = sorted([v.job_id for v in jobs_in_db])
@@ -887,7 +884,7 @@ def test_view_job(
         assert pending_job == expected_job
 
         # Run the queue to run the job and see that it is updated
-        worker.work(burst=True)
+        worker.run(is_burst=True)
 
         complete_job, _ = view_job(client, user_id=user_id, job_id=job_id)
         expected_completed_job = Job(
@@ -904,7 +901,6 @@ def test_view_job(
             estimated_duration=complete_job.estimated_duration,
             actual_duration=complete_job.actual_duration,
             download_url=complete_job.download_url,
-            storage_id=f"{job_id}:::{complete_job.estimated_duration}",
         )
         assert complete_job == expected_completed_job
         assert redis_conn_spy.call_count <= redis_connections_at_start + 1
@@ -1054,7 +1050,7 @@ def test_view_jobs(
         assert pending_jobs_resp == paginate(expected_jobs)
 
         # Run the queue to run the job and see that it is updated
-        worker.work(burst=True)
+        worker.run(is_burst=True)
 
         # refresh the headers
         headers = create_mss_headers(user_id)
@@ -1073,7 +1069,6 @@ def test_view_jobs(
                 "estimated_duration": jobs_in_resp[v["job_id"]]["estimated_duration"],
                 "actual_duration": jobs_in_resp[v["job_id"]]["actual_duration"],
                 "download_url": jobs_in_resp[v["job_id"]]["download_url"],
-                "storage_id": f"{v['job_id']}:::{jobs_in_resp[v["job_id"]]["estimated_duration"]}",
             }
             for idx, v in enumerate(expected_jobs)
         ]
@@ -1115,7 +1110,7 @@ def test_view_jobs_by_status(
         completed_job_ids = submit_jobs(client, data=job_metadata_list)
 
         # Run the queue to run the job and see that it is updated
-        worker.work(burst=True)
+        worker.run(is_burst=True)
 
         new_raw_jobs = [{**v, "job_id": f"{uuid4()}"} for v in raw_jobs]
         # Creating this job metadata list first because it takes up a lot of time
@@ -1184,7 +1179,6 @@ def test_view_jobs_by_status(
                 estimated_duration=jobs_in_resp[job_id]["estimated_duration"],
                 actual_duration=jobs_in_resp[job_id]["actual_duration"],
                 download_url=jobs_in_resp[job_id]["download_url"],
-                storage_id=f"{job_id}:::{jobs_in_resp[job_id]["estimated_duration"]}",
             ).model_dump(mode="json", exclude_none=True)
             for idx, job_id in enumerate(completed_job_ids)
             if idx % user_count == 0
@@ -1279,7 +1273,7 @@ def test_cancel_job_via_mss(
         original_job = response.json()
 
         # Run the queue to run the job and see that it is updated
-        worker.work(burst=True, max_jobs=1)
+        worker.run(is_burst=True, max_jobs=1)
 
         response = cancel_job_via_mss(
             client, user_id=user_id, job_id=job_id, reason=cancellation_reason
@@ -1349,7 +1343,7 @@ def test_cancel_job_directly(
         original_job = response.json()
 
         # Run the queue to run the job and see that it is updated
-        worker.work(burst=True, max_jobs=1)
+        worker.run(is_burst=True, max_jobs=1)
 
         response = client.post(
             f"/jobs/{job_id}/cancel",
@@ -1419,13 +1413,13 @@ def test_failed_job_is_marked_failed_and_sent_to_mss(
             set_worker_executor(worker, patch_kwargs["return_value"])
         else:
             mocker.patch(patch_target, **patch_kwargs)
-        mss_update_spy = mocker.spy(scheduler_tasks, "update_job_in_mss")
+        mss_update_spy = spy_on_mss_updates(mocker)
         with open(job_info["file_path"], "rb") as file:
             client.post(
                 "/jobs", files={"upload_file": file}, headers=job_info["headers"]
             )
 
-        worker.work(burst=True)
+        worker.run(is_burst=True)
 
         job_in_db = get_stored_jobs()[0]
         assert job_in_db.status == JobStatus.FAILED
@@ -1444,7 +1438,7 @@ def test_finished_job_is_sent_to_mss_with_its_results(
         )[0]
         submit_jobs(client, data=[job_info])
 
-        worker.work(burst=True)
+        worker.run(is_burst=True)
 
         job_updates = [
             event["data"]
@@ -1457,10 +1451,9 @@ def test_finished_job_is_sent_to_mss_with_its_results(
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
-def test_cancel_job_cancels_its_rq_job(
+def test_cancelled_job_is_not_executed(
     client, redis_conn, jobs_folder, worker, job, mocker, fake_clock
 ):
-    """Cancelling a queued job cancels the rq job that would run it"""
     with client as client:
         users = create_many_users(client, raw_users=USERS[:1])
         raw_jobs = get_raw_jobs(job, durations=[0.2])
@@ -1472,12 +1465,16 @@ def test_cancel_job_cancels_its_rq_job(
             client.post(
                 "/jobs", files={"upload_file": file}, headers=job_info["headers"]
             )
-        worker.work(burst=True, max_jobs=1)
+        worker.run(is_burst=True, max_jobs=1)
 
         cancel_job_via_mss(client, user_id=job_info["user_id"], job_id=job_id)
+        worker.run(is_burst=True)
 
-        rq_job = RqJob.fetch(get_rq_job_id(job_id, Stage.EXEC_Q), connection=redis_conn)
-        assert rq_job.get_status() == "canceled"
+        [stored_job] = get_stored_jobs()
+        assert (stored_job.status, stored_job.stage) == (
+            JobStatus.CANCELLED,
+            Stage.EXEC_Q,
+        )
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
@@ -1517,7 +1514,7 @@ def test_cancel_finished_job(
             client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
         )[0]
         submit_jobs(client, data=[job_info])
-        worker.work(burst=True)
+        worker.run(is_burst=True)
 
         response = cancel_job_via_mss(
             client, user_id=job_info["user_id"], job_id=job_info["job_id"]
@@ -1540,7 +1537,7 @@ def test_remove_cancelled_job(
         )[0]
         user_id, job_id = job_info["user_id"], job_info["job_id"]
         submit_jobs(client, data=[job_info])
-        worker.work(burst=True, max_jobs=1)
+        worker.run(is_burst=True, max_jobs=1)
         cancel_job_via_mss(client, user_id=user_id, job_id=job_id)
 
         response = client.delete(f"/jobs/{job_id}", headers=create_mss_headers(user_id))
@@ -1573,7 +1570,7 @@ def test_cancel_another_users_job(
             original_job = Job.model_validate(response.json())
 
         # Run the queue to run the job and see that it is updated
-        worker.work(burst=True, max_jobs=1)
+        worker.run(is_burst=True, max_jobs=1)
 
         other_user_id = users[1]["id"]
         response = cancel_job_via_mss(
@@ -1595,7 +1592,6 @@ def test_cancel_another_users_job(
                 "estimated_duration": job_in_db.estimated_duration,
                 "updated_at": job_in_db.updated_at,
                 "timestamps": job_in_db.timestamps,
-                "storage_id": f"{job_id}:::{job_in_db.estimated_duration}",
             }
         )
 
@@ -1625,7 +1621,7 @@ def test_admin_cancel_job(
             )
 
         # Run the queue to run the job and see that it is updated
-        worker.work(burst=True, max_jobs=1)
+        worker.run(is_burst=True, max_jobs=1)
 
         original_job = response.json()
 
@@ -1698,7 +1694,7 @@ def test_unauthenticated_cancel_job(
             )
 
         # Run the queue to run the job and see that it is updated
-        worker.work(burst=True, max_jobs=1)
+        worker.run(is_burst=True, max_jobs=1)
 
         payload = {"reason": cancellation_reason}
         url = f"/jobs/{job_id}/cancel"

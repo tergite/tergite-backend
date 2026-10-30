@@ -24,7 +24,6 @@ from ...utils.logging import err_logger
 from ...utils.redis import get_redis_connection
 from ...utils.sql_db import get_sql_engine
 from ..external.mss import MssClient, get_mss_public_key, get_private_key
-from .queues import QueuePool
 from .store import JobsStore
 from .utils import get_executor_options
 
@@ -34,14 +33,13 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class DeviceResources:
-    """What one device runs on: its settings, and the connections, stores, queues, MSS
-    client and keys got from them"""
+    """What one device runs on: its settings, and the connections, stores, MSS client and
+    keys got from them"""
 
     settings: DeviceSettings
     redis: Redis
     bookings_db: Engine
     jobs_store: JobsStore
-    queues: QueuePool
     mss_client: MssClient
     executor_options: ExecutorOptions
     mss_public_key: RSAPublicKey
@@ -64,7 +62,6 @@ class DeviceResources:
             redis=redis,
             bookings_db=sql_db,
             jobs_store=JobsStore.from_settings(sql_db, device_settings),
-            queues=QueuePool.from_settings(device_settings, redis),
             mss_client=MssClient.from_settings(device_settings, private_key),
             executor_options=get_executor_options(device_settings),
             mss_public_key=get_mss_public_key(device_settings.mss_public_key_path),

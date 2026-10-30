@@ -125,9 +125,6 @@ class Booking(SQLModel, table=True):
         id: the unique identifier of the booking
         user_id: the unique identifier of the user associated with this booking
         user: the user associated with this booking
-        start_event_id: the rq job id of the special event triggered at the start of this booking
-        end_event_id: the rq job id of the special event triggered at the end of this booking
-        idle_timer_id: the rq job id for the job that tracks the idleness of this booking
     """
 
     model_config = ConfigDict(validate_assignment=True)
@@ -139,33 +136,11 @@ class Booking(SQLModel, table=True):
     start_utc: datetime = Field(index=True)
     end_utc: datetime = Field(index=True)
 
-    # optional: event_ids are overwritten by the validators
-    start_event_id: str = Field(default="")
-    end_event_id: str = Field(default="")
-    idle_timer_id: str = Field(default="")
     user: Optional[User] = Relationship(
         back_populates="bookings", passive_deletes="all"
     )
     # optional: total_duration is overwritten by field validator
     total_duration: float = Field(default=0)
-
-    @field_validator("start_event_id", mode="after")
-    @classmethod
-    def generate_start_event_id(cls, v: Any, info: ValidationInfo):
-        """Generates the job ID for the start event"""
-        return f"{info.data['id']}_start_event"
-
-    @field_validator("end_event_id", mode="after")
-    @classmethod
-    def generate_end_event_id(cls, v: Any, info: ValidationInfo):
-        """Generates the job ID for the end event"""
-        return f"{info.data['id']}_end_event"
-
-    @field_validator("idle_timer_id", mode="after")
-    @classmethod
-    def generate_idle_timer_id(cls, v: Any, info: ValidationInfo):
-        """Generates the job ID for the idleness timer"""
-        return f"{info.data['id']}_idle_timer"
 
     @field_validator("start_utc", mode="after")
     @classmethod

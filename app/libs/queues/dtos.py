@@ -14,10 +14,8 @@
 import dataclasses
 from datetime import datetime
 from enum import Enum, unique
-from functools import cached_property
 from os import PathLike
 from typing import (
-    Any,
     Dict,
     List,
     Literal,
@@ -31,19 +29,14 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    GetCoreSchemaHandler,
     RedisDsn,
     computed_field,
-    field_validator,
     model_validator,
 )
-from pydantic_core import CoreSchema, core_schema
 
 from ...utils.datetime import to_utc, utc_now_str
 from ...utils.strings import uuid_str
 from ..device_parameters import BackendConfig
-
-_STORAGE_ID_SEPARATOR = ":::"
 
 HexMemory: TypeAlias = List[List[str]]
 # IQ point = tuple(re, im) or list[re, im]  →  use Sequence[float] for both.
@@ -79,81 +72,6 @@ class Stage(int, Enum):
     def verbose_name(self) -> str:
         """The name of this stage in a verbose manner"""
         return _STAGE_VERBOSE_NAME_MAP[self]
-
-
-class StorageID(str):
-    """A special type of string with format {uuid}:::{duration}"""
-
-    @cached_property
-    def parts(self) -> Tuple[str, float]:
-        """the components of this storage id as a tuple"""
-        try:
-            str_parts = self.split(_STORAGE_ID_SEPARATOR)
-            uuid = str_parts[0]
-            duration = float(str_parts[1])
-            return uuid, duration
-        except (IndexError, ValueError) as exp:
-            raise ValueError(f"malformed key: {exp}")
-
-    @property
-    def duration(self) -> float:
-        """the duration represented in this storage id"""
-        return self.parts[1]
-
-    @property
-    def uuid(self) -> str:
-        """the job id in this storage id"""
-        return self.parts[0]
-
-    def clone_with(self, uuid: str = None, duration: float = None) -> "StorageID":
-        """Returns a new instance with the given updates, ignoring updates set to None
-
-        Args:
-            uuid: the new uuid to set
-            duration: the new duration to set
-
-        Returns:
-            a new instance of StorageID with the updates
-        """
-        if uuid is None:
-            uuid = self.uuid
-        if duration is None:
-            duration = self.duration
-
-        return self.from_details(uuid, duration)
-
-    @classmethod
-    def from_job(cls, job: "Job") -> "StorageID":
-        """Gets Storage ID from the job where uuid part is the job_id
-
-        Duration defaults to 0 if it is None
-
-        Args:
-            job: the job
-        Returns:
-            the storage ID for this job
-        """
-        return cls.from_details(uuid=job.job_id, duration=job.estimated_duration)
-
-    @classmethod
-    def from_details(cls, uuid: str, duration: Optional[float]) -> "StorageID":
-        """Constructs a storage id from just its details
-
-        Args:
-            uuid: the unique identifier
-            duration: the optional duration; when it is None, it is set to 0
-
-        Returns:
-            the storage id
-        """
-        value = f"{uuid}{_STORAGE_ID_SEPARATOR}{duration or 0.0}"
-        return cls(value)
-
-    @classmethod
-    def __get_pydantic_core_schema__(
-        cls, source_type: Any, handler: GetCoreSchemaHandler
-    ) -> CoreSchema:
-        return core_schema.no_info_after_validator_function(cls, handler(str))
 
 
 class TimestampPair(BaseModel):
@@ -299,7 +217,6 @@ class Job(BaseModel):
     status: JobStatus = JobStatus.PENDING
     failure_reason: Optional[str] = None
     cancellation_reason: Optional[str] = None
-    storage_id: StorageID = None
     actual_duration: Optional[float] = None
     download_url: Optional[str] = None
     result: Optional[JobResult] = None
@@ -332,27 +249,7 @@ class Job(BaseModel):
         except AttributeError:
             pass
 
-        # set the storage id, or keep it to the job_id and estimated_duration
-        if self.storage_id is None:
-            self.storage_id = StorageID.from_job(self)
-        elif isinstance(self.storage_id, StorageID):
-            new_storage_id = self.storage_id.clone_with(
-                uuid=self.job_id, duration=self.estimated_duration
-            )
-            if new_storage_id != self.storage_id:
-                # if-statement to avoid endless recursion
-                self.storage_id = new_storage_id
-
         return self
-
-    @field_validator(
-        "storage_id", mode="before", json_schema_input_type=Union[StorageID, str]
-    )
-    @classmethod
-    def cast_storage_id(cls, value: Any) -> Any:
-        if isinstance(value, str):
-            return StorageID(value)
-        return value
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

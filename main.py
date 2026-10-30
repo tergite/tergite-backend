@@ -23,7 +23,6 @@
 # nuitka-project: --include-package=hiredis
 # nuitka-project: --include-package=redis
 # nuitka-project: --include-package=sqlmodel
-# nuitka-project: --include-package=rq
 # nuitka-project: --include-package=jwt
 # nuitka-project: --include-package=pydantic
 # nuitka-project: --include-package=alembic
@@ -70,16 +69,7 @@ from pathlib import Path
 
 import uvicorn
 
-# in the order a worker takes their jobs; the heavy queues' tasks all run the quantum
-# executor, which a lock lets do one thing at a time, so one worker loses them nothing
-HEAVY_QUEUES = (
-    "booked_execution",
-    "normal_execution",
-    "recalibration",
-    "preprocessing",
-)
-LIGHT_QUEUES = ("postprocessing", "general")
-COMMANDS = ("start", "serve", "rq")
+COMMANDS = ("start", "serve", "worker")
 
 
 def main() -> None:
@@ -92,9 +82,9 @@ def main() -> None:
         help="Serve the API, and run a heavy worker for each device and the light workers",
     )
     serve_parser = commands.add_parser("serve", help="Serve the API")
-    rq_parser = commands.add_parser("rq", help="Run one worker")
+    worker_parser = commands.add_parser("worker", help="Run one worker")
 
-    for command_parser in (start_parser, serve_parser, rq_parser):
+    for command_parser in (start_parser, serve_parser, worker_parser):
         command_parser.add_argument(
             "--env-file",
             action="append",
@@ -125,7 +115,7 @@ def main() -> None:
         "--light-workers",
         type=int,
         default=1,
-        help="The number of workers for every device's postprocessing and general tasks.",
+        help="The number of workers for every device's postprocessing.",
     )
     serve_parser.add_argument(
         "--reload",
@@ -133,14 +123,14 @@ def main() -> None:
         action="store_true",
         help="Enable reload (not recommended for production binaries).",
     )
-    rq_parser.add_argument(
+    worker_parser.add_argument(
         "--kind",
         required=True,
         choices=("heavy", "light"),
-        help=f"heavy runs a device's {', '.join(HEAVY_QUEUES)} queues; "
-        f"light runs every device's {', '.join(LIGHT_QUEUES)} queues.",
+        help="heavy runs a device's preprocessing, executions and recalibrations; "
+        "light runs every device's postprocessing.",
     )
-    rq_parser.add_argument(
+    worker_parser.add_argument(
         "--device", help="The device a heavy worker runs; default: the first."
     )
 
@@ -169,7 +159,7 @@ def main() -> None:
             args.workers,
         )
     else:
-        _run_rq_worker(args.kind, args.env_files, args.device)
+        _run_worker(args.kind, args.env_files, args.device)
 
 
 def _start(
@@ -187,7 +177,7 @@ def _start(
 
     processes = [
         multiprocessing.Process(
-            target=_run_rq_worker,
+            target=_run_worker,
             args=("heavy", env_files, device),
             name=f"heavy worker of {device}",
         )
@@ -195,7 +185,7 @@ def _start(
     ]
     processes.extend(
         multiprocessing.Process(
-            target=_run_rq_worker,
+            target=_run_worker,
             args=("light", env_files),
             name=f"light worker {number}",
         )
@@ -211,7 +201,7 @@ def _start(
     for process in processes:
         process.start()
 
-    # after the children start, which keep the handlers uvicorn and rq install
+    # after the children start, which keep the handlers uvicorn and the workers install
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     try:
         wait([process.sentinel for process in processes])
@@ -248,62 +238,34 @@ def _serve(
     )
 
 
-def _run_rq_worker(kind: str, env_files: list[str], device: str | None = None) -> None:
+def _run_worker(kind: str, env_files: list[str], device: str | None = None) -> None:
     _load_devices(env_files)
-    import settings
-    from app.api.worker import LightRqWorker, PreloadedRqWorker
-    from app.services.scheduler import QueuePool
-    from app.utils.logging import set_up_logging
-    from app.utils.redis import get_redis_connection
-
-    if kind == "heavy":
-        worker_class, queue_names = PreloadedRqWorker, HEAVY_QUEUES
-        devices = [device or settings.get_device_names()[0]]
-    else:
-        worker_class, queue_names = LightRqWorker, LIGHT_QUEUES
-        devices = settings.get_device_names()
-
-    set_up_logging(settings.get_device_settings().log_level)
-    if settings.get_device_settings().scheduler == "dispatcher":
-        _run_dispatcher(kind, devices)
-        return
-
-    redis_urls = {settings.get_device_settings(name).rq_redis_url for name in devices}
-    if len(redis_urls) > 1:
-        sys.exit(
-            "bcc: a light worker runs every device's queues over one connection, "
-            "so the devices must share their RQ_REDIS_URL"
-        )
-
-    connection = get_redis_connection(redis_urls.pop())
-    queues = []
-    for name in devices:
-        queue_pool = QueuePool.from_settings(
-            settings.get_device_settings(name), connection
-        )
-        queues.extend(queue_pool.queues[f"{name}_{queue}"] for queue in queue_names)
-
-    worker = worker_class(queues, connection=connection)
-    # the scheduler moves due enqueue_at and enqueue_in jobs, e.g. a booking's start and end,
-    # onto the worker's queues; RQ's locks let one worker per queue do it
-    worker.work(with_scheduler=True)
-
-
-def _run_dispatcher(kind: str, devices: list[str]) -> None:
     import settings
     from app.api.worker import preload_worker_globals
     from app.services.scheduler.dispatcher import Dispatcher
+    from app.utils.logging import set_up_logging
 
     is_heavy = kind == "heavy"
+    devices = (
+        [device or settings.get_device_names()[0]]
+        if is_heavy
+        else settings.get_device_names()
+    )
+    set_up_logging(settings.get_device_settings().log_level)
     resources = {
         name: preload_worker_globals(
             settings.get_device_settings(name), should_load_executor=is_heavy
         )
         for name in devices
     }
-    Dispatcher(
+    dispatcher = Dispatcher(
         resources, should_run_heavy=is_heavy, should_run_light=not is_heavy
-    ).run()
+    )
+    # as RQ's warm shutdown did, after the stage under way
+    signal.signal(signal.SIGTERM, lambda *_: dispatcher.stop())
+    # whatever the log level, as uvicorn announces its start
+    print(f"bcc: the {kind} worker is ready", flush=True)
+    dispatcher.run()
 
 
 def _load_devices(env_files: list[str]) -> None:

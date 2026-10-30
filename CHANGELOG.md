@@ -13,9 +13,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   link them from the GitLab release; the macOS ones run where `PUBLISH_MACOS_ARM64` is `true`, on a runner tagged `macos`
 - Added amd64 debs, for Debian 13 and Ubuntu 24.04 onwards, and macOS arm64 packages, `tergite-backend` and `tergite-backend-simulator`, running each
   backend instance, named for its `DEFAULT_PREFIX`, as a `bcc@<name>` service set up by `bcc-provision`
-- Added `bcc start`, the default command, to the Nuitka binary, which runs the API, one RQ worker for preprocessing, executions and
-  recalibrations, and `--light-workers` (default 1) for postprocessing and general tasks as one process tree
-- Added `--env-file`, given once per device, to `bcc start`, `serve` and `rq`, which serves several devices from one
+- Added `bcc start`, the default command, to the Nuitka binary, which runs the API, one worker for preprocessing, executions and
+  recalibrations, and `--light-workers` (default 1) for postprocessing as one process tree
+- Added `--env-file`, given once per device, to `bcc start`, `serve` and `worker`, which serves several devices from one
   process, each device's API under `/<DEFAULT_PREFIX>/`, with a heavy worker per device and light workers shared by all
 - Added `--workers` to `bcc start` and `serve`, the number of API processes, defaulting as uvicorn does to
   `$WEB_CONCURRENCY` or 1; `BCC_ENV_FILE` may name several env files, separated as in PATH, as `--env-file` does
@@ -30,8 +30,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   an existing one is kept as it is, but for its unused `user.password` column, which is dropped
 - Changed the 422 for a booking that starts in the past or lasts outside the device's limits to give its message
   as `detail`, as the other errors do, instead of pydantic's list of errors
-- Changed the arguments the RQ tasks are queued with: jobs, bookings' timers and recalibrations queued before an
-  upgrade to this version fail, so let the queues empty first
+- Changed the workers to take their jobs and recalibrations from the bookings database instead of RQ's queues, and
+  `bcc rq --kind` to `bcc worker --kind`; work queued in RQ before upgrading is dropped, so let the queues empty first
+- Changed a booker's job submitted before their booking to run in it, ahead of other users' jobs, instead of waiting
+  behind them
 - Changed the settings to be read with pydantic-settings: the `BCC_` names are the same, but now match whatever their
   case, and an empty value counts as unset rather than as an empty string
 - Changed the BCC to keep no password for a user: it hashed the one MSS sends and checked it nowhere, so
@@ -57,8 +59,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   simulators' trained discriminators, so that jobs were discriminated wrongly until the worker restarted; the heavy
   worker alone publishes the device's properties and calibration now
 - Fixed `BCC_ARE_CLUSTERS_RESETTABLE` being ignored: the quantify executor never reset its clusters, whatever it was set to
-- Fixed scheduled jobs never running: `bcc start` runs its workers with RQ's scheduler, so a booking's start and
-  end jobs and recalibration's start and repeats now run, which no release's workers did
+- Fixed bookings and recalibrations never taking effect: no release's workers ran RQ's scheduler, so a booking's
+  start and end, and recalibration's start and repeats, never ran
 - Fixed replayed MSS requests being accepted while the first was still running, or after it crashed: the nonce is
   now claimed before the route runs, instead of recorded after it
 - Fixed cancelling a job leaving its rq job queued: cancellation looked for an rq job id that was never used, so the
@@ -67,8 +69,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   so the scheduler thought more time was free before a booking than there was
 - Fixed the running job's time being left out of an execution queue's duration, so a job could be queued as fitting
   before a booking, or in what was left of one, when it did not
-- Fixed switching one device off taking every device served from the same Redis offline; a device switched off
-  before upgrading leaves every worker suspended until `rq resume` is run
+- Fixed switching one device off taking every device served from the same Redis offline
 - Fixed devices on one Redis sharing their jobs, so one device listed, and could cancel, another's, and sharing one
   executor lock in the working folder; jobs stored before upgrading are no longer listed
 - Fixed failed jobs not reaching MSS, and some staying `executing`: a job failing in preprocessing, execution or
@@ -103,6 +104,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Removed
 
+- Removed RQ and `BCC_MAX_GENERAL_QUEUE_TIME`, and the `storage_id` of jobs and the RQ job ids of bookings, which only
+  RQ's queues read; macOS no longer needs `OBJC_DISABLE_INITIALIZE_FORK_SAFETY`, as nothing forks
 - Removed `BCC_JOBS_STORE_CLEAN_INTERVAL`: a job older than `BCC_JOBS_STORE_TTL` is deleted as another is stored
 - Removed `BCC_REQUEST_LOG_TTL` and `BCC_REQUEST_LOG_CLEAN_INTERVAL`, with the two weeks of requests the BCC kept in
   Redis and read nowhere; MSS's nonces are still kept for `MSS_NONCE_TTL`

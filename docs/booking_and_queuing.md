@@ -26,23 +26,13 @@ book a time slot to accept only one user's jobs and waitlist other users' jobs.
 ## Dependencies
 
 - [Redis](https://redis.io/)
-- [SQLite](https://www.sqlite.org/)
-- [rq](https://python-rq.org/)
+- [SQLite](https://www.sqlite.org/), which holds the bookings and the jobs
 
 
 ## Operations (REST API)
 
 - Ensure you have [Anaconda/miniconda](https://www.anaconda.com/docs/getting-started/miniconda/install) 
  and [redis server/stack](https://redis.io/docs/latest/operate/oss_and_stack/install/archive/install-redis/) installed.
-
-_Note: the [RQ dashboard](https://github.com/nvie/rq-dashboard) will not work if `dev` optional dependencies are not included_  
-
-- Open another shell start the [RQ dashboard](https://github.com/nvie/rq-dashboard)
-
-```shell
-conda activate bookenv
-rq-dashboard
-```
 
 - Through, MSS, create users e.g.
 
@@ -142,9 +132,6 @@ Responding like:
 }
 ```
 
-- Open [http://127.0.0.1:9181/](http://127.0.0.1:9181/) in your browser. 
-  You should find that the jobs only jobs by the owner (John) of the booking run during the booked slot
-
 - Through MSS, you can also view a given job you submitted.
 
 ```shell
@@ -230,57 +217,37 @@ _Note: The user must specify the backend they are booking when submitting reques
 - If its span overlaps with the span of the cached view of the current 24-hour slice of the schedule,
   the cached view is invalidated.
 
-### Managing normal and slot queues
+### Running the jobs
 
-- Workers associated with the `normal_execution` queue and the `booked_execution` queue 
-  run the jobs on the normal and the slot queues respectively.
-- The `waitlist` queue is not associated with any worker. 
-  It is just a First-In-First-Out (FIFO) data structure from which jobs can be
-  popped off and put on an appropriate execution queue.
-- Whenever a job is received, the cached 24-hour slice of schedule is checked to get
-  the booking that should be running now.   
-  If none is found, job is sent to `normal_execution` queue.  
-  If one is found, more checks are done to determine if the job is for that booking or not.
+- A job is a row of the jobs table, with its stage and its estimated duration, which
+  preprocessing, the compilation of its schedules, sets.
+- Each device's heavy worker runs, of the jobs the table holds, the execution the bookings let run
+  next, else the oldest preprocessing, else a recalibration that is due. A light worker
+  postprocesses the oldest executed job of every device.
+- A worker claims a job in one transaction, so no two workers run the same stage of a job.
 
 ### When there is no active booking:
 
-- All jobs received are put into the `preprocessing` queue where they are compiled.
-- When a job is compiled, its absolute timings (and thus length) are determined.
-- If a job's length is greater than the available time on the `normal_execution` queue 
-  before the next time slot, it is put in the `waitlist` queue.  
-  _(Note that the pending jobs on the `normal_execution` queue are accounted for also when computing the available time.)_
-- Otherwise, it is put on the `normal_execution` queue.
+- The oldest preprocessed job that ends before the next booking starts runs next.
+  A longer job waits, and shorter ones run before it, until it fits.
 
 ### When a booking is active:
 
-- All jobs received are put into the preprocessing queue where they are compiled.
-- When a job is compiled, its absolute timings (and thus length) are determined.
-- Any job that does not belong to the user who booked the slot is immediately put in the `waitlist` queue.
-- Any job that has an explicit property `force_normal_queue=True`, is immediately put in the `waitlist` queue.
-- Otherwise, if a job's length is greater than the time left to the end of the slot,   
-  it fails immediately and alerts the user that the job is too long for the slot.  
+- The booker's oldest preprocessed job that ends before the booking does runs next.
+- A booker's job longer than what is left of the booking fails after preprocessing, and alerts
+  the user that the job is too long for the slot.  
   _(The reason here is to allow the user to decide if they want to elongate 
   their time slot or just put the job on the normal queue.)_
-- If the job's length is less than the available time in the slot, it is put on the `booked_execution` queue.  
-  _(Note that the pending jobs on the `booked_execution` queue are accounted 
-  for also when computing the available time.)_
-- Jobs on the `booked_execution` queue run to completion.
-- If the idle time between subsequent jobs on the `booked_execution` queue 
-  exceeds `MAX_IDLE_TIME`, the next job from the general `waitlist` queue,
-  whose length is shorter than the available time to the **start of the next time slot**, 
-  is put on the `booked_execution` queue. 
-  This implies that if the booker submitted a job before the booking starts, 
-  it will not run automatically when the booking starts. It must wait for all the other jobs that are short enough.
+- A booker's job with `force_normal_queue=True`, and any other user's job, waits.
+- Once the booker has had no job executing for `MAX_IDLE_TIME`, the oldest job of anyone's
+  that ends before the next booking starts runs, one at a time, until the booker sends another.
+- A job under way when the booking ends runs to completion; then the rules for no active
+  booking apply.
 
-### Immediately after a booking ends:
+### Recalibration
 
-- All the jobs on the `booked_execution` queue are allowed to run to completion.
-- All jobs in the waitlist whose length is less or equal to the available time before 
-  the next time slot are moved to the `normal_execution` queue.  
-  _(Note that the pending jobs on the execution queue are accounted 
-  for also when computing the available time.)_
-- The jobs on the `normal_execution` queue start running.
-
+- A recalibration is a row with a due time. A heavy worker runs it when its device has no job to
+  run, having first scheduled the next one interval later.
 
 ## Constraints
 

@@ -45,7 +45,7 @@ from app.tests.utils.jobs import (
     submit_jobs,
 )
 from app.tests.utils.params import (
-    CLIENT_AND_RQ_WORKER_TUPLES,
+    CLIENT_AND_WORKER_TUPLES,
     FASTAPI_CLIENTS,
     INVALID_CREATE_BOOKINGS_PARAMS,
     SIMPLE_UPLOAD_JOB_PARAMS,
@@ -57,11 +57,11 @@ from app.tests.utils.params import (
     PaginationInfo,
 )
 from app.tests.utils.records import order_by, paginate
-from app.tests.utils.rq import wait_on_rq_worker
 from app.tests.utils.users import (
     create_many_users,
     create_user,
 )
+from app.tests.utils.workers import wait_on_worker
 
 
 @pytest.mark.parametrize("user,booking,client", VALID_CREATE_BOOKINGS_PARAMS)
@@ -159,7 +159,7 @@ def test_create_too_many_booking(client):
                 assert response.status_code == 200
 
 
-@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
+@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_WORKER_TUPLES)
 def test_unauthenticated_create_booking(client, worker, redis_conn):
     """Creating booking outside MSS errors out"""
     with client as client:
@@ -243,7 +243,7 @@ def test_view_bookings(client, pagination: "PaginationInfo"):
                 assert actual_output == expected
 
 
-@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
+@pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_WORKER_TUPLES)
 def test_unauthenticated_view_bookings(client, worker, redis_conn):
     """Viewing bookings with non-existing user or outside MSS errors out"""
     with client as client:
@@ -327,7 +327,7 @@ def test_cancel_future_booking(
         expected_job_ids = submit_jobs(client, data=job_metadata_list)
 
         # Run the queue
-        worker.work(burst=True)
+        worker.run(is_burst=True)
 
         stored_jobs = get_stored_jobs()
 
@@ -551,7 +551,7 @@ def test_cancel_active_booking(
         submit_jobs(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
+        wait_on_worker(worker, clock=fake_clock)
 
         stored_jobs = get_stored_jobs()
 

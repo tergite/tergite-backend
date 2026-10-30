@@ -51,26 +51,6 @@ def test_bcc_env_file_names_each_device_an_api_worker_serves(tmp_path):
     assert result.stdout.strip().splitlines()[-1] == "['Alpha', 'Beta']"
 
 
-def test_each_device_has_its_own_queues(tmp_path, monkeypatch):
-    """Each device's queue pool has its own queues"""
-    import settings
-    from app.services.scheduler import QueuePool
-    from app.utils.redis import get_redis_connection
-
-    load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
-    connection = get_redis_connection(settings.get_device_settings().rq_redis_url)
-
-    alpha_pool = QueuePool.from_settings(
-        settings.get_device_settings("Alpha"), connection
-    )
-    beta_pool = QueuePool.from_settings(
-        settings.get_device_settings("Beta"), connection
-    )
-
-    assert alpha_pool.general.name == "Alpha_general"
-    assert beta_pool.general.name == "Beta_general"
-
-
 def test_app_keeps_each_device_resources_while_it_runs(
     tmp_path, monkeypatch, patched_mss_websockets
 ):
@@ -113,17 +93,6 @@ def test_each_device_path_reaches_that_device(tmp_path, monkeypatch, mocker):
         assert user_id in get_user_ids("/Beta/users")
         assert user_id not in get_user_ids("/Alpha/users")
         assert user_id not in get_user_ids("/users")
-
-
-def test_worker_runs_each_job_as_its_queue_device(tmp_path, monkeypatch):
-    """A queue is the device's whose name prefixes it, the longest if several do"""
-    from app.api.worker import _get_device_of_queue
-
-    load_test_devices(tmp_path, monkeypatch, ["sim", "sim_2q"])
-
-    assert _get_device_of_queue("sim_general") == "sim"
-    assert _get_device_of_queue("sim_2q_general") == "sim_2q"
-    assert _get_device_of_queue("sim_2q_normal_execution") == "sim_2q"
 
 
 def test_device_env_variables_override_the_shared_ones(tmp_path, monkeypatch):
@@ -174,39 +143,35 @@ def test_switching_a_device_off_leaves_the_others_on(
         assert beta_status.json() == {"status": "ON"}
 
 
-def test_heavy_worker_waits_while_its_device_is_off(
-    tmp_path, monkeypatch, mocker, redis_client
-):
-    from rq import Queue
-    from rq.worker import StopRequested
-
+def test_heavy_worker_waits_while_its_device_is_off(tmp_path, monkeypatch, mocker):
+    import settings
     from app.api import app
-    from app.api.worker import PreloadedRqWorker
-    from app.services.scheduler import DeviceResources
+    from app.services.scheduler import DeviceResources, close_device_resources
+    from app.services.scheduler.dispatcher import Dispatcher, schedule_recalibration
 
     load_test_devices(tmp_path, monkeypatch, ["Alpha", "Beta"])
     mocker.patch.object(MssClient, "send_event")
-    # the worker's start-up, but for building the executor and publishing the device
-    mocker.patch(
-        "app.api.worker.preload_worker_globals",
-        side_effect=lambda device_settings, should_load_executor: (
-            DeviceResources.from_settings(device_settings)
-        ),
-    )
-    alpha_worker = PreloadedRqWorker(
-        [Queue("Alpha_preprocessing", connection=redis_client)],
-        connection=redis_client,
-    )
-    beta_worker = PreloadedRqWorker(
-        [Queue("Beta_preprocessing", connection=redis_client)],
-        connection=redis_client,
-    )
     with get_test_client(app) as client:
         client.post("/Alpha/switch/off", headers=create_mss_headers(is_admin=True))
+    devices = {
+        name: DeviceResources.from_settings(settings.get_device_settings(name))
+        for name in ("Alpha", "Beta")
+    }
+    # the API cancels its own as it stops
+    for device in devices.values():
+        schedule_recalibration(device, due_at=None, interval=60)
 
-    with pytest.raises(StopRequested):
-        alpha_worker.check_for_suspension(True)
-    beta_worker.check_for_suspension(True)
+    is_alpha_run = Dispatcher(
+        {"Alpha": devices["Alpha"]}, should_run_heavy=True, should_run_light=False
+    ).run(is_burst=True, max_jobs=1)
+    is_beta_run = Dispatcher(
+        {"Beta": devices["Beta"]}, should_run_heavy=True, should_run_light=False
+    ).run(is_burst=True, max_jobs=1)
+
+    for device in devices.values():
+        close_device_resources(device)
+    assert not is_alpha_run
+    assert is_beta_run
 
 
 def test_each_device_has_its_own_jobs(tmp_path, monkeypatch):

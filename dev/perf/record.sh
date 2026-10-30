@@ -43,9 +43,6 @@ BCC_PORT=8102
 MSS_PORT=8006
 REDIS_PORT=6382
 export PERF_BACKLOG_USER_ID="perf-backlog-user" PERF_SDK_USER_ID="perf-sdk-user"
-# on macOS a worker's forked work horse is otherwise killed by the Objective-C runtime, as
-# start_bcc.sh and the launchd plist know
-export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
 
 main() {
   [[ -n "$1" ]] || exit_with_err "usage: $0 <out-dir>"
@@ -89,10 +86,10 @@ start_stack() {
   (cd "$ROOT_PATH" && exec "$WORK_PATH/venv/bin/python" main.py serve --host 127.0.0.1 --port "$BCC_PORT") \
     > "$WORK_PATH/api.log" 2>&1 &
   api_pid=$!
-  (cd "$ROOT_PATH" && exec "$WORK_PATH/venv/bin/python" -m dev.perf.stub_worker rq --kind heavy) \
+  (cd "$ROOT_PATH" && exec "$WORK_PATH/venv/bin/python" -m dev.perf.stub_worker worker --kind heavy) \
     > "$WORK_PATH/heavy.log" 2>&1 &
   heavy_pid=$!
-  (cd "$ROOT_PATH" && exec "$WORK_PATH/venv/bin/python" main.py rq --kind light) \
+  (cd "$ROOT_PATH" && exec "$WORK_PATH/venv/bin/python" main.py worker --kind light) \
     > "$WORK_PATH/light.log" 2>&1 &
   light_pid=$!
 
@@ -100,7 +97,7 @@ start_stack() {
     kill -0 "$api_pid" 2> /dev/null || exit_with_err "the API stopped; see $WORK_PATH/api.log"
     sleep 0.5
   done
-  until [[ "$(redis-cli -p "$REDIS_PORT" scard rq:workers)" == "2" ]]; do
+  until grep -q "worker is ready" "$WORK_PATH/heavy.log" && grep -q "worker is ready" "$WORK_PATH/light.log"; do
     kill -0 "$heavy_pid" 2> /dev/null || exit_with_err "the heavy worker stopped; see $WORK_PATH/heavy.log"
     kill -0 "$light_pid" 2> /dev/null || exit_with_err "the light worker stopped; see $WORK_PATH/light.log"
     sleep 0.5

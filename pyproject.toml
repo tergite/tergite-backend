@@ -45,7 +45,6 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "rq~=2.4.0",
     "sqlmodel~=0.0.24",
     "hiredis~=3.2.1",
     "pyjwt~=2.9.0",
@@ -98,7 +97,6 @@ dev = [
     "time-machine~=3.5.1",
     "pytest-lazy-fixtures>=1.1.2",
     "pre-commit~=4.2.0",
-    "rq-dashboard~=0.8.3.2",
     "pytest-mock~=3.14.1",
     "pytest-timeout~=2.3.1",
     "pytest-xdist~=3.8.0",

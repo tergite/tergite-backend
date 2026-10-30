@@ -75,19 +75,16 @@ async def get_recalibration_info(device: DeviceResourcesDep) -> RecalibrationInf
         Depends(check_device_is_online),
     ],
 )
-async def cancel_recalibration(
-    device: DeviceResourcesDep, ignore_errors: bool = Query(False)
-) -> GeneralMessage:
+async def cancel_recalibration(device: DeviceResourcesDep) -> GeneralMessage:
     """Cancels recalibration on this device
 
     Only MSS admin users can initialize recalibration
 
     Args:
         device: what the device runs on
-        ignore_errors: whether to ignore errors during recalibration
 
     Returns:
         general information on the status of the request
     """
-    scheduler.stop_recalibration(device, ignore_errors=ignore_errors)
+    scheduler.stop_recalibration(device)
     return {"status": "success"}

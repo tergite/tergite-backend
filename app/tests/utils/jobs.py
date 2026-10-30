@@ -32,8 +32,11 @@ from pydantic import ValidationError
 from pytest_mock import MockerFixture
 from sqlalchemy import create_engine
 
+import app.services.scheduler.dispatcher as scheduler_dispatcher
+import app.services.scheduler.tasks as scheduler_tasks
 from app.libs.queues.dtos import Job
 from app.services.scheduler import JobsStore
+from app.services.scheduler.utils import update_job_in_mss
 from app.tests.utils.api import (
     create_mss_headers,
     get_bearer_headers,
@@ -126,6 +129,14 @@ def get_stored_jobs() -> List[Job]:
         ttl=0,
     )
     return store.find()
+
+
+def spy_on_mss_updates(mocker: MockerFixture) -> Mock:
+    """Spies, with one mock, on the jobs the tasks and the dispatcher send MSS"""
+    spy = Mock(side_effect=update_job_in_mss)
+    for module in (scheduler_tasks, scheduler_dispatcher):
+        mocker.patch.object(module, "update_job_in_mss", spy)
+    return spy
 
 
 def get_jobs_sent_to_mss(mss_update_spy: Mock) -> List[Job]:

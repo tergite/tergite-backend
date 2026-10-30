@@ -31,10 +31,11 @@ from sqlmodel.sql.expression import SelectOfScalar
 
 from ...libs.queues.dtos import Job, JobStatus, Stage
 from ...utils.datetime import get_utc_now, to_utc
+from ...utils.exc import PostProcessingError
 from ...utils.sql_db import open_immediate_session
 from ..booking import Booking, get_active_booking, get_next_booking
 from ..devices import is_offline
-from .dtos import RecalibrationInfo
+from .dtos import RecalibrationInfo, RecalibrationStatus
 from .resources import DeviceResources
 from .store import JobRow, RecalibrationRow
 from .utils import log_job_failure, update_job_in_mss, update_job_stage
@@ -129,13 +130,9 @@ def enqueue_job(
             session.commit()
 
 
-def mark_preprocessed(device: DeviceResources, job: Job) -> str:
+def mark_preprocessed(device: DeviceResources, job: Job) -> None:
     """Leaves the preprocessed job for the bookings to let execute, or fails a booker's that
-    is too long for what is left of their booking
-
-    Returns:
-        the job's id
-    """
+    is too long for what is left of their booking"""
     now = get_utc_now()
     booking = get_active_booking(device.bookings_db)
     if (
@@ -147,10 +144,9 @@ def mark_preprocessed(device: DeviceResources, job: Job) -> str:
         _fail_job(
             device, job.job_id, reason="job too long for the time left in the booking"
         )
-        return job.job_id
+        return
 
     update_job_stage(device.jobs_store, job_id=job.job_id, stage=Stage.EXEC_Q)
-    return job.job_id
 
 
 def mark_executed(device: DeviceResources, job_id: str, results_file: str) -> Job:
@@ -165,12 +161,26 @@ def mark_executed(device: DeviceResources, job_id: str, results_file: str) -> Jo
     return update_job_stage(device.jobs_store, job_id=job_id, stage=Stage.PST_PROC_Q)
 
 
+def mark_postprocessed(device: DeviceResources, job_id: str) -> None:
+    """Moves the postprocessed job to its final stage, and tells MSS"""
+    job = update_job_stage(device.jobs_store, job_id=job_id, stage=Stage.FINAL_Q)
+    if job.status == JobStatus.SUCCESSFUL:
+        job = update_job_stage(device.jobs_store, job_id=job_id, stage=Stage.FINAL_W)
+
+    update_job_in_mss(
+        device.mss_client,
+        payload=job,
+        job_supervisor_log=device.settings.job_supervisor_log,
+    )
+
+
 def run_next_preprocessing(device: DeviceResources) -> bool:
     """Preprocesses the device's oldest job waiting for it
 
     Returns:
         whether there was one
     """
+    # imported here, as importing the tasks loads libraries the API need not
     from .tasks import preprocess
 
     row = _claim_job(device, Stage.PRE_PROC_Q, _pick_oldest)
@@ -178,13 +188,15 @@ def run_next_preprocessing(device: DeviceResources) -> bool:
         return False
     job = Job.model_validate_json(row.data)
     job_file = device.settings.job_upload_pool / job.job_id
-    _run_logged(
+    preprocessed_job = _run_logged(
         preprocess,
         device,
         job,
         job_file=job_file,
         timeout=device.settings.max_preprocessing_time,
     )
+    if preprocessed_job is not None:
+        mark_preprocessed(device, preprocessed_job)
     return True
 
 
@@ -200,7 +212,11 @@ def run_next_execution(device: DeviceResources) -> bool:
     if row is None:
         return False
     job = Job.model_validate_json(row.data)
-    _run_logged(execute, device, job, timeout=device.settings.max_execution_time)
+    results_file = _run_logged(
+        execute, device, job, timeout=device.settings.max_execution_time
+    )
+    if results_file is not None:
+        mark_executed(device, job.job_id, results_file=results_file)
     return True
 
 
@@ -210,7 +226,7 @@ def run_next_postprocessing(device: DeviceResources) -> bool:
     Returns:
         whether there was one
     """
-    from .tasks import fail_postprocessing, mark_postprocessed, postprocess
+    from .tasks import postprocess
 
     row = _claim_job(device, Stage.PST_PROC_Q, _pick_oldest)
     if row is None:
@@ -219,8 +235,9 @@ def run_next_postprocessing(device: DeviceResources) -> bool:
     try:
         with _raise_after(device.settings.max_postprocessing_time):
             postprocess(device, job, results_file=row.results_file)
-    except Exception as exp:
-        fail_postprocessing(device, exp)
+    except PostProcessingError as exp:
+        logging.error(exp.exp)
+        _fail_job(device, exp.job_id, reason="error during post processing")
     else:
         mark_postprocessed(device, job.job_id)
     return True
@@ -232,7 +249,7 @@ def run_due_recalibration(device: DeviceResources) -> bool:
     Returns:
         whether one was due
     """
-    from .tasks import recalibrate_now
+    from .tasks import recalibrate
 
     now = get_utc_now()
     with open_immediate_session(device.bookings_db) as session:
@@ -240,7 +257,7 @@ def run_due_recalibration(device: DeviceResources) -> bool:
             select(RecalibrationRow)
             .where(
                 col(RecalibrationRow.device_name) == device.settings.default_prefix,
-                col(RecalibrationRow.status) == "scheduled",
+                col(RecalibrationRow.status) == RecalibrationStatus.SCHEDULED,
                 col(RecalibrationRow.due_at) <= now,
             )
             .order_by(col(RecalibrationRow.due_at))
@@ -248,13 +265,13 @@ def run_due_recalibration(device: DeviceResources) -> bool:
         ).first()
         if row is None:
             return False
-        row.status, row.started_at = "started", now
+        row.status, row.started_at = RecalibrationStatus.STARTED, now
         session.add(row)
         if row.interval:
             session.add(
                 RecalibrationRow(
                     device_name=row.device_name,
-                    status="scheduled",
+                    status=RecalibrationStatus.SCHEDULED,
                     due_at=now + timedelta(seconds=row.interval),
                     interval=row.interval,
                 )
@@ -262,13 +279,13 @@ def run_due_recalibration(device: DeviceResources) -> bool:
         session.commit()
         recalibration_id = row.id
 
-    status, error = "finished", None
+    status, error = RecalibrationStatus.FINISHED, None
     try:
         with _raise_after(device.settings.max_recalibration_queue_time):
-            recalibrate_now(device)
+            recalibrate(device)
     except Exception as exp:
         logging.error(f"recalibration failed: {exp}")
-        status, error = "failed", f"{exp!r}"
+        status, error = RecalibrationStatus.FAILED, f"{exp!r}"
     _record_recalibration_end(
         device.bookings_db, recalibration_id, status=status, error=error
     )
@@ -310,7 +327,7 @@ def schedule_recalibration(
         session.add(
             RecalibrationRow(
                 device_name=device.settings.default_prefix,
-                status="scheduled",
+                status=RecalibrationStatus.SCHEDULED,
                 due_at=to_utc(due_at) if due_at else get_utc_now(),
                 interval=interval,
             )
@@ -324,13 +341,13 @@ def stop_recalibration(device: DeviceResources) -> None:
         session.exec(
             delete(RecalibrationRow).where(
                 col(RecalibrationRow.device_name) == device.settings.default_prefix,
-                col(RecalibrationRow.status) == "scheduled",
+                col(RecalibrationRow.status) == RecalibrationStatus.SCHEDULED,
             )
         )
         for row in session.exec(
             select(RecalibrationRow).where(
                 col(RecalibrationRow.device_name) == device.settings.default_prefix,
-                col(RecalibrationRow.status) == "started",
+                col(RecalibrationRow.status) == RecalibrationStatus.STARTED,
             )
         ):
             row.interval = None
@@ -346,17 +363,19 @@ def get_recalibration_info(device: DeviceResources) -> RecalibrationInfo:
             col(RecalibrationRow.device_name) == device_name
         )
         current = session.exec(
-            query.where(col(RecalibrationRow.status) == "started")
+            query.where(col(RecalibrationRow.status) == RecalibrationStatus.STARTED)
         ).first()
         previous = session.exec(
             query.where(
-                col(RecalibrationRow.status).in_(("finished", "failed"))
+                col(RecalibrationRow.status).in_(
+                    (RecalibrationStatus.FINISHED, RecalibrationStatus.FAILED)
+                )
             ).order_by(col(RecalibrationRow.ended_at).desc())
         ).first()
         upcoming = session.exec(
-            query.where(col(RecalibrationRow.status) == "scheduled").order_by(
-                col(RecalibrationRow.due_at)
-            )
+            query.where(
+                col(RecalibrationRow.status) == RecalibrationStatus.SCHEDULED
+            ).order_by(col(RecalibrationRow.due_at))
         ).first()
 
     info = {}
@@ -511,7 +530,10 @@ def _is_booking_excluded(device: DeviceResources, job_id: str) -> bool:
 
 
 def _record_recalibration_end(
-    db_engine: Engine, recalibration_id: str, status: str, error: Optional[str]
+    db_engine: Engine,
+    recalibration_id: str,
+    status: RecalibrationStatus,
+    error: Optional[str],
 ) -> None:
     with Session(db_engine) as session:
         row = session.get(RecalibrationRow, recalibration_id)
@@ -542,16 +564,21 @@ def _run_logged(
     *args: Any,
     timeout: float,
     **kwargs: Any,
-) -> None:
-    """Runs the task, which fails its job itself, logging what it raised"""
+) -> Optional[Any]:
+    """Runs the task, which fails its job itself, logging what it raised
+
+    Returns:
+        what the task returned, or None if it raised
+    """
     try:
         with _raise_after(timeout):
-            task(device, *args, **kwargs)
+            return task(device, *args, **kwargs)
     except TimeoutError:
         job: Job = args[0]
         _fail_job(device, job.job_id, reason="timed out")
     except Exception as exp:
         logging.error(f"{task.__name__} failed: {exp!r}")
+    return None
 
 
 @contextmanager

@@ -46,7 +46,6 @@ from app.tests.utils.params import (
     PaginationInfo,
 )
 from app.tests.utils.records import paginate
-from app.tests.utils.rq import wait_on_rq_worker
 from app.tests.utils.users import (
     create_many_users,
     create_user,
@@ -55,6 +54,7 @@ from app.tests.utils.users import (
     view_own_profile,
     view_user_list,
 )
+from app.tests.utils.workers import wait_on_worker
 
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
@@ -218,7 +218,7 @@ def test_delete_profile(
         assert response.json() == {"detail": "user not found"}
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
+        wait_on_worker(worker, clock=fake_clock)
 
         stored_jobs = get_stored_jobs()
 
@@ -245,7 +245,7 @@ def test_delete_profile_cancels_executing_jobs(
         )[0]
         submit_jobs(client, data=[job_info])
         # preprocessed and executed, waiting for postprocessing
-        worker.work(burst=True, max_jobs=2)
+        worker.run(is_burst=True, max_jobs=2)
         assert get_stored_jobs()[0].status == JobStatus.EXECUTING
 
         delete_own_profile(client, user_id=job_info["user_id"])
@@ -272,10 +272,10 @@ def test_delete_profile_during_booking_releases_the_waitlist(
             jobs_folder=jobs_folder,
         )[0]
         submit_jobs(client, data=[job_info])
-        worker.work(burst=True)
+        worker.run(is_burst=True)
 
         delete_own_profile(client, user_id=booker["id"])
-        worker.work(burst=True)
+        worker.run(is_burst=True)
 
         assert get_stored_jobs()[0].status == JobStatus.SUCCESSFUL
 
@@ -322,7 +322,7 @@ def test_admin_remove_user(
         assert response.json() == {"detail": "user not found"}
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
+        wait_on_worker(worker, clock=fake_clock)
 
         stored_jobs = get_stored_jobs()
 
@@ -371,7 +371,7 @@ def test_non_admin_remove_user(
         assert response.status_code == 200
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
+        wait_on_worker(worker, clock=fake_clock)
 
         stored_jobs = get_stored_jobs()
         assert all([v.status == JobStatus.SUCCESSFUL for v in stored_jobs])

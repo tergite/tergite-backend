@@ -454,13 +454,24 @@ TTLs, pagination and a Lua script, used by three stores of which only one needs 
      reads the started registry without cleanup. B limits a stage's time by SIGALRM, main thread only; runs it
      unforked, so a crash takes the worker, which the recovery pass covers; polls; imports `tasks` lazily to break
      a cycle; and registers no RQ worker, so `dev/perf/record.sh` waits for a ready line instead.
-   - Redis: A needs it for RQ; under B, item 6 makes it optional.
-6. **Redis only for autocalibration**, if B stays, one store per commit: the device parameters of 5.2, the offline
-   flag (`devices/service.py:142`), the MSS nonces of 5.1 (a table with a unique key and an expiry time, whose
+   - Redis: A needs it for RQ; under B, item 7 makes it optional.
+   *Decided:* B. A goes with RQ, `BCC_SCHEDULER`, `BCC_MAX_GENERAL_QUEUE_TIME`, the jobs' `storage_id` and the
+   bookings' rq job ids (migration 0005); `bcc rq` becomes `bcc worker`, which prints a ready line that
+   `dev/perf/record.sh` waits for. The tasks return their results and the dispatcher marks each stage done, so they
+   no longer call into it; it still imports them lazily, as they load libraries the API need not. A booker's job
+   submitted before their booking now runs in it, ahead of others', as `test_submit_long_jobs_before_booking`
+   expects.
+6. **Wake the dispatchers, not poll them**: the 0.2 s poll is B's added wait between stages. Each
+   dispatcher sleeps until its next timed change (`get_next_change_at`, due recalibrations, stage timeouts) or a
+   wake-up, a datagram on a Unix socket in its device's folder that the API, after committing a job or cancel, and
+   the heavy worker, after an execution, send; a lost one costs a few seconds' fallback poll. Postgres's
+   `LISTEN/NOTIFY` could replace the socket there.
+7. **Redis only for autocalibration**, now that B stays, one store per commit: the device parameters of 5.2, the
+   offline flag (`devices/service.py:142`), the MSS nonces of 5.1 (a table with a unique key and an expiry time, whose
    failed insert is the claim `SET NX` was) and the API's start-up lock (`dependencies.py:72`) move to the SQL
    database. Redis is then needed only by tergite-tuner's sessions (`quantify/executor.py:215`), so a qiskit
-   device runs without one; once tergite-tuner keeps them in SQLite, in a change of its own there, the BCC drops
-   Redis. Under A, RQ keeps Redis required, and this item is dropped.
+   device runs without one; once tergite-tuner keeps them in an SQL database, in a change of its own there, the BCC drops
+   Redis.
 
 ## Step 6: classes, long functions and DTOs
 

@@ -19,8 +19,6 @@
 set -e
 
 cd "$(dirname "$0")/.."
-# the RQ workers fork a process for every job, which macOS refuses once frameworks are loaded
-[ "$(uname -s)" != "Darwin" ] || export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
 
 env_file="${BCC_ENV_FILE:-.env}"
 if [ -f "$env_file" ] && grep -q "sops_hc_vault__" "$env_file"; then

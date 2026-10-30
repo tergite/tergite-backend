@@ -20,7 +20,7 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, List, Literal, Optional, Self
+from typing import Annotated, Any, List, Optional, Self
 from urllib.parse import urlsplit
 
 from dotenv import dotenv_values
@@ -90,8 +90,6 @@ class DeviceSettings(BaseSettings):
     private_key_file: Path = _ROOT_PATH / "private-bcc-key.pem"
     private_key_password: Optional[bytes] = None
 
-    # what runs the jobs: RQ's queues, or the dispatcher over the SQL database, until one stays
-    scheduler: Literal["rq", "dispatcher"] = "rq"
     # which QuantumExecutor runs the jobs; see .env.example
     executor_type: str = "quantify"
     # the cluster or other instrument set-up; see quantify-config.example.yml and
@@ -126,8 +124,6 @@ class DeviceSettings(BaseSettings):
     max_preprocessing_time: int = 300
     # default: 3 minutes
     max_postprocessing_time: int = 180
-    # default: 3 minutes
-    max_general_queue_time: int = 180
     # default: 1.5 hours
     max_recalibration_queue_time: int = 5400
     # default: 1 day
@@ -179,7 +175,6 @@ class DeviceSettings(BaseSettings):
         "max_execution_time",
         "max_preprocessing_time",
         "max_postprocessing_time",
-        "max_general_queue_time",
         "max_recalibration_queue_time",
         "jwt_ttl",
     )

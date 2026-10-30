@@ -17,29 +17,24 @@
 #
 """Module containing service for scheduling jobs"""
 import shutil
-from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
 from fastapi import UploadFile
-from pydantic import ValidationError
-from rq import exceptions as rq_errors
 from sqlmodel import or_
 
-from ...libs.queues.dtos import Job, JobStatus, Stage, StorageID
-from ...utils.datetime import get_utc_now, to_utc, utc_now_str
+from ...libs.queues.dtos import Job, JobStatus, Stage
+from ...utils.datetime import get_utc_now, utc_now_str
 from ...utils.exc import (
     BookingAlreadyActiveError,
     BookingAlreadyCompleteError,
     ConflictError,
     ItemNotFoundError,
-    JobAlreadyCancelled,
     JobAlreadyCompleteError,
     NotAuthenticatedError,
 )
 from ...utils.messages import GeneralMessage
-from ...utils.rq import cancel_rq_job
 from ..booking import (
     Booking,
     BookingsConfig,
@@ -49,7 +44,6 @@ from ..booking import (
     create_booking,
     delete_bookings,
     delete_users,
-    get_active_booking,
     get_booking,
     get_many_bookings,
     get_user,
@@ -57,12 +51,7 @@ from ..booking import (
 from ..devices import get_device_calibration_info
 from . import dispatcher
 from .dtos import RecalibrationInfo
-from .queues import QueuePool
 from .resources import DeviceResources
-from .utils import get_rq_job_id
-
-# the tasks go by import path, as importing them loads the executor's heavy libraries
-_TASKS_MODULE = f"{__package__}.tasks"
 
 
 def submit_booking(
@@ -70,24 +59,7 @@ def submit_booking(
     user_id: str,
     booking_info: NewBookingInfo,
 ) -> Booking:
-    """Submits a booking for registration
-
-    When a booking that is active:
-        - the idle time of the queue is checked at a given interval
-            - if the idle time of the booked_execution queue has exceeded MAX_SLOT_JOB_INTERVAL
-                - Find the first job on the waitlist that has a duration that is less than
-                  the total time left on the execution queue before the next booking:
-                    - push that job to booked_execution queue
-
-    When a booking ends:
-        - wait for all jobs on the booked_execution queue to run to completion
-        - clear the idle time timer
-        - Repeatedly find the first job on the waitlist that has a duration that is less than
-          the total time left on the execution queue before the next booking until the waitlist is empty:
-            - push that job to execution queue
-
-    On submission of a new booking, new events are scheduled to run, one at the `start_utc`
-    and the other at the `end_utc` of this booking to enforce the above conditions.
+    """Submits a booking, whose start and end the dispatcher compares with now
 
     Args:
         device: what the device runs on
@@ -97,37 +69,13 @@ def submit_booking(
     Returns:
         the submitted booking
     """
-    # create the new booking
-    booking = create_booking(
+    return create_booking(
         device.bookings_db,
         user_id=user_id,
         data=booking_info,
         config=BookingsConfig.from_settings(device.settings),
         now=device.settings.get_utc_now(),
     )
-    # the dispatcher compares the booking's start and end with now
-    if _is_dispatched(device):
-        return booking
-
-    # at the start_utc, reset the idle time tracker
-    device.queues.general.enqueue_at(
-        booking.start_utc,
-        f"{_TASKS_MODULE}.reset_idleness_timer",
-        booking_id=booking.id,
-        end_utc=booking.end_utc,
-        job_id=booking.start_event_id,
-    )
-
-    # at the end_utc of the booking, do proper cleanup of idleness timer,
-    # waitlist and booked execution queues
-    device.queues.general.enqueue_at(
-        booking.end_utc,
-        f"{_TASKS_MODULE}.post_booking_cleanup",
-        booking_id=booking.id,
-        job_id=booking.end_event_id,
-    )
-
-    return booking
 
 
 def cancel_booking(
@@ -177,8 +125,6 @@ def cancel_booking(
             f"the booking of id {booking_id} is already complete"
         )
 
-    if not _is_dispatched(device):
-        _cancel_booking_from_queues(device.queues, booking=booking)
     delete_bookings(device.bookings_db, Booking.id == booking_id)
 
 
@@ -188,27 +134,7 @@ def submit_job_file(
     credentials: MSSTokenClaims,
     should_force_normal_queue: bool = False,
 ) -> Job:
-    """Submits the job for processing
-
-    On submission, the job is processed to determine how long it will take to execute.
-    Then:
-    In case there is a booking that is active at the current time:
-        - if should_force_normal_queue:
-            - Push the job to the waitlist
-        - else if the user is owner of the current booking:
-            - reset the booked_execution queue idle time counter
-            - If the job's execution duration is greater than the total time left on the booked_execution queue:
-                - raise error "job too long for the time left in the booking"
-            - Otherwise:
-                - Push the job to the booked_execution queue
-        - Otherwise:
-            - Push the job to the waitlist
-
-    In case there is no active booking:
-        - If the job's execution duration is greater than the total time left on the execution queue before the next booking:
-            - the job is placed on the waitlist
-        - Otherwise:
-            - the job is pushed to the execution queue
+    """Submits the job, which the dispatcher preprocesses, then executes as the bookings let it
 
     Args:
         device: what the device runs on
@@ -222,20 +148,14 @@ def submit_job_file(
     upload_folder = device.settings.job_upload_pool
     backend_name = device.executor_options.backend_name
 
-    # We save the job first in the jobs store before we put it on the queue
-    # because it will be picked from the jobs store when the worker is running.
-    # It would be harder to pass the job payload itself across each worker because it would have
-    # to be pickled.
-    jobs_store = device.jobs_store
-
     job_id = credentials.job_id
     user_id = credentials.user_id
-    if jobs_store.is_stored(job_id):
+    if device.jobs_store.is_stored(job_id):
         raise ConflictError(f"job_id {job_id} already exists")
 
     # save job file
     new_file_path = upload_folder / job_id
-    job_file_path = _save_uploaded_file(upload_file, target=new_file_path)
+    _save_uploaded_file(upload_file, target=new_file_path)
 
     # save job in database
     calibration_info = get_device_calibration_info(device.redis, backend_name)
@@ -247,28 +167,7 @@ def submit_job_file(
         stage=Stage.PRE_PROC_Q,
     )
 
-    if _is_dispatched(device):
-        dispatcher.enqueue_job(
-            device, job, is_booking_excluded=should_force_normal_queue
-        )
-        return job
-
-    jobs_store.insert(job)
-
-    active_booking = get_active_booking(db_engine=device.bookings_db)
-    booking_id = None
-    if active_booking:
-        booking_id = active_booking.id
-
-    device.queues.preprocessing.enqueue(
-        f"{_TASKS_MODULE}.preprocess",
-        job,
-        booking_id=booking_id,
-        job_file=job_file_path,
-        should_force_normal_queue=should_force_normal_queue,
-        job_id=get_rq_job_id(job_id, Stage.PRE_PROC_Q),
-    )
-
+    dispatcher.enqueue_job(device, job, is_booking_excluded=should_force_normal_queue)
     return job
 
 
@@ -300,8 +199,6 @@ def cancel_job(
     if job.status.is_terminal():
         raise JobAlreadyCompleteError(f"job {job_id} is already {job.status.value}")
 
-    if not _is_dispatched(device):
-        _cancel_job_in_queues(device.queues, job)
     if reason is None:
         reason = "Cancelled by a user"
 
@@ -429,11 +326,6 @@ def delete_user_profile(device: DeviceResources, user_id: str) -> None:
     for job in user_jobs:
         if job.status.is_terminal():
             continue
-        with suppress(
-            rq_errors.InvalidJobOperation, rq_errors.InvalidJobOperationError
-        ):
-            if not _is_dispatched(device):
-                _cancel_job_in_queues(device.queues, job)
         job_store.update(
             job.job_id,
             {
@@ -447,18 +339,7 @@ def delete_user_profile(device: DeviceResources, user_id: str) -> None:
     user_incomplete_bookings = get_many_bookings(
         device.bookings_db, Booking.end_utc > get_utc_now(), Booking.user_id == user_id
     )
-    booking_ids = []
-    for booking in user_incomplete_bookings:
-        booking_ids.append(booking.id)
-        if _is_dispatched(device):
-            continue
-        _cancel_booking_from_queues(device.queues, booking=booking)
-        if booking.is_active_at(device.settings.get_utc_now()):
-            # its end, now cancelled, would have released the waitlist
-            device.queues.general.enqueue(
-                f"{_TASKS_MODULE}.post_booking_cleanup",
-                booking_id=booking.id,
-            )
+    booking_ids = [booking.id for booking in user_incomplete_bookings]
 
     # delete the bookings in the database
     delete_bookings(device.bookings_db, Booking.id.in_(booking_ids))
@@ -482,66 +363,20 @@ def init_recalibration(
 
     Returns:
         the general message indicating status of request
-
-    Raises:
-        IsOfflineError: the scheduler is offline
     """
     if interval is None:
         interval = device.settings.default_recalibration_interval
-    if _is_dispatched(device):
-        dispatcher.schedule_recalibration(
-            device, due_at=start_timestamp, interval=interval
-        )
-        return {"status": "success"}
-
-    # just make sure no other recalibration is running or scheduled before starting again
-    stop_recalibration(device, ignore_errors=True)
-
-    if isinstance(start_timestamp, datetime):
-        job = device.queues.recalibration.enqueue_at(
-            # rq reads a naive datetime as the server's local time; the API means UTC
-            datetime=to_utc(start_timestamp),
-            f=f"{_TASKS_MODULE}.recalibrate",
-            interval=interval,
-        )
-    else:
-        job = device.queues.recalibration.enqueue(
-            f=f"{_TASKS_MODULE}.recalibrate",
-            interval=interval,
-        )
-
-    # save some metadata on the job for later retrieval
-    job.meta["interval"] = interval
-    job.save_meta()
-
+    dispatcher.schedule_recalibration(device, due_at=start_timestamp, interval=interval)
     return {"status": "success"}
 
 
-def stop_recalibration(device: DeviceResources, ignore_errors: bool = False):
-    """Cancels recalibration if scheduled or queued
+def stop_recalibration(device: DeviceResources) -> None:
+    """Cancels the device's scheduled recalibrations; one under way schedules no next
 
     Args:
         device: what the device runs on
-        ignore_errors: whether to ignore errors during cancellation of recalibration; defaults to False
-
-    Raises:
-        ItemNotFoundError: if the job does not exist
-        JobAlreadyCancelled: if the job is already cancelled
-        IsOfflineError: the scheduler is offline
     """
-    if _is_dispatched(device):
-        return dispatcher.stop_recalibration(device)
-
-    pending_job_ids = device.queues.recalibration.get_job_ids()
-    pending_job_ids += device.queues.recalibration.scheduled_job_registry.get_job_ids()
-
-    for job_id in pending_job_ids:
-        try:
-            cancel_rq_job(device.redis, job_id=job_id, ignore_errors=ignore_errors)
-        except rq_errors.NoSuchJobError:
-            raise ItemNotFoundError("recalibration job does not exist")
-        except (rq_errors.InvalidJobOperationError, rq_errors.InvalidJobOperation):
-            raise JobAlreadyCancelled("recalibration job is already cancelled")
+    dispatcher.stop_recalibration(device)
 
 
 def get_recalibration_info(device: DeviceResources) -> RecalibrationInfo:
@@ -552,75 +387,8 @@ def get_recalibration_info(device: DeviceResources) -> RecalibrationInfo:
 
     Returns:
         the basic information about the recalibration
-
-    Raises:
-        RuntimeError: multiple current jobs found: [...]
     """
-    if _is_dispatched(device):
-        return dispatcher.get_recalibration_info(device)
-    return RecalibrationInfo.from_queue(device.queues.recalibration)
-
-
-def _is_dispatched(device: DeviceResources) -> bool:
-    """Whether the dispatcher, not RQ, runs the device's jobs"""
-    return device.settings.scheduler == "dispatcher"
-
-
-def _cancel_job_in_queues(queues: QueuePool, job: Job, ignore_errors: bool = False):
-    """Cancels the given job in the queues
-
-    Args:
-        queues: the collection of queue for this application
-        job: the job which is to be cancelled
-        ignore_errors: whether errors should be silently ignored or not
-
-    Raises:
-        rq.exceptions.InvalidJobOperationError: if the job has already been cancelled
-        rq.exceptions.InvalidJobOperation: if the job has already been cancelled
-    """
-    job_id = job.job_id
-    execution_storage_id = StorageID.from_details(
-        uuid=job_id, duration=job.estimated_duration
-    )
-    with suppress(ValidationError):
-        queues.waitlist.pop_job(execution_storage_id)
-
-    # rq job ids are global, so the normal and booked execution queues share the EXEC_Q one
-    connection = queues.preprocessing.connection
-    with suppress(rq_errors.NoSuchJobError):
-        cancel_rq_job(
-            connection,
-            get_rq_job_id(job_id, Stage.PRE_PROC_Q),
-            ignore_errors=ignore_errors,
-        )
-    with suppress(rq_errors.NoSuchJobError):
-        cancel_rq_job(
-            connection, get_rq_job_id(job_id, Stage.EXEC_Q), ignore_errors=ignore_errors
-        )
-    with suppress(rq_errors.NoSuchJobError):
-        cancel_rq_job(
-            connection,
-            get_rq_job_id(job_id, Stage.PST_PROC_Q),
-            ignore_errors=ignore_errors,
-        )
-
-
-def _cancel_booking_from_queues(queues: QueuePool, booking: Booking):
-    """Cancels the booking from the queues
-
-    Args:
-        queues: the collection of queues that handle the bookings
-        booking: the booking whose trace is to be removed
-    """
-    queue_connection = queues.general.connection
-    # cancel and remove any idleness timers
-    cancel_rq_job(queue_connection, booking.idle_timer_id, ignore_errors=True)
-
-    # cancel and remove any start_event jobs
-    cancel_rq_job(queue_connection, booking.start_event_id, ignore_errors=True)
-
-    # cancel and remove any end_event jobs
-    cancel_rq_job(queue_connection, booking.end_event_id, ignore_errors=True)
+    return dispatcher.get_recalibration_info(device)
 
 
 def _save_uploaded_file(file: UploadFile, target: Path) -> Path:

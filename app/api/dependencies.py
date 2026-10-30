@@ -90,7 +90,7 @@ async def lifespan(app: FastAPI):
     yield
 
     for device_resources in app.state.device_resources.values():
-        stop_recalibration(device_resources, ignore_errors=True)
+        stop_recalibration(device_resources)
     for device_resources in app.state.device_resources.values():
         close_device_resources(device_resources)
     app.state.device_resources.clear()

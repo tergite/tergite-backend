@@ -28,7 +28,7 @@ pytest_plugins = [
     "app.tests.utils.io",
     "app.tests.utils.mss",
     "app.tests.utils.redis",
-    "app.tests.utils.rq",
+    "app.tests.utils.workers",
 ]
 
 
@@ -62,10 +62,6 @@ def _configure_logging_for_tests():
     err_logger.debug = print
     is_debug = os.getenv("DEBUG", "").strip().lower() == "true"
     if not is_debug:
-        # silence rq logs
-        logging.getLogger("rq").setLevel(logging.WARNING)
-        logging.getLogger("rq.worker").setLevel(logging.WARNING)
-        logging.getLogger("rq.queue").setLevel(logging.WARNING)
         yield
         return
 

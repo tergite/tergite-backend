@@ -55,7 +55,7 @@ def get_current_timestamp_str() -> str:
 @pytest.fixture
 def fake_clock(mocker) -> Generator[time_machine.Traveller, Any, None]:
     """A clock that jumps ahead instead of waiting: the mock executors' jobs shift it by
-    their duration, and wait_on_rq_worker moves it on to the next scheduled job"""
+    their duration, and wait_on_worker moves it on to the next change in the bookings"""
     with time_machine.travel(datetime.now(timezone.utc), tick=True) as clock:
         # each mock only where its executor is installed, as CI installs one at a time
         if HAS_QUANTIFY:

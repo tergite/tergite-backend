@@ -17,12 +17,10 @@ The qiskit executor is swapped before main.py builds one, so BCC_ENV_FILE must n
 device's env file: settings is read on import, before main.py could set it.
 """
 
-if __name__ == "__main__":
-    # not at the top: RQ's scheduler runs in a spawned process that re-imports this module,
-    # and would load the whole qiskit stack for nothing
-    import app.libs.quantum_executor.qiskit.executor as qiskit_executor
-    import main
-    from dev.perf.stub_executor import StubExecutor
+import app.libs.quantum_executor.qiskit.executor as qiskit_executor
+import main
+from dev.perf.stub_executor import StubExecutor
 
+if __name__ == "__main__":
     qiskit_executor.QiskitDynamicsExecutor = StubExecutor
     main.main()

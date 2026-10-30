@@ -81,7 +81,7 @@ def test_switch_off(client, redis_conn, jobs_folder, worker, job, mocker, fake_c
         assert response.status_code == 503
         assert response.json() == {"detail": f"{name} is offline"}
 
-        worker.work(burst=True)
+        worker.run(is_burst=True)
 
         stored_jobs = get_stored_jobs()
         assert stored_jobs == []
@@ -122,7 +122,7 @@ def test_switch_on(client, redis_conn, jobs_folder, worker, job, mocker, fake_cl
 
         assert response.status_code == 200
 
-        worker.work(burst=True)
+        worker.run(is_burst=True)
 
         stored_jobs = get_stored_jobs()
         assert len(stored_jobs) == 1
