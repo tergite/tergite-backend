@@ -17,7 +17,12 @@ import numpy as np
 import pytest
 import xarray as xr
 
-from ...libs.quantum_executor.base.quantum_job import xarray_to_list
+from ...libs.quantum_executor.base.quantum_job import (
+    _get_ordered_channel_ids,
+    _get_shot_iq_points,
+    _to_iq_point,
+    xarray_to_list,
+)
 
 
 def _make_iq_dataset(slots: Dict[int, np.ndarray]) -> xr.Dataset:
@@ -149,3 +154,41 @@ def test_xarray_to_list_orders_by_memory_slot_not_qubit_order():
         ]
     ]
     assert got == expected
+
+
+def test_channels_order_by_memory_slot_when_each_has_one():
+    dataset = _make_iq_dataset({3: np.ones((1, 1)), 5: np.ones((1, 1))})
+    qobj = _dummy_qobj(qubits=[3, 5], slots=[1, 0])
+
+    assert _get_ordered_channel_ids(dataset, qobj, exp_index=0) == [5, 3]
+
+
+def test_channels_order_by_id_when_the_experiment_measures_nothing():
+    dataset = _make_iq_dataset({5: np.ones((1, 1)), 3: np.ones((1, 1))})
+    qobj = SimpleNamespace(experiments=[SimpleNamespace(instructions=[])])
+
+    assert _get_ordered_channel_ids(dataset, qobj, exp_index=0) == [3, 5]
+
+
+def test_a_shot_lists_each_channels_iq_points_in_turn():
+    dataset = _make_iq_dataset(
+        {
+            0: np.array([[1 + 2j, 3 + 4j], [5 + 6j, 7 + 8j]]),
+            1: np.array([[9j, 11j], [10j, 12j]]),
+        }
+    )
+
+    points = _get_shot_iq_points(dataset, channel_ids=[1, 0], shot=1)
+
+    assert points == [(0.0, 10.0), (0.0, 12.0), (5.0, 6.0), (7.0, 8.0)]
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (np.complex128(1 + 2j), (1.0, 2.0)),
+        (np.complex128(complex(np.nan, 1)), (0.0, 0.0)),
+    ],
+)
+def test_iq_point_is_zero_unless_finite(value, expected):
+    assert _to_iq_point(value) == expected

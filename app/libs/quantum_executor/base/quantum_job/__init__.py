@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import (
     Any,
     Callable,
+    Dict,
     List,
     Literal,
     Match,
@@ -248,84 +249,19 @@ def discriminate_results(
     if not callable(discriminator):
         raise ValueError("'discriminator' must be callable")
 
-    qobj = job.qobj
-    out: HexMatrix = []
-    qubit_ids = sorted([int(x.id) for x in calibration.qubits])
-    quantify_to_sdk_map = dict([(qubit, idx) for idx, qubit in enumerate(qubit_ids)])
-
-    for qobj_exp_index, expt_dataset in enumerate(job.raw_results.values()):
-        acq = get_acquisition_parameters_from_experiment(
-            exp_index=qobj_exp_index, qobj=qobj
+    qubit_index_map = _get_sdk_qubit_index_map(calibration)
+    return [
+        _discriminate_experiment(
+            job,
+            exp_index,
+            dataset,
+            discriminator=discriminator,
+            qubit_index_map=qubit_index_map,
+            num_of_states=num_of_states,
+            byteorder=byteorder,
         )
-
-        q_to_c = _get_q_to_c_from_qobj(qobj, qobj_exp_index, acq)
-        c_reg_len = _get_c_reg_len_from_qobj(
-            job=job,
-            qobj=qobj,
-            exp_index=qobj_exp_index,
-            acq=acq,
-        )
-
-        no_of_repetitions: int = expt_dataset.sizes.get("repetition", 1)
-        register = np.zeros((c_reg_len, no_of_repetitions), dtype=np.int8)
-
-        unmapped_channels: list[str] = []
-
-        sorted_acquisitions = sorted(expt_dataset.items(), key=lambda kv: int(kv[0]))
-
-        # as acquisitions are always ordered, qubit id would correspond to sdk qubit id per base contract
-        for channel, acquisitions in sorted_acquisitions:
-            if acquisitions.shape[1] != 1 and job.meas_return != MeasRet.AVERAGED:
-                raise ValueError(
-                    f"Experiment data contain more than one measurement per channel. "
-                    f"Found {acquisitions.shape[1]} for channel {channel}"
-                )
-
-            quantify_qubit_id = int(channel)
-            if quantify_qubit_id in quantify_to_sdk_map:
-                sdk_qubit_id = quantify_to_sdk_map[quantify_qubit_id]
-            else:
-                raise ValueError(
-                    f"Can't find qubit id {quantify_qubit_id} in the calibration data {calibration}."
-                    f"{quantify_to_sdk_map}"
-                )
-
-            if sdk_qubit_id not in q_to_c:
-                unmapped_channels.append(sdk_qubit_id)
-                continue
-
-            cbit_id = int(q_to_c[sdk_qubit_id])
-
-            iq_values: npt.NDArray[np.complexfloating] = acquisitions.data[:, 0]
-            disc_res = discriminator(quantify_qubit_id, iq_values)
-
-            if np.isscalar(disc_res):
-                register[cbit_id, :] = disc_res
-            else:
-                if len(disc_res) != no_of_repetitions:
-                    raise ValueError(
-                        f"Discriminator for qubit {sdk_qubit_id} returned {len(disc_res)} "
-                        f"values, expected {no_of_repetitions}"
-                    )
-                register[cbit_id, :] = np.asarray(disc_res, dtype=np.int8)
-
-        if unmapped_channels:
-            raise ValueError(
-                "Could not map raw acquisition channel ids "
-                f"{unmapped_channels} to SDK qubit ids for experiment "
-                f"{qobj_exp_index!r}."
-                f"{q_to_c}"
-                f"{quantify_to_sdk_map}"
-                f"{calibration}"
-            )
-
-        bitarrays_per_rep = register.transpose()
-        base_10_per_rep = _bitarrays_to_decimal(
-            bitarrays_per_rep, base=num_of_states, byteorder=byteorder
-        )
-        out.append(_dec_to_hex(base_10_per_rep).tolist())
-
-    return out
+        for exp_index, dataset in enumerate(job.raw_results.values())
+    ]
 
 
 def xarray_to_list(job: QuantumJob) -> IQMemory:
@@ -348,64 +284,18 @@ def xarray_to_list(job: QuantumJob) -> IQMemory:
             "xarray_to_list: Can't find Quantum job experiment results `job.raw_results`."
         )
 
-    qobj = job.qobj
-    experiments_mem: IQMemory = []
-    for qobj_exp_index, dataset in enumerate(job.raw_results.values()):
+    memory: IQMemory = []
+    for exp_index, dataset in enumerate(job.raw_results.values()):
         if not isinstance(dataset, xr.Dataset):
             raise TypeError(
                 "xarray_to_list: expected an xarray.Dataset in raw_results values"
             )
-
-        # dataset keys are physical qubit ids (strings like "11")
-        channel_ids = sorted((int(k) for k in dataset.data_vars.keys()))
-
-        # Try to order by memory slot if we can map qubit_id -> slot for this experiment
-        ordered_channel_ids = channel_ids
-
-        try:
-            acq = get_acquisition_parameters_from_experiment(
-                exp_index=qobj_exp_index, qobj=qobj
-            )
-            qubit_to_slot = dict(zip(acq.qubits, acq.memory_slots))  # qubit_id -> slot
-
-            if qubit_to_slot and all(q in qubit_to_slot for q in channel_ids):
-                ordered_channel_ids = sorted(
-                    channel_ids, key=lambda q: int(qubit_to_slot[q])
-                )
-        except Exception:
-            # fall back silently to dataset-key ordering
-            pass
-
-        nreps = dataset.sizes.get("repetition", 1)
-        exp_mem: List[List[IQPoint]] = []
-
-        for rep_idx in range(nreps):
-            rep_vals: List[IQPoint] = []
-            for qid in ordered_channel_ids:
-                arr = dataset[str(qid)].data
-
-                if arr.ndim == 2:
-                    row = arr[rep_idx, ...]
-                elif arr.ndim == 1:
-                    row = arr
-                else:
-                    raise ValueError(
-                        f"xarray_to_list: unexpected ndarray shape {arr.shape} for channel {qid}"
-                    )
-
-                for val in np.ravel(row):
-                    c = complex(val.item())
-
-                    if not np.isfinite([c.real, c.imag]).all():
-                        c = 0.0 + 0.0j
-
-                    rep_vals.append((float(c.real), float(c.imag)))
-
-            exp_mem.append(rep_vals)
-
-        experiments_mem.append(exp_mem)
-
-    return experiments_mem
+        channel_ids = _get_ordered_channel_ids(dataset, job.qobj, exp_index)
+        shots = dataset.sizes.get("repetition", 1)
+        memory.append(
+            [_get_shot_iq_points(dataset, channel_ids, shot) for shot in range(shots)]
+        )
+    return memory
 
 
 def get_experiment_name(qobj_expt_name: str, expt_index: int):
@@ -733,3 +623,140 @@ def _get_tergite_metadata_for_experiment(
 
     tergite_md = metadata.get("tergite", {})
     return tergite_md if isinstance(tergite_md, dict) else {}
+
+
+def _get_sdk_qubit_index_map(calibration: DeviceCalibration) -> Dict[int, int]:
+    """Maps each calibrated qubit's id to its index in the SDK, its place among the ids
+    in order"""
+    qubit_ids = sorted(int(qubit.id) for qubit in calibration.qubits)
+    return {qubit_id: index for index, qubit_id in enumerate(qubit_ids)}
+
+
+def _discriminate_experiment(
+    job: QuantumJob,
+    exp_index: int,
+    dataset: QDataset,
+    discriminator: Callable[[int, npt.NDArray[np.complexfloating]], int],
+    qubit_index_map: Dict[int, int],
+    num_of_states: int,
+    byteorder: ByteOrder,
+) -> List[str]:
+    """Discriminates the experiment's acquisitions into the classical bits their qubits
+    are measured into, and gets each shot's register as hex"""
+    qobj = job.qobj
+    acq = get_acquisition_parameters_from_experiment(exp_index=exp_index, qobj=qobj)
+    q_to_c = _get_q_to_c_from_qobj(qobj, exp_index, acq)
+    c_reg_len = _get_c_reg_len_from_qobj(
+        job=job, qobj=qobj, exp_index=exp_index, acq=acq
+    )
+    shots: int = dataset.sizes.get("repetition", 1)
+
+    states_by_cbit = {}
+    unmapped_channels: list[str] = []
+    # as acquisitions are always ordered, qubit id would correspond to sdk qubit id per base contract
+    for channel, acquisitions in sorted(dataset.items(), key=lambda kv: int(kv[0])):
+        if acquisitions.shape[1] != 1 and job.meas_return != MeasRet.AVERAGED:
+            raise ValueError(
+                f"Experiment data contain more than one measurement per channel. "
+                f"Found {acquisitions.shape[1]} for channel {channel}"
+            )
+
+        quantify_qubit_id = int(channel)
+        if quantify_qubit_id not in qubit_index_map:
+            raise ValueError(
+                f"Can't find qubit id {quantify_qubit_id} in the calibration data."
+                f"{qubit_index_map}"
+            )
+        sdk_qubit_id = qubit_index_map[quantify_qubit_id]
+        if sdk_qubit_id not in q_to_c:
+            unmapped_channels.append(sdk_qubit_id)
+            continue
+
+        states = discriminator(quantify_qubit_id, acquisitions.data[:, 0])
+        if not np.isscalar(states) and len(states) != shots:
+            raise ValueError(
+                f"Discriminator for qubit {sdk_qubit_id} returned {len(states)} "
+                f"values, expected {shots}"
+            )
+        states_by_cbit[int(q_to_c[sdk_qubit_id])] = states
+
+    if unmapped_channels:
+        raise ValueError(
+            "Could not map raw acquisition channel ids "
+            f"{unmapped_channels} to SDK qubit ids for experiment "
+            f"{exp_index!r}."
+            f"{q_to_c}"
+            f"{qubit_index_map}"
+        )
+
+    register = _get_register(states_by_cbit, c_reg_len=c_reg_len, shots=shots)
+    return _to_hex_shots(register, num_of_states=num_of_states, byteorder=byteorder)
+
+
+def _get_register(
+    states_by_cbit: Dict[int, Any], c_reg_len: int, shots: int
+) -> np.ndarray:
+    """Gets the classical register, a row per bit and a column per shot, with each bit's
+    discriminated states, one for all shots or one per shot; a bit no qubit is measured
+    into stays 0"""
+    register = np.zeros((c_reg_len, shots), dtype=np.int8)
+    for cbit, states in states_by_cbit.items():
+        register[cbit, :] = (
+            states if np.isscalar(states) else np.asarray(states, dtype=np.int8)
+        )
+    return register
+
+
+def _to_hex_shots(
+    register: np.ndarray, num_of_states: int, byteorder: ByteOrder
+) -> List[str]:
+    """Gets the register's state in each shot as hex"""
+    decimals = _bitarrays_to_decimal(
+        register.transpose(), base=num_of_states, byteorder=byteorder
+    )
+    return _dec_to_hex(decimals).tolist()
+
+
+def _get_ordered_channel_ids(
+    dataset: QDataset, qobj: PulseQobj, exp_index: int
+) -> List[int]:
+    """Gets the dataset's channels, the physical qubit ids, in the order of the memory
+    slots they are measured into if each is, or else of the ids"""
+    channel_ids = sorted(int(key) for key in dataset.data_vars.keys())
+    try:
+        acq = get_acquisition_parameters_from_experiment(exp_index=exp_index, qobj=qobj)
+    except (IndexError, ValueError):
+        # the experiment is missing, or measures nothing
+        return channel_ids
+
+    qubit_to_slot = dict(zip(acq.qubits, acq.memory_slots))
+    if qubit_to_slot and all(qubit in qubit_to_slot for qubit in channel_ids):
+        return sorted(channel_ids, key=lambda qubit: int(qubit_to_slot[qubit]))
+    return channel_ids
+
+
+def _get_shot_iq_points(
+    dataset: QDataset, channel_ids: List[int], shot: int
+) -> List[IQPoint]:
+    """Gets the IQ points of each channel's acquisitions in the shot, channel by channel"""
+    points: List[IQPoint] = []
+    for channel_id in channel_ids:
+        data = dataset[str(channel_id)].data
+        if data.ndim == 2:
+            row = data[shot, ...]
+        elif data.ndim == 1:
+            row = data
+        else:
+            raise ValueError(
+                f"xarray_to_list: unexpected ndarray shape {data.shape} for channel {channel_id}"
+            )
+        points.extend(_to_iq_point(value) for value in np.ravel(row))
+    return points
+
+
+def _to_iq_point(value: np.generic) -> IQPoint:
+    """Gets the real and imaginary parts of the value, or (0, 0) if either is not finite"""
+    point = complex(value.item())
+    if not np.isfinite([point.real, point.imag]).all():
+        point = 0j
+    return (float(point.real), float(point.imag))

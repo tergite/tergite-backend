@@ -19,6 +19,9 @@ import xarray as xr
 
 from ...libs.quantum_executor.base.quantum_job import (
     ByteOrder,
+    _get_register,
+    _get_sdk_qubit_index_map,
+    _to_hex_shots,
     discriminate_results,
 )
 from ...libs.quantum_executor.base.quantum_job.dtos import MeasLvl, MeasRet, QuantumJob
@@ -171,3 +174,25 @@ def test_discriminate_compacted_mapping():
     # rep0: slot0=0, slot1=1 => 0b0010 => 0x2
     # rep1: slot0=1, slot1=0 => 0b0001 => 0x1
     assert got == [["0x2", "0x1"]]
+
+
+def test_sdk_indexes_qubits_in_the_order_of_their_ids():
+    calibration = _dummy_calibration(qubits=[14, 11, 12])
+
+    assert _get_sdk_qubit_index_map(calibration) == {11: 0, 12: 1, 14: 2}
+
+
+def test_register_holds_each_bits_states_and_zero_elsewhere():
+    register = _get_register({0: np.array([1, 0, 1]), 2: 1}, c_reg_len=3, shots=3)
+
+    assert register.tolist() == [[1, 0, 1], [0, 0, 0], [1, 1, 1]]
+
+
+@pytest.mark.parametrize(
+    "byteorder, expected_hex",
+    [(ByteOrder.LITTLE_ENDIAN, ["0x1", "0x4"]), (ByteOrder.BIG_ENDIAN, ["0x4", "0x1"])],
+)
+def test_each_shot_reads_as_hex(byteorder, expected_hex):
+    register = np.array([[1, 0], [0, 0], [0, 1]], dtype=np.int8)
+
+    assert _to_hex_shots(register, num_of_states=2, byteorder=byteorder) == expected_hex
