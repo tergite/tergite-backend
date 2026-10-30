@@ -43,6 +43,7 @@ from app.libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
 from app.libs.quantum_executor.base.quantum_job.typing import QExperimentResult
 from app.libs.quantum_executor.quantify.experiment import QuantifyExperiment
 from app.libs.quantum_executor.quantify.utils.config import (
+    InstrumentConfig,
     QuantifyMetadata,
     load_quantify_config,
 )
@@ -52,6 +53,13 @@ from app.utils.compat import MeasurementMode, SPIMode
 
 from ...device_parameters import DeviceCalibration
 from .utils.calibration import recalibrate
+
+_QBLOX_CLUSTER_TYPE_MAP: Dict[str, qblox_instruments.ClusterType] = {
+    "QCM": qblox_instruments.ClusterType.CLUSTER_QCM,
+    "QRM": qblox_instruments.ClusterType.CLUSTER_QRM,
+    "QCM_RF": qblox_instruments.ClusterType.CLUSTER_QCM_RF,
+    "QRM_RF": qblox_instruments.ClusterType.CLUSTER_QRM_RF,
+}
 
 
 class QuantifyExecutor(QuantumExecutor):
@@ -144,7 +152,7 @@ class QuantifyExecutor(QuantumExecutor):
             )
             self._coordinator = InstrumentCoordinator(self.coordinator_name)
             try:
-                clusters = self.quantify_metadata.get_clusters()
+                clusters = _create_clusters(self.quantify_metadata)
                 for cluster in clusters:
                     if reset and are_clusters_resettable:
                         cluster.reset()
@@ -346,3 +354,40 @@ def _save_calibration_seed(calibration: DeviceCalibration, file: Path) -> None:
     }
     with open(file, "w") as seed_file:
         toml.dump(data, seed_file)
+
+
+def _create_clusters(metadata: QuantifyMetadata) -> List[qblox_instruments.Cluster]:
+    """Creates the clusters the metadata lists, which connects to the real ones"""
+    return [
+        _create_cluster(name, conf)
+        for name, conf in metadata.root.items()
+        if conf.instrument_type == "Cluster"
+    ]
+
+
+def _create_cluster(name: str, conf: InstrumentConfig) -> qblox_instruments.Cluster:
+    """
+    Creates and initializes a Cluster object.
+
+    If the configuration indicates a dummy cluster, a dummy configuration is built.
+    Otherwise, a real cluster is instantiated and reset.
+
+    Args:
+        name: the name of the cluster
+        conf: the configuration of the cluster
+
+    Returns:
+        qblox_instruments.Cluster for given name and config
+    """
+    dummy_cfg = None
+    if getattr(conf, "is_dummy", False):
+        dummy_cfg = {
+            int(idx): _QBLOX_CLUSTER_TYPE_MAP[conf.instrument_type]
+            for idx, conf in conf.modules.items()
+        }
+
+    return qblox_instruments.Cluster(
+        name=name,
+        identifier=conf.ip_address,
+        dummy_cfg=dummy_cfg,
+    )

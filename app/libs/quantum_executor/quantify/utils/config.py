@@ -13,9 +13,8 @@
 import json
 import re
 from os import PathLike
-from typing import Dict, List, Optional, Union
+from typing import Dict, Optional, Union
 
-import qblox_instruments
 import yaml
 from pydantic import (
     BaseModel,
@@ -34,13 +33,6 @@ ALLOWED_TOP_LEVEL_INSTRUMENTS = {
     "SPI-Rack",
 }
 ALLOWED_MODULE_TYPES = {"QCM", "QRM", "QCM_RF", "QRM_RF", "QTM"}
-_QBLOX_CLUSTER_TYPE_MAP: Dict[str, qblox_instruments.ClusterType] = {
-    "QCM": qblox_instruments.ClusterType.CLUSTER_QCM,
-    "QRM": qblox_instruments.ClusterType.CLUSTER_QRM,
-    "QCM_RF": qblox_instruments.ClusterType.CLUSTER_QCM_RF,
-    "QRM_RF": qblox_instruments.ClusterType.CLUSTER_QRM_RF,
-}
-
 # Regex pattern for cluster names
 CLUSTER_NAME_REGEX = re.compile(r"^cluster[A-Za-z0-9]+$", re.IGNORECASE)
 SPI_RACK_INSTRUMENT_TYPE = "SPI-Rack"
@@ -147,19 +139,6 @@ class QuantifyMetadata(RootModel[Dict[str, InstrumentConfig]]):
                 return conf.experiment_delay
         return 0.0
 
-    def get_clusters(self) -> List[qblox_instruments.Cluster]:
-        """Get the clusters corresponding to the metadata
-
-        Returns:
-            the list of clusters got from this metadata
-        """
-
-        return [
-            _create_cluster(name, conf)
-            for name, conf in self.root.items()
-            if conf.instrument_type == "Cluster"
-        ]
-
 
 def load_quantify_config(
     file_path: Union[PathLike, str],
@@ -177,31 +156,3 @@ def load_quantify_config(
 
     # new_config = QbloxHardwareCompilationConfig.from_old_style_hardware_config(data)
     return QbloxHardwareCompilationConfig.model_validate(data)
-
-
-def _create_cluster(name: str, conf: InstrumentConfig) -> qblox_instruments.Cluster:
-    """
-    Creates and initializes a Cluster object.
-
-    If the configuration indicates a dummy cluster, a dummy configuration is built.
-    Otherwise, a real cluster is instantiated and reset.
-
-    Args:
-        name: the name of the cluster
-        conf: the configuration of the cluster
-
-    Returns:
-        qblox_instruments.Cluster for given name and config
-    """
-    dummy_cfg = None
-    if getattr(conf, "is_dummy", False):
-        dummy_cfg = {
-            int(idx): _QBLOX_CLUSTER_TYPE_MAP[conf.instrument_type]
-            for idx, conf in conf.modules.items()
-        }
-
-    return qblox_instruments.Cluster(
-        name=name,
-        identifier=conf.ip_address,
-        dummy_cfg=dummy_cfg,
-    )
