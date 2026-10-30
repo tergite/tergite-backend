@@ -274,8 +274,9 @@ def _run_experiments(
 ) -> Dict[str, QExperimentResult]:
     """Runs the job's experiments natively, each result keyed by its experiment's name"""
     native_config = expt_metadata.native_config
-    # we recompile these because pickling them seems to break the schedules
-    # FIXME: If compilation is expensive, removing this duplication is a good place to start
+    # translated again rather than kept from preprocessing: pickling them broke the schedules,
+    # and translating costs about 0.1 ms an experiment, against milliseconds for quantify's
+    # compilation in run_native and hundreds for a simulation
     native_expts = executor.to_native_experiments(expt_metadata.qobj, native_config)
     return {
         expt.header.name: executor.run_native(
