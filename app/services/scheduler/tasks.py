@@ -19,7 +19,9 @@
 """Module containing the tasks to run on the job"""
 import functools
 import logging
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator, Optional
 
 from pydantic import ValidationError
 
@@ -34,7 +36,8 @@ from ...libs.quantum_executor.base.quantum_job import (
     read_job_from_hdf5,
     xarray_to_list,
 )
-from ...libs.queues.dtos import Job, JobStatus, Stage
+from ...libs.quantum_executor.base.quantum_job.dtos import QuantumJob
+from ...libs.queues.dtos import Job, JobStatus, Memory, Stage
 from ...utils.exc import JobAlreadyCancelled, PostProcessingError
 from ..devices import get_device_calibration_info
 from ..external.mss import DeviceEvent, DeviceEventName
@@ -65,43 +68,11 @@ def preprocess(device: DeviceResources, job: Job, job_file: Path) -> Job:
     Returns:
         the job, with its estimated duration
     """
-    job_id = job.job_id
-    jobs_store = device.jobs_store
-    results_folder = device.settings.preprocessed_job_pool
-
-    try:
-        with job_file.open() as file:
-            job_file_obj = JobFile.model_validate_json(file.read())
-            job_dict = job_file_obj.model_dump()
-
-        job_id: str = job_dict["job_id"]
-        update_job_stage(jobs_store, job_id=job_id, stage=Stage.PRE_PROC_W)
-
-        qobj = decompress_qobj(job_dict["params"]["qobj"])
-
-        # --- In-place decode complex values
-        # [[a,b],[c,d],...] -> [a + ib,c + id,...]
-        json_decoder.decode_pulse_qobj(qobj)
-        with device.executor_lock:
-            duration, _ = preprocess_qobj(
-                device.executor,
-                PulseQobj.from_dict(qobj),
-                job_id=job_id,
-                results_folder=results_folder,
-            )
-        return jobs_store.update(job.job_id, {"estimated_duration": duration})
-    except JobAlreadyCancelled as exp:
-        logging.error(f"{exp}")
-        raise exp
-
-    except ValidationError as exp:
-        _fail_job(device, job_id=job_id, reason=f"{exp}")
-        raise exp
-
-    except Exception as exp:
-        logging.error(f"Job failed\nJob execution failed. exp: {exp}")
-        _fail_job(device, job_id=job_id, reason="unexpected error during execution")
-        raise exp
+    with _fail_on_error(device, job.job_id):
+        job_dict = _read_job_file(job_file)
+        update_job_stage(device.jobs_store, job_id=job.job_id, stage=Stage.PRE_PROC_W)
+        duration = _estimate_duration(device, job_dict)
+        return device.jobs_store.update(job.job_id, {"estimated_duration": duration})
 
 
 def execute(device: DeviceResources, job: Job) -> str:
@@ -115,32 +86,22 @@ def execute(device: DeviceResources, job: Job) -> str:
         the results file's path
     """
     job_id = job.job_id
-    jobs_store = device.jobs_store
-    preprocessing_dir = device.settings.preprocessed_job_pool
-
-    try:
-        update_job_stage(jobs_store, job_id=job_id, stage=Stage.EXEC_W)
+    with _fail_on_error(device, job_id):
+        update_job_stage(device.jobs_store, job_id=job_id, stage=Stage.EXEC_W)
 
         # Just a locking mechanism to ensure jobs don't interfere with each other
         with device.executor_lock:
             results_file = run_job(
-                device.executor, job_id, inputs_folder=preprocessing_dir
+                device.executor,
+                job_id,
+                inputs_folder=device.settings.preprocessed_job_pool,
             )
 
-        job: Job = jobs_store.get_one(job_id)
-        if job.status == JobStatus.CANCELLED:
+        if device.jobs_store.get_one(job_id).status == JobStatus.CANCELLED:
             raise JobAlreadyCancelled("cancelled")
 
         logging.info("Job executed successfully")
         return results_file
-    except JobAlreadyCancelled as exp:
-        logging.error(f"{exp}")
-        raise exp
-
-    except Exception as exp:
-        logging.error(f"Job failed\nJob execution failed. exp: {exp}")
-        _fail_job(device, job_id=job_id, reason="unexpected error during execution")
-        raise exp
 
 
 def postprocess(device: DeviceResources, job: Job, results_file: str) -> str:
@@ -155,60 +116,33 @@ def postprocess(device: DeviceResources, job: Job, results_file: str) -> str:
         the job's ID
     """
     logging.info(f"Postprocessing logfile {results_file}")
-    results_file_path = Path(results_file)
-
     job_id = job.job_id
-    working_folder = device.settings.log_file_pool
-    backend_name = device.executor_options.backend_name
-
     jobs_store = device.jobs_store
     try:
-        new_file = move_file(results_file_path, new_folder=working_folder, ext=".hdf5")
+        new_file = move_file(
+            Path(results_file), new_folder=device.settings.log_file_pool, ext=".hdf5"
+        )
         logging.info(f"Moved the logfile to {str(new_file)}")
 
         update_job_stage(jobs_store, job_id=job_id, stage=Stage.PST_PROC_W)
 
         quantum_job = read_job_from_hdf5(new_file)
+        calibration = None
         if quantum_job.meas_level == MeasLvl.DISCRIMINATED:
             calibration = get_device_calibration_info(
-                device.bookings_db, backend_name=backend_name
+                device.bookings_db, backend_name=device.executor_options.backend_name
             )
-            discriminator = functools.partial(apply_linear_discriminator, calibration)
-
-            memory = discriminate_results(
-                quantum_job,
-                discriminator=discriminator,
-                calibration=calibration,
-            )
-            job = update_job_results(
-                jobs_store,
-                job_id=job_id,
-                data=memory,
-                machine_root_url=device.settings.machine_root_url,
-            )
-            update_job_in_mss(
-                device.mss_client,
-                payload=job,
-                job_supervisor_log=device.settings.job_supervisor_log,
-            )
-        elif quantum_job.meas_level == MeasLvl.INTEGRATED:
-            memory = xarray_to_list(quantum_job)
-            job = update_job_results(
-                jobs_store,
-                job_id=job_id,
-                data=memory,
-                machine_root_url=device.settings.machine_root_url,
-            )
-            update_job_in_mss(
-                device.mss_client,
-                payload=job,
-                job_supervisor_log=device.settings.job_supervisor_log,
-            )
-        else:
-            raise NotImplementedError(
-                f"meas_level {quantum_job.meas_level} is not supported"
-            )
-
+        job = update_job_results(
+            jobs_store,
+            job_id=job_id,
+            data=_get_memory(quantum_job, calibration),
+            machine_root_url=device.settings.machine_root_url,
+        )
+        update_job_in_mss(
+            device.mss_client,
+            payload=job,
+            job_supervisor_log=device.settings.job_supervisor_log,
+        )
         return job.job_id
     except Exception as exp:
         raise PostProcessingError(exp=exp, job_id=job_id)
@@ -218,22 +152,78 @@ def recalibrate(device: DeviceResources) -> None:
     """Recalibrates the device, and sends MSS the calibration it found"""
     # ensure recalibration runs without interference
     with device.executor_lock:
-        executor = device.executor
-        results = executor.recalibrate()
+        calibration = device.executor.recalibrate()
+        if isinstance(calibration, DeviceCalibration):
+            _send_calibration_to_mss(device, calibration)
 
-        if isinstance(results, DeviceCalibration):
-            logging.info("Updating MSS...")
-            response = device.mss_client.send_event(
-                DeviceEvent(
-                    name=DeviceEventName.RECALIBRATED,
-                    data=results,
-                ),
-                error_prefix="error sending recalibration info: ",
-            )
 
-            logging.info(
-                f"calibration data updated in MSS with response: {response["status"]}"
-            )
+@contextmanager
+def _fail_on_error(device: DeviceResources, job_id: str) -> Iterator[None]:
+    """Fails the job, and tells MSS, on an error in the block but its cancellation; either
+    way, it re-raises"""
+    try:
+        yield
+    except JobAlreadyCancelled as exp:
+        logging.error(f"{exp}")
+        raise
+    except ValidationError as exp:
+        _fail_job(device, job_id=job_id, reason=f"{exp}")
+        raise
+    except Exception as exp:
+        logging.error(f"Job failed\nJob execution failed. exp: {exp}")
+        _fail_job(device, job_id=job_id, reason="unexpected error during execution")
+        raise
+
+
+def _read_job_file(job_file: Path) -> dict:
+    """Reads the uploaded job file, which validates it"""
+    with job_file.open() as file:
+        return JobFile.model_validate_json(file.read()).model_dump()
+
+
+def _estimate_duration(device: DeviceResources, job_dict: dict) -> float:
+    """Compiles the job's qobj on the executor, and gets the seconds it would take"""
+    qobj = decompress_qobj(job_dict["params"]["qobj"])
+    # In-place decode complex values: [[a,b],[c,d],...] -> [a + ib,c + id,...]
+    json_decoder.decode_pulse_qobj(qobj)
+    with device.executor_lock:
+        duration, _ = preprocess_qobj(
+            device.executor,
+            PulseQobj.from_dict(qobj),
+            job_id=job_dict["job_id"],
+            results_folder=device.settings.preprocessed_job_pool,
+        )
+    return duration
+
+
+def _get_memory(
+    quantum_job: QuantumJob, calibration: Optional[DeviceCalibration]
+) -> Memory:
+    """Gets the job's memory: each shot's register as hex, discriminated with the
+    calibration, or its IQ points
+
+    Raises:
+        NotImplementedError: meas_level {meas_level} is not supported
+    """
+    if quantum_job.meas_level == MeasLvl.DISCRIMINATED:
+        discriminator = functools.partial(apply_linear_discriminator, calibration)
+        return discriminate_results(
+            quantum_job, discriminator=discriminator, calibration=calibration
+        )
+    if quantum_job.meas_level == MeasLvl.INTEGRATED:
+        return xarray_to_list(quantum_job)
+    raise NotImplementedError(f"meas_level {quantum_job.meas_level} is not supported")
+
+
+def _send_calibration_to_mss(
+    device: DeviceResources, calibration: DeviceCalibration
+) -> None:
+    logging.info("Updating MSS...")
+    response = device.mss_client.send_event(
+        DeviceEvent(name=DeviceEventName.RECALIBRATED, data=calibration),
+        error_prefix="error sending recalibration info: ",
+    )
+    logging.info(f"calibration data updated in MSS with response: {response["status"]}")
 
 
 def _fail_job(device: DeviceResources, job_id: str, reason: str) -> Job:

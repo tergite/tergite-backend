@@ -77,6 +77,7 @@ VERBS = frozenset(
         "encrypt",
         "enqueue",
         "ensure",
+        "estimate",
         "execute",
         "expire",
         "export",
