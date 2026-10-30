@@ -1,4 +1,4 @@
-# Code that broke a style rule when tests/test_styleguide.py was added (step 1.9).
+# Code that broke a style rule when tests/test_styleguide.py was added.
 # This list only shrinks: delete a line when its violation is fixed, never add one.
 boolean: libs/device_parameters/dtos.py::Device.characterized
 boolean: libs/device_parameters/dtos.py::Device.open_pulse
