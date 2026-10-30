@@ -22,7 +22,6 @@ from typing import (
     List,
     Literal,
     Optional,
-    Self,
     Tuple,
     TypeAlias,
     Union,
@@ -40,7 +39,6 @@ from pydantic import (
 )
 from pydantic_core import CoreSchema, core_schema
 
-from ...utils.config import DeviceSettings
 from ...utils.datetime import to_utc, utc_now_str
 from ...utils.model import PartialMeta
 from ...utils.redis_store import Schema
@@ -408,29 +406,6 @@ class ExecutorOptions:
     calibration_device_config: Optional[PathLike[str]] = None
     calibration_spi_config: Optional[PathLike[str]] = None
     calibration_seed_file: Optional[PathLike[str]] = None
-
-    @classmethod
-    def from_settings(cls, device_settings: DeviceSettings) -> Self:
-        """Generates executor options from the device's settings"""
-        backend_config = BackendConfig.from_toml(
-            device_settings.backend_settings,
-            seed_file=device_settings.calibration_seed,
-        )
-        return cls(
-            executor_type=device_settings.executor_type,
-            backend_name=backend_config.name,
-            backend_config=backend_config,
-            calibration_seed_file=device_settings.calibration_seed,
-            quantify_config_file=device_settings.quantify_config_file,
-            quantify_metadata_file=device_settings.quantify_metadata_file,
-            should_restore_currents=device_settings.should_restore_currents,
-            are_clusters_resettable=device_settings.is_cluster_reset_allowed,
-            data_directory=device_settings.executor_data_dir,
-            calibration_node_config=device_settings.calibration_node_config_file,
-            calibration_device_config=device_settings.calibration_device_config_file,
-            calibration_spi_config=device_settings.calibration_spi_config_file,
-            redis_url=device_settings.rq_redis_url,
-        )
 
 
 _STAGE_VERBOSE_NAME_MAP: Dict[Stage, str] = {

@@ -19,9 +19,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 import numpy as np
 from numpy import typing as npt
 
-from ...libs.device_parameters import (
-    DeviceCalibration,
-)
+from ...libs.device_parameters import BackendConfig, DeviceCalibration
 from ...libs.quantum_executor.utils.serialization import iqx_rld
 from ...libs.queues.dtos import (
     ExecutorOptions,
@@ -33,6 +31,7 @@ from ...libs.queues.dtos import (
     Stage,
     Timestamps,
 )
+from ...utils.config import DeviceSettings
 from ...utils.datetime import utc_now_str
 from ...utils.exc import MssRejectedError
 from ...utils.logging import err_logger
@@ -68,6 +67,29 @@ _STAGE_STATUS_MAP: Dict[Stage, JobStatus] = {
     Stage.FINAL_Q: JobStatus.EXECUTING,
     Stage.FINAL_W: JobStatus.SUCCESSFUL,
 }
+
+
+def get_executor_options(device_settings: DeviceSettings) -> ExecutorOptions:
+    """Gets the options of the device's quantum executor from its settings"""
+    backend_config = BackendConfig.from_toml(
+        device_settings.backend_settings,
+        seed_file=device_settings.calibration_seed,
+    )
+    return ExecutorOptions(
+        executor_type=device_settings.executor_type,
+        backend_name=backend_config.name,
+        backend_config=backend_config,
+        calibration_seed_file=device_settings.calibration_seed,
+        quantify_config_file=device_settings.quantify_config_file,
+        quantify_metadata_file=device_settings.quantify_metadata_file,
+        should_restore_currents=device_settings.should_restore_currents,
+        are_clusters_resettable=device_settings.is_cluster_reset_allowed,
+        data_directory=device_settings.executor_data_dir,
+        calibration_node_config=device_settings.calibration_node_config_file,
+        calibration_device_config=device_settings.calibration_device_config_file,
+        calibration_spi_config=device_settings.calibration_spi_config_file,
+        redis_url=device_settings.rq_redis_url,
+    )
 
 
 def get_executor(executor_options: ExecutorOptions) -> "QuantumExecutor":

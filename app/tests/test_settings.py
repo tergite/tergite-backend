@@ -8,7 +8,6 @@ from pydantic import ValidationError
 
 import settings
 from app.api import app
-from app.libs.queues.dtos import ExecutorOptions
 from app.services.external.mss import (
     DeviceEvent,
     DeviceEventName,
@@ -16,7 +15,7 @@ from app.services.external.mss import (
     MssClient,
     get_private_key,
 )
-from app.services.scheduler.utils import get_executor
+from app.services.scheduler.utils import get_executor, get_executor_options
 from app.tests.utils.env import (
     TEST_BACKEND_SETTINGS_FILE,
     TEST_BROKEN_QUANTIFY_CONFIG_FILE,
@@ -140,7 +139,7 @@ def test_quantify_metadata_is_broken(monkeypatch):
     _reload_settings()
 
     with pytest.raises(ValidationError):
-        get_executor(ExecutorOptions.from_settings(settings.get_device_settings()))
+        get_executor(get_executor_options(settings.get_device_settings()))
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
@@ -154,7 +153,7 @@ def test_quantify_config_is_broken(monkeypatch):
     _reload_settings()
 
     with pytest.raises(ValidationError):
-        get_executor(ExecutorOptions.from_settings(settings.get_device_settings()))
+        get_executor(get_executor_options(settings.get_device_settings()))
 
 
 def test_executor_options_allow_resetting_the_clusters_when_set(monkeypatch):
@@ -164,9 +163,7 @@ def test_executor_options_allow_resetting_the_clusters_when_set(monkeypatch):
     monkeypatch.setenv("BCC_ARE_CLUSTERS_RESETTABLE", "true")
     _reload_settings()
 
-    assert ExecutorOptions.from_settings(
-        settings.get_device_settings()
-    ).are_clusters_resettable
+    assert get_executor_options(settings.get_device_settings()).are_clusters_resettable
 
 
 def _reload_settings() -> None:

@@ -366,8 +366,8 @@ the connections. This step makes the device explicit.
    moves to the composition root. The booking validators that read `settings` and the clock
    (`booking/models.py:98-137, 220-235, 254-263`) become checks in the booking service, given `BookingsConfig` and
    `now`.
-   *Done otherwise for `ExecutorOptions.from_settings`:* it stays on the DTO, given the device's `DeviceSettings`, as
-   `libs` may import `utils` and the conversions stay on the DTOs. The booking checks raise `InvalidBookingError`,
+   *Done:* `ExecutorOptions.from_settings` is the scheduler's `get_executor_options`, beside `get_executor`: on the
+   DTO, given `DeviceSettings`, it tied `libs` to the app's settings model. The booking checks raise `InvalidBookingError`,
    answered with 422 as the validators' errors were; `DeviceSettings.get_utc_now` gives the time `BCC_CURRENT_DATE`
    stands in for, and `Booking.is_active_at` and `is_complete_at` take it.
 7. **Settings without the indirection.** **Decided:** a `pydantic-settings` model, as below. `DeviceSettings` (`settings.py:47`, its `__init__` 276 lines)

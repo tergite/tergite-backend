@@ -27,6 +27,7 @@ from ..booking import get_bookings_sql_engine
 from ..external.mss import MssClient, get_mss_public_key, get_private_key
 from .queues import QueuePool
 from .store import get_jobs_store
+from .utils import get_executor_options
 
 if TYPE_CHECKING:
     from ...libs.quantum_executor.base.executor import QuantumExecutor
@@ -65,7 +66,7 @@ class DeviceResources:
             jobs_store=get_jobs_store(redis, device_settings),
             queues=QueuePool.from_settings(device_settings, redis),
             mss_client=MssClient.from_settings(device_settings, private_key),
-            executor_options=ExecutorOptions.from_settings(device_settings),
+            executor_options=get_executor_options(device_settings),
             mss_public_key=get_mss_public_key(device_settings.mss_public_key_path),
             private_key=private_key,
             executor_lock=FileLock(
