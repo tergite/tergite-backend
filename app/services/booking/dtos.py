@@ -91,13 +91,13 @@ class NewBookingInfo(BaseModel):
     @field_validator("start_utc", mode="after")
     @classmethod
     def validate_start_utc(cls, v: datetime):
-        """Validate start_utc"""
+        """Puts the start in UTC"""
         return to_utc(v)
 
     @field_validator("end_utc", mode="after")
     @classmethod
     def validate_end_utc(cls, v: datetime, info: ValidationInfo):
-        """Validate end_utc"""
+        """Puts the end in UTC, refusing one before the start"""
         v = to_utc(v)
         start_utc = info.data.get("start_utc")
         if start_utc and v < start_utc:
@@ -134,13 +134,13 @@ class Booking(SQLModel, table=True):
     @field_validator("start_utc", mode="after")
     @classmethod
     def validate_start_utc(cls, v: datetime):
-        """Validate start_utc"""
+        """Puts the start in UTC"""
         return to_utc(v)
 
     @field_validator("end_utc", mode="after")
     @classmethod
     def validate_end_utc(cls, v: datetime, info: ValidationInfo):
-        """Validate end_utc"""
+        """Puts the end in UTC, refusing one before the start"""
         v = to_utc(v)
         start_utc = info.data.get("start_utc")
         if start_utc and v < start_utc:

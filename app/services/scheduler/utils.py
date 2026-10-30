@@ -292,8 +292,7 @@ def decompress_qobj(qobj_dict: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         A QObject dict that is decompressed
     """
-    # --- In-place RLD pulse library
-    # [([a,b], 2),...] -> [[a,b],[a,b],...]
+    # the pulse library, run-length decoded: [([a,b], 2),...] -> [[a,b],[a,b],...]
     for pulse in qobj_dict["config"]["pulse_library"]:
         pulse["samples"] = iqx_rld(pulse["samples"])
 
