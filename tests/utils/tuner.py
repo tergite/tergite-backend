@@ -16,7 +16,6 @@ from typing import Any, Dict, Literal, Unpack
 
 from tergite_tuner import NodeEnum, SessionContext
 from tergite_tuner.config.session import SessionOptions
-from tergite_tuner.lib.base.node import CouplerNode, QubitNode
 
 from tests.utils.fixtures import load_fixture
 
@@ -52,28 +51,22 @@ def mock_run_node(
     assert qubits == ["q12", "q13", "q14"]
     assert couplers == ["q12_q13", "q12_q14"]
 
-    node_cls = session.node_cls_map[node]
+    element, qois = _get_element_qois(node, session)
     data = {
         "cs": {k: {} for k in qubits + couplers},
         "transmons": {k: {} for k in qubits},
         "couplers": {k: {} for k in couplers},
     }
-    if issubclass(node_cls, QubitNode):
-        for q in qubits:
-            for qoi in node_cls.qubit_qois or []:
-                data["transmons"][q][qoi] = RECALIBRATION_MOCKS["qubit"].get(qoi)
-                session._redis_fields_touched[qoi] = (
-                    session._redis_fields_touched.get(qoi, 0) + 1
-                )
-            data["cs"][q][node.value] = "calibrated"
-    elif issubclass(node_cls, CouplerNode):
-        for c in couplers:
-            for qoi in node_cls.coupler_qois or []:
-                data["couplers"][c][qoi] = RECALIBRATION_MOCKS["coupler"].get(qoi)
-                session._redis_fields_touched[qoi] = (
-                    session._redis_fields_touched.get(qoi, 0) + 1
-                )
-            data["cs"][c][node.value] = "calibrated"
+    elements, group = (
+        (qubits, "transmons") if element == "qubit" else (couplers, "couplers")
+    )
+    for name in elements:
+        for qoi in qois:
+            data[group][name][qoi] = RECALIBRATION_MOCKS[element].get(qoi)
+            session._redis_fields_touched[qoi] = (
+                session._redis_fields_touched.get(qoi, 0) + 1
+            )
+        data["cs"][name][node.value] = "calibrated"
 
     session.redis_store.save_many(data)
     # FIXME: data is not fully nested as expected.
@@ -138,3 +131,24 @@ def _populate_node_parameters(
             },
         }
     )
+
+
+def _get_element_qois(
+    node: NodeEnum, session: "SessionContext"
+) -> tuple[Literal["qubit", "coupler"], list[str]]:
+    """Whether the node calibrates qubits or couplers, and the Redis fields it sets.
+
+    Reads tergite-tuner's NodeSpecs, or its node classes in versions before them.
+    """
+    try:
+        from tergite_tuner.lib.nodes import DEFAULT_NODE_SPECS
+    except ImportError:
+        from tergite_tuner.lib.base.node import QubitNode
+
+        node_cls = session.node_cls_map[node]
+        if issubclass(node_cls, QubitNode):
+            return "qubit", list(node_cls.qubit_qois or [])
+        return "coupler", list(node_cls.coupler_qois or [])
+
+    spec = {**DEFAULT_NODE_SPECS, **session.node_specs}[node]
+    return spec.element, list(spec.qois.values())
