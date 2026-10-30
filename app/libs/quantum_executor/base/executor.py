@@ -187,52 +187,24 @@ def run_job(executor: QuantumExecutor, job_id: str, inputs_folder: Path) -> str:
     Returns:
         the path to the results obtained after measurement
     """
+    preprocessed_file = _get_preprocessed_expt_file(job_id, folder=inputs_folder)
     logger: Optional[ExperimentLogger] = None
     try:
-        preprocessed_file = _get_preprocessed_expt_file(job_id, folder=inputs_folder)
-        with open(preprocessed_file, "rb") as file:
-            expt_metadata_dict = pickle.load(file)
-            expt_metadata = NativeExptMetadata.from_dict(expt_metadata_dict)
-
+        expt_metadata = _load_expt_metadata(preprocessed_file)
         tuid = expt_metadata.tuid
-        qobj = expt_metadata.qobj
-        native_config = expt_metadata.native_config
-        qobj_tag = expt_metadata.qobj_tag
-
         experiment_folder = Path(
-            create_exp_folder(tuid=tuid, name=qobj_tag, datadir=executor.data_dir)
+            create_exp_folder(
+                tuid=tuid, name=expt_metadata.qobj_tag, datadir=executor.data_dir
+            )
         )
         logger = ExperimentLogger(tuid, datadir=executor.data_dir)
         logger.info(f"Starting job: {tuid}")
-
         logger.info(f"Running experiments for job id: {job_id}")
 
-        # we recompile these because pickling them seems to break the schedules
-        # FIXME: If compilation is expensive, removing this duplication is a good place to start
-        native_expts = executor.to_native_experiments(qobj, native_config)
-        experiment_results = {
-            expt.header.name: executor.run_native(
-                expt, native_config=native_config, logger=logger
-            )
-            for expt in native_expts
-        }
-
-        job = QuantumJob(
-            job_id=job_id,
-            tuid=tuid,
-            meas_return=native_config.meas_return,
-            meas_return_cols=native_config.meas_return_cols,
-            meas_level=native_config.meas_level,
-            n_qubits=native_config.n_qubits,
-            memory_slot_size=qobj.config.memory_slot_size,
-            qobj=qobj,
-            raw_results=experiment_results,
+        raw_results = _run_experiments(executor, expt_metadata, logger=logger)
+        results_file_path = _save_results(
+            job_id, expt_metadata, raw_results, folder=experiment_folder
         )
-
-        results_file_path = experiment_folder / f"{job_id}.hdf5"
-        save_job_in_hdf5(job, results_file_path)
-
-        # cleanup
         preprocessed_file.unlink(missing_ok=True)
 
         logger.info(f"Stored measurement data at {results_file_path}")
@@ -296,3 +268,55 @@ def _get_preprocessed_expt_file(job_id: str, folder: Path) -> Path:
         the path to the file
     """
     return folder / f"{job_id}-expt-metadata.json"
+
+
+def _load_expt_metadata(file: Path) -> "NativeExptMetadata":
+    """Loads the metadata of the experiments that preprocessing pickled to the file"""
+    with open(file, "rb") as metadata_file:
+        return NativeExptMetadata.from_dict(pickle.load(metadata_file))
+
+
+def _run_experiments(
+    executor: QuantumExecutor,
+    expt_metadata: "NativeExptMetadata",
+    logger: ExperimentLogger,
+) -> Dict[str, QExperimentResult]:
+    """Runs the job's experiments natively, each result keyed by its experiment's name"""
+    native_config = expt_metadata.native_config
+    # we recompile these because pickling them seems to break the schedules
+    # FIXME: If compilation is expensive, removing this duplication is a good place to start
+    native_expts = executor.to_native_experiments(expt_metadata.qobj, native_config)
+    return {
+        expt.header.name: executor.run_native(
+            expt, native_config=native_config, logger=logger
+        )
+        for expt in native_expts
+    }
+
+
+def _save_results(
+    job_id: str,
+    expt_metadata: "NativeExptMetadata",
+    raw_results: Dict[str, QExperimentResult],
+    folder: Path,
+) -> Path:
+    """Saves the job and its experiments' results in an HDF5 file in the folder
+
+    Returns:
+        the file's path
+    """
+    native_config = expt_metadata.native_config
+    job = QuantumJob(
+        job_id=job_id,
+        tuid=expt_metadata.tuid,
+        meas_return=native_config.meas_return,
+        meas_return_cols=native_config.meas_return_cols,
+        meas_level=native_config.meas_level,
+        n_qubits=native_config.n_qubits,
+        memory_slot_size=expt_metadata.qobj.config.memory_slot_size,
+        qobj=expt_metadata.qobj,
+        raw_results=raw_results,
+    )
+    results_file_path = folder / f"{job_id}.hdf5"
+    save_job_in_hdf5(job, results_file_path)
+    return results_file_path
