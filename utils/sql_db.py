@@ -19,7 +19,6 @@ from typing import Iterable, Iterator, Type
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import Engine
-from sqlalchemy.pool import NullPool
 from sqlmodel import Session, SQLModel, col, create_engine, desc
 
 from .exc import InvalidRequestError
@@ -29,15 +28,9 @@ _ALEMBIC_CONFIG_FILE = Path(__file__).parents[1] / "alembic.ini"
 
 
 def get_sql_engine(url: str) -> Engine:
-    """Gets a new SQL engine for the given URL; migrate_sql_db creates its tables"""
-    url = str(url)
-    kwargs = {}
-    if url.startswith("sqlite"):
-        # to avoid prefork-errors with sqlite since we are running in multiple processes,
-        # we use NullPool
-        kwargs["poolclass"] = NullPool
-
-    return create_engine(url, **kwargs)
+    """Gets a new SQL engine for the given URL, which pools its connections, as every process
+    makes its own engine and none forks; migrate_sql_db creates its tables"""
+    return create_engine(str(url))
 
 
 def migrate_sql_db(url: str) -> None:
