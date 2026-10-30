@@ -13,7 +13,6 @@ boolean: app/libs/device_parameters/dtos.py::Device.open_pulse
 boolean: app/libs/device_parameters/dtos.py::_BackendGeneralConfig.characterized
 boolean: app/libs/device_parameters/dtos.py::_BackendGeneralConfig.open_pulse
 boolean: app/libs/device_parameters/dtos.py::_BackendGeneralConfig.simulator
-boolean: app/libs/quantum_executor/base/quantum_job/dtos.py::QuantumJob.local
 boolean: app/libs/quantum_executor/base/quantum_job/typing.py::QDataArray.__init__(fastpath)
 boolean: app/libs/quantum_executor/qiskit/executor.py::QiskitDynamicsExecutor.new_one_qubit(reset)
 boolean: app/libs/quantum_executor/qiskit/executor.py::QiskitDynamicsExecutor.new_two_qubit(reset)
@@ -59,7 +58,6 @@ private-helper-position: app/libs/qiskit/qobj/pulse_qobj.py::PulseQobjExperiment
 private-helper-position: app/libs/quantum_executor/base/quantum_job/__init__.py::discriminate_results
 private-helper-position: app/libs/quantum_executor/base/quantum_job/__init__.py::get_acquisition_parameters_from_experiment
 private-helper-position: app/libs/quantum_executor/base/quantum_job/__init__.py::get_experiment_name
-private-helper-position: app/libs/quantum_executor/base/quantum_job/__init__.py::to_native_qobj_config
 private-helper-position: app/libs/quantum_executor/base/quantum_job/__init__.py::xarray_to_list
 private-helper-position: app/libs/quantum_executor/quantify/experiment.py::QuantifyExperiment
 type-hints: app/api/__init__.py::root
@@ -139,7 +137,6 @@ type-hints: app/libs/quantum_executor/base/quantum_job/dtos.py::QobjData.from_qo
 type-hints: app/libs/quantum_executor/base/quantum_job/dtos.py::QobjHeaderMetadata.from_qobj_header
 type-hints: app/libs/quantum_executor/base/quantum_job/dtos.py::QobjMetadata.from_qobj
 type-hints: app/libs/quantum_executor/base/quantum_job/dtos.py::QobjSweepData.from_qobj_header
-type-hints: app/libs/quantum_executor/base/quantum_job/dtos.py::QuantumJob.__post_init__
 type-hints: app/libs/quantum_executor/base/quantum_job/dtos.py::QuantumJob.to_dict
 type-hints: app/libs/quantum_executor/base/quantum_job/typing.py::QDataArray.from_xarray
 type-hints: app/libs/quantum_executor/base/quantum_job/typing.py::QDataset.from_xarray

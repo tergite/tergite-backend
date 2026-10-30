@@ -21,7 +21,7 @@ from typing import Any, Optional, Type, Union
 import numpy as np
 from pydantic import BaseModel, ConfigDict
 
-from app.libs.qiskit.qobj import PulseQobj
+from app.libs.qiskit.qobj import PulseQobj, PulseQobjConfig
 from app.libs.qiskit_providers.utils import json_decoder
 from app.libs.qiskit_providers.utils.json_encoder import IQXJsonEncoder
 
@@ -122,6 +122,67 @@ class NativeQobjConfig:
         return raw_dict
 
     @classmethod
+    def from_pulse_qobj_config(cls, config: PulseQobjConfig) -> "NativeQobjConfig":
+        """Gets the native config of the pulse qobj config
+
+        Args:
+            config: the configuration object of the pulse qobj
+
+        Returns:
+            NativeQobjConfig instance
+        """
+        bin_mode = _get_bin_mode(config)
+        protocol = _get_meas_protocol(config)
+        n_qubits = config.n_qubits
+        meas_level = MeasLvl(config.meas_level)
+
+        if (
+            bin_mode is BinMode.AVERAGE
+            and protocol is MeasProtocol.SSB_INTEGRATION_COMPLEX
+        ):
+            return cls(
+                acq_return_type=complex,
+                protocol=protocol,
+                bin_mode=bin_mode,
+                meas_level=meas_level,
+                meas_return=MeasRet.AVERAGED,
+                meas_return_cols=1,
+                n_qubits=n_qubits,
+                shots=config.shots,
+            )
+
+        if bin_mode is BinMode.AVERAGE and protocol is MeasProtocol.TRACE:
+            return cls(
+                acq_return_type=np.ndarray,
+                protocol=protocol,
+                bin_mode=bin_mode,
+                meas_level=meas_level,
+                meas_return=MeasRet.AVERAGED,
+                meas_return_cols=16384,  # length of a trace
+                n_qubits=n_qubits,
+                shots=config.shots,
+            )
+
+        if (
+            bin_mode is BinMode.APPEND
+            and protocol is MeasProtocol.SSB_INTEGRATION_COMPLEX
+        ):
+            return cls(
+                acq_return_type=np.ndarray,
+                protocol=MeasProtocol.SSB_INTEGRATION_COMPLEX,
+                bin_mode=BinMode.APPEND,
+                meas_level=meas_level,
+                meas_return=MeasRet.APPENDED,
+                meas_return_cols=config.shots,
+                n_qubits=n_qubits,
+                shots=config.shots,
+            )
+
+        raise RuntimeError(
+            f"Combination {(config.meas_return, config.meas_return)} is not supported."
+        )
+
+    @classmethod
     def from_dict(cls, value: dict) -> "NativeQobjConfig":
         """Converts a dict into a NativeQobjConfig object
 
@@ -211,24 +272,20 @@ class QuantumJob:
     n_qubits: int
     job_id: Optional[str] = None
     memory_slot_size: int = 100
-    local: bool = True
     qobj: Optional[PulseQobj] = None
-    qobj_data: Optional[QobjData] = None
-    metadata: Optional[QobjMetadata] = None
     raw_results: Optional[QJobResult] = None
 
-    def __post_init__(self):
-        """Initialize properties that depend on other properties"""
-        self.local = self.job_id is None
+    @property
+    def is_local(self) -> bool:
+        """Whether the job runs with no job id"""
+        return self.job_id is None
 
-        if isinstance(self.qobj, PulseQobj):
-            self.metadata = QobjMetadata.from_qobj(self.qobj)
-
-        if isinstance(self.qobj, PulseQobj) and self.qobj_data is None:
-            self.qobj_data = QobjData.from_qobj(self.qobj)
-
-        if isinstance(self.qobj_data, QobjData) and self.qobj is None:
-            self.qobj = self.qobj_data.to_qobj()
+    @property
+    def metadata(self) -> Optional[QobjMetadata]:
+        """The metadata of the job's qobj, if it has one"""
+        if self.qobj is None:
+            return None
+        return QobjMetadata.from_qobj(self.qobj)
 
     def to_dict(self):
         """Converts current to dictionary"""
@@ -300,3 +357,48 @@ class SweepParamMetadata(BaseModel):
 
     long_name: str
     unit: str
+
+
+def _get_bin_mode(qobj_conf: PulseQobjConfig) -> BinMode:
+    """Gets the BinMode based on the meas_return of the qobj.config
+
+    Args:
+        qobj_conf: the qobject config whose bin mode is to be obtained
+
+    Returns:
+        the BinMode for the given qobj
+    """
+    meas_return = qobj_conf.meas_return
+    if isinstance(meas_return, int):
+        return {
+            int(MeasRet.APPENDED): BinMode.APPEND,
+            int(MeasRet.AVERAGED): BinMode.AVERAGE,
+        }[meas_return]
+
+    # FIXME: For some reason, PulseQobjConfig expects to be an int
+    #   yet our fixtures all have strings.
+    meas_return = str.lower(qobj_conf.meas_return)
+    return {
+        "avg": BinMode.AVERAGE,
+        "average": BinMode.AVERAGE,
+        "averaged": BinMode.AVERAGE,
+        "single": BinMode.APPEND,
+        "append": BinMode.APPEND,
+        "appended": BinMode.APPEND,
+    }[meas_return]
+
+
+def _get_meas_protocol(qobj_conf: PulseQobjConfig) -> "MeasProtocol":
+    """Gets the measurement protocol for the given qobject
+
+    Args:
+        qobj_conf: the qobject config from which to extract the measurement protocol
+
+    Returns:
+        the measurement protocol for the given qobject
+    """
+    return {
+        0: MeasProtocol.TRACE,
+        1: MeasProtocol.SSB_INTEGRATION_COMPLEX,
+        2: MeasProtocol.SSB_INTEGRATION_COMPLEX,
+    }[qobj_conf.meas_level]

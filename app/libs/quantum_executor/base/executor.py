@@ -26,7 +26,6 @@ from app.libs.qiskit.qobj import PulseQobj
 from app.libs.quantum_executor.base.experiment import NativeExperiment
 from app.libs.quantum_executor.base.quantum_job import (
     save_job_in_hdf5,
-    to_native_qobj_config,
 )
 from app.libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig, QuantumJob
 from app.libs.quantum_executor.base.quantum_job.typing import QExperimentResult
@@ -154,7 +153,7 @@ def preprocess_qobj(
 
         # translate qobj experiments to quantify schedules
         logger.info(f"Started compilation for job id: {job_id} at {datetime.now()}")
-        native_config = to_native_qobj_config(qobj.config)
+        native_config = NativeQobjConfig.from_pulse_qobj_config(qobj.config)
         native_expts = executor.to_native_experiments(qobj, native_config)
         total_duration = sum([expt.duration for expt in native_expts])
 

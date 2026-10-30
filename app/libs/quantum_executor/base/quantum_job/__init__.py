@@ -36,20 +36,16 @@ import numpy as np
 import xarray as xr
 from numpy import typing as npt
 
-from app.libs.qiskit.qobj import PulseQobj, PulseQobjConfig, PulseQobjInstruction
+from app.libs.qiskit.qobj import PulseQobj, PulseQobjInstruction
 
 from ....device_parameters.dtos import DeviceCalibration
 from ...utils.general import search_nested
 from .dtos import (
-    BinMode,
     ByteOrder,
     MeasLvl,
-    MeasProtocol,
     MeasRet,
-    NativeQobjConfig,
     QobjData,
     QobjHeaderMetadata,
-    QobjMetadata,
     QobjSweepData,
     QuantumJob,
     SweepParamMetadata,
@@ -103,28 +99,20 @@ def read_job_from_hdf5(file: Path) -> QuantumJob:
         meas_return_cols = hdf5_file.attrs["meas_return_cols"]
         n_qubits = hdf5_file.attrs["n_qubits"]
         job_id = hdf5_file.attrs.get("job_id")
-        local = hdf5_file.attrs.get("local")
         raw_results = _extract_results_from_hdf5(hdf5_file)
         qobj_data = _read_hdf5_attributes(
             hdf5_file, path=_HDF5_QOBJ_DATA_PATH, type_=QobjData
         )
-        metadata = _read_hdf5_attributes(
-            hdf5_file, path=_HDF5_QOBJ_METADATA_PATH, type_=QobjMetadata
-        )
-        qobj = qobj_data.to_qobj()
 
     return QuantumJob(
         tuid=tuid,
         meas_return=meas_return,
-        local=local,
         meas_level=meas_level,
         meas_return_cols=meas_return_cols,
         n_qubits=n_qubits,
         raw_results=raw_results,
-        qobj_data=qobj_data,
-        metadata=metadata,
         job_id=job_id,
-        qobj=qobj,
+        qobj=qobj_data.to_qobj(),
     )
 
 
@@ -143,7 +131,7 @@ def save_job_in_hdf5(job: QuantumJob, file: Path):
         hdf5_file.attrs["n_qubits"] = job.n_qubits
         hdf5_file.attrs["memory_slot_size"] = job.memory_slot_size
         hdf5_file.attrs["job_id"] = job.job_id
-        hdf5_file.attrs["local"] = job.local
+        hdf5_file.attrs["local"] = job.is_local
 
         header_dict = job.qobj.header.to_dict()
         _save_qobj_header_to_hdf5(hdf5_file, header_dict=header_dict)
@@ -420,61 +408,6 @@ def xarray_to_list(job: QuantumJob) -> IQMemory:
     return experiments_mem
 
 
-def to_native_qobj_config(config: PulseQobjConfig) -> "NativeQobjConfig":
-    """Converts the pulse qobj config to native qobj config
-
-    Args:
-        config: the configuration object of the pulse qobj
-
-    Returns:
-        NativeQobjConfig instance
-    """
-    bin_mode = _get_bin_mode(config)
-    protocol = _get_meas_protocol(config)
-    n_qubits = config.n_qubits
-    meas_level = MeasLvl(config.meas_level)
-
-    if bin_mode is BinMode.AVERAGE and protocol is MeasProtocol.SSB_INTEGRATION_COMPLEX:
-        return NativeQobjConfig(
-            acq_return_type=complex,
-            protocol=protocol,
-            bin_mode=bin_mode,
-            meas_level=meas_level,
-            meas_return=MeasRet.AVERAGED,
-            meas_return_cols=1,
-            n_qubits=n_qubits,
-            shots=config.shots,
-        )
-
-    if bin_mode is BinMode.AVERAGE and protocol is MeasProtocol.TRACE:
-        return NativeQobjConfig(
-            acq_return_type=np.ndarray,
-            protocol=protocol,
-            bin_mode=bin_mode,
-            meas_level=meas_level,
-            meas_return=MeasRet.AVERAGED,
-            meas_return_cols=16384,  # length of a trace
-            n_qubits=n_qubits,
-            shots=config.shots,
-        )
-
-    if bin_mode is BinMode.APPEND and protocol is MeasProtocol.SSB_INTEGRATION_COMPLEX:
-        return NativeQobjConfig(
-            acq_return_type=np.ndarray,
-            protocol=MeasProtocol.SSB_INTEGRATION_COMPLEX,
-            bin_mode=BinMode.APPEND,
-            meas_level=meas_level,
-            meas_return=MeasRet.APPENDED,
-            meas_return_cols=config.shots,
-            n_qubits=n_qubits,
-            shots=config.shots,
-        )
-
-    raise RuntimeError(
-        f"Combination {(config.meas_return, config.meas_return)} is not supported."
-    )
-
-
 def get_experiment_name(qobj_expt_name: str, expt_index: int):
     """
     Creates a cleaned version of a given experiment name
@@ -511,17 +444,16 @@ def _save_qobj_to_hdf5(file: h5py.File, job: QuantumJob):
         file: the HDF5 file to save to
         job: the quantum job containing the qobj
     """
-    # save the raw metadata
-    if isinstance(job.metadata, QobjMetadata):
-        _save_hdf5_attributes(
-            file, path=_HDF5_QOBJ_METADATA_PATH, source=job.metadata.to_dict()
-        )
-
-    # save the raw data
-    if isinstance(job.qobj_data, QobjData):
-        _save_hdf5_attributes(
-            file, path=_HDF5_QOBJ_DATA_PATH, source=job.qobj_data.to_dict()
-        )
+    if job.qobj is None:
+        return
+    _save_hdf5_attributes(
+        file, path=_HDF5_QOBJ_METADATA_PATH, source=job.metadata.to_dict()
+    )
+    _save_hdf5_attributes(
+        file,
+        path=_HDF5_QOBJ_DATA_PATH,
+        source=QobjData.from_qobj(job.qobj).to_dict(),
+    )
 
 
 def _save_sweep_data_to_hdf5(file: h5py.File, header_dict: dict):
@@ -713,51 +645,6 @@ def _get_value_at_path(data: dict, path: List[str]) -> Any:
         value = data[part]
 
     return value
-
-
-def _get_bin_mode(qobj_conf: PulseQobjConfig) -> BinMode:
-    """Gets the BinMode based on the meas_return of the qobj.config
-
-    Args:
-        qobj_conf: the qobject config whose bin mode is to be obtained
-
-    Returns:
-        the BinMode for the given qobj
-    """
-    meas_return = qobj_conf.meas_return
-    if isinstance(meas_return, int):
-        return {
-            int(MeasRet.APPENDED): BinMode.APPEND,
-            int(MeasRet.AVERAGED): BinMode.AVERAGE,
-        }[meas_return]
-
-    # FIXME: For some reason, PulseQobjConfig expects to be an int
-    #   yet our fixtures all have strings.
-    meas_return = str.lower(qobj_conf.meas_return)
-    return {
-        "avg": BinMode.AVERAGE,
-        "average": BinMode.AVERAGE,
-        "averaged": BinMode.AVERAGE,
-        "single": BinMode.APPEND,
-        "append": BinMode.APPEND,
-        "appended": BinMode.APPEND,
-    }[meas_return]
-
-
-def _get_meas_protocol(qobj_conf: PulseQobjConfig) -> "MeasProtocol":
-    """Gets the measurement protocol for the given qobject
-
-    Args:
-        qobj_conf: the qobject config from which to extract the measurement protocol
-
-    Returns:
-        the measurement protocol for the given qobject
-    """
-    return {
-        0: MeasProtocol.TRACE,
-        1: MeasProtocol.SSB_INTEGRATION_COMPLEX,
-        2: MeasProtocol.SSB_INTEGRATION_COMPLEX,
-    }[qobj_conf.meas_level]
 
 
 def _bitarrays_to_decimal(
