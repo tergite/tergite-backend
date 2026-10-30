@@ -87,7 +87,7 @@ def get_executor_options(device_settings: DeviceSettings) -> ExecutorOptions:
         quantify_config_file=device_settings.quantify_config_file,
         quantify_metadata_file=device_settings.quantify_metadata_file,
         should_restore_currents=device_settings.should_restore_currents,
-        are_clusters_resettable=device_settings.is_cluster_reset_allowed,
+        is_cluster_reset_allowed=device_settings.is_cluster_reset_allowed,
         data_directory=device_settings.executor_data_dir,
         calibration_node_config=device_settings.calibration_node_config_file,
         calibration_device_config=device_settings.calibration_device_config_file,
@@ -98,7 +98,7 @@ def get_executor_options(device_settings: DeviceSettings) -> ExecutorOptions:
 
 def get_executor(executor_options: ExecutorOptions) -> "QuantumExecutor":
     """Gets a new quantum executor of the given options, its instruments reset"""
-    executor = _init_executor(executor_options, reset=True)
+    executor = _init_executor(executor_options, should_reset=True)
     err_logger.info(
         f"QuantumExecutor initialised for backend '{executor_options.backend_name}'.'"
     )
@@ -300,12 +300,14 @@ def decompress_qobj(qobj_dict: Dict[str, Any]) -> Dict[str, Any]:
     return qobj_dict
 
 
-def _init_executor(options: ExecutorOptions, reset: bool = False) -> "QuantumExecutor":
+def _init_executor(
+    options: ExecutorOptions, should_reset: bool = False
+) -> "QuantumExecutor":
     """Initializes the executor
 
     Args:
         options: the executor options useful to initialize the executor
-        reset: whether to reset the executor; default = False
+        should_reset: whether to reset the executor; default = False
 
     Returns:
         An initialized quantum executor
@@ -321,7 +323,7 @@ def _init_executor(options: ExecutorOptions, reset: bool = False) -> "QuantumExe
         return QiskitDynamicsExecutor.new_one_qubit(
             backend_config=backend_config,
             data_dir=options.data_directory,
-            reset=reset,
+            should_reset=should_reset,
         )
 
     elif executor_type == "qiskit_pulse_2q":
@@ -332,7 +334,7 @@ def _init_executor(options: ExecutorOptions, reset: bool = False) -> "QuantumExe
         return QiskitDynamicsExecutor.new_two_qubit(
             backend_config=backend_config,
             data_dir=options.data_directory,
-            reset=reset,
+            should_reset=should_reset,
         )
 
     # only import this if the executor is of the quantify so
@@ -343,9 +345,9 @@ def _init_executor(options: ExecutorOptions, reset: bool = False) -> "QuantumExe
         quantify_config_file=options.quantify_config_file,
         quantify_metadata_file=options.quantify_metadata_file,
         backend_config=backend_config,
-        reset=reset,
+        should_reset=should_reset,
         should_restore_currents=options.should_restore_currents,
-        are_clusters_resettable=options.are_clusters_resettable,
+        is_cluster_reset_allowed=options.is_cluster_reset_allowed,
         data_dir=options.data_directory,
         calib_node_conf=options.calibration_node_config,
         calib_device_conf=options.calibration_device_config,

@@ -239,7 +239,7 @@ class ExecutorOptions:
         backend_config: the backend configuration of the executor
         backend_name: name of backend
         should_restore_currents: whether the executor should restore SPI currents
-        are_clusters_resettable: whether the clusters for this executor can be reset
+        is_cluster_reset_allowed: whether the clusters for this executor can be reset
         data_directory: the directory where to save experiment data
         calibration_node_config: the configuration file for the nodes during calibration
         calibration_device_config: the configuration file for the entire devices during calibration
@@ -254,7 +254,7 @@ class ExecutorOptions:
     quantify_config_file: Optional[PathLike] = None
     quantify_metadata_file: Optional[PathLike] = None
     should_restore_currents: bool = False
-    are_clusters_resettable: bool = False
+    is_cluster_reset_allowed: bool = False
     data_directory: Optional[PathLike[str]] = None
     calibration_node_config: Optional[PathLike[str]] = None
     calibration_device_config: Optional[PathLike[str]] = None

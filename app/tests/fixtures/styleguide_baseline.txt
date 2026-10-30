@@ -5,15 +5,9 @@ boolean: app/libs/device_parameters/dtos.py::Device.open_pulse
 boolean: app/libs/device_parameters/dtos.py::_BackendGeneralConfig.characterized
 boolean: app/libs/device_parameters/dtos.py::_BackendGeneralConfig.open_pulse
 boolean: app/libs/device_parameters/dtos.py::_BackendGeneralConfig.simulator
-boolean: app/libs/quantum_executor/qiskit/executor.py::QiskitDynamicsExecutor.new_one_qubit(reset)
-boolean: app/libs/quantum_executor/qiskit/executor.py::QiskitDynamicsExecutor.new_two_qubit(reset)
 boolean: app/libs/quantum_executor/qiskit/instruction.py::GaussianPlay.__init__(limit_amplitude)
-boolean: app/libs/quantum_executor/quantify/executor.py::QuantifyExecutor.__init__(are_clusters_resettable)
-boolean: app/libs/quantum_executor/quantify/executor.py::QuantifyExecutor.__init__(reset)
 boolean: app/libs/quantum_executor/quantify/experiment.py::_ChannelPlan.had_any_instructions
 boolean: app/libs/quantum_executor/quantify/experiment.py::_State.has_emitted
-boolean: app/libs/queues/dtos.py::ExecutorOptions.are_clusters_resettable
-boolean: app/services/scheduler/utils.py::_init_executor(reset)
 constant-position: app/libs/quantum_executor/quantify/utils/calibration.py::_FIXED_DURATION_COUPLER_NODES
 constant-position: app/libs/quantum_executor/quantify/utils/calibration.py::_NON_FIXED_DURATION_COUPLER_NODES
 license-header: app/libs/__init__.py

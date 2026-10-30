@@ -99,14 +99,14 @@ class QiskitDynamicsExecutor(QuantumExecutor):
 
     @classmethod
     def new_one_qubit(
-        cls, backend_config: BackendConfig, data_dir: Path, reset: bool = False
+        cls, backend_config: BackendConfig, data_dir: Path, should_reset: bool = False
     ):
         """Generates a new one-qubit qiskit-dynamics executor
 
         Args:
             backend_config: the backend configuration
             data_dir: the directory where to save experiment data
-            reset: whether to reset the backend
+            should_reset: whether to reset the backend
 
         Returns:
             an instance of this class that has one-qubit
@@ -120,7 +120,7 @@ class QiskitDynamicsExecutor(QuantumExecutor):
             ),
         )
 
-        if reset:
+        if should_reset:
             # train the discriminators and update the backend config
             instance.backend_config.calibration_config.discriminators = (
                 train_one_qubit_discriminator(instance.backend, backend_config)
@@ -130,14 +130,14 @@ class QiskitDynamicsExecutor(QuantumExecutor):
 
     @classmethod
     def new_two_qubit(
-        cls, backend_config: BackendConfig, data_dir: Path, reset: bool = False
+        cls, backend_config: BackendConfig, data_dir: Path, should_reset: bool = False
     ):
         """Generates a new two-qubit qiskit-dynamics executor
 
         Args:
             backend_config: the backend configuration
             data_dir: the directory where to save experiment data
-            reset: whether to reset the backend
+            should_reset: whether to reset the backend
 
         Returns:
             an instance of this class that has two coupled qubits
@@ -150,7 +150,7 @@ class QiskitDynamicsExecutor(QuantumExecutor):
             ),
         )
 
-        if reset:
+        if should_reset:
             # train the discriminators and update the backend config
             instance.backend_config.calibration_config.discriminators = (
                 train_two_qubit_discriminator(instance.backend)

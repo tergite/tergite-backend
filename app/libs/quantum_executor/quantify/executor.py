@@ -74,8 +74,8 @@ class QuantifyExecutor(QuantumExecutor):
         quantify_metadata_file: Union[str, bytes, os.PathLike],
         backend_config: BackendConfig,
         *,
-        reset: bool = False,
-        are_clusters_resettable: bool = False,
+        should_reset: bool = False,
+        is_cluster_reset_allowed: bool = False,
         data_dir: Path | os.PathLike[str],
         calib_node_conf: Path | os.PathLike[str],
         calib_device_conf: Path | os.PathLike[str],
@@ -89,8 +89,8 @@ class QuantifyExecutor(QuantumExecutor):
             quantify_config_file: path to the quantify specific config file
             quantify_metadata_file: path to our custom quantify specific metadata
             backend_config: the general backend configuration regardless of executor type
-            reset: whether to reset the whole executor; default = False
-            are_clusters_resettable: whether the clusters can be reset for this executor; default = False
+            should_reset: whether to reset the whole executor; default = False
+            is_cluster_reset_allowed: whether the clusters can be reset for this executor; default = False
             data_dir: the directory where to save experiment data
             calib_node_conf: the configuration file for the nodes during calibration
             calib_device_conf: the configuration file for the entire devices during calibration
@@ -105,7 +105,7 @@ class QuantifyExecutor(QuantumExecutor):
         self.quantify_config = load_quantify_config(quantify_config_file)
         self.quantify_metadata = QuantifyMetadata.from_yaml(quantify_metadata_file)
         self.device_name = backend_config.general_config.name
-        self.are_clusters_resettable = are_clusters_resettable
+        self.is_cluster_reset_allowed = is_cluster_reset_allowed
         self.lo_frequencies = _extract_lo_frequencies(self.quantify_config)
         self.drive_frequencies = _extract_drive_frequencies(backend_config)
         self._redis_url = redis_url
@@ -130,7 +130,7 @@ class QuantifyExecutor(QuantumExecutor):
         # the same device name never reuses them
         self._instruments_key = str(Path(os.fsdecode(quantify_metadata_file)).resolve())
         self._coordinator = self._get_coordinator(
-            should_reset_clusters=reset and are_clusters_resettable
+            should_reset_clusters=should_reset and is_cluster_reset_allowed
         )
         self._quantum_device = _get_quantum_device(
             self.device_name, self.quantify_config

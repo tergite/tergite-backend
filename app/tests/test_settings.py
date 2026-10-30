@@ -163,7 +163,7 @@ def test_executor_options_allow_resetting_the_clusters_when_set(monkeypatch):
     monkeypatch.setenv("BCC_ARE_CLUSTERS_RESETTABLE", "true")
     _reload_settings()
 
-    assert get_executor_options(settings.get_device_settings()).are_clusters_resettable
+    assert get_executor_options(settings.get_device_settings()).is_cluster_reset_allowed
 
 
 def _reload_settings() -> None:
