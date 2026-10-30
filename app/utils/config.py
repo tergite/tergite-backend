@@ -20,7 +20,7 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, List, Optional, Self
+from typing import Annotated, Any, List, Literal, Optional, Self
 from urllib.parse import urlsplit
 
 from dotenv import dotenv_values
@@ -90,6 +90,8 @@ class DeviceSettings(BaseSettings):
     private_key_file: Path = _ROOT_PATH / "private-bcc-key.pem"
     private_key_password: Optional[bytes] = None
 
+    # what runs the jobs: RQ's queues, or the dispatcher over the SQL database, until one stays
+    scheduler: Literal["rq", "dispatcher"] = "rq"
     # which QuantumExecutor runs the jobs; see .env.example
     executor_type: str = "quantify"
     # the cluster or other instrument set-up; see quantify-config.example.yml and

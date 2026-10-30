@@ -20,9 +20,10 @@ from sqlmodel import Field, Session, SQLModel, col, delete, select
 
 from ...libs.queues.dtos import Job, JobStatus
 from ...utils.config import DeviceSettings
-from ...utils.datetime import get_utc_now
+from ...utils.datetime import get_utc_now, to_utc
 from ...utils.exc import ItemNotFoundError
 from ...utils.sql_db import open_immediate_session
+from ...utils.strings import uuid_str
 
 
 class JobRow(SQLModel, table=True):
@@ -38,6 +39,30 @@ class JobRow(SQLModel, table=True):
     updated_at: datetime = Field(index=True)
     # the job, as JSON
     data: str
+    stage: str = Field(default="", index=True)
+    estimated_duration: Optional[float] = None
+    created_at: Optional[datetime] = Field(default=None, index=True)
+    # the dispatcher's: when a worker claimed the job's current stage, when its execution
+    # ended, whether, booked, it waits for the time outside bookings, and its results
+    claimed_at: Optional[datetime] = None
+    executed_at: Optional[datetime] = None
+    is_booking_excluded: bool = False
+    results_file: Optional[str] = None
+
+
+class RecalibrationRow(SQLModel, table=True):
+    """A recalibration of a device, done, under way or due, as the dispatcher keeps them"""
+
+    __tablename__ = "recalibration"
+
+    id: str = Field(default_factory=uuid_str, primary_key=True)
+    device_name: str = Field(index=True)
+    status: str = Field(index=True)
+    due_at: datetime = Field(index=True)
+    interval: Optional[float] = None
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+    error: Optional[str] = None
 
 
 class JobsStore:
@@ -72,7 +97,9 @@ class JobsStore:
                     col(JobRow.updated_at) < now - self._ttl,
                 )
             )
-            session.merge(self._to_row(job, now=now))
+            row = JobRow(device_name=self._device_name, job_id=job.job_id, data="")
+            _write_job(row, job, now=now)
+            session.merge(row)
             session.commit()
         return job
 
@@ -101,7 +128,8 @@ class JobsStore:
                 raise ItemNotFoundError(f"'{job_id}' not found")
             job = Job.model_validate_json(row.data)
             updated_job = Job.model_validate({**job.model_dump(), **updates})
-            session.merge(self._to_row(updated_job, now=get_utc_now()))
+            _write_job(row, updated_job, now=get_utc_now())
+            session.add(row)
             session.commit()
         return updated_job
 
@@ -133,12 +161,15 @@ class JobsStore:
         with Session(self._db_engine) as session:
             return [Job.model_validate_json(row.data) for row in session.exec(query)]
 
-    def _to_row(self, job: Job, now: datetime) -> JobRow:
-        return JobRow(
-            device_name=self._device_name,
-            job_id=job.job_id,
-            user_id=job.user_id,
-            status=job.status.value,
-            updated_at=now,
-            data=job.model_dump_json(),
-        )
+
+def _write_job(row: JobRow, job: Job, now: datetime) -> None:
+    """Writes the job into its row, leaving the dispatcher's columns as they are"""
+    row.user_id = job.user_id
+    row.status = job.status.value
+    row.updated_at = now
+    row.data = job.model_dump_json()
+    row.stage = job.stage.name
+    row.estimated_duration = job.estimated_duration
+    row.created_at = (
+        to_utc(datetime.fromisoformat(job.created_at)) if job.created_at else now
+    )

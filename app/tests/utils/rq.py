@@ -12,6 +12,7 @@
 
 """Utilities for testing rq workers and queues"""
 import dataclasses
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Generator, List, Optional, Union
 
@@ -23,8 +24,9 @@ from rq import Queue as RqQueue
 from rq import SimpleWorker, Worker
 from rq.timeouts import TimerDeathPenalty
 
-from app.api.worker import PreloadedRqWorker
+from app.api.worker import PreloadedRqWorker, preload_worker_globals
 from app.services.scheduler import close_device_resources
+from app.services.scheduler.dispatcher import Dispatcher, get_next_change_at
 from app.services.scheduler.queues import QueuePool
 from app.tests.utils.env import (
     TEST_DEFAULT_PREFIX,
@@ -37,6 +39,22 @@ from app.tests.utils.env import (
     TEST_MAX_RECALIBRATION_QUEUE_TIME,
     TEST_RQ_MAX_QUEUE_WAIT_TIME,
 )
+
+
+class DispatchingTestWorker(Dispatcher):
+    """The dispatcher, running a device's heavy and light work, as the tests run an rq worker"""
+
+    should_wait_while_offline = False
+
+    def run(
+        self,
+        burst: bool = True,
+        max_jobs: Optional[int] = None,
+        with_scheduler: bool = False,
+    ) -> bool:
+        return super().run(is_burst=True, max_jobs=max_jobs)
+
+    work = run
 
 
 class PreloadedSimpleWorker(PreloadedRqWorker, SimpleWorker):
@@ -148,6 +166,10 @@ def wait_on_rq_worker(
         TimeoutError: Worker took longer than {max_idle_time} seconds
         KeyError: if the queue of given name doesn't exist
     """
+    if isinstance(worker, Dispatcher):
+        _wait_on_dispatcher(worker, max_idle_time=max_idle_time, clock=clock)
+        return
+
     if queue is None:
         queue = worker.queues[0]
 
@@ -194,6 +216,16 @@ def wait_on_rq_worker(
 
 
 def _get_device_worker(redis_client: Redis, prefix: str) -> Union[Worker, SimpleWorker]:
+    if os.environ.get("BCC_SCHEDULER") == "dispatcher":
+        import settings
+
+        device = preload_worker_globals(
+            settings.get_device_settings(prefix), should_load_executor=True
+        )
+        return DispatchingTestWorker(
+            {prefix: device}, should_run_heavy=True, should_run_light=True
+        )
+
     queue_pool = QueuePool(
         prefix=prefix,
         connection=redis_client,
@@ -219,3 +251,25 @@ def set_worker_executor(worker: PreloadedSimpleWorker, executor: Any) -> None:
         worker.device_resources[device] = dataclasses.replace(
             resources, executor=executor
         )
+
+
+def _wait_on_dispatcher(
+    worker: Dispatcher,
+    max_idle_time: int,
+    clock: Optional[time_machine.Traveller],
+) -> None:
+    """Runs the dispatcher until nothing is due, moving the fake clock, if given, on to the
+    next change in the bookings while a job waits for one"""
+    deadline = datetime.now() + timedelta(seconds=max_idle_time)
+    while datetime.now() < deadline:
+        worker.work(burst=True)
+        if clock is None:
+            return
+        change_times = [
+            get_next_change_at(device) for device in worker.device_resources.values()
+        ]
+        next_change_at = min(filter(None, change_times), default=None)
+        if next_change_at is None:
+            return
+        clock.move_to(next_change_at)
+    raise TimeoutError(f"Worker took longer than {max_idle_time} seconds")

@@ -264,6 +264,10 @@ def _run_rq_worker(kind: str, env_files: list[str], device: str | None = None) -
         devices = settings.get_device_names()
 
     set_up_logging(settings.get_device_settings().log_level)
+    if settings.get_device_settings().scheduler == "dispatcher":
+        _run_dispatcher(kind, devices)
+        return
+
     redis_urls = {settings.get_device_settings(name).rq_redis_url for name in devices}
     if len(redis_urls) > 1:
         sys.exit(
@@ -283,6 +287,23 @@ def _run_rq_worker(kind: str, env_files: list[str], device: str | None = None) -
     # the scheduler moves due enqueue_at and enqueue_in jobs, e.g. a booking's start and end,
     # onto the worker's queues; RQ's locks let one worker per queue do it
     worker.work(with_scheduler=True)
+
+
+def _run_dispatcher(kind: str, devices: list[str]) -> None:
+    import settings
+    from app.api.worker import preload_worker_globals
+    from app.services.scheduler.dispatcher import Dispatcher
+
+    is_heavy = kind == "heavy"
+    resources = {
+        name: preload_worker_globals(
+            settings.get_device_settings(name), should_load_executor=is_heavy
+        )
+        for name in devices
+    }
+    Dispatcher(
+        resources, should_run_heavy=is_heavy, should_run_light=not is_heavy
+    ).run()
 
 
 def _load_devices(env_files: list[str]) -> None:

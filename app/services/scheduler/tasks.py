@@ -121,6 +121,11 @@ def preprocess(
             )
         job = jobs_store.update(job.job_id, {"estimated_duration": duration})
 
+        if device.settings.scheduler == "dispatcher":
+            # imported here, as it imports this module
+            from .dispatcher import mark_preprocessed
+
+            return mark_preprocessed(device, job)
         if booking_id is None:
             return _try_enqueue_on_normal_queue(device, job)
         else:
@@ -246,6 +251,12 @@ def execute(device: DeviceResources, job: Job) -> Tuple[str, str]:
         if job.status == JobStatus.CANCELLED:
             raise JobAlreadyCancelled("cancelled")
 
+        if device.settings.scheduler == "dispatcher":
+            from .dispatcher import mark_executed
+
+            job = mark_executed(device, job_id, results_file=results_file)
+            return job.job_id, results_file
+
         postproc_queue = device.queues.postprocessing
         job = update_job_stage(jobs_store, job_id=job_id, stage=Stage.PST_PROC_Q)
         postproc_queue.enqueue(
@@ -351,9 +362,12 @@ def postprocessing_success_callback(
         _rq_connection: the redis connection
         job_id: the result of the postprocessing, the job's ID
     """
-    device: DeviceResources = rq_job.device_resources
-    jobs_store = device.jobs_store
+    mark_postprocessed(rq_job.device_resources, job_id)
 
+
+def mark_postprocessed(device: DeviceResources, job_id: str) -> None:
+    """Moves the postprocessed job to its final stage, and tells MSS"""
+    jobs_store = device.jobs_store
     job = update_job_stage(jobs_store, job_id=job_id, stage=Stage.FINAL_Q)
     if job.status == JobStatus.SUCCESSFUL:
         job = update_job_stage(jobs_store, job_id=job_id, stage=Stage.FINAL_W)
@@ -382,13 +396,14 @@ def postprocessing_failure_callback(
         value: the value passed to the callback from the handler
         traceback: the error traceback
     """
-    if isinstance(value, PostProcessingError):
-        logging.error(value.exp)
-        _fail_job(
-            rq_job.device_resources,
-            job_id=value.job_id,
-            reason="error during post processing",
-        )
+    fail_postprocessing(rq_job.device_resources, value)
+
+
+def fail_postprocessing(device: DeviceResources, exp: Exception) -> None:
+    """Fails the job whose postprocessing raised the error, if it says which"""
+    if isinstance(exp, PostProcessingError):
+        logging.error(exp.exp)
+        _fail_job(device, job_id=exp.job_id, reason="error during post processing")
 
 
 def recalibrate(
@@ -407,7 +422,12 @@ def recalibrate(
         the rq.job.Job that is constructed and enqueued to schedule next recalibration, or None if interval was not set
     """
     next_job = _schedule_next_recalibration(device, interval=interval)
+    recalibrate_now(device)
+    return next_job
 
+
+def recalibrate_now(device: DeviceResources) -> None:
+    """Recalibrates the device, and sends MSS the calibration it found"""
     # ensure recalibration runs without interference
     with device.executor_lock:
         executor = device.executor
@@ -426,8 +446,6 @@ def recalibrate(
             logging.info(
                 f"calibration data updated in MSS with response: {response["status"]}"
             )
-
-    return next_job
 
 
 def _is_job_shorter(storage_id: StorageID, duration: float) -> bool:

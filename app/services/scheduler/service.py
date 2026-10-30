@@ -55,6 +55,7 @@ from ..booking import (
     get_user,
 )
 from ..devices import get_device_calibration_info
+from . import dispatcher
 from .dtos import RecalibrationInfo
 from .queues import QueuePool
 from .resources import DeviceResources
@@ -104,6 +105,9 @@ def submit_booking(
         config=BookingsConfig.from_settings(device.settings),
         now=device.settings.get_utc_now(),
     )
+    # the dispatcher compares the booking's start and end with now
+    if _is_dispatched(device):
+        return booking
 
     # at the start_utc, reset the idle time tracker
     device.queues.general.enqueue_at(
@@ -173,7 +177,8 @@ def cancel_booking(
             f"the booking of id {booking_id} is already complete"
         )
 
-    _cancel_booking_from_queues(device.queues, booking=booking)
+    if not _is_dispatched(device):
+        _cancel_booking_from_queues(device.queues, booking=booking)
     delete_bookings(device.bookings_db, Booking.id == booking_id)
 
 
@@ -242,6 +247,12 @@ def submit_job_file(
         stage=Stage.PRE_PROC_Q,
     )
 
+    if _is_dispatched(device):
+        dispatcher.enqueue_job(
+            device, job, is_booking_excluded=should_force_normal_queue
+        )
+        return job
+
     jobs_store.insert(job)
 
     active_booking = get_active_booking(db_engine=device.bookings_db)
@@ -289,7 +300,8 @@ def cancel_job(
     if job.status.is_terminal():
         raise JobAlreadyCompleteError(f"job {job_id} is already {job.status.value}")
 
-    _cancel_job_in_queues(device.queues, job)
+    if not _is_dispatched(device):
+        _cancel_job_in_queues(device.queues, job)
     if reason is None:
         reason = "Cancelled by a user"
 
@@ -420,7 +432,8 @@ def delete_user_profile(device: DeviceResources, user_id: str) -> None:
         with suppress(
             rq_errors.InvalidJobOperation, rq_errors.InvalidJobOperationError
         ):
-            _cancel_job_in_queues(device.queues, job)
+            if not _is_dispatched(device):
+                _cancel_job_in_queues(device.queues, job)
         job_store.update(
             job.job_id,
             {
@@ -437,6 +450,8 @@ def delete_user_profile(device: DeviceResources, user_id: str) -> None:
     booking_ids = []
     for booking in user_incomplete_bookings:
         booking_ids.append(booking.id)
+        if _is_dispatched(device):
+            continue
         _cancel_booking_from_queues(device.queues, booking=booking)
         if booking.is_active_at(device.settings.get_utc_now()):
             # its end, now cancelled, would have released the waitlist
@@ -471,11 +486,16 @@ def init_recalibration(
     Raises:
         IsOfflineError: the scheduler is offline
     """
-    # just make sure no other recalibration is running or scheduled before starting again
-    stop_recalibration(device, ignore_errors=True)
-
     if interval is None:
         interval = device.settings.default_recalibration_interval
+    if _is_dispatched(device):
+        dispatcher.schedule_recalibration(
+            device, due_at=start_timestamp, interval=interval
+        )
+        return {"status": "success"}
+
+    # just make sure no other recalibration is running or scheduled before starting again
+    stop_recalibration(device, ignore_errors=True)
 
     if isinstance(start_timestamp, datetime):
         job = device.queues.recalibration.enqueue_at(
@@ -509,6 +529,9 @@ def stop_recalibration(device: DeviceResources, ignore_errors: bool = False):
         JobAlreadyCancelled: if the job is already cancelled
         IsOfflineError: the scheduler is offline
     """
+    if _is_dispatched(device):
+        return dispatcher.stop_recalibration(device)
+
     pending_job_ids = device.queues.recalibration.get_job_ids()
     pending_job_ids += device.queues.recalibration.scheduled_job_registry.get_job_ids()
 
@@ -533,7 +556,14 @@ def get_recalibration_info(device: DeviceResources) -> RecalibrationInfo:
     Raises:
         RuntimeError: multiple current jobs found: [...]
     """
+    if _is_dispatched(device):
+        return dispatcher.get_recalibration_info(device)
     return RecalibrationInfo.from_queue(device.queues.recalibration)
+
+
+def _is_dispatched(device: DeviceResources) -> bool:
+    """Whether the dispatcher, not RQ, runs the device's jobs"""
+    return device.settings.scheduler == "dispatcher"
 
 
 def _cancel_job_in_queues(queues: QueuePool, job: Job, ignore_errors: bool = False):
