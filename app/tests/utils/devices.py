@@ -30,7 +30,6 @@ def load_test_devices(
     """
     import settings
 
-    monkeypatch.setattr(settings, "_DEFAULT_DEVICE", settings._DEFAULT_DEVICE)
     monkeypatch.setattr(settings, "_DEVICES", settings._DEVICES)
     # the shell's variables would take precedence over every device's file
     monkeypatch.delenv("BCC_DEFAULT_PREFIX", raising=False)

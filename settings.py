@@ -37,8 +37,8 @@ def load_devices(env_files: List[Path]) -> List[str]:
     Returns:
         the names of the devices, i.e. their default_prefix
     """
-    global _DEFAULT_DEVICE, _DEVICES
-    _DEFAULT_DEVICE, _DEVICES = _read_devices(env_files)
+    global _DEVICES
+    _DEVICES = _read_devices(env_files)
     return list(_DEVICES)
 
 
@@ -49,18 +49,16 @@ def get_device_names() -> List[str]:
 
 def get_device_settings(name: Optional[str] = None) -> DeviceSettings:
     """Gets the settings of the named device, or else of the default one"""
-    return _DEVICES[name] if name else _DEFAULT_DEVICE
+    return _DEVICES[name] if name else next(iter(_DEVICES.values()))
 
 
-def _read_devices(
-    env_files: List[Path],
-) -> tuple[DeviceSettings, dict[str, DeviceSettings]]:
-    """Reads the devices of the env files: the first, the default one, and all by name"""
+def _read_devices(env_files: List[Path]) -> dict[str, DeviceSettings]:
+    """Reads the devices of the env files by name, in their order, the default first"""
     devices = [read_device_settings(Path(env_file).resolve()) for env_file in env_files]
-    return devices[0], {device.default_prefix: device for device in devices}
+    return {device.default_prefix: device for device in devices}
 
 
 # BCC_ENV_FILE may name several, separated as in PATH, one per device
-_DEFAULT_DEVICE, _DEVICES = _read_devices(
+_DEVICES = _read_devices(
     [_ROOT_PATH / v for v in os.environ.get("BCC_ENV_FILE", ".env").split(os.pathsep)]
 )
