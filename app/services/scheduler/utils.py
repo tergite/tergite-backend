@@ -127,20 +127,20 @@ def move_file(file: Path, new_folder: Path, ext: str = "") -> Path:
     return file.replace(new_file_path)
 
 
-def update_job_stage(jobs_db: JobsStore, job_id: str, stage: Stage) -> Job:
+def update_job_stage(jobs_store: JobsStore, job_id: str, stage: Stage) -> Job:
     """Updates the job's stage in the database
 
     This also updates the timestamps and the status of the job
 
     Args:
-        jobs_db: the device's jobs
+        jobs_store: the device's jobs
         job_id: the unique identifier of jobs
         stage: the stage to set on the job
 
     Returns:
         the updated job
     """
-    job = jobs_db.get_one(job_id)
+    job = jobs_store.get_one(job_id)
 
     current_timestamp = utc_now_str()
     timestamps = _get_next_timestamps(
@@ -148,7 +148,7 @@ def update_job_stage(jobs_db: JobsStore, job_id: str, stage: Stage) -> Job:
     )
     status = _get_next_status(job, next_stage=stage)
 
-    return jobs_db.update(
+    return jobs_store.update(
         job_id,
         {
             "status": status,
@@ -159,13 +159,13 @@ def update_job_stage(jobs_db: JobsStore, job_id: str, stage: Stage) -> Job:
     )
 
 
-def log_job_failure(
-    jobs_db: JobsStore, job_id: str, reason: str, job_supervisor_log: Path
+def mark_job_failed(
+    jobs_store: JobsStore, job_id: str, reason: str, job_supervisor_log: Path
 ) -> Job:
-    """Logs the job in the db as failed
+    """Marks the job failed for the reason, and logs it to the job supervisor log
 
     Args:
-        jobs_db: the device's jobs
+        jobs_store: the device's jobs
         job_id: the unique identifier of the job
         reason: the failure reason
         job_supervisor_log: the device's job supervisor log file
@@ -173,7 +173,7 @@ def log_job_failure(
     Returns:
         the updated job with its failure status
     """
-    job = jobs_db.update(
+    job = jobs_store.update(
         job_id,
         {
             "status": JobStatus.FAILED,
@@ -191,7 +191,7 @@ def log_job_failure(
 
 
 def update_job_results(
-    jobs_db: JobsStore,
+    jobs_store: JobsStore,
     job_id: str,
     data: List[List[str]],
     machine_root_url: str,
@@ -199,7 +199,7 @@ def update_job_results(
     """Updates the results of the job and returns the updated job
 
     Args:
-        jobs_db: the device's jobs
+        jobs_store: the device's jobs
         job_id: the unique identifier of the job
         data: the discriminated results from the quantum job
         machine_root_url: the URL this device's API is reached at
@@ -207,7 +207,7 @@ def update_job_results(
     Returns:
         the updated job
     """
-    return jobs_db.update(
+    return jobs_store.update(
         job_id,
         {
             "status": JobStatus.SUCCESSFUL,

@@ -38,7 +38,7 @@ from ..devices import is_offline
 from .dtos import RecalibrationInfo, RecalibrationStatus
 from .resources import DeviceResources
 from .store import JobRow, RecalibrationRow
-from .utils import log_job_failure, update_job_in_mss, update_job_stage
+from .utils import mark_job_failed, update_job_in_mss, update_job_stage
 from .wakeups import WakeUpListener, WorkerKind, wake_workers
 
 # the longest wait, in seconds, of a worker with nothing to claim: the delay of a lost
@@ -591,7 +591,7 @@ def _record_recalibration_end(
 
 
 def _fail_job(device: DeviceResources, job_id: str, reason: str) -> None:
-    job = log_job_failure(
+    job = mark_job_failed(
         device.jobs_store,
         job_id=job_id,
         reason=reason,

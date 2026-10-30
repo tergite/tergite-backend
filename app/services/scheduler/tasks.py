@@ -46,7 +46,7 @@ from .resources import DeviceResources
 from .utils import (
     apply_linear_discriminator,
     decompress_qobj,
-    log_job_failure,
+    mark_job_failed,
     move_file,
     update_job_in_mss,
     update_job_results,
@@ -228,7 +228,7 @@ def _send_calibration_to_mss(
 
 def _fail_job(device: DeviceResources, job_id: str, reason: str) -> Job:
     """Marks the job as failed for the given reason, and tells MSS"""
-    job = log_job_failure(
+    job = mark_job_failed(
         device.jobs_store,
         job_id=job_id,
         reason=reason,
