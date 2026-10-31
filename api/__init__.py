@@ -66,6 +66,12 @@ async def root():
     return {"message": "Welcome to BCC machine"}
 
 
+@app.get("/health")
+async def check_health() -> dict[str, str]:
+    """Answers that the API runs, for bcc start and load balancers, without MSS's signature"""
+    return {"status": "ok"}
+
+
 app.include_router(logfiles.router)
 app.include_router(devices.router)
 app.include_router(users.router)

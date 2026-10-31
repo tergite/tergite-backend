@@ -441,6 +441,9 @@ stage under way without waiting out its timeout.
   (`DEADLINE_CHECK_SECONDS` in `main.py`), and kills, with `SIGKILL`, as its `SIGTERM` handler
   could not run, a worker past it; then it stops the rest, and the service manager restarts the
   backend. The killed worker's job is then failed as overdue.
+- **A stuck API**: a hung event loop leaves the process alive, so `bcc start` also asks the
+  API's `/health` on the loopback at each check, within 5 s, and kills it after 3 misses in a
+  row, counting misses only once it has answered, as starting its devices takes a while.
 - **A job that waits too long to execute**: every pass also fails the device's jobs in
   `EXEC_Q` last written longer ago than `BCC_MAX_EXECUTION_QUEUE_TIME`, a day by default, 0 for
   no limit (`fail_jobs_queued_too_long`), with the reason that they waited that long, and tells
@@ -494,6 +497,7 @@ the first device.
 | Path | Auth | Notes |
 | --- | --- | --- |
 | `GET /` | MSS | a greeting, for MSS to check the signature |
+| `GET /health` | none | `{"status": "ok"}` while the API runs, for `bcc start` and load balancers |
 | `/static-properties`, `/dynamic-properties` | MSS | the device's properties and calibration, as the heavy worker saved them |
 | `POST /token` | MSS | a job token, encrypted with MSS's public key; creates the user if new |
 | `/me` | MSS | `GET` the user's profile; `DELETE` it, cancelling their jobs and bookings |
@@ -961,8 +965,8 @@ Worth knowing before you are surprised by them:
 - **MSS learns late of what happened while it was unreachable.** The kept events reach it once
   it is back, at a worker's next pass (§8.4); until then it shows the jobs' and the device's
   last state it had. A switch made meanwhile reaches it only when switched again.
-- **Some stuck processes are not noticed.** A worker's deadline is checked only by `bcc start`,
-  so a worker run alone with `bcc worker` is not, nor is the API (§6.5).
+- **A worker run alone is not watched.** Only `bcc start` checks the workers' deadlines and the
+  API's health, so a worker run with `bcc worker` is not (§6.5).
 - **Nothing ages a waiting job.** Outside bookings, a job longer than the time to the next
   booking waits while shorter ones overtake it, for as long as the bookings leave it no room;
   `BCC_MAX_EXECUTION_QUEUE_TIME` fails it after a day, rather than run it sooner (§6.3).

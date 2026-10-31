@@ -64,9 +64,10 @@ import multiprocessing
 import os
 import signal
 import sys
+import urllib.request
 from multiprocessing.connection import wait
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import uvicorn
 
@@ -74,8 +75,11 @@ if TYPE_CHECKING:
     from services.scheduler import WorkerDeadline
 
 COMMANDS = ("start", "serve", "worker")
-# how often bcc start checks that no worker is past its deadline
+# how often bcc start checks that no worker is past its deadline, and that the API answers
 DEADLINE_CHECK_SECONDS = 5.0
+# how long the API has to answer each /health, and how many in a row it may miss
+HEALTH_CHECK_TIMEOUT_SECONDS = 5.0
+HEALTH_CHECK_MAX_MISSES = 3
 
 
 def main() -> None:
@@ -119,7 +123,12 @@ def _start(
 
     # after the children start, which keep the handlers uvicorn and the workers install
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-    stopped = _wait_for_first_stop(processes, deadlines=worker_deadlines)
+    api_health = ApiHealth(
+        api_process, url=f"http://{_get_loopback_host(host)}:{port}/health"
+    )
+    stopped = _wait_for_first_stop(
+        processes, deadlines=worker_deadlines, api_health=api_health
+    )
     sys.exit(
         f"bcc: the {stopped.name} process stopped with exit code {stopped.exitcode}"
     )
@@ -165,10 +174,11 @@ def _start_processes(
 def _wait_for_first_stop(
     processes: list[multiprocessing.Process],
     deadlines: dict[multiprocessing.Process, "WorkerDeadline"],
+    api_health: Optional["ApiHealth"] = None,
 ) -> multiprocessing.Process:
-    """Waits for any of the processes to stop, or a worker to pass its deadline, which it
-    kills, as one stuck where no signal handler runs would not stop otherwise; then stops
-    the rest
+    """Waits for any of the processes to stop, or a worker to pass its deadline, or the API to
+    stop answering its health check, which it kills, as one stuck where no signal handler runs
+    would not stop otherwise; then stops the rest
 
     Returns:
         the first that stopped, or the one killed
@@ -193,6 +203,16 @@ def _wait_for_first_stop(
                     process.kill()
                     process.join()
                     return process
+            if api_health is not None and api_health.is_unresponsive():
+                print(
+                    f"bcc: the {api_health.process.name} process missed"
+                    f" {HEALTH_CHECK_MAX_MISSES} health checks in a row, so stuck;"
+                    " killing it",
+                    flush=True,
+                )
+                api_health.process.kill()
+                api_health.process.join()
+                return api_health.process
     finally:
         for process in processes:
             process.terminate()
@@ -370,6 +390,47 @@ def _with_default_command(arguments: list[str]) -> list[str]:
     if {"-h", "--help", *COMMANDS}.intersection(arguments):
         return arguments
     return ["start", *arguments]
+
+
+class ApiHealth:
+    """Whether the API still answers its /health, which bcc start asks from outside it, as a
+    hung event loop leaves its process alive"""
+
+    def __init__(
+        self,
+        process: multiprocessing.Process,
+        url: str,
+        timeout: float = HEALTH_CHECK_TIMEOUT_SECONDS,
+    ):
+        self.process = process
+        self._url = url
+        self._timeout = timeout
+        self._misses = 0
+        # misses count only once it has answered, as starting a device takes a while
+        self._has_answered = False
+
+    def is_unresponsive(self) -> bool:
+        """Asks /health once, and checks whether the API has missed too many in a row"""
+        try:
+            with urllib.request.urlopen(self._url, timeout=self._timeout) as response:
+                is_answered = response.status == 200
+        except OSError:
+            is_answered = False
+        if is_answered:
+            self._has_answered = True
+            self._misses = 0
+        elif self._has_answered:
+            self._misses += 1
+        return self._misses >= HEALTH_CHECK_MAX_MISSES
+
+
+def _get_loopback_host(host: str) -> str:
+    """Gets the host to ask the API on, which listens on the loopback too when on any address"""
+    if host in ("", "0.0.0.0"):
+        return "127.0.0.1"
+    if host == "::":
+        return "[::1]"
+    return f"[{host}]" if ":" in host else host
 
 
 if __name__ == "__main__":

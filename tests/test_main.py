@@ -10,14 +10,28 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests for the bcc command's arguments and the processes bcc start runs"""
+import http.server
 import multiprocessing
 import signal
+import socket
 import time
 
 import pytest
 
 import main
 from services.scheduler import WorkerDeadline
+
+
+@pytest.fixture
+def started_processes():
+    """The processes a test starts, killed after it if alive, as some ignore SIGTERM, which
+    multiprocessing would otherwise wait on as the tests end"""
+    processes = []
+    yield processes
+    for process in processes:
+        if process.is_alive():
+            process.kill()
+            process.join()
 
 
 def test_worker_takes_its_kind_and_each_env_file():
@@ -66,13 +80,16 @@ def test_each_device_gets_a_heavy_worker_and_shares_the_light_ones():
 
 
 @pytest.mark.timeout(60)
-def test_a_worker_past_its_deadline_is_killed_and_stops_the_rest():
+def test_a_worker_past_its_deadline_is_killed_and_stops_the_rest(started_processes):
     """A worker stuck where no signal handler runs is killed, as SIGTERM would not stop it"""
     stuck_deadline = WorkerDeadline()
     stuck = multiprocessing.Process(
-        target=_get_stuck, args=(stuck_deadline,), name="heavy worker of Alpha"
+        target=_get_stuck,
+        args=(stuck_deadline,),
+        name="heavy worker of Alpha",
     )
     idle = multiprocessing.Process(target=_wait_forever, name="light worker 1")
+    started_processes.extend([stuck, idle])
     for process in (stuck, idle):
         process.start()
 
@@ -86,18 +103,46 @@ def test_a_worker_past_its_deadline_is_killed_and_stops_the_rest():
 
 
 @pytest.mark.timeout(60)
-def test_a_worker_stuck_before_its_first_pass_is_killed_at_its_start_up_deadline():
+def test_a_worker_stuck_before_its_first_pass_is_killed_at_its_start_up_deadline(
+    started_processes,
+):
     """As connecting to the clusters may hang, before the worker sets a deadline itself"""
     deadline = WorkerDeadline()
     starting = multiprocessing.Process(
         target=_wait_forever, name="heavy worker of Alpha"
     )
 
+    started_processes.append(starting)
     main._start_processes({starting: deadline}, start_seconds=0.5)
     stopped = main._wait_for_first_stop([starting], deadlines={starting: deadline})
 
     assert stopped is starting
     assert starting.exitcode == -signal.SIGKILL
+
+
+@pytest.mark.timeout(60)
+def test_an_api_that_stops_answering_its_health_check_is_killed(
+    monkeypatch, started_processes
+):
+    """As a hung event loop leaves the process alive, which nothing else would notice"""
+    monkeypatch.setattr(main, "DEADLINE_CHECK_SECONDS", 0.2)
+    port = _get_free_port()
+    api = multiprocessing.Process(
+        target=_answer_once_then_hang, args=(port,), name="api"
+    )
+    started_processes.append(api)
+    api.start()
+
+    stopped = main._wait_for_first_stop(
+        [api],
+        deadlines={},
+        api_health=main.ApiHealth(
+            api, url=f"http://127.0.0.1:{port}/health", timeout=0.2
+        ),
+    )
+
+    assert stopped is api
+    assert api.exitcode == -signal.SIGKILL
 
 
 def _get_stuck(deadline: WorkerDeadline) -> None:
@@ -110,3 +155,26 @@ def _get_stuck(deadline: WorkerDeadline) -> None:
 def _wait_forever() -> None:
     while True:
         time.sleep(1)
+
+
+def _get_free_port() -> int:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def _answer_once_then_hang(port: int) -> None:
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        answered = False
+
+        def do_GET(self) -> None:
+            if Handler.answered:
+                time.sleep(3600)
+            Handler.answered = True
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'{"status": "ok"}')
+
+    http.server.HTTPServer(("127.0.0.1", port), Handler).serve_forever()

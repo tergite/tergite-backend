@@ -121,6 +121,15 @@ def test_root(client):
         assert response.json() == {"message": "Welcome to BCC machine"}
 
 
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_health_answers_without_mss_headers(client):
+    """For bcc start and load balancers, which have no MSS signature"""
+    with client as client:
+        response = client.get("/health")
+
+    assert (response.status_code, response.json()) == (200, {"status": "ok"})
+
+
 @pytest.mark.parametrize("client,headers", _ROOT_PARAMS)
 def test_root_invalid_headers(client, headers):
     """GET / fails with 401 unauthorized when accessed with invalid MSS headers"""

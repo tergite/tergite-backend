@@ -9,6 +9,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- Added `GET /health`, unauthenticated, which `bcc start` asks every 5 s, killing an API that misses 3 in a row, as a
+  hung event loop left it running but deaf
 - Added `BCC_MAX_WORKER_START_TIME`, 10 minutes by default and 0 for none: `bcc start` kills a worker that has not
   finished starting by then, e.g. stuck connecting to the clusters, which went unnoticed
 - Added `<seed>.tuner.json` beside the calibration seed file, tergite-tuner's results of the last recalibration, which
