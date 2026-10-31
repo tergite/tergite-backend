@@ -54,8 +54,12 @@ def get_current_timestamp_str() -> str:
 
 @pytest.fixture
 def fake_clock(mocker) -> Generator[time_machine.Traveller, Any, None]:
-    """A clock that jumps ahead instead of waiting: the test jobs shift it by
-    their duration, and wait_on_worker moves it on to the next change in the bookings"""
-    with time_machine.travel(datetime.now(timezone.utc), tick=True) as clock:
+    """A clock that moves only when the test jobs shift it by their duration and
+    wait_on_worker moves it on to the next change in the bookings
+
+    It does not tick, so how fast the machine works through the jobs takes no time from the
+    bookings, and a test's outcome is the same on a slow machine as on a fast one.
+    """
+    with time_machine.travel(datetime.now(timezone.utc), tick=False) as clock:
         mocker.patch.object(durations, "wait", side_effect=clock.shift)
         yield clock

@@ -165,6 +165,8 @@ def test_job_token_for_another_job_is_refused(client):
 
 
 @pytest.mark.simulated
+# the 2-qubit simulation alone takes about a minute on a fast machine, beside other workers more
+@pytest.mark.timeout(600)
 @pytest.mark.parametrize(
     "client, worker, job, expected_counts, device",
     ALL_UPLOAD_JOB_PARAMS,
@@ -250,13 +252,14 @@ def test_submit_jobs_no_booking(
             post_processing = timestamps.post_processing
             final = timestamps.final
 
-            assert pre_processing.start_timestamp < pre_processing.finish_timestamp
+            # on the fake clock, a stage that takes no simulated time ends as it starts
+            assert pre_processing.start_timestamp <= pre_processing.finish_timestamp
             assert pre_processing.finish_timestamp <= execution.start_timestamp
-            assert execution.start_timestamp < execution.finish_timestamp
+            assert execution.start_timestamp <= execution.finish_timestamp
             assert execution.finish_timestamp <= post_processing.start_timestamp
-            assert post_processing.start_timestamp < post_processing.finish_timestamp
+            assert post_processing.start_timestamp <= post_processing.finish_timestamp
             assert post_processing.finish_timestamp <= final.start_timestamp
-            assert final.start_timestamp < final.finish_timestamp
+            assert final.start_timestamp <= final.finish_timestamp
 
         # no connection per job: the app's and the worker's are made at their start-up,
         # MSS's lazily on the first send
