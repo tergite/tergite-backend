@@ -7,10 +7,18 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.11.0-rc.3] - 2026-10-31
+
+This is part of the tergite release v2026.11.0-rc.3.
+
 ### Changed
 
 - Changed a tag's GitHub release notes, which only said "See CHANGELOG.md.", to its CHANGELOG.md section; a tag
   without one now fails the release workflow before it builds anything
+
+### Contributors
+
+- Martin Ahindura
 
 ## [2026.11.0-rc.2] - 2026-10-31
 
