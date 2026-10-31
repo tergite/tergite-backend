@@ -38,8 +38,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 - Changed the expired MSS nonces to be deleted by the workers as they look for work, instead of by every request
   from MSS
-- Changed the quantify extra's tergite-tuner to 2026.10.0rc2 or a later 2026.10 release, which keeps its sessions
-  in memory instead of Redis; pydantic-settings 2.9, which it pins, is allowed again
+- Changed the quantify extra's tergite-tuner to 2026.10.0rc3 or a later 2026.10 release, which keeps its sessions
+  in memory instead of Redis
 - Changed `GET /jobs` to list 100 jobs unless `limit` asks for more, up to 1000, where it listed all of them; page
   through with `skip`
 - Changed the job supervisor log to plain lines, as Python's logging writes them, without the ANSI colour codes

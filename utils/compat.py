@@ -28,7 +28,7 @@ try:
     from quantify_scheduler.schedules import CompiledSchedule
     from tergite_tuner import CalibrationResults
     from tergite_tuner.config.types import ClusterConfig
-    from tergite_tuner.export import _CouplerInRedis as CouplerResults
+    from tergite_tuner.export import CouplerResults
     from tergite_tuner.utils.types.enums import MeasurementMode, SPIMode
 except ImportError as e:
     if HAS_QUANTIFY:

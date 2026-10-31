@@ -2200,31 +2200,13 @@ wheels = [
 
 [[package]]
 name = "pydantic-settings"
-version = "2.9.1"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "platform_machine != 'ARM64' or sys_platform != 'win32'",
-]
-dependencies = [
-    { name = "pydantic", marker = "extra == 'extra-15-tergite-backend-quantify'" },
-    { name = "python-dotenv", marker = "extra == 'extra-15-tergite-backend-quantify'" },
-    { name = "typing-inspection", marker = "extra == 'extra-15-tergite-backend-quantify'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/67/1d/42628a2c33e93f8e9acbde0d5d735fa0850f3e6a2f8cb1eb6c40b9a732ac/pydantic_settings-2.9.1.tar.gz", hash = "sha256:c509bf79d27563add44e8446233359004ed85066cd096d8b510f715e6ef5d268", size = 163234, upload-time = "2025-04-18T16:44:48.265Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/b6/5f/d6d641b490fd3ec2c4c13b4244d68deea3a1b970a97be64f34fb5504ff72/pydantic_settings-2.9.1-py3-none-any.whl", hash = "sha256:59b4f431b1defb26fe620c71a7d3968a710d719f5f4cdbbdb7926edeb770f6ef", size = 44356, upload-time = "2025-04-18T16:44:46.617Z" },
-]
-
-[[package]]
-name = "pydantic-settings"
 version = "2.16.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pydantic", marker = "extra == 'extra-15-tergite-backend-qiskit' or extra != 'extra-15-tergite-backend-quantify'" },
-    { name = "python-dotenv", marker = "extra == 'extra-15-tergite-backend-qiskit' or extra != 'extra-15-tergite-backend-quantify'" },
-    { name = "typing-extensions", marker = "extra == 'extra-15-tergite-backend-qiskit' or extra != 'extra-15-tergite-backend-quantify'" },
-    { name = "typing-inspection", marker = "extra == 'extra-15-tergite-backend-qiskit' or extra != 'extra-15-tergite-backend-quantify'" },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "typing-extensions" },
+    { name = "typing-inspection" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d0/31/21d21e0e38a8f5f7a7f0cde22820117b6d17d6bc36f348129527f915d7f4/pydantic_settings-2.16.2.tar.gz", hash = "sha256:3dc08ffabed2bbd5dc2dd55ead7b78b4e4c5cd776aecd04310db5f1224caaf46", size = 309225, upload-time = "2026-10-28T11:14:28.066Z" }
 wheels = [
@@ -3283,8 +3265,7 @@ dependencies = [
     { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-15-tergite-backend-qiskit' or extra == 'extra-15-tergite-backend-quantify'" },
     { name = "pandas" },
     { name = "pydantic" },
-    { name = "pydantic-settings", version = "2.9.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-15-tergite-backend-quantify'" },
-    { name = "pydantic-settings", version = "2.16.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-15-tergite-backend-qiskit' or extra != 'extra-15-tergite-backend-quantify'" },
+    { name = "pydantic-settings" },
     { name = "pyjwt" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
@@ -3348,7 +3329,7 @@ requires-dist = [
     { name = "numpy", marker = "extra == 'quantify'", specifier = ">=2.0" },
     { name = "pandas", specifier = "~=2.3.3" },
     { name = "pydantic", specifier = "~=2.11.3" },
-    { name = "pydantic-settings", specifier = ">=2.9.1,<3" },
+    { name = "pydantic-settings", specifier = "~=2.16.2" },
     { name = "pyjwt", specifier = "~=2.9.0" },
     { name = "python-dotenv", specifier = "~=1.2.2" },
     { name = "pyyaml", specifier = "~=6.0.2" },
@@ -3361,7 +3342,7 @@ requires-dist = [
     { name = "sqlmodel", specifier = "~=0.0.24" },
     { name = "starlette", specifier = "~=0.48.0" },
     { name = "tabulate", specifier = ">=0.9.0" },
-    { name = "tergite-tuner", marker = "extra == 'quantify'", specifier = ">=2026.10.0rc2,<2026.11.0" },
+    { name = "tergite-tuner", marker = "extra == 'quantify'", specifier = ">=2026.10.0rc3,<2026.11.0" },
     { name = "toml", specifier = ">=0.10.2" },
     { name = "uvicorn", specifier = "~=0.46.0" },
     { name = "websockets", specifier = "~=16.0" },
@@ -3390,7 +3371,7 @@ dev = [
 
 [[package]]
 name = "tergite-tuner"
-version = "2026.10.0rc2"
+version = "2026.10.0rc3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cf-xarray" },
@@ -3400,7 +3381,7 @@ dependencies = [
     { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" } },
     { name = "pandas" },
     { name = "pydantic" },
-    { name = "pydantic-settings", version = "2.9.1", source = { registry = "https://pypi.org/simple" } },
+    { name = "pydantic-settings" },
     { name = "qblox-instruments" },
     { name = "qcodes" },
     { name = "quantify-scheduler" },
@@ -3410,9 +3391,9 @@ dependencies = [
     { name = "tomlkit" },
     { name = "xarray" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9e/9e/4129e57bd7e6175ad6cada9a82645fbae7ba2849cf11acf9a2a0dd84f566/tergite_tuner-2026.10.0rc2.tar.gz", hash = "sha256:0ccc49a474df59ed89c14969e2bc2b45f68411561cf813e1a39cc431fb541eaa", size = 358453, upload-time = "2026-10-31T00:04:49.778Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e2/fa/208e2569af9ea3bb4e576ffb7ae08dd81eb13d611a571a87a70278c61556/tergite_tuner-2026.10.0rc3.tar.gz", hash = "sha256:e206654e607f65c82b466cc01f3d02097e07751c0926a4ed755ddd7d2abe7640", size = 358376, upload-time = "2026-10-31T02:49:51.94Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/01/22/ef941b21f14c17e2cd47b5c96c5237051fbabd310ed1229713062b7b6006/tergite_tuner-2026.10.0rc2-py3-none-any.whl", hash = "sha256:b75a11b8205f0599611061469e9f6c4bcc17142388a479c001d961520512a829", size = 210198, upload-time = "2026-10-31T00:04:48.537Z" },
+    { url = "https://files.pythonhosted.org/packages/1b/49/f396746ae3dbf0a90b883350fe88948bc02726d45e6ec326d566586d403c/tergite_tuner-2026.10.0rc3-py3-none-any.whl", hash = "sha256:38edd8a9f78d619d966e220143dec2a4c7084486e61f169d5cf36fd95244dfc5", size = 210183, upload-time = "2026-10-31T02:49:50.59Z" },
 ]
 
 [[package]]
