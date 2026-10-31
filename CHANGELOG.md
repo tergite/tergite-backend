@@ -7,6 +7,19 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.11.0-rc.2] - 2026-10-31
+
+This is part of the tergite release v2026.11.0-rc.2.
+
+### Changed
+
+- Gave every public function and class a Google-style docstring, saying what it does for the caller, its arguments,
+  what it returns and what it raises
+
+### Contributors
+
+- Martin Ahindura
+
 ## [2026.11.0-rc.1] - 2026-10-31
 
 This is part of the tergite release v2026.11.0-rc.1.
