@@ -91,13 +91,31 @@ class NewBookingInfo(BaseModel):
     @field_validator("start_utc", mode="after")
     @classmethod
     def validate_start_utc(cls, v: datetime):
-        """Puts the start in UTC"""
+        """Puts the start in UTC
+
+        Args:
+            v: the start
+
+        Returns:
+            the start in UTC
+        """
         return to_utc(v)
 
     @field_validator("end_utc", mode="after")
     @classmethod
     def validate_end_utc(cls, v: datetime, info: ValidationInfo):
-        """Puts the end in UTC, refusing one before the start"""
+        """Puts the end in UTC, refusing one before the start
+
+        Args:
+            v: the end
+            info: the fields validated so far, the start among them
+
+        Returns:
+            the end in UTC
+
+        Raises:
+            ValueError: end_utc ({end}) comes earlier than start_utc ({start})
+        """
         v = to_utc(v)
         start_utc = info.data.get("start_utc")
         if start_utc and v < start_utc:
@@ -134,13 +152,31 @@ class Booking(SQLModel, table=True):
     @field_validator("start_utc", mode="after")
     @classmethod
     def validate_start_utc(cls, v: datetime):
-        """Puts the start in UTC"""
+        """Puts the start in UTC
+
+        Args:
+            v: the start
+
+        Returns:
+            the start in UTC
+        """
         return to_utc(v)
 
     @field_validator("end_utc", mode="after")
     @classmethod
     def validate_end_utc(cls, v: datetime, info: ValidationInfo):
-        """Puts the end in UTC, refusing one before the start"""
+        """Puts the end in UTC, refusing one before the start
+
+        Args:
+            v: the end
+            info: the fields validated so far, the start among them
+
+        Returns:
+            the end in UTC
+
+        Raises:
+            ValueError: end_utc ({end}) comes earlier than start_utc ({start})
+        """
         v = to_utc(v)
         start_utc = info.data.get("start_utc")
         if start_utc and v < start_utc:
@@ -150,11 +186,25 @@ class Booking(SQLModel, table=True):
         return v
 
     def is_active_at(self, now: datetime) -> bool:
-        """Whether this booking must be running at the given time"""
+        """Whether this booking must be running at the given time
+
+        Args:
+            now: the time to check at, in UTC
+
+        Returns:
+            True if the time is within the booking, ends included
+        """
         return self.start_utc <= now <= self.end_utc
 
     def is_complete_at(self, now: datetime) -> bool:
-        """Whether this booking must have completed by the given time"""
+        """Whether this booking must have completed by the given time
+
+        Args:
+            now: the time to check at, in UTC
+
+        Returns:
+            True if the booking ended before the time
+        """
         return self.end_utc < now
 
 
@@ -175,7 +225,14 @@ class BookingsConfig(BaseModel):
 
     @classmethod
     def from_settings(cls, device_settings: DeviceSettings) -> Self:
-        """Creates this configuration from the device's settings"""
+        """Creates this configuration from the device's settings
+
+        Args:
+            device_settings: the settings of the device
+
+        Returns:
+            the bookings configuration of the device
+        """
         return cls(
             max_time_slot_length=device_settings.max_time_slot_length,
             min_time_slot_length=device_settings.min_time_slot_length,

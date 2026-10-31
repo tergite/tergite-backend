@@ -35,6 +35,8 @@ from .backends.two_qubit import get_two_qubit_backend, train_two_qubit_discrimin
 
 
 class QiskitDynamicsExecutor(QuantumExecutor):
+    """Runs jobs on a qiskit-dynamics pulse simulator instead of real hardware"""
+
     def __init__(
         self,
         backend_config: BackendConfig,
@@ -52,6 +54,7 @@ class QiskitDynamicsExecutor(QuantumExecutor):
         self.backend = backend
 
     def recalibrate(self, **kwargs) -> None:
+        """Does nothing, as a simulator needs no recalibration"""
         pass
 
     def run_native(
@@ -62,6 +65,16 @@ class QiskitDynamicsExecutor(QuantumExecutor):
         native_config: NativeQobjConfig,
         logger: ExperimentLogger,
     ) -> QExperimentResult:
+        """Simulates the native experiment
+
+        Args:
+            experiment: the native experiment to run
+            native_config: native config for the qobj
+            logger: the logger for the given experiment
+
+        Returns:
+            xarray.Dataset of results, one data variable per acquisition channel
+        """
         meas_return = _QiskitDynMeasReturn.from_native_qobj_config(native_config)
         shots = native_config.shots
         job = self.backend.run(
@@ -95,6 +108,7 @@ class QiskitDynamicsExecutor(QuantumExecutor):
         return native_experiments
 
     def close(self):
+        """Does nothing, as the simulator holds no resources to free"""
         pass
 
     @classmethod

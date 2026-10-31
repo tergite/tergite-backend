@@ -21,7 +21,14 @@ router = APIRouter()
 
 @router.get("/static-properties", dependencies=[Depends(get_verified_mss_user_id)])
 async def get_static_properties(device: DeviceResourcesDep):
-    """Retrieves the device properties that are not changing"""
+    """Retrieves the device properties that are not changing
+
+    Args:
+        device: what the device runs on
+
+    Returns:
+        the device's static properties
+    """
     return devices.get_device_info(
         device.bookings_db, device.executor_options.backend_name
     )
@@ -29,7 +36,14 @@ async def get_static_properties(device: DeviceResourcesDep):
 
 @router.get("/dynamic-properties", dependencies=[Depends(get_verified_mss_user_id)])
 async def get_dynamic_properties(device: DeviceResourcesDep):
-    """Retrieves the device properties that are changing with time i.e. calibration data"""
+    """Retrieves the device properties that are changing with time i.e. calibration data
+
+    Args:
+        device: what the device runs on
+
+    Returns:
+        the device's latest calibration data
+    """
     return devices.get_device_calibration_info(
         device.bookings_db, device.executor_options.backend_name
     )

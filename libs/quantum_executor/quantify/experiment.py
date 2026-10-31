@@ -74,6 +74,8 @@ PLACEHOLDER_CLOCK_FREQ_HZ = 0.0
 
 @dataclass(frozen=True)
 class QuantifyExperiment(NativeExperiment[Schedule]):
+    """An experiment compiled to a quantify schedule, for the Qblox clusters"""
+
     channel_registry: QuantifyChannelRegistry
 
     @classmethod

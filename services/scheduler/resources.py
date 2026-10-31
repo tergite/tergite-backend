@@ -49,7 +49,14 @@ class DeviceResources:
 
     @classmethod
     def from_settings(cls, device_settings: DeviceSettings) -> Self:
-        """Gets the resources of the device of these settings"""
+        """Gets the resources of the device of these settings
+
+        Args:
+            device_settings: the settings of the device
+
+        Returns:
+            the device's resources, without an executor
+        """
         private_key = get_private_key(
             device_settings.private_key_file, device_settings.private_key_password
         )
@@ -70,7 +77,11 @@ class DeviceResources:
 
 def close_device_resources(device: DeviceResources) -> None:
     """Closes the connections and the executor the device's resources hold open, logging
-    any MSS or executor failure"""
+    any MSS or executor failure
+
+    Args:
+        device: the device's resources to close
+    """
     try:
         device.mss_client.close()
     except Exception as exp:

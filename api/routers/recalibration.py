@@ -64,6 +64,12 @@ async def get_recalibration_info(device: DeviceResourcesDep) -> RecalibrationInf
     """Gets the current information about the recalibration
 
     Only MSS admin users can get recalibration info
+
+    Args:
+        device: what the device runs on
+
+    Returns:
+        the recalibration's schedule and status
     """
     return scheduler.get_recalibration_info(device)
 

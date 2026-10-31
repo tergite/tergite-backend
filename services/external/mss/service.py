@@ -73,7 +73,15 @@ class MssClient:
         cls, device_settings: DeviceSettings, private_key: RSAPrivateKey
     ) -> Self:
         """Constructs the client of the device of the given settings, which signs its
-        connection with the given private key"""
+        connection with the given private key
+
+        Args:
+            device_settings: the settings of the device
+            private_key: the private key of this BCC
+
+        Returns:
+            the client to the device's MSS
+        """
         return cls(
             uri=f"{device_settings.mss_device_events_endpoint}",
             device=device_settings.default_prefix,

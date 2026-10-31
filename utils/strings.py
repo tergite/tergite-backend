@@ -22,10 +22,27 @@ import uuid
 
 
 def validate_uuid4_str(id_str):
+    """Checks whether the string is a UUID4 in its canonical form
+
+    Args:
+        id_str: the string to check
+
+    Returns:
+        True if it is a valid UUID4 string
+    """
     return validate_uuid_str(id_str, 4)
 
 
 def validate_uuid_str(id_str, version):
+    """Checks whether the string is a UUID of the version in its canonical form
+
+    Args:
+        id_str: the string to check
+        version: the UUID version expected
+
+    Returns:
+        True if it is a valid UUID string of that version
+    """
     try:
         temp_uuid = uuid.UUID(id_str, version=version)
     except (ValueError, TypeError):
@@ -34,7 +51,11 @@ def validate_uuid_str(id_str, version):
 
 
 def uuid_str() -> str:
-    """generates a UUID string"""
+    """generates a UUID string
+
+    Returns:
+        a new UUID4 string
+    """
     return f"{uuid.uuid4()}"
 
 

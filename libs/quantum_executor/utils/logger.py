@@ -33,6 +33,8 @@ from .general import load_config, search_nested
 
 
 class Line:
+    """A numbered line of a Q1ASM program, printed with its parts tab-aligned"""
+
     __slots__ = "idx", "raw"
 
     def __init__(self: object, idx: int, raw: str):
@@ -45,6 +47,8 @@ class Line:
 
 
 class ExperimentLogger:
+    """Logs an experiment's messages, schedules and Q1ASM programs to its folder"""
+
     def __init__(
         self,
         tuid: Union[str, "TUID"],
@@ -65,15 +69,30 @@ class ExperimentLogger:
         self.last_programs = dict()
 
     def warning(self, message, /, **kwargs):
-        """Log a message at the warning level."""
+        """Log a message at the warning level.
+
+        Args:
+            message: the message to log
+            **kwargs: passed on to logging.Logger.warning
+        """
         self.logger.warning(message, **kwargs)
 
     def error(self, message, /, **kwargs):
-        """Log a message at the error level."""
+        """Log a message at the error level.
+
+        Args:
+            message: the message to log
+            **kwargs: passed on to logging.Logger.error
+        """
         self.logger.error(message, **kwargs)
 
     def info(self, message, /, **kwargs):
-        """Log a message at the info level."""
+        """Log a message at the info level.
+
+        Args:
+            message: the message to log
+            **kwargs: passed on to logging.Logger.info
+        """
         self.logger.info(message, **kwargs)
 
     @staticmethod
@@ -81,7 +100,16 @@ class ExperimentLogger:
         module_name: str, output_folder: str, formatter: logging.Formatter, /
     ) -> logging.Logger:
         """Gets the logger of the module name, which logs to log.txt in the experiment's
-        output folder alone, with the formatter"""
+        output folder alone, with the formatter
+
+        Args:
+            module_name: the name of the logger
+            output_folder: the experiment's folder, where log.txt is written
+            formatter: the formatter of the log records
+
+        Returns:
+            the logger, with its previous handlers replaced
+        """
         logger = logging.getLogger(module_name)
         logger.setLevel(logging.INFO)
         file_handler = logging.FileHandler(
@@ -98,8 +126,13 @@ class ExperimentLogger:
     @staticmethod
     def clean_Q1ASM_program(program_lines: list, /) -> set:
         """Clean a single Q1ASM program given as lines of code in string format.
-        Returns a set of enumerated lines, where argument, function & comment
-        are separated by exactly two whitespaces.
+
+        Args:
+            program_lines: the lines of the program
+
+        Returns:
+            a set of (line number, line) pairs, the empty lines left out, where argument,
+            function & comment are separated by exactly two whitespaces
         """
         # remove empty lines
         program_lines = list(filter(lambda l: l.replace(" ", "") != "", program_lines))
@@ -121,9 +154,12 @@ class ExperimentLogger:
 
     def log_schedule(self, schedule: Union["Schedule", "CompiledSchedule"], /):
         """Log the timing table for a Quantify schedule.
-        A delta is computed with the last executed timing table and only the changed operations
-        are saving in the log. When the current schedule has changed operations, the entire current schedule
-        is logged. If the previous and the current schedules are identical, nothing is logged.
+        When the current schedule has changed operations since the last one logged, the entire
+        current timing table is logged. If they are identical, it is not logged again.
+        Either way, it is written to compiled_schedule_expected.csv in the experiment's folder.
+
+        Args:
+            schedule: the schedule whose timing table is to be logged
         """
         # catch deprecation warnings, let Quantify fix those
         # with warnings.catch_warnings(record=True) as _:
@@ -166,6 +202,13 @@ class ExperimentLogger:
     def format_Q1ASM(path: tuple, code: set) -> str:
         """Takes a clean program set for a specific sequencer and formats it nicely
         to make the logfiles more human-readable.
+
+        Args:
+            path: the path to the sequencer in the compiled instructions, ending in "seq_fn"
+            code: the (line number, line) pairs got from clean_Q1ASM_program
+
+        Returns:
+            the sequencer's path as a tree, followed by its numbered program lines
         """
         fstr = ""
         path = path[:-1]  # suppress "seq_fn" to save some space when logging
@@ -188,6 +231,9 @@ class ExperimentLogger:
         A delta is computed with the last compiled schedule and only the changed sequencing
         is saved in the log. When a sequencer has updated programming, both the previous and
         the current Q1ASM programming for that sequencer is printed (symmetric difference).
+
+        Args:
+            compiled_schedule: the compiled schedule whose programs are to be logged
         """
 
         programs = self._get_sequencer_programs(compiled_schedule)

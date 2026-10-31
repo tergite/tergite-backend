@@ -47,6 +47,9 @@ def get_two_qubit_backend(
         r: The Rabi rate in Hz.
         dim: The dimension of the Hilbert space for each qubit.
         **options: Additional keyword arguments passed to the DynamicsBackend.
+
+    Returns:
+        the simulator backend of the two qubits and their coupler
     """
     if backend_config.general_config.num_qubits < 2:
         raise ValueError("The backend configuration must have at least two qubits.")

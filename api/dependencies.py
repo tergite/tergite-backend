@@ -59,7 +59,11 @@ from utils.strings import validate_uuid4_str
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Starts each device this process serves before the application, and stops them after"""
+    """Starts each device this process serves before the application, and stops them after
+
+    Args:
+        app: the FastAPI application whose state gets the devices' resources
+    """
     # each API worker, which uvicorn may start apart from main.py, sets up its own
     set_up_logging(settings.get_device_settings().log_level)
     app.state.device_resources = {}
@@ -85,7 +89,14 @@ async def lifespan(app: FastAPI):
 
 
 def get_device_resources(request: Request) -> DeviceResources:
-    """Dependency injector of the resources of the device the request's path names"""
+    """Dependency injector of the resources of the device the request's path names
+
+    Args:
+        request: the current FastAPI request
+
+    Returns:
+        the resources of the device the request is for
+    """
     return request.app.state.device_resources[request.state.device_name]
 
 
@@ -93,12 +104,22 @@ DeviceResourcesDep = Annotated[DeviceResources, Depends(get_device_resources)]
 
 
 def get_booking_db(device: DeviceResourcesDep) -> Engine:
-    """Gets the SQLAlchemy engine for the bookings service"""
+    """Gets the SQLAlchemy engine for the bookings service
+
+    Args:
+        device: the resources of the device the request is for
+
+    Returns:
+        the engine of the device's bookings database
+    """
     return device.bookings_db
 
 
 def check_device_is_online(device: DeviceResourcesDep) -> None:
     """Refuses the request while the device is switched off
+
+    Args:
+        device: the resources of the device the request is for
 
     Raises:
         IsOfflineError: {device name} is offline
@@ -346,6 +367,12 @@ async def validate_job_file(upload_file: UploadFile) -> UploadFile:
 
     Args:
         upload_file: the UploadFile instance that is uploaded
+
+    Returns:
+        the same upload file, rewound to its start
+
+    Raises:
+        InvalidRequestError: Invalid file: {error}
     """
     try:
         upload_file.file.seek(0)
@@ -382,6 +409,8 @@ def get_bearer_token(request: Request) -> Optional[str]:
 
 
 class MSSAuthDetails(BaseModel):
+    """The user and job that MSS's headers or the job's token verified for a request"""
+
     user_id: str
     job_id: str
     is_mss_admin: bool = False

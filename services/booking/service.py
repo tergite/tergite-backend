@@ -189,6 +189,9 @@ def get_next_booking(db_engine: Engine) -> Optional[Booking]:
 
     Args:
         db_engine: the SQL engine to query from
+
+    Returns:
+        the earliest booking that has not yet started, or None if there is none
     """
     with Session(db_engine) as session:
         current_timestamp = get_utc_now()

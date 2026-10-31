@@ -75,7 +75,14 @@ _STAGE_STATUS_MAP: Dict[Stage, JobStatus] = {
 
 
 def get_executor_options(device_settings: DeviceSettings) -> ExecutorOptions:
-    """Gets the options of the device's quantum executor from its settings"""
+    """Gets the options of the device's quantum executor from its settings
+
+    Args:
+        device_settings: the settings of the device
+
+    Returns:
+        the options of the device's quantum executor
+    """
     backend_config = BackendConfig.from_toml(
         device_settings.backend_settings,
         seed_file=device_settings.calibration_seed,
@@ -97,7 +104,14 @@ def get_executor_options(device_settings: DeviceSettings) -> ExecutorOptions:
 
 
 def get_executor(executor_options: ExecutorOptions) -> "QuantumExecutor":
-    """Gets a new quantum executor of the given options, its instruments reset"""
+    """Gets a new quantum executor of the given options, its instruments reset
+
+    Args:
+        executor_options: the options of the executor
+
+    Returns:
+        the new quantum executor
+    """
     executor = _init_executor(executor_options, should_reset=True)
     err_logger.info(
         f"QuantumExecutor initialised for backend '{executor_options.backend_name}'.'"
@@ -106,7 +120,12 @@ def get_executor(executor_options: ExecutorOptions) -> "QuantumExecutor":
 
 
 def log_job_error(job_supervisor_log: Path, message: str) -> None:
-    """Logs the error to the device's job supervisor log"""
+    """Logs the error to the device's job supervisor log
+
+    Args:
+        job_supervisor_log: the device's job supervisor log file
+        message: the error message
+    """
     _get_job_logger(job_supervisor_log).error(message)
 
 
@@ -219,7 +238,13 @@ def update_job_results(
 
 
 def update_job_in_mss(db_engine: Engine, mss_client: MssClient, payload: Job) -> None:
-    """Sends MSS the job, or keeps it for MSS until MSS can be reached"""
+    """Sends MSS the job, or keeps it for MSS until MSS can be reached
+
+    Args:
+        db_engine: the SQL database the events are kept in
+        mss_client: the client to the device's MSS
+        payload: the job to send
+    """
     send_mss_event(
         db_engine,
         mss_client,

@@ -31,6 +31,10 @@ def preload_worker_globals(
 ) -> DeviceResources:
     """Initializes the device's resources and other globals, so that the tasks find them loaded
 
+    Args:
+        device_settings: the settings of the device the worker serves
+        should_load_executor: whether to also load the executor, as a heavy worker does
+
     Returns:
         the device's resources
     """

@@ -61,6 +61,7 @@ _INSTRUCTION_PULSE_MAP: Dict[
 
 @dataclass(frozen=True)
 class QiskitDynamicsExperiment(NativeExperiment[Schedule]):
+    """An experiment compiled to a qiskit pulse schedule, for the qiskit-dynamics simulator"""
 
     @classmethod
     def from_qobj_expt(

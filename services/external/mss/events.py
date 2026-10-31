@@ -45,7 +45,13 @@ def send_mss_event(
 ) -> None:
     """Sends the event to MSS, or keeps it for send_kept_mss_events: when MSS cannot be
     reached, or other events of the device wait to be sent before it. MSS's refusal is
-    logged, as sending it again would not change MSS's answer."""
+    logged, as sending it again would not change MSS's answer.
+
+    Args:
+        db_engine: the SQL database the events are kept in
+        mss_client: the client to the device's MSS
+        event: the event to send
+    """
     if _is_any_event_kept(db_engine, mss_client.device):
         _keep_event(db_engine, mss_client.device, event)
         return

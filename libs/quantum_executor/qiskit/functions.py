@@ -66,13 +66,23 @@ def omega_c(
 
 
 def get_lo_range(frequency: float) -> list[float]:
-    """Gets the range, in GHz, of a local oscillator 0.1 GHz either side of the frequency in Hz"""
+    """Gets the range, in GHz, of a local oscillator 0.1 GHz either side of the frequency
+
+    Args:
+        frequency: the frequency in Hz
+
+    Returns:
+        the lower and upper bounds of the range in GHz
+    """
     return [frequency / 1e9 - 0.1, frequency / 1e9 + 0.1]
 
 
 def fit_lda(iq_0: np.ndarray, iq_1: np.ndarray) -> Dict[str, float]:
-    """Fits a linear discriminator that tells the IQ points measured in |1> from those in
-    |0>, each an (shots, 2) array
+    """Fits a linear discriminator that tells the IQ points measured in |1> from those in |0>
+
+    Args:
+        iq_0: the IQ points measured in |0>, a (shots, 2) array
+        iq_1: the IQ points measured in |1>, a (shots, 2) array
 
     Returns:
         the discriminator's intercept and coefficients, as the backend config keeps them
@@ -87,8 +97,15 @@ def fit_lda(iq_0: np.ndarray, iq_1: np.ndarray) -> Dict[str, float]:
 
 
 def get_basis_statevector(dims: List[int], mode: int, level: int) -> Statevector:
-    """Gets the state of the modes, of the given dims and the first least significant, in
-    which all are in their ground state but the one of the index, which is at the level
+    """Gets the basis state in which every mode is in its ground state but one
+
+    Args:
+        dims: the dimension of each mode, the first least significant
+        mode: the index of the mode that is not in its ground state
+        level: the level of that mode
+
+    Returns:
+        the state vector of all the modes
     """
     vector = np.zeros(int(np.prod(dims)), dtype=complex)
     vector[level * int(np.prod(dims[:mode]))] = 1

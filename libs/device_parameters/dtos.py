@@ -169,6 +169,14 @@ class QubitCalibration(BaseModel):
     @field_validator("id", mode="before")
     @classmethod
     def prep_id(cls, v):
+        """Accepts the id as a number or as a name like "q1"
+
+        Args:
+            v: the raw id
+
+        Returns:
+            the id as a number
+        """
         if isinstance(v, str):
             return int(v.lstrip("q"))
         return int(v)
@@ -176,6 +184,7 @@ class QubitCalibration(BaseModel):
     @computed_field
     @cached_property
     def name(self) -> Optional[str]:
+        """The name like "q1", or None if there is no id"""
         if self.id is None:
             return None
         return f"q{self.id}"
@@ -264,6 +273,14 @@ class ResonatorCalibration(BaseModel):
     @field_validator("id", mode="before")
     @classmethod
     def prep_id(cls, v):
+        """Accepts the id as a number or as a name like "q1"
+
+        Args:
+            v: the raw id
+
+        Returns:
+            the id as a number
+        """
         if isinstance(v, str):
             return int(v.lstrip("q"))
         return int(v)
@@ -271,6 +288,7 @@ class ResonatorCalibration(BaseModel):
     @computed_field
     @cached_property
     def name(self) -> Optional[str]:
+        """The name like "q1", or None if there is no id"""
         if self.id is None:
             return None
         return f"q{self.id}"
@@ -365,6 +383,14 @@ class CouplerCalibration(BaseModel):
     @field_validator("id", mode="before")
     @classmethod
     def prep_id(cls, v):
+        """Accepts the id as a number or as a name like "u1"
+
+        Args:
+            v: the raw id
+
+        Returns:
+            the id as a number
+        """
         if isinstance(v, str):
             return int(v.lstrip("u"))
         return v
@@ -372,6 +398,14 @@ class CouplerCalibration(BaseModel):
     @field_validator("full_name", mode="before")
     @classmethod
     def validate_full_name(cls, v):
+        """Accepts the full name as is or as a calibration value
+
+        Args:
+            v: the raw full name
+
+        Returns:
+            the full name
+        """
         if isinstance(v, dict):
             return v.get("value")
         return v
@@ -379,6 +413,7 @@ class CouplerCalibration(BaseModel):
     @computed_field
     @cached_property
     def short_name(self) -> Optional[str]:
+        """The name like "u1", or None if there is no id"""
         if self.id is None:
             return None
         return f"u{self.id}"
@@ -386,6 +421,7 @@ class CouplerCalibration(BaseModel):
     @computed_field
     @cached_property
     def control_qubit(self) -> Optional[str]:
+        """The name of the control qubit, or None if there is no full name"""
         # FIXME: the format '{control}_{target}' is not being used at the moment
         if self.full_name is None:
             return None
@@ -394,6 +430,7 @@ class CouplerCalibration(BaseModel):
     @computed_field
     @cached_property
     def target_qubit(self) -> Optional[str]:
+        """The name of the target qubit, or None if there is no full name"""
         # FIXME: the format '{control}_{target}' is not being used at the moment
         if self.full_name is None:
             return None
@@ -510,7 +547,11 @@ class DeviceCalibration(BaseModel):
     last_calibrated: str
 
     def to_calibration_config(self) -> "_BackendCalibrationConfig":
-        """Gets the calibration config of a calibration seed file, with each value's unit"""
+        """Gets the calibration config of a calibration seed file, with each value's unit
+
+        Returns:
+            the calibration config of this calibration data
+        """
         units = _to_units(self)
         scalars = _to_scalars(self)
 
@@ -703,7 +744,16 @@ class BackendConfig(BaseModel):
 
     @classmethod
     def from_toml(cls, file: PathLike, seed_file: PathLike):
-        """Creates a BackendConfig instance from a TOML file"""
+        """Creates a BackendConfig instance from a TOML file
+
+        Args:
+            file: the path to the backend config TOML file
+            seed_file: the path to the calibration seed TOML file; its calibration
+                config is left out if the file or its section is missing
+
+        Returns:
+            the new BackendConfig
+        """
         config = toml.load(file)
 
         calibration_config = None
@@ -724,6 +774,11 @@ class BackendConfig(BaseModel):
 
     @model_validator(mode="after")
     def check_simulator_config(self):
+        """Requires a calibration config for a simulator
+
+        Raises:
+            ValueError: Calibration config is required for simulators.
+        """
         if self.general_config.simulator and self.calibration_config is None:
             raise ValueError("Calibration config is required for simulators.")
 

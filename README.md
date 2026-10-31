@@ -147,11 +147,6 @@ the [CHANGELOG.md](./CHANGELOG.md) file.
 
 [Apache 2.0 License](./LICENSE.txt)
 
-## TODO
-
-- [ ] Give every public function a Google-style docstring, saying what it does for the caller and how to use
-  it, with `Args:`, `Returns:` and `Raises:` where they apply; many lack `Args:`
-
 ## Acknowledgements
 
 This project was sponsored by:

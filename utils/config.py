@@ -132,7 +132,18 @@ class DeviceSettings(BaseSettings):
     )
     @classmethod
     def check_calibration_file_exists(cls, path: Path, info: ValidationInfo) -> Path:
-        """Refuses a calibration file that is missing where quantify, which reads it, is installed"""
+        """Refuses a calibration file that is missing where quantify, which reads it, is installed
+
+        Args:
+            path: the path to the calibration file
+            info: the validation info, which names the setting
+
+        Returns:
+            the path
+
+        Raises:
+            FileNotFoundError: BCC_{SETTING NAME}: {path} not found.
+        """
         if HAS_QUANTIFY and not path.exists():
             raise FileNotFoundError(f"BCC_{info.field_name.upper()}: {path} not found.")
         return path
@@ -140,6 +151,17 @@ class DeviceSettings(BaseSettings):
     @field_validator("mss_public_key_path")
     @classmethod
     def check_mss_public_key_exists(cls, path: Path) -> Path:
+        """Refuses an MSS public key file that is missing
+
+        Args:
+            path: the path to the key file
+
+        Returns:
+            the absolute path
+
+        Raises:
+            ValueError: {path} does not exist
+        """
         path = path.resolve()
         if not path.exists():
             raise ValueError(f"{path} does not exist")
@@ -148,6 +170,17 @@ class DeviceSettings(BaseSettings):
     @field_validator("private_key_file")
     @classmethod
     def check_private_key_exists(cls, path: Path) -> Path:
+        """Refuses a private key file that is missing
+
+        Args:
+            path: the path to the key file
+
+        Returns:
+            the absolute path
+
+        Raises:
+            ValueError: private key file '{path}' does not exist
+        """
         path = path.resolve()
         if not path.exists():
             raise ValueError(f"private key file '{path}' does not exist")
@@ -168,12 +201,27 @@ class DeviceSettings(BaseSettings):
     )
     @classmethod
     def set_negative_limits_to_zero(cls, value: float) -> float:
-        """Reads a negative limit as none at all"""
+        """Reads a negative limit as none at all
+
+        Args:
+            value: the limit
+
+        Returns:
+            the limit, 0 if it is negative
+        """
         return max(0, value)
 
     @field_validator("cors_origins", mode="before")
     @classmethod
     def split_cors_origins(cls, value: Any) -> Any:
+        """Reads the CORS origins from a comma-separated string too
+
+        Args:
+            value: the origins, as a list or a comma-separated string
+
+        Returns:
+            the origins
+        """
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
@@ -181,11 +229,23 @@ class DeviceSettings(BaseSettings):
     @field_validator("log_level")
     @classmethod
     def parse_log_level(cls, value: str) -> str:
+        """Reads the log level whatever its case
+
+        Args:
+            value: the log level
+
+        Returns:
+            the log level in upper case
+        """
         return value.strip().upper()
 
     @model_validator(mode="after")
     def set_defaults_from_other_settings(self) -> Self:
-        """Fills in the settings whose defaults come from others"""
+        """Fills in the settings whose defaults come from others
+
+        Returns:
+            these settings, filled in
+        """
         if self.mss_device_events_endpoint is None:
             self.mss_device_events_endpoint = _get_mss_device_events_endpoint(
                 self.mss_machine_root_url, self.default_prefix
@@ -195,15 +255,21 @@ class DeviceSettings(BaseSettings):
         return self
 
     def get_utc_now(self) -> datetime:
-        """Gets the time now, which BCC_CURRENT_DATE stands in for where set"""
+        """Gets the time now, which BCC_CURRENT_DATE stands in for where set
+
+        Returns:
+            the time now in UTC, or BCC_CURRENT_DATE
+        """
         return self.current_date or get_utc_now()
 
     @property
     def executor_data_dir(self) -> Path:
+        """The folder the quantum executor keeps its experiments' data in"""
         return self.storage_root / self.default_prefix / self.executor_data_dirname
 
     @property
     def preprocessed_job_pool(self) -> Path:
+        """The folder the preprocessed jobs wait in to be executed"""
         return self.storage_root / self.default_prefix / self.job_pre_proc_pool_dirname
 
     @property
@@ -218,14 +284,17 @@ class DeviceSettings(BaseSettings):
 
     @property
     def job_upload_pool(self) -> Path:
+        """The folder the uploaded job files are kept in until preprocessed"""
         return self.prefix_root / self.job_upload_pool_dirname
 
     @property
     def log_file_pool(self) -> Path:
+        """The folder the jobs' results files are kept in, for their users to download"""
         return self.prefix_root / self.logfile_download_pool_dirname
 
     @property
     def job_supervisor_log(self) -> Path:
+        """The file the jobs' failures are logged to"""
         return self.prefix_root / self.job_supervisor_log_name
 
     @property
@@ -237,6 +306,12 @@ class DeviceSettings(BaseSettings):
 def read_device_settings(env_file: Path) -> DeviceSettings:
     """Reads a device's settings: its own BCC_<PREFIX>_<NAME> env variables over BCC_<NAME>,
     over the env file's BCC_<NAME>
+
+    Args:
+        env_file: the path to the device's env file
+
+    Returns:
+        the device's settings
 
     Raises:
         ValueError: if the file has a key without the BCC_ prefix, which would be ignored
@@ -252,7 +327,11 @@ def read_device_settings(env_file: Path) -> DeviceSettings:
 
 
 def create_device_folders(device_settings: DeviceSettings) -> None:
-    """Creates the folders the device keeps its jobs' files in"""
+    """Creates the folders the device keeps its jobs' files in
+
+    Args:
+        device_settings: the settings of the device
+    """
     device_settings.executor_data_dir.mkdir(exist_ok=True, parents=True)
     device_settings.preprocessed_job_pool.mkdir(exist_ok=True, parents=True)
     device_settings.job_upload_pool.mkdir(exist_ok=True, parents=True)

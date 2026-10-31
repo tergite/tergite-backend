@@ -72,27 +72,39 @@ class BinMode(str, Enum):
 
 
 class MeasLvl(int, Enum):
+    """How far measurements are processed: to discriminated states, IQ points or raw"""
+
     DISCRIMINATED = 2
     INTEGRATED = 1
     RAW = 0
 
 
 class MeasRet(int, Enum):
+    """Whether the measurements of all shots are averaged or returned shot by shot"""
+
     AVERAGED = 1
     APPENDED = 0
 
 
 class MeasProtocol(str, enum.Enum):
+    """How each measurement is acquired: integrated to an IQ point or as a trace"""
+
     SSB_INTEGRATION_COMPLEX = "SSBIntegrationComplex"
     TRACE = "trace"
 
 
 class AcqReturnType(int, enum.Enum):
+    """The serializable name of the type an acquisition returns"""
+
     COMPLEX = 1
     ND_ARRAY = 2
 
     def to_type(self) -> Union[Type]:
-        """Retrieves the type associated with this enum"""
+        """Retrieves the type associated with this enum
+
+        Returns:
+            complex or numpy.ndarray
+        """
         if self == AcqReturnType.COMPLEX:
             return complex
         elif self == AcqReturnType.ND_ARRAY:
@@ -113,7 +125,11 @@ class NativeQobjConfig:
     shots: int
 
     def to_dict(self) -> dict:
-        """Converts this config into a JSON serializable dictionary"""
+        """Converts this config into a JSON serializable dictionary
+
+        Returns:
+            the JSON serializable dict of this config
+        """
         raw_dict = asdict(self)
         if self.acq_return_type == complex:
             raw_dict["acq_return_type"] = AcqReturnType.COMPLEX
@@ -198,6 +214,8 @@ class NativeQobjConfig:
 
 
 class ByteOrder(str, enum.Enum):
+    """Whether a bit string lists the acquisition channels most or least significant first"""
+
     BIG_ENDIAN = "big-endian"
     LITTLE_ENDIAN = "little-endian"
 
@@ -226,6 +244,11 @@ class QobjMetadata:
         )
 
     def to_dict(self) -> dict:
+        """Converts this metadata into a JSON serializable dictionary
+
+        Returns:
+            the JSON serializable dict of this metadata
+        """
         return asdict(self)
 
 
@@ -250,10 +273,19 @@ class QobjData:
         )
 
     def to_dict(self) -> dict:
+        """Converts this wrapper into a JSON serializable dictionary
+
+        Returns:
+            the JSON serializable dict of this wrapper
+        """
         return asdict(self)
 
     def to_qobj(self) -> PulseQobj:
-        """Returns a PulseQobj instance from this QobjData"""
+        """Returns a PulseQobj instance from this QobjData
+
+        Returns:
+            the qobject this wrapper holds
+        """
         qobj_dict = json.loads(self.experiment_data)
         json_decoder.decode_pulse_qobj(qobj_dict)
         return PulseQobj.from_dict(qobj_dict)
@@ -286,6 +318,11 @@ class QuantumJob:
         return QobjMetadata.from_qobj(self.qobj)
 
     def to_dict(self):
+        """Converts this job into a dictionary
+
+        Returns:
+            the dict of this job's fields
+        """
         return asdict(self)
 
 

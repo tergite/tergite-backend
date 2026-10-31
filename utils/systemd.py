@@ -18,7 +18,11 @@ from typing import Callable, Optional
 
 
 def notify_systemd(message: str) -> None:
-    """Sends systemd the message, e.g. WATCHDOG=1, if it runs this process; else nothing"""
+    """Sends systemd the message, e.g. WATCHDOG=1, if it runs this process; else nothing
+
+    Args:
+        message: the notification to send
+    """
     address = os.environ.get("NOTIFY_SOCKET")
     if not address:
         return
@@ -30,7 +34,11 @@ def notify_systemd(message: str) -> None:
 
 
 def get_watchdog_seconds() -> Optional[float]:
-    """Gets the WatchdogSec systemd set for this process, or None if it set none for it"""
+    """Gets the WatchdogSec systemd set for this process
+
+    Returns:
+        the watchdog's seconds, or None if systemd set none for this process
+    """
     microseconds = os.environ.get("WATCHDOG_USEC")
     watchdog_pid = os.environ.get("WATCHDOG_PID")
     if microseconds is None or (watchdog_pid and int(watchdog_pid) != os.getpid()):
@@ -43,7 +51,12 @@ def keep_watchdog_fed_while_on_time(
 ) -> None:
     """Tells systemd the process is alive every interval for as long as it is on time, which
     a thread does beside the work, so that systemd restarts a process that falls behind, or
-    whose work holds the interpreter"""
+    whose work holds the interpreter
+
+    Args:
+        is_on_time: tells whether the process is still on time
+        interval_seconds: the seconds between notifications
+    """
     while is_on_time():
         notify_systemd("WATCHDOG=1")
         time.sleep(interval_seconds)
