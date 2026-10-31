@@ -20,6 +20,7 @@ This is part of the tergite release v2026.11.0-rc.2.
 
 - Fixed the GitHub release of a tag getting no installers: it is now published with them, as an immutable release
   took none once published
+- Fixed a release candidate's GitHub release being published as the latest release; it is now a pre-release
 
 ### Contributors
 
