@@ -585,7 +585,8 @@ def test_cancel_completed_booking(
         )
         booking = Booking.model_validate(response.json())
 
-        fake_clock.shift(2)
+        # past its end, at which it is still active
+        fake_clock.shift(2.1)
 
         response = cancel_booking(client, user_id=booker_user_id, booking_id=booking.id)
         expected = {"detail": f"the booking of id {booking.id} is already complete"}
