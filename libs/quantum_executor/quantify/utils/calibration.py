@@ -75,7 +75,6 @@ def recalibrate(
         the new device calibration
     """
     if results_file.exists():
-        # a tuner from before its refactor ignores it, keeping its own in Redis
         session_options["calibration"] = str(results_file)
     session = _recalibrate_all_qubits(**session_options)
     session = _recalibrate_all_couplers(session)

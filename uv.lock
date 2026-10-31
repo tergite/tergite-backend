@@ -2200,13 +2200,31 @@ wheels = [
 
 [[package]]
 name = "pydantic-settings"
+version = "2.9.1"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "platform_machine == 'ARM64' and sys_platform == 'win32'",
+    "platform_machine != 'ARM64' or sys_platform != 'win32'",
+]
+dependencies = [
+    { name = "pydantic", marker = "extra == 'extra-15-tergite-backend-quantify'" },
+    { name = "python-dotenv", marker = "extra == 'extra-15-tergite-backend-quantify'" },
+    { name = "typing-inspection", marker = "extra == 'extra-15-tergite-backend-quantify'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/67/1d/42628a2c33e93f8e9acbde0d5d735fa0850f3e6a2f8cb1eb6c40b9a732ac/pydantic_settings-2.9.1.tar.gz", hash = "sha256:c509bf79d27563add44e8446233359004ed85066cd096d8b510f715e6ef5d268", size = 163234, upload-time = "2025-04-18T16:44:48.265Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b6/5f/d6d641b490fd3ec2c4c13b4244d68deea3a1b970a97be64f34fb5504ff72/pydantic_settings-2.9.1-py3-none-any.whl", hash = "sha256:59b4f431b1defb26fe620c71a7d3968a710d719f5f4cdbbdb7926edeb770f6ef", size = 44356, upload-time = "2025-04-18T16:44:46.617Z" },
+]
+
+[[package]]
+name = "pydantic-settings"
 version = "2.16.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "pydantic" },
-    { name = "python-dotenv" },
-    { name = "typing-extensions" },
-    { name = "typing-inspection" },
+    { name = "pydantic", marker = "extra == 'extra-15-tergite-backend-qiskit' or extra != 'extra-15-tergite-backend-quantify'" },
+    { name = "python-dotenv", marker = "extra == 'extra-15-tergite-backend-qiskit' or extra != 'extra-15-tergite-backend-quantify'" },
+    { name = "typing-extensions", marker = "extra == 'extra-15-tergite-backend-qiskit' or extra != 'extra-15-tergite-backend-quantify'" },
+    { name = "typing-inspection", marker = "extra == 'extra-15-tergite-backend-qiskit' or extra != 'extra-15-tergite-backend-quantify'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/d0/31/21d21e0e38a8f5f7a7f0cde22820117b6d17d6bc36f348129527f915d7f4/pydantic_settings-2.16.2.tar.gz", hash = "sha256:3dc08ffabed2bbd5dc2dd55ead7b78b4e4c5cd776aecd04310db5f1224caaf46", size = 309225, upload-time = "2026-10-28T11:14:28.066Z" }
 wheels = [
@@ -2719,15 +2737,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/56/a5/8defe4164e7d0a1a056a3e3fa6a0dcd43ec888b1ae9efacaf7d9ab156da3/quantify_scheduler-0.22.3.tar.gz", hash = "sha256:6017b1302dd4558c996f039b465eae43adb29dea3e7106386102e92f757b73c1", size = 1730459, upload-time = "2025-03-20T20:59:35.772Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a7/39/d2691803c34174ef726ed977ee7dbcd45db40f247f802303a3150ca37dc8/quantify_scheduler-0.22.3-py3-none-any.whl", hash = "sha256:8ce710ac812c1838fb2477d1e0fe2c73380526e21240a09cfa0644390765022d", size = 413627, upload-time = "2025-03-20T20:59:33.777Z" },
-]
-
-[[package]]
-name = "redis"
-version = "7.4.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/7b/7f/3759b1d0d72b7c92f0d70ffd9dc962b7b7b5ee74e135f9d7d8ab06b8a318/redis-7.4.0.tar.gz", hash = "sha256:64a6ea7bf567ad43c964d2c30d82853f8df927c5c9017766c55a1d1ed95d18ad", size = 4943913, upload-time = "2026-03-24T09:14:37.53Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/74/3a/95deec7db1eb53979973ebd156f3369a72732208d1391cd2e5d127062a32/redis-7.4.0-py3-none-any.whl", hash = "sha256:a9c74a5c893a5ef8455a5adb793a31bb70feb821c86eccb62eebef5a19c429ec", size = 409772, upload-time = "2026-03-24T09:14:35.968Z" },
 ]
 
 [[package]]
@@ -3274,7 +3283,8 @@ dependencies = [
     { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-15-tergite-backend-qiskit' or extra == 'extra-15-tergite-backend-quantify'" },
     { name = "pandas" },
     { name = "pydantic" },
-    { name = "pydantic-settings" },
+    { name = "pydantic-settings", version = "2.9.1", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-15-tergite-backend-quantify'" },
+    { name = "pydantic-settings", version = "2.16.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-15-tergite-backend-qiskit' or extra != 'extra-15-tergite-backend-quantify'" },
     { name = "pyjwt" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
@@ -3338,7 +3348,7 @@ requires-dist = [
     { name = "numpy", marker = "extra == 'quantify'", specifier = ">=2.0" },
     { name = "pandas", specifier = "~=2.3.3" },
     { name = "pydantic", specifier = "~=2.11.3" },
-    { name = "pydantic-settings", specifier = "~=2.16.2" },
+    { name = "pydantic-settings", specifier = ">=2.9.1,<3" },
     { name = "pyjwt", specifier = "~=2.9.0" },
     { name = "python-dotenv", specifier = "~=1.2.2" },
     { name = "pyyaml", specifier = "~=6.0.2" },
@@ -3351,7 +3361,7 @@ requires-dist = [
     { name = "sqlmodel", specifier = "~=0.0.24" },
     { name = "starlette", specifier = "~=0.48.0" },
     { name = "tabulate", specifier = ">=0.9.0" },
-    { name = "tergite-tuner", marker = "extra == 'quantify'", specifier = "~=2026.6.0rc5" },
+    { name = "tergite-tuner", marker = "extra == 'quantify'", specifier = ">=2026.10.0rc2,<2026.11.0" },
     { name = "toml", specifier = ">=0.10.2" },
     { name = "uvicorn", specifier = "~=0.46.0" },
     { name = "websockets", specifier = "~=16.0" },
@@ -3380,31 +3390,29 @@ dev = [
 
 [[package]]
 name = "tergite-tuner"
-version = "2026.6.0rc5"
+version = "2026.10.0rc2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "h5py" },
+    { name = "cf-xarray" },
     { name = "matplotlib" },
     { name = "netcdf4" },
     { name = "networkx" },
     { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" } },
     { name = "pandas" },
     { name = "pydantic" },
-    { name = "python-dotenv" },
+    { name = "pydantic-settings", version = "2.9.1", source = { registry = "https://pypi.org/simple" } },
     { name = "qblox-instruments" },
     { name = "qcodes" },
     { name = "quantify-scheduler" },
-    { name = "redis" },
-    { name = "requests" },
+    { name = "rich" },
     { name = "scikit-learn" },
     { name = "scipy" },
-    { name = "toml" },
     { name = "tomlkit" },
     { name = "xarray" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d9/e2/2966c478f09385dea075e5eb3c005079b3c188cef7f15ce2879ed587f277/tergite_tuner-2026.6.0rc5.tar.gz", hash = "sha256:af62ef05c87a06986217dedc2c4b1e3a79dda265a9964e526a394ee7de0ae61a", size = 236797, upload-time = "2026-05-20T17:22:01.44Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/9e/9e/4129e57bd7e6175ad6cada9a82645fbae7ba2849cf11acf9a2a0dd84f566/tergite_tuner-2026.10.0rc2.tar.gz", hash = "sha256:0ccc49a474df59ed89c14969e2bc2b45f68411561cf813e1a39cc431fb541eaa", size = 358453, upload-time = "2026-10-31T00:04:49.778Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bd/e4/6b2a0030269073c6a40695fc94b0f4ba6777c6f2baa3e45209cc9430ffed/tergite_tuner-2026.6.0rc5-py3-none-any.whl", hash = "sha256:76d4bc779408f988ad3e25a0bc30d5203263bd10dba58c93eed5b49df456cbc8", size = 320767, upload-time = "2026-05-20T17:22:00.165Z" },
+    { url = "https://files.pythonhosted.org/packages/01/22/ef941b21f14c17e2cd47b5c96c5237051fbabd310ed1229713062b7b6006/tergite_tuner-2026.10.0rc2-py3-none-any.whl", hash = "sha256:b75a11b8205f0599611061469e9f6c4bcc17142388a479c001d961520512a829", size = 210198, upload-time = "2026-10-31T00:04:48.537Z" },
 ]
 
 [[package]]

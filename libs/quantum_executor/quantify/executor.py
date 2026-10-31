@@ -260,7 +260,6 @@ class QuantifyExecutor(QuantumExecutor):
             stdout_log_level=25,
             file_log_level=25,
             cluster_ip=conf.ip_address,
-            redis_url=self._redis_url,
             data_dir=Path(self.data_dir),
             spi_mode=SPIMode.dummy,
             qubits=backend_config.device_config.qubit_ids,

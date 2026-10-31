@@ -27,7 +27,6 @@ pytest_plugins = [
     "tests.utils.datetime",
     "tests.utils.io",
     "tests.utils.mss",
-    "tests.utils.redis",
     "tests.utils.systemd",
     "tests.utils.workers",
 ]

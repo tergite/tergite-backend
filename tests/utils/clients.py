@@ -58,7 +58,7 @@ def quantify_seed_file(tmp_path) -> Generator[str, Any, None]:
 
 @pytest.fixture
 def quantify_rest_client(
-    mocker, mock_mss, redis_client, quantify_seed_file, monkeypatch
+    mocker, mock_mss, quantify_seed_file, monkeypatch
 ) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
     monkeypatch.setenv("BCC_EXECUTOR_TYPE", "quantify")

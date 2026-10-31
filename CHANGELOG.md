@@ -16,7 +16,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Added `BCC_MAX_WORKER_START_TIME`, 10 minutes by default and 0 for none: `bcc start` kills a worker that has not
   finished starting by then, e.g. stuck connecting to the clusters, which went unnoticed
 - Added `<seed>.tuner.json` beside the calibration seed file, tergite-tuner's results of the last recalibration, which
-  the next one starts from once tergite-tuner keeps nothing between its sessions, as from its refactor
+  the next one starts from, as tergite-tuner keeps nothing between its sessions
 - Added `BCC_MAX_EXECUTION_QUEUE_TIME`, a day by default and 0 for none: a preprocessed job waiting longer to execute,
   e.g. for room between bookings, is failed and its user told, where it waited indefinitely
 - Added `BCC_MAX_WORKER_WAIT_TIME`, the longest a worker with nothing to do waits before looking again, which bounds
@@ -36,6 +36,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- Changed the quantify extra's tergite-tuner to 2026.10.0rc2 or a later 2026.10 release, which keeps its sessions
+  in memory instead of Redis; pydantic-settings 2.9, which it pins, is allowed again
 - Changed `GET /jobs` to list 100 jobs unless `limit` asks for more, up to 1000, where it listed all of them; page
   through with `skip`
 - Changed the job supervisor log to plain lines, as Python's logging writes them, without the ANSI colour codes

@@ -16,6 +16,7 @@ from typing import Any, Dict, Literal, Unpack
 
 from tergite_tuner import NodeEnum, SessionContext
 from tergite_tuner.config.session import SessionOptions
+from tergite_tuner.lib.nodes import DEFAULT_NODE_SPECS
 
 from tests.utils.fixtures import load_fixture
 
@@ -35,7 +36,6 @@ def mock_run_node(
     """A mock run node function"""
     if session is None:
         session = SessionContext.from_env(env_file=env_file, **options)
-        _populate_initial_parameters(session)
 
     _populate_node_parameters(
         node.value,
@@ -65,36 +65,9 @@ def mock_run_node(
             data[group][name][qoi] = RECALIBRATION_MOCKS[element].get(qoi)
         data["cs"][name][node.value] = "calibrated"
 
-    _write_results(session, data)
+    session.state.write(data)
     # FIXME: data is not fully nested as expected.
     return session, data
-
-
-def _populate_initial_parameters(session: "SessionContext"):
-    """Populates the store with the initial values from the device config
-
-    Args:
-        session: the session context
-    """
-    if _is_state_in_session(session):
-        return  # the session starts from the device config itself
-    initial_qubit_parameters = session.device_config.qubits
-    initial_coupler_parameters = session.device_config.couplers
-
-    session.redis_store.save_many(
-        {
-            "transmons": {
-                qubit: initial_qubit_parameters[qubit]
-                for qubit in session.qubits
-                if qubit in initial_qubit_parameters
-            },
-            "couplers": {
-                coupler: initial_coupler_parameters[coupler]
-                for coupler in session.couplers
-                if coupler in initial_coupler_parameters
-            },
-        }
-    )
 
 
 def _populate_node_parameters(
@@ -121,8 +94,7 @@ def _populate_node_parameters(
     qubits = session.qubits
 
     all_components_node_conf = data.get("all", {})
-    _load_values(
-        session,
+    session.state.load(
         {
             # FIXME: this should probably be only qubits not qubits + couplers
             "transmons": {k: all_components_node_conf for k in qubits},
@@ -136,45 +108,6 @@ def _populate_node_parameters(
 def _get_element_qois(
     node: NodeEnum, session: "SessionContext"
 ) -> tuple[Literal["qubit", "coupler"], list[str]]:
-    """Whether the node calibrates qubits or couplers, and the fields it sets.
-
-    Reads tergite-tuner's NodeSpecs, or its node classes in versions before them.
-    """
-    try:
-        from tergite_tuner.lib.nodes import DEFAULT_NODE_SPECS
-    except ImportError:
-        from tergite_tuner.lib.base.node import QubitNode
-
-        node_cls = session.node_cls_map[node]
-        if issubclass(node_cls, QubitNode):
-            return "qubit", list(node_cls.qubit_qois or [])
-        return "coupler", list(node_cls.coupler_qois or [])
-
+    """Whether the node calibrates qubits or couplers, and the fields it sets"""
     spec = {**DEFAULT_NODE_SPECS, **session.node_specs}[node]
     return spec.element, list(spec.qois.values())
-
-
-def _write_results(session: "SessionContext", records: Dict[str, Any]) -> None:
-    """Writes a node's results where the tuner keeps them: its session's state, or Redis before it."""
-    if _is_state_in_session(session):
-        session.state.write(records)
-        return
-    for collection in ("transmons", "couplers"):
-        for record in records[collection].values():
-            for field in record:
-                touched = session._redis_fields_touched
-                touched[field] = touched.get(field, 0) + 1
-    session.redis_store.save_many(records)
-
-
-def _load_values(session: "SessionContext", records: Dict[str, Any]) -> None:
-    """Loads values a run starts from: into the session's state, or Redis before it."""
-    if _is_state_in_session(session):
-        session.state.load(records)
-    else:
-        session.redis_store.save_many(records)
-
-
-def _is_state_in_session(session: "SessionContext") -> bool:
-    """Whether the tuner keeps the device in the session, as it does from its refactor."""
-    return hasattr(type(session), "state")
