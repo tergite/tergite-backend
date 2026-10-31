@@ -7,6 +7,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.11.0-rc.1] - 2026-10-31
+
+This is part of the tergite release v2026.11.0-rc.1.
+
 ### Added
 
 - Added a systemd watchdog to `bcc@.service`, `WatchdogSec=60s`: `bcc start`, and a `bcc worker` its unit runs alone,
@@ -158,6 +162,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Removed `BCC_IS_ASYNC`, which ran each job inside the API request that queued it; the jobs run on the workers only
 - Removed `bcc.service` and `start_bcc.sh`'s conda-based systemd mode, which the packages replace
 - Removed the Docker image and its release jobs; the debs and macOS packages, or `bcc` from a checkout, run the backend
+
+### Contributors
+
+- Martin Ahindura
 
 ## [2026.09.0-rc.1] - 2026-07-03
 

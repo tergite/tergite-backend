@@ -31,7 +31,7 @@ from .routers import bookings, devices, jobs, logfiles, recalibration, switch, u
 app = FastAPI(
     title="Backend Control Computer",
     description="Interfaces Quantum processor via REST API",
-    version="v2026.09.0-rc.1",
+    version="v2026.11.0-rc.1",
     lifespan=lifespan,
 )
 
