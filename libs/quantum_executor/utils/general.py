@@ -44,6 +44,17 @@ def search_nested(haystack: Union[h5py.Group, dict], needle: str):
 
 
 def load_config(filepath: str):
+    """Loads a JSON configuration file
+
+    Args:
+        filepath: the path to the JSON file
+
+    Returns:
+        the parsed configuration
+
+    Raises:
+        json.JSONDecodeError: the file is not valid JSON
+    """
     with open(filepath, mode="r") as _j:
         try:
             return json.load(_j)

@@ -227,7 +227,12 @@ def enqueue_job(
 
 def mark_preprocessed(device: DeviceResources, job: Job) -> None:
     """Leaves the preprocessed job for the bookings to let execute, or fails a booker's that
-    is too long for what is left of their booking"""
+    is too long for what is left of their booking
+
+    Args:
+        device: what the device runs on
+        job: the preprocessed job
+    """
     now = get_utc_now()
     booking = get_active_booking(device.bookings_db)
     if (
@@ -245,7 +250,16 @@ def mark_preprocessed(device: DeviceResources, job: Job) -> None:
 
 
 def mark_executed(device: DeviceResources, job_id: str, results_file: str) -> Job:
-    """Leaves the executed job for a light worker to postprocess its results file"""
+    """Leaves the executed job for a light worker to postprocess its results file
+
+    Args:
+        device: what the device runs on
+        job_id: the id of the executed job
+        results_file: the path to the file of the job's raw results
+
+    Returns:
+        the job, at its postprocessing queue's stage
+    """
     # before the stage, which lets a light worker claim the job and read its results file
     with Session(device.bookings_db) as session:
         row = session.get(JobRow, (device.settings.default_prefix, job_id))
@@ -259,7 +273,12 @@ def mark_executed(device: DeviceResources, job_id: str, results_file: str) -> Jo
 
 
 def mark_postprocessed(device: DeviceResources, job_id: str) -> None:
-    """Moves the postprocessed job to its final stage, and tells MSS"""
+    """Moves the postprocessed job to its final stage, and tells MSS
+
+    Args:
+        device: what the device runs on
+        job_id: the id of the postprocessed job
+    """
     job = update_job_stage(device.jobs_store, job_id=job_id, stage=Stage.FINAL_Q)
     if job.status == JobStatus.SUCCESSFUL:
         job = update_job_stage(device.jobs_store, job_id=job_id, stage=Stage.FINAL_W)
@@ -421,7 +440,11 @@ def run_due_recalibration(
 
 
 def fail_overdue_jobs(device: DeviceResources) -> None:
-    """Fails the device's jobs whose stage has run past its timeout, as their worker died"""
+    """Fails the device's jobs whose stage has run past its timeout, as their worker died
+
+    Args:
+        device: what the device runs on
+    """
     timeouts = {
         Stage.PRE_PROC_W: device.settings.max_preprocessing_time,
         Stage.EXEC_W: device.settings.max_execution_time,
@@ -454,6 +477,9 @@ def fail_jobs_queued_too_long(device: DeviceResources) -> None:
     """Fails the device's preprocessed jobs that have waited past BCC_MAX_EXECUTION_QUEUE_TIME
     to execute, e.g. finding no room between bookings, rather than leave them waiting; it
     counts from when each was last written, as nothing writes a waiting job before its claim
+
+    Args:
+        device: what the device runs on
     """
     max_wait_seconds = device.settings.max_execution_queue_time
     # a limit of 0 is none
@@ -477,7 +503,11 @@ def fail_jobs_queued_too_long(device: DeviceResources) -> None:
 
 def fail_abandoned_recalibrations(device: DeviceResources) -> None:
     """Fails the device's recalibrations that a worker started and stopped before they ended,
-    as it died or was killed; unless one is running, which holds the executor lock"""
+    as it died or was killed; unless one is running, which holds the executor lock
+
+    Args:
+        device: what the device runs on
+    """
     try:
         with device.executor_lock.acquire(timeout=0):
             with Session(device.bookings_db) as session:
@@ -500,7 +530,13 @@ def fail_abandoned_recalibrations(device: DeviceResources) -> None:
 def schedule_recalibration(
     device: DeviceResources, due_at: Optional[datetime], interval: float
 ) -> None:
-    """Schedules the device's recalibration, repeating every interval, in place of any other"""
+    """Schedules the device's recalibration, repeating every interval, in place of any other
+
+    Args:
+        device: what the device runs on
+        due_at: when the first recalibration is due; None for now
+        interval: the seconds between recalibrations; 0 for no repeat
+    """
     stop_recalibration(device)
     with Session(device.bookings_db) as session:
         session.add(
@@ -516,7 +552,11 @@ def schedule_recalibration(
 
 
 def stop_recalibration(device: DeviceResources) -> None:
-    """Cancels the device's scheduled recalibrations; one under way schedules no next"""
+    """Cancels the device's scheduled recalibrations; one under way schedules no next
+
+    Args:
+        device: what the device runs on
+    """
     with Session(device.bookings_db) as session:
         session.exec(
             delete(RecalibrationRow).where(
@@ -536,7 +576,14 @@ def stop_recalibration(device: DeviceResources) -> None:
 
 
 def get_recalibration_info(device: DeviceResources) -> RecalibrationInfo:
-    """Gets the device's recalibration under way, the last ended and the next due"""
+    """Gets the device's recalibration under way, the last ended and the next due
+
+    Args:
+        device: what the device runs on
+
+    Returns:
+        the info of each of those recalibrations that there is
+    """
     device_name = device.settings.default_prefix
     with Session(device.bookings_db) as session:
         query = select(RecalibrationRow).where(
@@ -586,7 +633,14 @@ def get_recalibration_info(device: DeviceResources) -> RecalibrationInfo:
 
 
 def get_next_change_at(device: DeviceResources) -> Optional[datetime]:
-    """Gets when the bookings next change which waiting job may execute, if one waits"""
+    """Gets when the bookings next change which waiting job may execute, if one waits
+
+    Args:
+        device: what the device runs on
+
+    Returns:
+        the next such time, or None if no job waits or no change is coming
+    """
     with Session(device.bookings_db) as session:
         has_waiting_job = (
             session.exec(_get_waiting_query(device, Stage.EXEC_Q)).first() is not None

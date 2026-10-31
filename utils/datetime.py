@@ -86,5 +86,9 @@ def to_utc(value: datetime) -> datetime:
 
 
 def utc_now_str() -> str:
-    """Returns current time in UTC string but with hours replaced with a Z"""
+    """Returns current time in UTC string but with hours replaced with a Z
+
+    Returns:
+        the time now as an ISO string ending in Z
+    """
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")

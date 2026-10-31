@@ -15,6 +15,8 @@
 
 
 class BaseBccException(Exception):
+    """The base of BCC's errors, whose message is its string"""
+
     def __init__(self, message: str = ""):
         self._message = message
 
@@ -78,6 +80,8 @@ class JobAlreadyCancelled(BaseBccException):
 
 
 class InvalidJobIdInUploadedFileError(BaseBccException):
+    """Exception when an uploaded job file has no valid job id"""
+
     pass
 
 

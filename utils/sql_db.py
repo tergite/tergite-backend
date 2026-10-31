@@ -29,7 +29,14 @@ _ALEMBIC_CONFIG_FILE = Path(__file__).parents[1] / "alembic.ini"
 
 def get_sql_engine(url: str) -> Engine:
     """Gets a new SQL engine for the given URL, which pools its connections, as every process
-    makes its own engine and none forks; migrate_sql_db creates its tables"""
+    makes its own engine and none forks; migrate_sql_db creates its tables
+
+    Args:
+        url: the URL of the database
+
+    Returns:
+        the new SQL engine
+    """
     engine = create_engine(str(url))
     if engine.dialect.name == "sqlite":
         event.listen(engine, "connect", _write_ahead)
@@ -37,7 +44,11 @@ def get_sql_engine(url: str) -> Engine:
 
 
 def migrate_sql_db(url: str) -> None:
-    """Migrates the database at the URL to the models' schema, with Alembic"""
+    """Migrates the database at the URL to the models' schema, with Alembic
+
+    Args:
+        url: the URL of the database
+    """
     config = Config(
         str(_ALEMBIC_CONFIG_FILE), attributes={"should_configure_logging": False}
     )
@@ -49,7 +60,14 @@ def migrate_sql_db(url: str) -> None:
 @contextmanager
 def open_immediate_session(db_engine: Engine) -> Iterator[Session]:
     """Opens a session that, on SQLite, takes the write lock as it begins, so that what it
-    reads cannot change before it writes, even from another process"""
+    reads cannot change before it writes, even from another process
+
+    Args:
+        db_engine: the engine of the database
+
+    Yields:
+        the session, closed on leaving the block
+    """
     with Session(db_engine) as session:
         if db_engine.dialect.name == "sqlite":
             session.connection().exec_driver_sql("BEGIN IMMEDIATE")

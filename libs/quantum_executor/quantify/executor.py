@@ -158,6 +158,15 @@ class QuantifyExecutor(QuantumExecutor):
     def to_native_experiments(
         self, qobj: PulseQobj, native_config: NativeQobjConfig, /
     ) -> List[QuantifyExperiment]:
+        """Constructs quantify experiments from the PulseQobj instance
+
+        Args:
+            qobj: the Pulse qobject containing the experiments
+            native_config: the native config for the qobj
+
+        Returns:
+            list of QuantifyExperiment's
+        """
         native_experiments = [
             QuantifyExperiment.from_qobj_expt(
                 name=get_experiment_name(expt.header.name, idx + 1),
@@ -179,6 +188,17 @@ class QuantifyExecutor(QuantumExecutor):
         native_config: NativeQobjConfig,
         logger: ExperimentLogger,
     ) -> QExperimentResult:
+        """Compiles the experiment and runs it on the clusters
+
+        Args:
+            experiment: the native experiment to run
+            native_config: native config for the qobj
+            logger: the logger for the given experiment, which also logs its schedule
+                and Q1ASM programs
+
+        Returns:
+            xarray.Dataset of results, one data variable per acquisition channel
+        """
         if self._experiment_delay > 0:
             time.sleep(self._experiment_delay)
 
@@ -275,6 +295,7 @@ class QuantifyExecutor(QuantumExecutor):
         )
 
     def close(self) -> None:
+        """Stops and closes the clusters, those of every other QuantifyExecutor too"""
         self._coordinator.stop()
         # FIXME: This global is unnatural but QCoDeS is forcing us to do this
         #   Unfortunately, this means closing one instance of this class closes

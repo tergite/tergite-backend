@@ -23,6 +23,8 @@ from utils.strings import uuid_str
 
 
 class DeviceEventName(str, Enum):
+    """The kinds of events the device sends MSS"""
+
     INITIALIZED = "initialized"
     RECALIBRATED = "recalibrated"
     JOB_UPDATED = "job_updated"
@@ -31,6 +33,8 @@ class DeviceEventName(str, Enum):
 
 
 class DeviceSwitchData(BaseModel):
+    """The data of the event that the device was switched on or off"""
+
     date: datetime
 
 
@@ -66,7 +70,18 @@ class DeviceEvent(BaseModel):
     def validate_data(
         cls, value: DeviceEventData, info: ValidationInfo
     ) -> DeviceEventData:
-        """Validates the data depending on the name type"""
+        """Validates the data depending on the name type
+
+        Args:
+            value: the event's data
+            info: the fields validated so far, the event's name among them
+
+        Returns:
+            the data
+
+        Raises:
+            ValueError: data must be of type {expected type}, was {actual type}
+        """
         expected_data_cls = _EVENT_DATA_TYPES[info.data["name"]]
         if not isinstance(value, expected_data_cls):
             raise ValueError(

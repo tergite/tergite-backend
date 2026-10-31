@@ -36,7 +36,11 @@ class QuantifyChannelRegistry(dict):
         return channel
 
     def add(self, instruction: "BaseInstruction") -> None:
-        """Adds the instruction to its channel's playback, at the next position"""
+        """Adds the instruction to its channel's playback, at the next position
+
+        Args:
+            instruction: the instruction to add; its position is set to where it is added
+        """
         instruction.position = instruction.channel.register_instruction(instruction)
 
 

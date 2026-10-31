@@ -34,6 +34,9 @@ _ROOT_PATH = Path(__file__).parent
 def load_devices(env_files: List[Path]) -> List[str]:
     """Serves the devices of the given env files, the first being the default one
 
+    Args:
+        env_files: the paths to the devices' env files
+
     Returns:
         the names of the devices, i.e. their default_prefix
     """
@@ -43,12 +46,23 @@ def load_devices(env_files: List[Path]) -> List[str]:
 
 
 def get_device_names() -> List[str]:
-    """Gets the names of the devices this process serves, the default one first"""
+    """Gets the names of the devices this process serves, the default one first
+
+    Returns:
+        the names of the devices, i.e. their default_prefix
+    """
     return list(_DEVICES)
 
 
 def get_device_settings(name: Optional[str] = None) -> DeviceSettings:
-    """Gets the settings of the named device, or else of the default one"""
+    """Gets the settings of the named device, or else of the default one
+
+    Args:
+        name: the name of the device; None for the default one
+
+    Returns:
+        the device's settings
+    """
     return _DEVICES[name] if name else next(iter(_DEVICES.values()))
 
 

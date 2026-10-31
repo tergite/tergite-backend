@@ -83,6 +83,7 @@ HEALTH_CHECK_MAX_MISSES = 3
 
 
 def main() -> None:
+    """Runs the bcc command the command line names, start if it names none"""
     parser = _get_argument_parser()
     args = parser.parse_args(_with_default_command(sys.argv[1:]))
     if args.command == "start" and args.light_workers < 1:
@@ -448,7 +449,11 @@ class ApiHealth:
         self._has_answered = False
 
     def is_unresponsive(self) -> bool:
-        """Asks /health once, and checks whether the API has missed too many in a row"""
+        """Asks /health once, and checks whether the API has missed too many in a row
+
+        Returns:
+            True once the API has answered and then missed HEALTH_CHECK_MAX_MISSES in a row
+        """
         try:
             with urllib.request.urlopen(self._url, timeout=self._timeout) as response:
                 is_answered = response.status == 200

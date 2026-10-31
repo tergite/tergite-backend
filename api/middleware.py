@@ -25,6 +25,9 @@ async def add_request_id(
     Args:
         request: the current FastAPI request object
         call_next: the callback that calls the next middleware or route handler
+
+    Returns:
+        the response, with its `X-Request-ID` header set
     """
     request_id = request.headers.get("x-mss-request-id")
     if request_id is None:

@@ -144,7 +144,11 @@ def postprocess(device: DeviceResources, job: Job, results_file: str) -> str:
 
 
 def recalibrate(device: DeviceResources) -> None:
-    """Recalibrates the device, and saves and sends MSS the calibration it found"""
+    """Recalibrates the device, and saves and sends MSS the calibration it found
+
+    Args:
+        device: what the device runs on, its executor loaded
+    """
     # ensure recalibration runs without interference
     with device.executor_lock:
         calibration = device.executor.recalibrate()

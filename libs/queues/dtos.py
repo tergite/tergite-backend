@@ -76,6 +76,8 @@ class Stage(int, Enum):
 
 
 class TimestampPair(BaseModel):
+    """When a stage of the job started and finished, as ISO strings"""
+
     started: Optional[str] = None
     finished: Optional[str] = None
 
@@ -114,6 +116,8 @@ class Timestamps(BaseModel):
 
 
 class JobStatus(str, Enum):
+    """The overall status of the job, coarser than its stage"""
+
     PENDING = "pending"
     EXECUTING = "executing"
     FAILED = "failed"
@@ -184,7 +188,14 @@ class Job(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def remove_computed_fields(cls, data: Any) -> Any:
-        """Removes the computed fields that a dumped job carries, which extra would keep"""
+        """Removes the computed fields that a dumped job carries, which extra would keep
+
+        Args:
+            data: the raw data of the job
+
+        Returns:
+            the data without the computed fields
+        """
         if not isinstance(data, dict):
             return data
         return {k: v for k, v in data.items() if k not in cls.model_computed_fields}

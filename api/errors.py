@@ -61,7 +61,11 @@ HTTP_STATUS_CODES: Dict[Type[Exception], int] = {
 
 
 def add_error_handlers(app: FastAPI) -> None:
-    """Answers each error in HTTP_STATUS_CODES with its status code"""
+    """Answers each error in HTTP_STATUS_CODES with its status code
+
+    Args:
+        app: the FastAPI application to add the error handlers to
+    """
     for error, status_code in HTTP_STATUS_CODES.items():
         app.add_exception_handler(error, _to_http_error(status_code))
 

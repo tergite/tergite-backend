@@ -47,7 +47,11 @@ class WakeUpListener:
                 self._port_files.append(port_file)
 
     def wait(self, timeout: float) -> None:
-        """Waits for a wake-up, or for the timeout in seconds, taking every wake-up sent"""
+        """Waits for a wake-up, or for the timeout, taking every wake-up sent
+
+        Args:
+            timeout: the most seconds to wait
+        """
         select.select([self._socket], [], [], max(timeout, 0))
         with suppress(BlockingIOError):
             while True:
@@ -58,13 +62,19 @@ class WakeUpListener:
         _send_wake_up(self._port)
 
     def close(self) -> None:
+        """Stops listening, and deletes the port files that name this listener"""
         for port_file in self._port_files:
             port_file.unlink(missing_ok=True)
         self._socket.close()
 
 
 def wake_workers(device: DeviceResources, kind: WorkerKind) -> None:
-    """Wakes the device's waiting workers of the kind; a busy one looks for work when done"""
+    """Wakes the device's waiting workers of the kind; a busy one looks for work when done
+
+    Args:
+        device: what the device runs on
+        kind: the kind of workers to wake, "heavy" or "light"
+    """
     for port_file in device.settings.wakeups_dir.glob(f"{kind}-*.port"):
         # a file half written, or deleted meanwhile, costs that worker its wait's timeout
         with suppress(OSError, ValueError):

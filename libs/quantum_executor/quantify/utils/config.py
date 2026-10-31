@@ -40,6 +40,8 @@ CLUSTER_INSTRUMENT_TYPE = "Cluster"
 
 
 class ModuleConfig(BaseModel):
+    """The configuration of a module in a cluster"""
+
     model_config = ConfigDict(extra="allow")
 
     instrument_type: str = Field(..., description="Module instrument type.")
@@ -47,6 +49,17 @@ class ModuleConfig(BaseModel):
 
     @field_validator("instrument_type")
     def validate_module_instrument_type(cls, v):
+        """Accepts only the known module types
+
+        Args:
+            v: the module's instrument type
+
+        Returns:
+            the instrument type
+
+        Raises:
+            ValueError: Invalid module instrument_type '{v}'. Allowed types: {allowed types}
+        """
         if v not in ALLOWED_MODULE_TYPES:
             raise ValueError(
                 f"Invalid module instrument_type '{v}'. Allowed types: {ALLOWED_MODULE_TYPES}"
@@ -83,6 +96,17 @@ class InstrumentConfig(BaseModel):
 
     @field_validator("instrument_type")
     def validate_instrument_type(cls, v):
+        """Accepts only the known top-level instrument types
+
+        Args:
+            v: the instrument's type
+
+        Returns:
+            the instrument type
+
+        Raises:
+            ValueError: Invalid top-level instrument_type '{v}'. Allowed types: {allowed types}
+        """
         if v not in ALLOWED_TOP_LEVEL_INSTRUMENTS:
             raise ValueError(
                 f"Invalid top-level instrument_type '{v}'. Allowed types: {ALLOWED_TOP_LEVEL_INSTRUMENTS}"
@@ -99,6 +123,19 @@ class QuantifyMetadata(RootModel[Dict[str, InstrumentConfig]]):
     def validate_hardware_description(
         cls, v: Dict[str, InstrumentConfig]
     ) -> Dict[str, InstrumentConfig]:
+        """Requires each cluster to have a valid name and an IP address, and each SPI rack a port
+
+        Args:
+            v: the instrument configs by name
+
+        Returns:
+            the instrument configs
+
+        Raises:
+            ValueError: Cluster name '{name}' does not match expected pattern 'cluster<number>'.
+            ValueError: Cluster '{name}' must specify an ip_address.
+            ValueError: SPI-Rack '{name}' must specify a serial 'port'.
+        """
         for name, instr in v.items():
             if instr.instrument_type == CLUSTER_INSTRUMENT_TYPE:
                 # Validate that for each Cluster instrument the name matches the expected pattern.

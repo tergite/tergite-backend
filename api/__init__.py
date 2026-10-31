@@ -31,7 +31,7 @@ from .routers import bookings, devices, jobs, logfiles, recalibration, switch, u
 app = FastAPI(
     title="Backend Control Computer",
     description="Interfaces Quantum processor via REST API",
-    version="v2026.11.0-rc.1",
+    version="v2026.11.0-rc.2",
     lifespan=lifespan,
 )
 
@@ -63,12 +63,21 @@ app.add_middleware(DeviceRoutingMiddleware)
 
 @app.get("/", dependencies=[Depends(get_verified_mss_user_id)])
 async def root():
+    """Greets a caller that MSS has signed for, to check it can reach this device
+
+    Returns:
+        a welcome message
+    """
     return {"message": "Welcome to BCC machine"}
 
 
 @app.get("/health")
 async def check_health() -> dict[str, str]:
-    """Answers that the API runs, for bcc start and load balancers, without MSS's signature"""
+    """Answers that the API runs, for bcc start and load balancers, without MSS's signature
+
+    Returns:
+        the status "ok"
+    """
     return {"status": "ok"}
 
 

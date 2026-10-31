@@ -125,6 +125,13 @@ def verify_mss_signature(
 
 
 def get_mss_public_key(key_path: Path) -> RSAPublicKey:
-    """Loads the public key for MSS given the path to the key file"""
+    """Loads the public key for MSS given the path to the key file
+
+    Args:
+        key_path: the path to the PEM file of the key
+
+    Returns:
+        the MSS public key
+    """
     with open(key_path, "rb") as key_file:
         return serialization.load_pem_public_key(key_file.read())

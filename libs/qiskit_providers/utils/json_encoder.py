@@ -67,11 +67,28 @@ class IQXJsonEncoder(json.JSONEncoder):
     def encode(self, o: Any) -> str:
         """
         Return a JSON string representation of a Python data structure.
+
+        Args:
+            o: the object to encode
+
+        Returns:
+            the JSON string
         """
         new_o = self.__encode(o)
         return super().encode(new_o)
 
     def default(self, o: Any) -> Any:
+        """Converts arrays, complex numbers and bound parameters to JSON-serializable values
+
+        Args:
+            o: the object the base encoder cannot serialize
+
+        Returns:
+            a JSON-serializable form of the object
+
+        Raises:
+            TypeError: the object is not JSON serializable
+        """
         # Convert numpy arrays:
         if hasattr(o, "tolist"):
             return o.tolist()

@@ -56,6 +56,9 @@ def get_one_qubit_backend(
         dim: The dimension of the Hilbert space for the system
         is_noisy: whether the simulation has noise
         **options: Additional keyword arguments passed to the DynamicsBackend
+
+    Returns:
+        the simulator backend of the qubit
     """
     dt = backend_config.general_config.dt
     qubit_conf = backend_config.calibration_config.qubit[0]

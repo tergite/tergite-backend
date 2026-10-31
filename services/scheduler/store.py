@@ -75,7 +75,15 @@ class JobsStore:
 
     @classmethod
     def from_settings(cls, db_engine: Engine, device_settings: DeviceSettings) -> Self:
-        """Gets the store of the device of these settings, in the given database"""
+        """Gets the store of the device of these settings, in the given database
+
+        Args:
+            db_engine: the engine of the database the jobs are kept in
+            device_settings: the settings of the device
+
+        Returns:
+            the device's jobs store
+        """
         return cls(
             db_engine,
             device_name=device_settings.default_prefix,
@@ -83,12 +91,26 @@ class JobsStore:
         )
 
     def is_stored(self, job_id: str) -> bool:
-        """Checks whether the device has the job"""
+        """Checks whether the device has the job
+
+        Args:
+            job_id: the id of the job
+
+        Returns:
+            True if the job is stored
+        """
         with Session(self._db_engine) as session:
             return session.get(JobRow, (self._device_name, job_id)) is not None
 
     def insert(self, job: Job) -> Job:
-        """Inserts the job, replacing any of the same id, and deletes the expired ones"""
+        """Inserts the job, replacing any of the same id, and deletes the expired ones
+
+        Args:
+            job: the job to insert
+
+        Returns:
+            the inserted job
+        """
         now = get_utc_now()
         with open_immediate_session(self._db_engine) as session:
             session.exec(
@@ -106,6 +128,12 @@ class JobsStore:
     def get_one(self, job_id: str) -> Job:
         """Gets the job of the given id
 
+        Args:
+            job_id: the id of the job
+
+        Returns:
+            the job
+
         Raises:
             ItemNotFoundError: '{job_id}' not found
         """
@@ -117,6 +145,13 @@ class JobsStore:
 
     def update(self, job_id: str, updates: dict) -> Job:
         """Sets the given fields of the job, and returns it
+
+        Args:
+            job_id: the id of the job
+            updates: the new values of the fields, by name
+
+        Returns:
+            the updated job
 
         Raises:
             ItemNotFoundError: '{job_id}' not found
@@ -134,7 +169,11 @@ class JobsStore:
         return updated_job
 
     def delete(self, job_id: str) -> None:
-        """Deletes the job of the given id, if the device has it"""
+        """Deletes the job of the given id, if the device has it
+
+        Args:
+            job_id: the id of the job
+        """
         with Session(self._db_engine) as session:
             session.exec(
                 delete(JobRow).where(
@@ -151,7 +190,17 @@ class JobsStore:
         skip: int = 0,
         limit: Optional[int] = None,
     ) -> List[Job]:
-        """Finds the jobs of the user, or of the status, or all, least recently written first"""
+        """Finds the jobs of the user, or of the status, or all, least recently written first
+
+        Args:
+            user_id: the id of the user whose jobs to find; None for any user's
+            status: the status of the jobs to find; None for any status
+            skip: the number of jobs to skip
+            limit: the most jobs to return; None for no limit
+
+        Returns:
+            the jobs found
+        """
         query = select(JobRow).where(col(JobRow.device_name) == self._device_name)
         if user_id is not None:
             query = query.where(col(JobRow.user_id) == user_id)

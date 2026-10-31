@@ -110,10 +110,16 @@ class QuantumExecutor(abc.ABC):
 
     @abc.abstractmethod
     def recalibrate(self, **kwargs) -> DeviceCalibration | None:
-        """Recalibrates the executor"""
+        """Recalibrates the executor
+
+        Returns:
+            the device calibration after recalibration, or None if this executor
+            cannot recalibrate
+        """
 
     @abc.abstractmethod
     def close(self):
+        """Frees the resources the executor holds, e.g. its connections to instruments"""
         pass
 
     def __enter__(self):
@@ -229,7 +235,11 @@ class NativeExptMetadata:
     qobj_tag: str
 
     def to_dict(self) -> dict:
-        """Converts this experiment metadata to JSON serializable dict"""
+        """Converts this experiment metadata to JSON serializable dict
+
+        Returns:
+            the JSON serializable dict of this metadata
+        """
         return {
             "tuid": self.tuid,
             "qobj": self.qobj.to_dict(),

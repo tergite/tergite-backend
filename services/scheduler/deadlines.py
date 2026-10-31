@@ -29,9 +29,17 @@ class WorkerDeadline:
         self._monotonic_time = multiprocessing.Value("d", math.inf, lock=False)
 
     def set_in(self, seconds: float) -> None:
-        """Sets the deadline the seconds from now; infinite seconds are none"""
+        """Sets the deadline the seconds from now
+
+        Args:
+            seconds: the seconds from now; math.inf for no deadline
+        """
         self._monotonic_time.value = time.monotonic() + seconds
 
     def get_seconds_left(self) -> float:
-        """Gets the seconds to the deadline, negative once it has passed"""
+        """Gets the seconds to the deadline
+
+        Returns:
+            the seconds left, negative once it has passed, math.inf while there is none
+        """
         return self._monotonic_time.value - time.monotonic()

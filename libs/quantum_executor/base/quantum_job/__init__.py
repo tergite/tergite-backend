@@ -239,6 +239,16 @@ def xarray_to_list(job: QuantumJob) -> IQMemory:
                     ]
 
     NumPy complex scalars are converted to float tuple.
+
+    Args:
+        job: the quantum job whose raw results are to be converted
+
+    Returns:
+        the memory of the job, per experiment, per shot, per channel
+
+    Raises:
+        ValueError: the job has no raw results
+        TypeError: a raw result is not an xarray.Dataset
     """
     if job.raw_results is None:
         raise ValueError(

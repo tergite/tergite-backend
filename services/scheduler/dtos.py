@@ -55,6 +55,8 @@ class RecalibrationInfo(BaseModel):
 
 
 class JobFileParams(BaseModel):
+    """The params of a job file: the qobject to run"""
+
     model_config = ConfigDict(
         extra="forbid",
         arbitrary_types_allowed=True,
@@ -64,7 +66,15 @@ class JobFileParams(BaseModel):
 
     @field_serializer("qobj")
     def serialize_qobj(self, qobj: PulseQobj, _info: SerializationInfo):
-        """Converts qobj into a dict"""
+        """Converts qobj into a dict
+
+        Args:
+            qobj: the qobject to serialize
+            _info: the serialization info, which tells whether it serializes to JSON
+
+        Returns:
+            the qobject's dict, or its JSON string when serializing to JSON
+        """
         qobj_dict = qobj.to_dict()
 
         if _info.mode_is_json():
@@ -74,7 +84,17 @@ class JobFileParams(BaseModel):
     @field_validator("qobj", mode="before")
     @classmethod
     def parse_qobj(cls, v):
-        """Parses the qobject from dict/str to Qobj"""
+        """Parses the qobject from dict/str to Qobj
+
+        Args:
+            v: the qobject, its dict or its JSON string
+
+        Returns:
+            the qobject
+
+        Raises:
+            TypeError: Invalid type for PulseQobj: {type}
+        """
         if isinstance(v, PulseQobj):
             return v
         elif isinstance(v, dict):

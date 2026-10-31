@@ -72,15 +72,36 @@ class BaseInstruction(abc.ABC):
     position: Optional[int] = None
 
     def get_phase_delta(self, channel: QuantifyChannel) -> float:
-        """A representation of the change in phase this instruction introduces to its channel"""
+        """A representation of the change in phase this instruction introduces to its channel
+
+        Args:
+            channel: the channel, as it is before this instruction is added
+
+        Returns:
+            the change in phase, in degrees
+        """
         return 0
 
     def get_frequency_delta(self, channel: QuantifyChannel) -> float:
-        """A representation of the change in frequency this instruction introduces to its channel"""
+        """A representation of the change in frequency this instruction introduces to its channel
+
+        Args:
+            channel: the channel, as it is before this instruction is added
+
+        Returns:
+            the change in frequency, in Hz
+        """
         return 0
 
     def get_acquisitions_delta(self, channel: QuantifyChannel) -> int:
-        """A representation of the change in acquisitions this instruction introduces to its channel"""
+        """A representation of the change in acquisitions this instruction introduces to its channel
+
+        Args:
+            channel: the channel, as it is before this instruction is added
+
+        Returns:
+            the number of acquisitions added
+        """
         return 0
 
     @abc.abstractmethod
@@ -136,6 +157,15 @@ class InitialObjectInstruction(BaseInstruction):
         channel_registry: QuantifyChannelRegistry,
         **kwargs,
     ) -> List["InitialObjectInstruction"]:
+        """Generates the initial idle for the qobj instruction
+
+        Args:
+            qobj_inst: the PulseQobjInstruction to convert from
+            channel_registry: the registry of channels for the current experiment
+
+        Returns:
+            a list of the one InitialObjectInstruction
+        """
         t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         duration = _map_to_qblox_timegrid(qobj_inst.duration * DT_CONST)
         channel = channel_registry[qobj_inst.ch]
@@ -148,6 +178,14 @@ class InitialObjectInstruction(BaseInstruction):
         ]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
+        """Gets the idle that the schedule starts with
+
+        Args:
+            config: the PulseQobjConfig corresponding to the parent experiment of this instruction
+
+        Returns:
+            the IdlePulse operation
+        """
         # Use the new IdlePulse operation to represent a no-op delay
         op = IdlePulse(duration=self.duration)
         return op
@@ -160,6 +198,14 @@ class AcquireInstruction(BaseInstruction):
     name: str = field(default="acquire", init=False)
 
     def get_acquisitions_delta(self, channel: QuantifyChannel) -> int:
+        """Counts this acquisition as one more on its channel
+
+        Args:
+            channel: the channel, as it is before this instruction is added
+
+        Returns:
+            1
+        """
         return 1
 
     @classmethod
@@ -171,6 +217,17 @@ class AcquireInstruction(BaseInstruction):
         hardware_map: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> List["AcquireInstruction"]:
+        """Generates an acquisition for each qubit the qobj instruction measures
+
+        Args:
+            qobj_inst: the PulseQobjInstruction to convert from
+            native_config: the native configuration for the qobj
+            channel_registry: the registry of channels for the current experiment
+            hardware_map: the mapping of the layout of the physical device
+
+        Returns:
+            the AcquireInstructions, one per measured qubit
+        """
         t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         duration = _map_to_qblox_timegrid(qobj_inst.duration * DT_CONST)
         acquire_instructions = []
@@ -193,6 +250,17 @@ class AcquireInstruction(BaseInstruction):
         return acquire_instructions
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
+        """Gets the acquisition operation of the native config's protocol
+
+        Args:
+            config: the PulseQobjConfig corresponding to the parent experiment of this instruction
+
+        Returns:
+            the SSBIntegrationComplex or Trace operation
+
+        Raises:
+            RuntimeError: Unknown acquisition protocol {protocol}.
+        """
         acq_index = self.channel.get_acquisitions_at_position(self.position) - 1
         if self.protocol == "SSBIntegrationComplex":
             op = SSBIntegrationComplex(
@@ -230,6 +298,16 @@ class DelayInstruction(BaseInstruction):
         hardware_map: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> List["DelayInstruction"]:
+        """Generates the delay for the qobj instruction
+
+        Args:
+            qobj_inst: the PulseQobjInstruction to convert from
+            channel_registry: the registry of channels for the current experiment
+            hardware_map: the mapping of the layout of the physical device
+
+        Returns:
+            a list of the one DelayInstruction
+        """
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
         channel = channel_registry[clock_name]
@@ -245,6 +323,14 @@ class DelayInstruction(BaseInstruction):
         ]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
+        """Gets the idle operation of this delay
+
+        Args:
+            config: the PulseQobjConfig corresponding to the parent experiment of this instruction
+
+        Returns:
+            the IdlePulse operation
+        """
         # Idle pulse don't have t0 parameter
         op = IdlePulse(duration=self.duration)
         return op
@@ -257,6 +343,14 @@ class SetFreqInstruction(BaseInstruction):
     name: str = field(default="setf", init=False)
 
     def get_frequency_delta(self, channel: QuantifyChannel) -> float:
+        """Gets the change that brings the channel to this instruction's frequency
+
+        Args:
+            channel: the channel, as it is before this instruction is added
+
+        Returns:
+            the change in frequency, in Hz
+        """
         # reset the channel frequency to zero then add the instruction frequency
         return self.frequency - channel.final_frequency
 
@@ -268,6 +362,16 @@ class SetFreqInstruction(BaseInstruction):
         hardware_map: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> List["SetFreqInstruction"]:
+        """Generates the frequency setting for the qobj instruction
+
+        Args:
+            qobj_inst: the PulseQobjInstruction to convert from
+            channel_registry: the registry of channels for the current experiment
+            hardware_map: the mapping of the layout of the physical device
+
+        Returns:
+            a list of the one SetFreqInstruction
+        """
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
         channel = channel_registry[clock_name]
@@ -284,6 +388,14 @@ class SetFreqInstruction(BaseInstruction):
         ]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
+        """Gets the operation that sets the clock to the channel's frequency at this instruction
+
+        Args:
+            config: the PulseQobjConfig corresponding to the parent experiment of this instruction
+
+        Returns:
+            the SetClockFrequency operation
+        """
         # Frequency after this instruction (playback already computed)
         freq_now = self.channel.get_freq_at_position(self.position)
         return SetClockFrequency(
@@ -299,6 +411,14 @@ class ShiftFreqInstruction(BaseInstruction):
     name: str = field(default="shiftf", init=False)
 
     def get_frequency_delta(self, channel: QuantifyChannel) -> float:
+        """Gets this instruction's frequency shift
+
+        Args:
+            channel: the channel, as it is before this instruction is added
+
+        Returns:
+            the change in frequency
+        """
         return self.frequency
 
     @classmethod
@@ -309,6 +429,16 @@ class ShiftFreqInstruction(BaseInstruction):
         hardware_map: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> List["ShiftFreqInstruction"]:
+        """Generates the frequency shift for the qobj instruction
+
+        Args:
+            qobj_inst: the PulseQobjInstruction to convert from
+            channel_registry: the registry of channels for the current experiment
+            hardware_map: the mapping of the layout of the physical device
+
+        Returns:
+            a list of the one ShiftFreqInstruction
+        """
         t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
@@ -325,6 +455,14 @@ class ShiftFreqInstruction(BaseInstruction):
         ]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
+        """Gets the operation that sets the clock to the channel's frequency at this instruction
+
+        Args:
+            config: the PulseQobjConfig corresponding to the parent experiment of this instruction
+
+        Returns:
+            the SetClockFrequency operation
+        """
         # After shiftf, the playback contains the updated absolute frequency.
         freq_now = self.channel.get_freq_at_position(self.position)
         return SetClockFrequency(
@@ -340,6 +478,14 @@ class SetPhaseInstruction(BaseInstruction):
     name: str = field(default="setp", init=False)
 
     def get_phase_delta(self, channel: QuantifyChannel) -> float:
+        """Gets the change that brings the channel to this instruction's phase
+
+        Args:
+            channel: the channel, as it is before this instruction is added
+
+        Returns:
+            the change in phase, in degrees
+        """
         # reset the channel phase to zero then add the instruction phase
         return self.phase - channel.final_phase
 
@@ -351,6 +497,16 @@ class SetPhaseInstruction(BaseInstruction):
         hardware_map: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> List["SetPhaseInstruction"]:
+        """Generates the phase setting, in degrees, for the qobj instruction
+
+        Args:
+            qobj_inst: the PulseQobjInstruction to convert from
+            channel_registry: the registry of channels for the current experiment
+            hardware_map: the mapping of the layout of the physical device
+
+        Returns:
+            a list of the one SetPhaseInstruction
+        """
         t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
@@ -369,6 +525,14 @@ class SetPhaseInstruction(BaseInstruction):
         ]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
+        """Gets the phase shift that brings the clock to the channel's phase at this instruction
+
+        Args:
+            config: the PulseQobjConfig corresponding to the parent experiment of this instruction
+
+        Returns:
+            the ShiftClockPhase operation
+        """
         # phase after this instruction according to playback
         target = self.channel.get_phase_at_position(self.position)
 
@@ -390,6 +554,14 @@ class ShiftPhaseInstruction(BaseInstruction):
     name: str = field(default="fc", init=False)
 
     def get_phase_delta(self, channel: QuantifyChannel) -> float:
+        """Gets this instruction's phase shift
+
+        Args:
+            channel: the channel, as it is before this instruction is added
+
+        Returns:
+            the change in phase, in degrees
+        """
         return self.phase
 
     @classmethod
@@ -400,6 +572,18 @@ class ShiftPhaseInstruction(BaseInstruction):
         hardware_map: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> List["ShiftPhaseInstruction"]:
+        """Generates the phase shift, in degrees, for the qobj instruction
+
+        Args:
+            qobj_inst: the PulseQobjInstruction to convert from
+            channel_registry: the registry of channels for the current experiment
+            hardware_map: the mapping of the layout of the physical device
+            **kwargs: `drive_frequencies` by clock and `lo_frequencies` by port-clock; the
+                phase is negated where the LO is below the drive frequency
+
+        Returns:
+            a list of the one ShiftPhaseInstruction
+        """
         t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
@@ -429,6 +613,12 @@ class ShiftPhaseInstruction(BaseInstruction):
     def to_operation(self, config: PulseQobjConfig) -> Operation:
         """
         Send shift clock phase command in degree.
+
+        Args:
+            config: the PulseQobjConfig corresponding to the parent experiment of this instruction
+
+        Returns:
+            the ShiftClockPhase operation
         """
         return ShiftClockPhase(
             phase_shift=self.phase,
@@ -449,6 +639,18 @@ class GaussPulseInstruction(BaseInstruction):
         channel_registry: QuantifyChannelRegistry,
         hardware_map: Optional[Dict[str, Any]] = None,
     ) -> List["GaussPulseInstruction"]:
+        """Generates the gaussian pulse for the qobj instruction
+
+        Args:
+            qobj_inst: the PulseQobjInstruction to convert from
+            config: the PulseQobjConfig for the instruction
+            native_config: the native configuration for the qobj
+            channel_registry: the registry of channels for the current experiment
+            hardware_map: the mapping of the layout of the physical device
+
+        Returns:
+            a list of the one GaussPulseInstruction
+        """
         # Map timing and channel information as appropriate.
         t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         duration = _map_to_qblox_timegrid(qobj_inst.parameters["duration"] * DT_CONST)
@@ -468,6 +670,14 @@ class GaussPulseInstruction(BaseInstruction):
         ]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
+        """Gets the DRAG pulse operation of this gaussian pulse
+
+        Args:
+            config: the PulseQobjConfig corresponding to the parent experiment of this instruction
+
+        Returns:
+            the DRAGPulse operation
+        """
         # Extract parameters, with defaults as needed.
         G_amp = self.parameters.get("amp")
         phase = self.parameters.get("phase", 0.0)
@@ -497,6 +707,18 @@ class SquarePulseInstruction(BaseInstruction):
         channel_registry: QuantifyChannelRegistry,
         hardware_map: Optional[Dict[str, Any]] = None,
     ) -> List["SquarePulseInstruction"]:
+        """Generates the square pulse for the qobj instruction
+
+        Args:
+            qobj_inst: the PulseQobjInstruction to convert from
+            config: the PulseQobjConfig for the instruction
+            native_config: the native configuration for the qobj
+            channel_registry: the registry of channels for the current experiment
+            hardware_map: the mapping of the layout of the physical device
+
+        Returns:
+            a list of the one SquarePulseInstruction
+        """
         t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         duration = _map_to_qblox_timegrid(qobj_inst.parameters["duration"] * DT_CONST)
         qobj_channel = qobj_inst.ch
@@ -515,6 +737,14 @@ class SquarePulseInstruction(BaseInstruction):
         ]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
+        """Gets the square pulse operation
+
+        Args:
+            config: the PulseQobjConfig corresponding to the parent experiment of this instruction
+
+        Returns:
+            the SquarePulse operation
+        """
         amp = self.parameters.get("amp")
         op = SquarePulse(
             amp=amp,
@@ -539,6 +769,18 @@ class PulseLibInstruction(BaseInstruction):
         channel_registry: QuantifyChannelRegistry,
         hardware_map: Optional[Dict[str, Any]] = None,
     ) -> List["PulseLibInstruction"]:
+        """Generates the pulse, from the config's pulse library, for the qobj instruction
+
+        Args:
+            qobj_inst: the PulseQobjInstruction to convert from
+            config: the PulseQobjConfig for the instruction
+            native_config: the native configuration for the qobj
+            channel_registry: the registry of channels for the current experiment
+            hardware_map: the mapping of the layout of the physical device
+
+        Returns:
+            a list of the one PulseLibInstruction
+        """
         t0 = _map_to_qblox_timegrid(qobj_inst.t0 * DT_CONST)
         qobj_channel = qobj_inst.ch
         clock_name, port_name = hardware_map[qobj_channel]
@@ -558,6 +800,17 @@ class PulseLibInstruction(BaseInstruction):
         ]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
+        """Gets the numerical pulse of this instruction's waveform in the pulse library
+
+        Args:
+            config: the PulseQobjConfig corresponding to the parent experiment of this instruction
+
+        Returns:
+            the NumericalPulse operation
+
+        Raises:
+            RuntimeError: Unable to schedule operation {instruction}.
+        """
         try:
             # FIXME: pulse_library seems to be a list but is accessed here as a dict
             waveform = config.pulse_library[self.name]
@@ -587,6 +840,19 @@ class WacqtCZPulseInstruction(BaseInstruction):
         channel_registry: QuantifyChannelRegistry,
         hardware_map: Optional[Dict[str, Any]] = None,
     ) -> List["WacqtCZPulseInstruction"]:
+        """Generates the WACQT CZ pulse for the qobj instruction
+
+        Args:
+            qobj_inst: the PulseQobjInstruction to convert from
+            config: the PulseQobjConfig for the instruction
+            native_config: the native configuration for the qobj
+            channel_registry: the registry of channels for the current experiment
+            hardware_map: the mapping of the layout of the physical device
+
+        Returns:
+            a list of the one WacqtCZPulseInstruction, or an empty list if the qobj
+            instruction is not a WACQT CZ pulse
+        """
         # Accept either a dedicated name or a parametric pulse with shape tag
         is_name_ok = qobj_inst.name.lower() in {"wacqt_cz", "parametric_pulse"}
         shape = getattr(qobj_inst, "pulse_shape", "wacqt_cz")
@@ -614,6 +880,14 @@ class WacqtCZPulseInstruction(BaseInstruction):
         ]
 
     def to_operation(self, config: PulseQobjConfig) -> Operation:
+        """Gets the soft square pulse operation of this flux pulse
+
+        Args:
+            config: the PulseQobjConfig corresponding to the parent experiment of this instruction
+
+        Returns:
+            the SoftSquarePulse operation
+        """
         # TODO: assert duration == t_p or replace t_p, t_w, t_rf with one duration parameter
         return SoftSquarePulse(
             duration=self.duration,

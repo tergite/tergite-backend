@@ -133,7 +133,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-        run: |
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 ||
-            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --notes "See CHANGELOG.md."
-          gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          # a release candidate must not become the repository's latest release
+          IS_PRERELEASE: ${{ contains(github.ref_name, '-rc') }}
+        # given the files, gh uploads them to a draft and then publishes it, as a published
+        # release is immutable and takes no more
+        run: >-
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag
+          --prerelease="$IS_PRERELEASE" --notes "See CHANGELOG.md."

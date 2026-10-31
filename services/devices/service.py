@@ -43,6 +43,13 @@ from .store import DeviceParametersRow, SwitchedOffDeviceRow
 def get_device_info(db_engine: Engine, backend_name: str) -> Device:
     """Gets the backend's device info
 
+    Args:
+        db_engine: the engine of the device's database
+        backend_name: the name of the backend
+
+    Returns:
+        the device's static properties
+
     Raises:
         ItemNotFoundError: '{backend_name}' not found
     """
@@ -55,6 +62,13 @@ def get_device_calibration_info(
 ) -> DeviceCalibration:
     """Gets the backend's calibration info
 
+    Args:
+        db_engine: the engine of the device's database
+        backend_name: the name of the backend
+
+    Returns:
+        the device's latest calibration
+
     Raises:
         ItemNotFoundError: '{backend_name}' not found
     """
@@ -66,7 +80,13 @@ def save_all_device_params(
     db_engine: Engine, backend_config: BackendConfig, mss_client: MssClient
 ) -> None:
     """Saves the backend's device info and calibration info, and sends them to MSS, or keeps
-    them for it while it cannot be reached"""
+    them for it while it cannot be reached
+
+    Args:
+        db_engine: the engine of the device's database
+        backend_config: the backend config the device info and calibration are got from
+        mss_client: the client to MSS
+    """
     device_info = Device.from_config(backend_config)
     calib_info = DeviceCalibration.from_config(backend_config)
 
@@ -101,6 +121,12 @@ def save_device_calibration(
     """Saves the backend's new calibration, which the light workers discriminate with and the
     API serves, and sends it to MSS, or keeps it for it while it cannot be reached
 
+    Args:
+        db_engine: the engine of the device's database
+        backend_name: the name of the backend
+        calibration: the new calibration
+        mss_client: the client to MSS
+
     Raises:
         ItemNotFoundError: '{backend_name}' not found
     """
@@ -121,6 +147,11 @@ def save_device_calibration(
 def switch_off(db_engine: Engine, mss_client: MssClient, device_name: str) -> None:
     """Switches off the device, and tells MSS
 
+    Args:
+        db_engine: the engine of the device's database
+        mss_client: the client to MSS
+        device_name: the name of the device
+
     Raises:
         MssRejectedError: error sending switch off data: {error message}
         MssTimeoutError: error sending switch off data: response took longer than timeout
@@ -139,6 +170,11 @@ def switch_off(db_engine: Engine, mss_client: MssClient, device_name: str) -> No
 
 def switch_on(db_engine: Engine, mss_client: MssClient, device_name: str) -> None:
     """Switches on the device, and tells MSS
+
+    Args:
+        db_engine: the engine of the device's database
+        mss_client: the client to MSS
+        device_name: the name of the device
 
     Raises:
         MssRejectedError: error sending switch on data: {error message}
@@ -161,7 +197,15 @@ def switch_on(db_engine: Engine, mss_client: MssClient, device_name: str) -> Non
 
 
 def is_offline(db_engine: Engine, device_name: str) -> bool:
-    """Checks if the named device is switched off"""
+    """Checks if the named device is switched off
+
+    Args:
+        db_engine: the engine of the device's database
+        device_name: the name of the device
+
+    Returns:
+        True if the device is switched off
+    """
     with Session(db_engine) as session:
         return session.get(SwitchedOffDeviceRow, device_name) is not None
 

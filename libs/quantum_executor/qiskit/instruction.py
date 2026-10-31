@@ -85,6 +85,14 @@ class GaussianPlay(qiskit_pulse.Play, QiskitDynamicsInstruction):
 
     @classmethod
     def from_qobj(cls, qobj_inst: PulseQobjInstruction) -> "GaussianPlay":
+        """Creates the Gaussian play on the drive channel of the qobj instruction
+
+        Args:
+            qobj_inst: the PulseQobjInstruction instance to generate from
+
+        Returns:
+            the GaussianPlay instruction
+        """
         channel = _get_channel(qobj_inst)
         # amp values is no longer complex
         # TODO: find ref to the docs update
@@ -165,6 +173,14 @@ class WacqtCZPlay(qiskit_pulse.Play, QiskitDynamicsInstruction):
 
     @classmethod
     def from_qobj(cls, qobj_inst: PulseQobjInstruction) -> "WacqtCZPlay":
+        """Creates the WACQT CZ play on the control channel of the qobj instruction
+
+        Args:
+            qobj_inst: the PulseQobjInstruction instance to generate from
+
+        Returns:
+            the WacqtCZPlay instruction
+        """
         channel = _get_channel(qobj_inst)
         normalized_params = {k.lower(): v for k, v in qobj_inst.parameters.items()}
         return cls(channel=ControlChannel(channel), **normalized_params)
@@ -175,6 +191,17 @@ class SetFrequency(qiskit_pulse.SetFrequency, QiskitDynamicsInstruction):
 
     @classmethod
     def from_qobj(cls, qobj_inst: PulseQobjInstruction) -> "SetFrequency":
+        """Creates the set frequency on the drive channel of the qobj instruction
+
+        Args:
+            qobj_inst: the PulseQobjInstruction instance to generate from
+
+        Returns:
+            the SetFrequency instruction
+
+        Raises:
+            NotImplementedError: SetFrequency not implemented for measurement
+        """
         if _is_measurement(qobj_inst):
             raise NotImplementedError("SetFrequency not implemented for measurement")
 
@@ -187,6 +214,17 @@ class ShiftFrequency(qiskit_pulse.ShiftFrequency, QiskitDynamicsInstruction):
 
     @classmethod
     def from_qobj(cls, qobj_inst: PulseQobjInstruction) -> "ShiftFrequency":
+        """Creates the shift frequency on the drive channel of the qobj instruction
+
+        Args:
+            qobj_inst: the PulseQobjInstruction instance to generate from
+
+        Returns:
+            the ShiftFrequency instruction
+
+        Raises:
+            NotImplementedError: ShiftFrequency not implemented for measurement
+        """
         if _is_measurement(qobj_inst):
             raise NotImplementedError("ShiftFrequency not implemented for measurement")
 
@@ -199,6 +237,17 @@ class SetPhase(qiskit_pulse.SetPhase, QiskitDynamicsInstruction):
 
     @classmethod
     def from_qobj(cls, qobj_inst: PulseQobjInstruction) -> "SetPhase":
+        """Creates the set phase on the drive channel of the qobj instruction
+
+        Args:
+            qobj_inst: the PulseQobjInstruction instance to generate from
+
+        Returns:
+            the SetPhase instruction
+
+        Raises:
+            NotImplementedError: SetPhase not implemented for measurement
+        """
         if _is_measurement(qobj_inst):
             raise NotImplementedError("SetPhase not implemented for measurement")
 
@@ -211,6 +260,17 @@ class ShiftPhase(qiskit_pulse.ShiftPhase, QiskitDynamicsInstruction):
 
     @classmethod
     def from_qobj(cls, qobj_inst: PulseQobjInstruction) -> "ShiftPhase":
+        """Creates the shift phase on the drive channel of the qobj instruction
+
+        Args:
+            qobj_inst: the PulseQobjInstruction instance to generate from
+
+        Returns:
+            the ShiftPhase instruction
+
+        Raises:
+            NotImplementedError: ShiftPhase not implemented for measurement
+        """
         if _is_measurement(qobj_inst):
             raise NotImplementedError("ShiftPhase not implemented for measurement")
 
@@ -223,6 +283,14 @@ class Delay(qiskit_pulse.Delay, QiskitDynamicsInstruction):
 
     @classmethod
     def from_qobj(cls, qobj_inst: PulseQobjInstruction) -> "Delay":
+        """Creates the delay on the drive channel of the qobj instruction
+
+        Args:
+            qobj_inst: the PulseQobjInstruction instance to generate from
+
+        Returns:
+            the Delay instruction
+        """
         params = getattr(qobj_inst, "parameters", {})
         duration = params.get("duration", getattr(qobj_inst, "duration", 0))
         channel = _get_channel(qobj_inst)
@@ -237,6 +305,14 @@ class Acquire(qiskit_pulse.Acquire, QiskitDynamicsInstruction):
 
     @classmethod
     def from_qobj(cls, qobj_inst: PulseQobjInstruction) -> "Acquire":
+        """Creates the acquisition on the channel of the qobj instruction
+
+        Args:
+            qobj_inst: the PulseQobjInstruction instance to generate from
+
+        Returns:
+            the Acquire instruction
+        """
         channel = _get_channel(qobj_inst)
         return cls(
             duration=1,  # set duration to any value, because it does not matter
