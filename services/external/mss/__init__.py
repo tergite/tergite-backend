@@ -18,7 +18,7 @@ from .auth import (
 )
 from .dtos import DeviceEvent, DeviceEventName, DeviceSwitchData, EventResponse
 from .events import send_kept_mss_events, send_mss_event
-from .nonces import claim_mss_nonce
+from .nonces import claim_mss_nonce, delete_expired_mss_nonces
 from .service import MssClient
 
 __all__ = [
@@ -28,6 +28,7 @@ __all__ = [
     "EventResponse",
     "MssClient",
     "claim_mss_nonce",
+    "delete_expired_mss_nonces",
     "encrypt_mss_jwt_token",
     "get_mss_public_key",
     "get_private_key",

@@ -40,7 +40,7 @@ from utils.sql_db import open_immediate_session
 
 from ..booking import Booking, get_active_booking, get_next_booking
 from ..devices import is_offline
-from ..external.mss import send_kept_mss_events
+from ..external.mss import delete_expired_mss_nonces, send_kept_mss_events
 from .deadlines import WorkerDeadline
 from .dtos import RecalibrationInfo, RecalibrationStatus
 from .resources import DeviceResources
@@ -171,6 +171,7 @@ class Dispatcher:
         self._send_kept_mss_events(device)
         fail_overdue_jobs(device)
         fail_jobs_queued_too_long(device)
+        delete_expired_mss_nonces(device.bookings_db)
         if self._should_run_light and run_next_postprocessing(device, self._deadline):
             return True
         if not self._should_run_heavy:

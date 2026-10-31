@@ -35,7 +35,7 @@ def claim_mss_nonce(
     """Claims the nonce MSS signed a request with, so that the request cannot be replayed
 
     A nonce is kept for ttl seconds, past which the timestamp MSS signed with it is refused
-    as too old anyway.
+    as too old anyway; it stays claimed until delete_expired_mss_nonces sweeps it.
 
     Args:
         db_engine: the SQL database the nonces are kept in
@@ -46,14 +46,12 @@ def claim_mss_nonce(
     Returns:
         whether the nonce was new; False if another request claimed it first
     """
-    now = get_utc_now()
     with Session(db_engine) as session:
-        session.exec(delete(MssNonceRow).where(col(MssNonceRow.expires_at) < now))
         session.add(
             MssNonceRow(
                 device_name=device_name,
                 nonce=nonce,
-                expires_at=now + timedelta(seconds=ttl),
+                expires_at=get_utc_now() + timedelta(seconds=ttl),
             )
         )
         try:
@@ -61,3 +59,16 @@ def claim_mss_nonce(
         except IntegrityError:
             return False
     return True
+
+
+def delete_expired_mss_nonces(db_engine: Engine) -> None:
+    """Deletes the nonces whose ttl has passed, which no request could replay anyway
+
+    Args:
+        db_engine: the SQL database the nonces are kept in
+    """
+    with Session(db_engine) as session:
+        session.exec(
+            delete(MssNonceRow).where(col(MssNonceRow.expires_at) < get_utc_now())
+        )
+        session.commit()

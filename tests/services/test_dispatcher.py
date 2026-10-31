@@ -32,6 +32,7 @@ def test_a_light_worker_takes_its_devices_in_turn(mocker):
     mocker.patch.object(dispatcher, "send_kept_mss_events", return_value=True)
     mocker.patch.object(dispatcher, "fail_overdue_jobs")
     mocker.patch.object(dispatcher, "fail_jobs_queued_too_long")
+    mocker.patch.object(dispatcher, "delete_expired_mss_nonces")
     mocker.patch.object(
         dispatcher, "run_next_postprocessing", side_effect=postprocess_next
     )
@@ -51,6 +52,7 @@ def test_a_worker_with_nothing_to_do_waits_the_shortest_of_its_devices_settings(
     mocker.patch.object(dispatcher, "send_kept_mss_events", return_value=True)
     mocker.patch.object(dispatcher, "fail_overdue_jobs")
     mocker.patch.object(dispatcher, "fail_jobs_queued_too_long")
+    mocker.patch.object(dispatcher, "delete_expired_mss_nonces")
     mocker.patch.object(dispatcher, "run_next_postprocessing", return_value=False)
     listener = mocker.patch.object(dispatcher, "WakeUpListener").return_value
     devices = {
@@ -70,6 +72,22 @@ def test_a_worker_with_nothing_to_do_waits_the_shortest_of_its_devices_settings(
     assert wait_timeouts == [0.5]
 
 
+def test_a_pass_sweeps_the_devices_expired_mss_nonces(mocker):
+    """So that no request from MSS spends its time deleting them"""
+    mocker.patch.object(dispatcher, "send_kept_mss_events", return_value=True)
+    mocker.patch.object(dispatcher, "fail_overdue_jobs")
+    mocker.patch.object(dispatcher, "fail_jobs_queued_too_long")
+    mocker.patch.object(dispatcher, "run_next_postprocessing", return_value=False)
+    sweep = mocker.patch.object(dispatcher, "delete_expired_mss_nonces")
+    device = _get_device("alpha")
+
+    Dispatcher({"alpha": device}, should_run_heavy=False, should_run_light=True).run(
+        is_burst=True
+    )
+
+    sweep.assert_called_with(device.bookings_db)
+
+
 def _get_device(name: str, max_worker_wait_time: float = 5) -> SimpleNamespace:
     return SimpleNamespace(
         settings=SimpleNamespace(
@@ -78,6 +96,6 @@ def _get_device(name: str, max_worker_wait_time: float = 5) -> SimpleNamespace:
             mss_max_reconnection_delay=1,
             max_worker_wait_time=max_worker_wait_time,
         ),
-        bookings_db=None,
+        bookings_db=object(),
         mss_client=None,
     )
