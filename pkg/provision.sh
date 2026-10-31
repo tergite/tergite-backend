@@ -1,6 +1,6 @@
 #!/bin/sh
 # Creates a backend instance: `sudo @BINARY@-provision <name> [--executor E] [--port P]
-# [--mss-url URL] [--redis-url URL]`, with a Redis password, if any, in REDIS_PASSWORD.
+# [--mss-url URL]`.
 # <name> is its DEFAULT_PREFIX, which names /etc/bcc/<name>, /var/lib/bcc/<name> and the
 # @BINARY@@<name> service, or on macOS /usr/local/etc/bcc/<name>, /usr/local/var/bcc/<name>
 # and a LaunchDaemon. Writes backend.env, a key pair and the example configs, and leaves an
@@ -25,7 +25,7 @@ examples=$share_dir/examples
 
 main() {
 	name=$1
-	[ -n "$name" ] || fail "usage: @BINARY@-provision <name> [--executor E] [--port P] [--mss-url URL] [--redis-url URL]"
+	[ -n "$name" ] || fail "usage: @BINARY@-provision <name> [--executor E] [--port P] [--mss-url URL]"
 	shift
 	case $name in
 		*[!A-Za-z0-9_-]*) fail "the name '$name' may only have letters, digits, _ and -" ;;
@@ -34,18 +34,16 @@ main() {
 	executor=@DEFAULT_EXECUTOR@
 	port=@DEFAULT_PORT@
 	mss_url=http://localhost:8002
-	redis_url=redis://localhost:6379/0
 	while [ $# -gt 0 ]; do
 		case $1 in
 			--executor) executor=$2 ;;
 			--port) port=$2 ;;
 			--mss-url) mss_url=$2 ;;
-			--redis-url) redis_url=$2 ;;
 			*) fail "unknown option $1" ;;
 		esac
 		shift 2
 	done
-	for value in "$port" "$mss_url" "$redis_url"; do
+	for value in "$port" "$mss_url"; do
 		case $value in
 			*[\"\'\\\$\`\ ]*) fail "'$value' has a quote, backslash, dollar or space" ;;
 		esac
@@ -93,7 +91,6 @@ main() {
 		BCC_PORT=$port
 		BCC_MACHINE_ROOT_URL=http://$host:$port
 		BCC_MSS_MACHINE_ROOT_URL=$mss_url
-		BCC_TUNER_REDIS_URL=$(add_password "$redis_url" "$REDIS_PASSWORD")
 
 		BCC_STORAGE_ROOT=$data/storage
 		BCC_BOOKING_DB_URL=sqlite:///$data/booking.db
@@ -163,24 +160,6 @@ copy_examples() {
 # writes the tuner's results beside it, where /etc is read-only to the service
 install_seed() {
 	install -m 0640 -o "$group" -g "$group" "$1" "$data/calibration.seed.toml"
-}
-
-add_password() {
-	if [ -z "$2" ]; then
-		printf '%s' "$1"
-		return
-	fi
-	scheme=${1%%://*}
-	rest=${1#*://}
-	case $rest in
-		*@*) url_user=${rest%%@*} url_host=${rest#*@} ;;
-		*) url_user= url_host=$rest ;;
-	esac
-	printf '%s://%s:%s@%s' "$scheme" "$url_user" "$(encode_url "$2")" "$url_host"
-}
-
-encode_url() {
-	printf '%s' "$1" | od -An -tx1 -v | tr -d ' \n' | sed 's/../%&/g'
 }
 
 get_secret() {

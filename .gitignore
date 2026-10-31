@@ -173,9 +173,6 @@ backend_config.**.toml
 !**/fixtures/backend_config**.toml
 !backend_config.example.toml
 
-# redis
-**.rdb
-
 # sqlite databases
 *.db
 **.db-shm

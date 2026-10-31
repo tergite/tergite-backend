@@ -20,7 +20,7 @@ from typing import Dict, List, Optional
 
 ALLOWED_WORSENING = 0.10
 # a rise this small is noise however large it is relative to the baseline, which may be 0
-NOISE_FLOORS = {"ms": 10, "MiB": 5, "keys": 50, "failures": 0}
+NOISE_FLOORS = {"ms": 10, "MiB": 5, "failures": 0}
 MEMORY_UNITS_IN_MIB = {"B": 1 / 1024**2, "KiB": 1 / 1024, "MiB": 1, "GiB": 1024}
 
 
@@ -41,13 +41,13 @@ def read_measures(path: Path) -> Dict[str, float]:
     measures.update(read_latencies(path / "locust_stats.csv"))
     measures.update(read_stage_times(path / "stage-times.csv"))
     measures.update(read_process_peaks(path / "process-stats.csv"))
-    measures.update(read_redis_peaks(path / "redis-stats.csv"))
     return measures
 
 
 def is_worse(name: str, baseline: float, run: Optional[float]) -> bool:
     if run is None:
-        return True
+        # a process the run no longer has costs nothing
+        return not name.startswith("peak ")
     rise = run - baseline
     unit = name.split(":")[0].split()[-1]
     return rise > NOISE_FLOORS[unit] and rise > baseline * ALLOWED_WORSENING
@@ -98,16 +98,6 @@ def read_process_peaks(path: Path) -> Dict[str, float]:
         name = f"peak MiB: {row['process']}"
         peaks[name] = max(peaks[name], _parse_quantity(row["memory"]))
     return dict(peaks)
-
-
-def read_redis_peaks(path: Path) -> Dict[str, float]:
-    peaks = {"peak MiB: redis used memory": 0.0, "peak keys: redis": 0.0}
-    for row in _read_csv(path):
-        peaks["peak MiB: redis used memory"] = max(
-            peaks["peak MiB: redis used memory"], _parse_quantity(row["memory"])
-        )
-        peaks["peak keys: redis"] = max(peaks["peak keys: redis"], float(row["keys"]))
-    return peaks
 
 
 def _read_csv(path: Path) -> List[Dict[str, str]]:

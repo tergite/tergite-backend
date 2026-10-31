@@ -96,21 +96,10 @@ class DeviceSettings(BaseSettings):
     # quantify-metadata.example.yml
     quantify_config_file: Path = _ROOT_PATH / "quantify-config.json"
     quantify_metadata_file: Path = _ROOT_PATH / "quantify-metadata.yml"
-    # whether to write the SPI currents to redis and restore them during circuit execution
+    # whether to restore the SPI currents during circuit execution
     should_restore_currents: bool = False
     is_cluster_reset_allowed: bool = Field(
         False, validation_alias="BCC_ARE_CLUSTERS_RESETTABLE"
-    )
-
-    redis_scheme: str = "redis"
-    redis_host: str = "localhost"
-    redis_port: int = 6379
-    redis_user: Optional[str] = None
-    redis_password: Optional[str] = None
-    redis_db: int = 0
-    # tergite-tuner's, by default the one of the redis_* settings, read by its old name too
-    tuner_redis_url: Optional[str] = Field(
-        None, validation_alias=AliasChoices("BCC_TUNER_REDIS_URL", "BCC_RQ_REDIS_URL")
     )
 
     max_time_slot_length: float = 6 * 60 * 60
@@ -201,8 +190,6 @@ class DeviceSettings(BaseSettings):
             self.mss_device_events_endpoint = _get_mss_device_events_endpoint(
                 self.mss_machine_root_url, self.default_prefix
             )
-        if self.tuner_redis_url is None:
-            self.tuner_redis_url = self.redis_url
         if self.app_settings == "production":
             self.current_date = None
         return self
@@ -245,14 +232,6 @@ class DeviceSettings(BaseSettings):
     def prefix_root(self) -> Path:
         """The folder this device shares with those of the same storage prefix"""
         return self.storage_root / (self.storage_prefix_dirname or self.default_prefix)
-
-    @property
-    def redis_url(self) -> str:
-        """The URL the redis_* settings make up"""
-        credentials = ""
-        if self.redis_user or self.redis_password:
-            credentials = f"{self.redis_user or ''}:{self.redis_password or ''}@"
-        return f"{self.redis_scheme}://{credentials}{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
 
 def read_device_settings(env_file: Path) -> DeviceSettings:

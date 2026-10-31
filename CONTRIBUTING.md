@@ -80,8 +80,6 @@ All signed CLAs are emails to us at <quantum-nextlabs@chalmers.se>.
 
 ## How to Test
 
-- Ensure you have a [redis server](https://redis.io/docs/install/install-redis/) installed on your local machine,
-  which the `quantify` extra's tests need.
 - Ensure you have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed. 
  (_You could simply have python +3.13 installed instead._)
 
@@ -114,12 +112,6 @@ uv sync --dev --extra quantify
 source .venv/bin/activate
 ```
 
-- For the `quantify` extra, start the redis server in another terminal on port 6378
-
-```shell
-redis-server --port 6378
-```
-
 - Lint with black, isort and pyflakes, as CI does
 
 ```shell
@@ -150,15 +142,14 @@ pytest tests -m real_time
   the qiskit simulators. They install side by side.
 
 - Install it. A deb asks for a first backend instance: its name, which is its `DEFAULT_PREFIX`,
-  executor, port, MSS URL and, for quantify, Redis.
+  executor, port and MSS URL.
 
 ```shell
 sudo apt install ./tergite-backend_<version>_amd64.deb
 ```
 
 - Create any other instance, or the first on macOS, which asks nothing.
-  `--executor`, `--port`, `--mss-url` and `--redis-url` override the defaults, and a Redis
-  password goes in `REDIS_PASSWORD`.
+  `--executor`, `--port` and `--mss-url` override the defaults.
 
 ```shell
 sudo bcc-provision lab1

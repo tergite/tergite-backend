@@ -20,7 +20,7 @@ from pathlib import Path
 from tests.utils.fixtures import get_fixture_path
 
 _PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
-# set when pytest-xdist runs the tests, e.g. gw3; each worker has its own files and Redis database
+# set when pytest-xdist runs the tests, e.g. gw3; each worker has its own files
 _XDIST_WORKER = os.getenv("PYTEST_XDIST_WORKER", "gw0")
 
 # made on import, as the settings read it before any fixture runs; the suite runs in it.
@@ -84,13 +84,6 @@ TEST_MSS_NONCE_TTL = 200
 TEST_BCC_NONCE_TTL = 200
 TEST_CORS_ORIGINS = "testclient,localhost,127.0.0.1"
 
-REDIS_PORT = os.getenv("REDIS_PORT", "6378")
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_DB = f"{int(os.getenv('REDIS_DB', '2')) + int(_XDIST_WORKER.removeprefix('gw'))}"
-
-TEST_TUNER_REDIS_URL = os.getenv(
-    "TUNER_REDIS_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
-)
 TEST_LOG_LEVEL = os.getenv("LOG_LEVEL", "ERROR")
 TEST_DEBUG = os.getenv("DEBUG", "False")
 TEST_MAX_WORKER_WAIT_TIME = int(os.getenv("TEST_MAX_WORKER_WAIT_TIME", "120"))
@@ -166,7 +159,3 @@ def setup_test_env():
     environ["BCC_CORS_ORIGINS"] = f"{TEST_CORS_ORIGINS}"
     environ["BCC_LOG_LEVEL"] = f"{TEST_LOG_LEVEL}"
     environ["BCC_DEBUG"] = f"{TEST_DEBUG}"
-
-    environ["BCC_REDIS_PORT"] = f"{REDIS_PORT}"
-    environ["BCC_REDIS_HOST"] = f"{REDIS_HOST}"
-    environ["BCC_REDIS_DB"] = f"{REDIS_DB}"

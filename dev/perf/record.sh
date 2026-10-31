@@ -13,10 +13,10 @@
 #
 # Records the performance measures into <out-dir>: Locust on a BCC from this working tree, one
 # qiskit_pulse_1q device whose heavy worker stubs out the simulation (dev/perf/stub_worker.py),
-# talking to a stub MSS (dev/perf/mss_stub.py), with a Redis of its own and a stored backlog
-# (dev/perf/seed.py). It samples the CPU and memory of the API, the heavy and the light worker
-# and Redis, and Redis's memory and keys; once the jobs submitted have finished, it records
-# each one's time queued and running in each stage (dev/perf/stage_times.py).
+# talking to a stub MSS (dev/perf/mss_stub.py), with a stored backlog (dev/perf/seed.py). It
+# samples the CPU and memory of the API, the heavy and the light worker; once the jobs
+# submitted have finished, it records each one's time queued and running in each stage
+# (dev/perf/stage_times.py).
 #
 # Usage
 # =====
@@ -25,7 +25,7 @@
 #   ./dev/perf/record.sh /tmp/perf                    # a run to compare with it
 #   python3 dev/perf/compare.py dev/perf/baselines /tmp/perf
 #
-# Needs uv, redis-server, redis-cli and curl, and ports 8102, 8006 and 6382 free.
+# Needs uv and curl, and ports 8102 and 8006 free.
 # Compare only runs made on the same machine: the numbers are this machine's.
 
 set -e
@@ -41,12 +41,11 @@ export UV_PYTHON="${UV_PYTHON:-3.13}"
 FIXTURES_PATH="$ROOT_PATH/tests/fixtures"
 BCC_PORT=8102
 MSS_PORT=8006
-REDIS_PORT=6382
 export PERF_BACKLOG_USER_ID="perf-backlog-user" PERF_SDK_USER_ID="perf-sdk-user"
 
 main() {
   [[ -n "$1" ]] || exit_with_err "usage: $0 <out-dir>"
-  for tool in uv redis-server redis-cli curl; do
+  for tool in uv curl; do
     command -v "$tool" &> /dev/null || exit_with_err "$tool is not available"
   done
   mkdir -p "$1"
@@ -55,8 +54,6 @@ main() {
   start_stack
   sample_processes &
   process_sampler_pid=$!
-  sample_redis &
-  redis_sampler_pid=$!
   uvx --from "locust==$LOCUST_VERSION" --with cryptography \
     locust -f "$ROOT_PATH/dev/perf/locustfile.py" --headless --only-summary \
     --host "http://127.0.0.1:$BCC_PORT" -u "$LOAD_USERS" -r "$LOAD_USERS" -t "$LOAD_DURATION" \
@@ -65,16 +62,12 @@ main() {
   stop_stack
 }
 
-# Starts Redis, the stub MSS, the API and the heavy and light workers in WORK_PATH, after
+# Starts the stub MSS, the API and the heavy and light workers in WORK_PATH, after
 # seeding the backlog
 start_stack() {
   WORK_PATH="$(mktemp -d)"
   trap stop_stack EXIT
   write_env_file
-
-  redis-server --port "$REDIS_PORT" --bind 127.0.0.1 --save "" --appendonly no > "$WORK_PATH/redis.log" 2>&1 &
-  redis_pid=$!
-  until redis-cli -p "$REDIS_PORT" ping &> /dev/null; do sleep 0.5; done
 
   UV_PROJECT_ENVIRONMENT="$WORK_PATH/venv" uv sync -q --frozen --no-dev --extra qiskit --project "$ROOT_PATH"
   # read on import, so the stub worker's swap of the executor sees the device
@@ -115,8 +108,6 @@ write_env_file() {
     echo "BCC_JWT_SECRET=$(openssl rand -hex 32)"
     echo "BCC_MACHINE_ROOT_URL=http://127.0.0.1:$BCC_PORT"
     echo "BCC_MSS_MACHINE_ROOT_URL=http://127.0.0.1:$MSS_PORT"
-    echo "BCC_REDIS_HOST=127.0.0.1"
-    echo "BCC_REDIS_PORT=$REDIS_PORT"
     echo "BCC_STORAGE_ROOT=$WORK_PATH/storage"
     echo "BCC_BOOKING_DB_URL=sqlite:///$WORK_PATH/bookings.db"
     echo "BCC_BACKEND_SETTINGS=$FIXTURES_PATH/backend_config.simq1.toml"
@@ -129,10 +120,10 @@ write_env_file() {
 }
 
 stop_stack() {
-  kill $process_sampler_pid $redis_sampler_pid "$api_pid" "$heavy_pid" "$light_pid" "$mss_pid" "$redis_pid" 2> /dev/null
+  kill $process_sampler_pid "$api_pid" "$heavy_pid" "$light_pid" "$mss_pid" 2> /dev/null
   wait 2> /dev/null
   rm -rf "$WORK_PATH"
-  process_sampler_pid="" redis_sampler_pid=""
+  process_sampler_pid=""
   trap - EXIT
 }
 
@@ -141,7 +132,7 @@ stop_stack() {
 # tree: the memory of it and its children, and the CPU of it and the children it has waited for
 sample_processes() {
   uv run -q --no-project --with psutil python - "$OUT_PATH/process-stats.csv" "$SAMPLE_INTERVAL_SECONDS" \
-    "api=$api_pid" "heavy_worker=$heavy_pid" "light_worker=$light_pid" "redis=$redis_pid" <<'PYTHON'
+    "api=$api_pid" "heavy_worker=$heavy_pid" "light_worker=$light_pid" <<'PYTHON'
 import csv
 import sys
 import time
@@ -191,19 +182,6 @@ with open(path, "w", newline="") as file:
             break
         file.flush()
 PYTHON
-}
-
-# Appends Redis's used memory and its number of keys to redis-stats.csv every SAMPLE_INTERVAL_SECONDS
-sample_redis() {
-  echo "time,memory,keys" > "$OUT_PATH/redis-stats.csv"
-  while true; do
-    local used_bytes keys
-    used_bytes="$(redis-cli -p "$REDIS_PORT" info memory | awk -F: '/^used_memory:/ {print $2}' | tr -d '\r')"
-    keys="$(redis-cli -p "$REDIS_PORT" dbsize)"
-    echo "$(date +%s),$(awk -v bytes="$used_bytes" 'BEGIN {printf "%.1fMiB", bytes / 1048576}'),$keys" \
-      >> "$OUT_PATH/redis-stats.csv"
-    sleep "$SAMPLE_INTERVAL_SECONDS"
-  done
 }
 
 exit_with_err() {

@@ -27,7 +27,6 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import qblox_instruments
 import toml
-from pydantic import RedisDsn
 from qcodes import Instrument
 from quantify_core.data.handling import set_datadir
 from quantify_scheduler.backends.graph_compilation import SerialCompiler
@@ -81,7 +80,6 @@ class QuantifyExecutor(QuantumExecutor):
         calib_device_conf: Path | os.PathLike[str],
         calib_spi_conf: Path | os.PathLike[str],
         calib_seed_file: Path | os.PathLike[str],
-        redis_url: RedisDsn | str,
         **kwargs,
     ):
         """
@@ -96,7 +94,6 @@ class QuantifyExecutor(QuantumExecutor):
             calib_device_conf: the configuration file for the entire devices during calibration
             calib_spi_conf: the configuration file for the spi during calibration
             calib_seed_file: the calibration seed file
-            redis_url: the redis url where data, e.g. recalibration data, is temporarily stored
         """
         self.calib_seed_file = calib_seed_file
         self.calib_spi_conf = calib_spi_conf
@@ -108,7 +105,6 @@ class QuantifyExecutor(QuantumExecutor):
         self.is_cluster_reset_allowed = is_cluster_reset_allowed
         self.lo_frequencies = _extract_lo_frequencies(self.quantify_config)
         self.drive_frequencies = _extract_drive_frequencies(backend_config)
-        self._redis_url = redis_url
 
         qubit_ids = backend_config.device_config.qubit_ids
         coupling_dict = backend_config.device_config.coupling_dict

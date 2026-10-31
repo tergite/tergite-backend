@@ -2,7 +2,7 @@
 # binary, and %i is the instance's DEFAULT_PREFIX, e.g. `systemctl enable --now bcc@lab1`
 [Unit]
 Description=Tergite Backend Control Computer (BCC) %i
-After=network-online.target redis-server.service redis.service
+After=network-online.target
 Wants=network-online.target
 ConditionPathExists=/etc/bcc/%i/backend.env
 

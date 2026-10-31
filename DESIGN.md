@@ -42,7 +42,6 @@ flowchart LR
       Files[("storage root<br/>job files, results")]
     end
 
-    Redis[("Redis<br/>tergite-tuner's sessions")]
     Cluster["Qblox clusters"]
 
     SDK -->|"REST via MSS"| MSS
@@ -57,13 +56,10 @@ flowchart LR
     Heavy --> Files
     Light --> Files
     Heavy -->|"quantify only"| Cluster
-    Heavy -.->|"quantify recalibration only"| Redis
 ```
 
 The API and the workers share no memory: they meet in the SQL database and the storage root,
-and the API and the heavy worker wake the others over the loopback (§6). Redis is needed only
-by the quantify executor, whose tergite-tuner keeps its sessions there (`BCC_TUNER_REDIS_URL`);
-the simulators run without it.
+and the API and the heavy worker wake the others over the loopback (§6).
 
 ## 3. BCC and MSS: the seam between them
 
@@ -752,14 +748,14 @@ package so they install side by side. Each instance is a device: `bcc-provision 
 seed into `/var/lib/bcc/<name>/`, which recalibrations rewrite while `/etc` is read-only to the
 service; the `bcc@<name>` systemd service runs it from there, logging to the journal; on
 macOS the paths are under `/usr/local/` and a LaunchDaemon runs it. The deb asks debconf for a
-first instance, and for Redis only when its executor is quantify. See
+first instance. See
 [CONTRIBUTING.md](CONTRIBUTING.md#how-to-install-as-a-service).
 
 ## 14. Testing
 
 | Level | Where | Command |
 | --- | --- | --- |
-| BCC unit/integration | `tests` — pytest, against SQLite and, for quantify, Redis | `pytest tests -n 4 --dist=worksteal -m "not real_time"`, then `pytest tests -m real_time` |
+| BCC unit/integration | `tests` — pytest, against SQLite | `pytest tests -n 4 --dist=worksteal -m "not real_time"`, then `pytest tests -m real_time` |
 | e2e | tergite-frontend's [`dev/e2e_native_test.sh`](https://github.com/tergite/tergite-frontend/blob/main/dev/e2e_native_test.sh), MSS and its dashboard against this checkout | `BACKEND_PATH=../tergite-backend ./dev/e2e_native_test.sh`, from tergite-frontend |
 | Performance | `dev/perf/` — Locust on a simulator device with a stubbed MSS and simulation | `./dev/perf/record.sh <dir>`, then `python3 dev/perf/compare.py dev/perf/baselines <dir>` |
 
@@ -782,7 +778,7 @@ needing the other extra is skipped (`HAS_QUANTIFY`, `HAS_QISKIT_DYNAMICS` in
 - The simulators' tests use a stub executor; `@pytest.mark.simulated` runs one for real, for
   tests that check measured counts.
 - The suite runs on 4 pytest-xdist workers, `--dist=worksteal`, as each has its own temporary
-  root, database and Redis database: about 3 times as fast as one. The tests marked
+  root and database: about 3 times as fast as one. The tests marked
   `real_time`, whose outcome depends on how fast the machine works through the jobs against
   bookings, run alone after them: `pytest tests -n 4 --dist=worksteal -m "not real_time"`,
   then `pytest tests -m real_time`. `worksteal`, not `loadscope`, as every fixture is built
@@ -800,7 +796,7 @@ Both GitHub Actions ([.github/workflows](.github/workflows)) and GitLab CI
 mirror — see §16).
 
 On every push and merge request, `tests` runs for each extra, `qiskit` and `quantify`, with uv
-from `uv.lock` on Python 3.13 and a Redis: `black --check`, `isort --check-only` and `pyflakes`
+from `uv.lock` on Python 3.13: `black --check`, `isort --check-only` and `pyflakes`
 over `api libs services utils tests dev migrations main.py settings.py`, then the tests as §14
 runs them.
 
@@ -911,7 +907,7 @@ the styleguide baseline; none adds one.
 
 **Before a merge request**:
 
-- the full suite in both environments; the qiskit one needs no Redis;
+- the full suite in both environments;
 - tergite-frontend's `dev/e2e_native_test.sh` against this checkout (`BACKEND_PATH`);
 - the performance check, recorded with `dev/perf/record.sh` and compared with
   `dev/perf/baselines`, which are never re-recorded for an older commit. Its numbers are this

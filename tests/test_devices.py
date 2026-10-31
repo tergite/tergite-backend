@@ -123,37 +123,14 @@ def test_env_file_keys_are_bcc_prefixed(tmp_path, monkeypatch):
         load_test_devices(tmp_path, monkeypatch, ["sim"], {"PORT": "8123"})
 
 
-@pytest.mark.parametrize(
-    "file_values, device_env, expected_url",
-    [
-        ({"BCC_RQ_REDIS_URL": "redis://old:1/0"}, {}, "redis://old:1/0"),
-        (
-            {
-                "BCC_RQ_REDIS_URL": "redis://old:1/0",
-                "BCC_TUNER_REDIS_URL": "redis://new:2/0",
-            },
-            {},
-            "redis://new:2/0",
-        ),
-        (
-            {"BCC_TUNER_REDIS_URL": "redis://new:2/0"},
-            {"BCC_SIM_RQ_REDIS_URL": "redis://device:3/0"},
-            "redis://device:3/0",
-        ),
-    ],
-)
-def test_tuner_redis_url_is_read_by_its_old_name_too(
-    tmp_path, monkeypatch, file_values, device_env, expected_url
-):
+def test_an_env_file_from_before_redis_was_dropped_still_loads(tmp_path, monkeypatch):
+    """A provisioned instance's backend.env keeps BCC_TUNER_REDIS_URL after an upgrade"""
     import settings
 
-    for name in ("BCC_TUNER_REDIS_URL", "BCC_RQ_REDIS_URL"):
-        monkeypatch.delenv(name, raising=False)
-    for name, value in device_env.items():
-        monkeypatch.setenv(name, value)
+    file_values = {"BCC_TUNER_REDIS_URL": "redis://old:1/0", "BCC_REDIS_PORT": "6379"}
     load_test_devices(tmp_path, monkeypatch, ["sim"], file_values)
 
-    assert settings.get_device_settings("sim").tuner_redis_url == expected_url
+    assert settings.get_device_settings("sim").default_prefix == "sim"
 
 
 def test_switching_a_device_off_leaves_the_others_on(tmp_path, monkeypatch, mocker):

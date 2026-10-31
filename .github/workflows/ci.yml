@@ -21,17 +21,6 @@ jobs:
         python-version: [ "3.13" ]
         deps-group: [ "qiskit", "quantify" ]
 
-    services:
-      redis:
-        image: redis
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - uses: actions/checkout@v6
       - name: Install uv
@@ -48,10 +37,6 @@ jobs:
           uv run pyflakes api libs services utils tests dev migrations main.py settings.py
           uv run pytest tests -n 4 --dist=worksteal -m "not real_time"
           uv run pytest tests -m real_time
-        env:
-          REDIS_HOST: localhost
-          REDIS_PORT: 6379
-          TEST_RQ_MAX_QUEUE_WAIT_TIME: 60
 
   upstream:
     name: Update upstream

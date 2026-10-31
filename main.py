@@ -53,7 +53,6 @@
 #   nuitka-project: --include-data-files={MAIN_DIRECTORY}/.venv/lib/python*/site-packages/quantify_scheduler/_static_version.py=quantify_scheduler/_static_version.py
 #   nuitka-project: --include-package=qblox_instruments
 #   nuitka-project: --include-package=tergite_tuner
-#   nuitka-project: --include-package=redis
 #   nuitka-project: --include-package=networkx
 #   nuitka-project: --include-package=numpy
 #   nuitka-project: --include-package=h5py

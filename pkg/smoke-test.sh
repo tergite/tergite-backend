@@ -1,6 +1,6 @@
 #!/bin/sh
 # Provisions an instance with an installed package and loads it, which imports every executor
-# dependency and reads the instance's settings, needing neither MSS nor Redis: as root, from
+# dependency and reads the instance's settings, needing no MSS: as root, from
 # the repo root, `pkg/smoke-test.sh bcc` or `pkg/smoke-test.sh bcc.simulator`
 
 set -e

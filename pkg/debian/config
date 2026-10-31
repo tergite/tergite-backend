@@ -17,14 +17,3 @@ db_input high @PACKAGE@/executor || true
 db_input high @PACKAGE@/port || true
 db_input high @PACKAGE@/mss_url || true
 db_go || true
-# only quantify's tergite-tuner keeps anything in Redis
-db_get @PACKAGE@/executor
-[ "$RET" = quantify ] || exit 0
-db_input high @PACKAGE@/redis || true
-db_go || true
-db_get @PACKAGE@/redis
-if [ "$RET" = url ]; then
-	db_input high @PACKAGE@/redis_url || true
-	db_input high @PACKAGE@/redis_password || true
-	db_go || true
-fi

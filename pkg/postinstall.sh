@@ -30,18 +30,9 @@ if [ "$1" = configure ] && [ -e /usr/share/debconf/confmodule ] &&
 		port=$RET
 		db_get @PACKAGE@/mss_url
 		mss_url=$RET
-		db_get @PACKAGE@/redis
-		redis_url=redis://localhost:6379/0
-		if [ "$RET" = url ]; then
-			db_get @PACKAGE@/redis_url
-			redis_url=$RET
-		fi
-		db_get @PACKAGE@/redis_password
 		# stdout is debconf's until db_stop
-		REDIS_PASSWORD=$RET /usr/sbin/@BINARY@-provision "$name" --executor "$executor" \
-			--port "$port" --mss-url "$mss_url" --redis-url "$redis_url" >&2
-		# backend.env is the one place a password is kept
-		db_set @PACKAGE@/redis_password ""
+		/usr/sbin/@BINARY@-provision "$name" --executor "$executor" \
+			--port "$port" --mss-url "$mss_url" >&2
 	fi
 	db_stop
 fi

@@ -30,7 +30,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    RedisDsn,
     computed_field,
     model_validator,
 )
@@ -215,13 +214,11 @@ class ExecutorOptions:
         calibration_node_config: the configuration file for the nodes during calibration
         calibration_device_config: the configuration file for the entire devices during calibration
         calibration_spi_config: the configuration file for the spi during calibration
-        redis_url: the redis url where temp data e.g. recalibration data is stored
     """
 
     executor_type: str
     backend_name: str
     backend_config: BackendConfig
-    redis_url: RedisDsn | str
     quantify_config_file: Optional[PathLike] = None
     quantify_metadata_file: Optional[PathLike] = None
     should_restore_currents: bool = False

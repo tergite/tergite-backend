@@ -104,13 +104,12 @@ def test_executors_of_two_quantify_configs_are_built_one_after_another(tmp_path)
 
 
 def _get_calibration_kwargs(data_dir: Path) -> dict:
-    """Gets the data directory, calibration files and Redis URL a QuantifyExecutor needs"""
+    """Gets the data directory and calibration files a QuantifyExecutor needs"""
     from ..utils.env import (
         TEST_CALIBRATION_DEVICE_CONFIG_FILE,
         TEST_CALIBRATION_NODE_CONFIG_FILE,
         TEST_CALIBRATION_SPI_CONFIG_FILE,
         TEST_QUANTIFY_SEED_FILE,
-        TEST_TUNER_REDIS_URL,
     )
 
     return dict(
@@ -119,5 +118,4 @@ def _get_calibration_kwargs(data_dir: Path) -> dict:
         calib_device_conf=TEST_CALIBRATION_DEVICE_CONFIG_FILE,
         calib_spi_conf=TEST_CALIBRATION_SPI_CONFIG_FILE,
         calib_seed_file=TEST_QUANTIFY_SEED_FILE,
-        redis_url=TEST_TUNER_REDIS_URL,
     )

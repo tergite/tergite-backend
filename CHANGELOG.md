@@ -47,10 +47,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   Redis before upgrading are no longer listed, so let the queues empty first
 - Changed whether a device is switched off to be kept in the bookings database instead of Redis; a device switched
   off before upgrading is on after it, so switch it off again
-- Changed the device parameters and MSS's request nonces to be kept in the bookings database instead of Redis, which
-  only the quantify executor's tergite-tuner now needs; the simulators, and their package, run without one
-- Changed `BCC_RQ_REDIS_URL` to `BCC_TUNER_REDIS_URL`, as RQ is gone and tergite-tuner alone uses it; the old name is
-  still read
+- Changed the device parameters and MSS's request nonces to be kept in the bookings database instead of Redis
 - Changed the bookings database to be created and upgraded with Alembic as the API and the workers start, instead of by SQLModel;
   an existing one is kept as it is, but for its unused `user.password` column, which is dropped
 - Changed the 422 for a booking that starts in the past or lasts outside the device's limits to give its message
@@ -149,6 +146,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Removed
 
+- Removed Redis, which nothing needs since tergite-tuner 2026.10.0rc2: `BCC_RQ_REDIS_URL` and the `BCC_REDIS_*`
+  settings are ignored, and the deb and `bcc-provision` no longer ask for one
 - Removed RQ and `BCC_MAX_GENERAL_QUEUE_TIME`, and the `storage_id` of jobs and the RQ job ids of bookings, which only
   RQ's queues read; macOS no longer needs `OBJC_DISABLE_INITIALIZE_FORK_SAFETY`, as nothing forks
 - Removed `BCC_JOBS_STORE_CLEAN_INTERVAL`: a job older than `BCC_JOBS_STORE_TTL` is deleted as another is stored

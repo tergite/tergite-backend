@@ -49,7 +49,7 @@ from utils.datetime import utc_now_str
 from .utils import attach_units_many
 
 if TYPE_CHECKING:
-    from utils.compat import CalibrationResults, _CouplerInRedis
+    from utils.compat import CalibrationResults, CouplerResults
 
 _CalibValueType = TypeVar("_CalibValueType", int, float, str)
 _DOWNCONVERT_FREQUENCY = 4.4e9
@@ -209,7 +209,7 @@ class QubitCalibration(BaseModel):
         """Generates new instances of QubitCalibration from the calibration results
 
         Args:
-            calib_results: the for the qubit in redis
+            calib_results: tergite-tuner's results of a recalibration
 
         Returns:
             the list of new instances of QubitCalibration
@@ -738,14 +738,14 @@ class BackendConfig(BaseModel):
 
 def _get_local_phases(
     coupler: str,
-    coupler_results: "_CouplerInRedis",
+    coupler_results: "CouplerResults",
     reverse_phase_qubits: Tuple[str, ...],
 ) -> Tuple[float, float]:
-    """Gets the local phases in radians for given the coupler_results from redis
+    """Gets the local phases in radians for given the coupler_results from tergite-tuner
 
     Args:
         coupler: the coupler name
-        coupler_results: the coupler_results of the coupler as obtained from the redis
+        coupler_results: the coupler's results from tergite-tuner
         reverse_phase_qubits: the qubits that have the reverse phase of what they sh
             should have phase on their couplers
 
