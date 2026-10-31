@@ -503,7 +503,7 @@ the first device.
 | `/me` | MSS | `GET` the user's profile; `DELETE` it, cancelling their jobs and bookings |
 | `/users`, `/users/{user_id}` | MSS admin | create, list, delete |
 | `/bookings` | MSS | create, list, `/{booking_id}/cancel`, `/config` |
-| `/jobs` | job token / MSS | `POST` uploads (token); `GET` lists, `GET /{job_id}`, `DELETE /{job_id}` (MSS); `/{job_id}/cancel` (either) |
+| `/jobs` | job token / MSS | `POST` uploads (token); `GET` lists, 100 at a time unless `limit` asks for up to 1000, from `skip`, `GET /{job_id}`, `DELETE /{job_id}` (MSS); `/{job_id}/cancel` (either) |
 | `/logfiles/{job_id}` | job token | the job's results, as HDF5 |
 | `/recalibration` | MSS admin | `/init`, `/info`, `/cancel` |
 | `/switch` | MSS admin / MSS | `/off`, `/on`; `/status` |

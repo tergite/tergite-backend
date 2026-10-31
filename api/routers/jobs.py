@@ -32,6 +32,10 @@ from ..dependencies import (
 )
 from ..dtos import CancellationDetails
 
+# a page of jobs by default, and the most in one, so that no list reads a backlog whole
+JOBS_PAGE_SIZE = 100
+MAX_JOBS_PAGE_SIZE = 1000
+
 router = APIRouter()
 
 
@@ -150,8 +154,8 @@ async def view_jobs(
     device: DeviceResourcesDep,
     user_id: str = Depends(get_verified_mss_user_id),
     status: Optional[JobStatus] = Query(default=None),
-    skip: int = Query(default=0),
-    limit: Optional[int] = Query(default=None),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=JOBS_PAGE_SIZE, ge=1, le=MAX_JOBS_PAGE_SIZE),
 ) -> dict:
     """Views all jobs that belong to the current user
 
@@ -160,10 +164,11 @@ async def view_jobs(
         user_id: the unique identifier of the currently logged in user
         status: the status of the jobs to return; default = None, i.e. all statuses
         skip: number of records to ignore at the top of the returned results; default is 0
-        limit: maximum number of records to return; default is None.
+        limit: maximum number of records to return; default is JOBS_PAGE_SIZE, at most
+            MAX_JOBS_PAGE_SIZE
 
     Returns:
-        the paginated list of the available bookings
+        the paginated list of the user's jobs
     """
     stored_jobs = scheduler.get_many_jobs(
         device, user_id=user_id, status=status, skip=skip, limit=limit

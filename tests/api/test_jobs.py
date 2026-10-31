@@ -25,6 +25,7 @@ import pytest
 import time_machine
 from pytest_mock import MockerFixture
 
+from api.routers.jobs import JOBS_PAGE_SIZE
 from libs.queues.dtos import Job, JobStatus, Stage, Timestamps
 from services.booking import Booking
 from services.scheduler import WorkerDeadline
@@ -986,6 +987,24 @@ def test_admin_view_job(
         assert received_job == expected_job
 
 
+@pytest.mark.parametrize("query", ["?limit=0", "?limit=1001", "?skip=-1"])
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_jobs_are_listed_only_in_pages_of_at_most_a_thousand(client, query):
+    with client as client:
+        response = client.get(f"/jobs{query}", headers=create_mss_headers())
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_jobs_are_listed_a_hundred_at_a_time_unless_asked(client):
+    """So that a user's backlog is not read and sent whole"""
+    with client as client:
+        response = client.get("/jobs", headers=create_mss_headers())
+
+    assert (response.status_code, response.json()["limit"]) == (200, 100)
+
+
 @pytest.mark.parametrize("client, worker, job, device", VIEW_JOBS_PARAMS)
 def test_view_jobs(
     client, worker, job, device, jobs_folder, mocker: MockerFixture, fake_clock
@@ -1040,7 +1059,7 @@ def test_view_jobs(
         pending_jobs_resp["data"] = order_by(pending_jobs_resp["data"], field="job_id")
         expected_jobs = order_by(expected_jobs, field="job_id")
 
-        assert pending_jobs_resp == paginate(expected_jobs)
+        assert pending_jobs_resp == paginate(expected_jobs, limit=JOBS_PAGE_SIZE)
 
         # Run the queue to run the job and see that it is updated
         worker.run(is_burst=True)
@@ -1070,7 +1089,7 @@ def test_view_jobs(
         completed_jobs_resp["data"] = order_by(
             completed_jobs_resp["data"], field="job_id"
         )
-        assert completed_jobs_resp == paginate(expected_jobs)
+        assert completed_jobs_resp == paginate(expected_jobs, limit=JOBS_PAGE_SIZE)
 
 
 @pytest.mark.parametrize("client, worker, job, device", VIEW_JOBS_PARAMS)
@@ -1145,7 +1164,9 @@ def test_view_jobs_by_status(
         pending_jobs_resp["data"] = order_by(pending_jobs_resp["data"], field="job_id")
         expected_pending_jobs = order_by(expected_pending_jobs, field="job_id")
 
-        assert pending_jobs_resp == paginate(expected_pending_jobs)
+        assert pending_jobs_resp == paginate(
+            expected_pending_jobs, limit=JOBS_PAGE_SIZE
+        )
 
         ## Get completed jobs
 
@@ -1182,7 +1203,9 @@ def test_view_jobs_by_status(
             completed_jobs_resp["data"], field="job_id"
         )
         expected_completed_jobs = order_by(expected_completed_jobs, field="job_id")
-        assert completed_jobs_resp == paginate(expected_completed_jobs)
+        assert completed_jobs_resp == paginate(
+            expected_completed_jobs, limit=JOBS_PAGE_SIZE
+        )
 
         ## Get all jobs
 
@@ -1196,7 +1219,7 @@ def test_view_jobs_by_status(
 
         # ensure ordering is the same
         all_jobs_resp["data"] = order_by(all_jobs_resp["data"], field="job_id")
-        assert all_jobs_resp == paginate(expected_all_jobs)
+        assert all_jobs_resp == paginate(expected_all_jobs, limit=JOBS_PAGE_SIZE)
 
 
 @pytest.mark.parametrize("client, worker, job, device", VIEW_JOBS_PARAMS)

@@ -34,6 +34,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- Changed `GET /jobs` to list 100 jobs unless `limit` asks for more, up to 1000, where it listed all of them; page
+  through with `skip`
 - Changed the job supervisor log to plain lines, as Python's logging writes them, without the ANSI colour codes
 - Changed a recalibration's calibration to hold every stored value, not only those the run set, so it no longer
   fails on values the run leaves alone, such as `acq_delay`, with tergite-tuner's exact `read_result` matching
