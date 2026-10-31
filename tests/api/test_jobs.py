@@ -165,6 +165,8 @@ def test_job_token_for_another_job_is_refused(client):
 
 
 @pytest.mark.simulated
+# the 2-qubit simulation alone takes about a minute on a fast machine, beside other workers more
+@pytest.mark.timeout(600)
 @pytest.mark.parametrize(
     "client, worker, job, expected_counts, device",
     ALL_UPLOAD_JOB_PARAMS,
