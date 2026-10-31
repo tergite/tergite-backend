@@ -64,6 +64,7 @@ import multiprocessing
 import os
 import signal
 import sys
+import threading
 import urllib.request
 from multiprocessing.connection import wait
 from pathlib import Path
@@ -183,6 +184,8 @@ def _wait_for_first_stop(
     Returns:
         the first that stopped, or the one killed
     """
+    from utils.systemd import notify_systemd
+
     try:
         while True:
             wait(
@@ -213,6 +216,9 @@ def _wait_for_first_stop(
                 api_health.process.kill()
                 api_health.process.join()
                 return api_health.process
+            # every child on time, for a unit with WatchdogSec, which restarts a bcc start
+            # that hangs itself
+            notify_systemd("WATCHDOG=1")
     finally:
         for process in processes:
             process.terminate()
@@ -341,6 +347,15 @@ def _run_worker(
 ) -> None:
     _load_devices(env_files)
     import settings
+    from utils.systemd import get_watchdog_seconds
+
+    watchdog_seconds = get_watchdog_seconds()
+    # run alone, as a unit's main process, it is watched by systemd rather than bcc start
+    if deadline is None and watchdog_seconds is not None:
+        deadline = _start_own_watchdog(
+            watchdog_seconds,
+            start_seconds=settings.get_device_settings(device).max_worker_start_time,
+        )
     from api.worker import preload_worker_globals
     from services.scheduler.dispatcher import Dispatcher
     from utils.logging import set_up_logging
@@ -369,6 +384,30 @@ def _run_worker(
     # whatever the log level, as uvicorn announces its start
     print(f"bcc: the {kind} worker is ready", flush=True)
     dispatcher.run()
+
+
+def _start_own_watchdog(
+    watchdog_seconds: float, start_seconds: float
+) -> "WorkerDeadline":
+    """Starts a thread that tells systemd every half of its WatchdogSec that the worker is
+    alive, for as long as it is on time, which its start-up's deadline bounds until its first
+    pass sets one; 0 start seconds are no limit
+
+    Returns:
+        the deadline the worker is to keep
+    """
+    from services.scheduler import WorkerDeadline
+    from utils.systemd import keep_watchdog_fed_while_on_time
+
+    deadline = WorkerDeadline()
+    deadline.set_in(start_seconds if start_seconds > 0 else math.inf)
+    threading.Thread(
+        target=keep_watchdog_fed_while_on_time,
+        args=(lambda: deadline.get_seconds_left() > 0, watchdog_seconds / 2),
+        name="watchdog",
+        daemon=True,
+    ).start()
+    return deadline
 
 
 def _load_devices(env_files: list[str]) -> None:

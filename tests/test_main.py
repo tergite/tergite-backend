@@ -145,6 +145,43 @@ def test_an_api_that_stops_answering_its_health_check_is_killed(
     assert api.exitcode == -signal.SIGKILL
 
 
+@pytest.mark.timeout(60)
+def test_systemd_is_told_bcc_start_is_alive_while_every_child_is_on_time(
+    monkeypatch, notify_socket, started_processes
+):
+    monkeypatch.setattr(main, "DEADLINE_CHECK_SECONDS", 0.2)
+    deadline = WorkerDeadline()
+    deadline.set_in(60)
+    worker = multiprocessing.Process(target=_wait_then_stop, args=(1,), name="worker")
+    started_processes.append(worker)
+    worker.start()
+
+    main._wait_for_first_stop([worker], deadlines={worker: deadline})
+
+    assert notify_socket.recv(64) == b"WATCHDOG=1"
+
+
+def test_a_lone_worker_under_a_watchdog_keeps_it_fed_within_its_start_up_deadline(
+    notify_socket,
+):
+    deadline = main._start_own_watchdog(watchdog_seconds=0.2, start_seconds=0.5)
+
+    time.sleep(1)
+    fed = []
+    while True:
+        try:
+            fed.append(notify_socket.recv(64))
+        except TimeoutError:
+            break
+
+    assert deadline.get_seconds_left() < 0
+    assert 3 <= len(fed) <= 8
+
+
+def _wait_then_stop(seconds: float) -> None:
+    time.sleep(seconds)
+
+
 def _get_stuck(deadline: WorkerDeadline) -> None:
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
     deadline.set_in(0.5)

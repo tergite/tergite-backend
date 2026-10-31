@@ -9,6 +9,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- Added a systemd watchdog to `bcc@.service`, `WatchdogSec=60s`: `bcc start`, and a `bcc worker` its unit runs alone,
+  tell systemd they are alive while on time, so a hung one is restarted
 - Added `GET /health`, unauthenticated, which `bcc start` asks every 5 s, killing an API that misses 3 in a row, as a
   hung event loop left it running but deaf
 - Added `BCC_MAX_WORKER_START_TIME`, 10 minutes by default and 0 for none: `bcc start` kills a worker that has not

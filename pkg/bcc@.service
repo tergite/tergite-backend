@@ -16,6 +16,9 @@ SupplementaryGroups=dialout
 Environment=BCC_ENV_FILE=/etc/bcc/%i/backend.env
 ExecStart=/usr/bin/%p start
 Restart=on-failure
+# bcc start tells systemd it is alive every 5 s while its children are on time; a hang restarts it
+WatchdogSec=60s
+NotifyAccess=main
 RestartSec=10s
 # the workers finish their running job on SIGTERM
 TimeoutStopSec=5min

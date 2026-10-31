@@ -444,6 +444,12 @@ stage under way without waiting out its timeout.
 - **A stuck API**: a hung event loop leaves the process alive, so `bcc start` also asks the
   API's `/health` on the loopback at each check, within 5 s, and kills it after 3 misses in a
   row, counting misses only once it has answered, as starting its devices takes a while.
+- **A stuck `bcc start`, or a worker run alone**: `bcc@.service` has `WatchdogSec=60s`, and
+  `bcc start` tells systemd it is alive (`WATCHDOG=1` on `NOTIFY_SOCKET`, `utils/systemd.py`) at
+  each of its checks where every child is on time, so systemd restarts it if it hangs itself.
+  A worker run alone as a unit's main process, with a `WatchdogSec` of its own, keeps a deadline
+  as `bcc start` would set it and tells systemd from a thread, every half of it, while that
+  deadline holds; stuck past it, or in a call that holds the interpreter, it is restarted.
 - **A job that waits too long to execute**: every pass also fails the device's jobs in
   `EXEC_Q` last written longer ago than `BCC_MAX_EXECUTION_QUEUE_TIME`, a day by default, 0 for
   no limit (`fail_jobs_queued_too_long`), with the reason that they waited that long, and tells
@@ -965,8 +971,8 @@ Worth knowing before you are surprised by them:
 - **MSS learns late of what happened while it was unreachable.** The kept events reach it once
   it is back, at a worker's next pass (§8.4); until then it shows the jobs' and the device's
   last state it had. A switch made meanwhile reaches it only when switched again.
-- **A worker run alone is not watched.** Only `bcc start` checks the workers' deadlines and the
-  API's health, so a worker run with `bcc worker` is not (§6.5).
+- **A worker run alone is watched only by systemd.** Outside a unit with `WatchdogSec`, nothing
+  restarts a stuck `bcc worker`, nor a stuck `bcc serve` anywhere (§6.5).
 - **Nothing ages a waiting job.** Outside bookings, a job longer than the time to the next
   booking waits while shorter ones overtake it, for as long as the bookings leave it no room;
   `BCC_MAX_EXECUTION_QUEUE_TIME` fails it after a day, rather than run it sooner (§6.3).
