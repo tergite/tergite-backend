@@ -16,6 +16,11 @@ This is part of the tergite release v2026.11.0-rc.2.
 - Gave every public function and class a Google-style docstring, saying what it does for the caller, its arguments,
   what it returns and what it raises
 
+### Fixed
+
+- Fixed the GitHub release of a tag getting no installers: it is now published with them, as an immutable release
+  took none once published
+
 ### Contributors
 
 - Martin Ahindura
