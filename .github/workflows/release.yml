@@ -26,11 +26,30 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
+      notes: ${{ steps.notes.outputs.notes }}
     steps:
       - id: version
         env:
           RAW_VERSION: ${{ inputs.version || github.ref_name }}
         run: echo "version=${RAW_VERSION#v}" >> "$GITHUB_OUTPUT"
+      - if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/checkout@v4
+      # the release's notes are the tag's CHANGELOG.md section; read here, a tag without one
+      # fails before the builds rather than after
+      - id: notes
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          {
+            echo "notes<<END_OF_NOTES"
+            awk -v heading="## [$VERSION]" '
+              index($0, heading) == 1 { is_found = 1; next }
+              is_found && /^## \[/ { exit }
+              is_found { print }
+              END { if (!is_found) exit 1 }' CHANGELOG.md
+            echo "END_OF_NOTES"
+          } >> "$GITHUB_OUTPUT"
 
   linux:
     needs: version
@@ -120,7 +139,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: [linux, macos]
+    needs: [version, linux, macos]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -135,8 +154,9 @@ jobs:
           TAG: ${{ github.ref_name }}
           # a release candidate must not become the repository's latest release
           IS_PRERELEASE: ${{ contains(github.ref_name, '-rc') }}
+          NOTES: ${{ needs.version.outputs.notes }}
         # given the files, gh uploads them to a draft and then publishes it, as a published
         # release is immutable and takes no more
         run: >-
           gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --verify-tag
-          --prerelease="$IS_PRERELEASE" --notes "See CHANGELOG.md."
+          --prerelease="$IS_PRERELEASE" --notes "$NOTES"
