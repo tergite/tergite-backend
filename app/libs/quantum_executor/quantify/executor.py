@@ -71,16 +71,12 @@ class QuantifyExecutor(QuantumExecutor):
         *,
         reset: bool = False,
         are_clusters_resettable: bool = False,
-        data_dir: Path | os.PathLike[str] = settings.EXECUTOR_DATA_DIR,
-        calib_node_conf: (
-            Path | os.PathLike[str]
-        ) = settings.CALIBRATION_NODE_CONFIG_FILE,
-        calib_device_conf: (
-            Path | os.PathLike[str]
-        ) = settings.CALIBRATION_DEVICE_CONFIG_FILE,
-        calib_spi_conf: Path | os.PathLike[str] = settings.CALIBRATION_SPI_CONFIG_FILE,
-        calib_seed_file: Path | os.PathLike[str] = settings.CALIBRATION_SEED,
-        redis_url: RedisDsn | str = settings.RQ_REDIS_URL,
+        data_dir: Path | os.PathLike[str] | None = None,
+        calib_node_conf: Path | os.PathLike[str] | None = None,
+        calib_device_conf: Path | os.PathLike[str] | None = None,
+        calib_spi_conf: Path | os.PathLike[str] | None = None,
+        calib_seed_file: Path | os.PathLike[str] | None = None,
+        redis_url: RedisDsn | str | None = None,
         **kwargs,
     ):
         """
@@ -91,15 +87,24 @@ class QuantifyExecutor(QuantumExecutor):
             reset: whether to reset the whole executor; default = False
             are_clusters_resettable: whether the clusters can be reset for this executor; default = False
             data_dir: the directory where to save experiment data; default = settings.EXECUTOR_DATA_DIR
-            calib_node_conf: the configuration file for the nodes during calibration
-            calib_device_conf: the configuration file for the entire devices during calibration
-            calib_spi_conf: the configuration file for the spi during calibration
-            redis_url: the redis url where data, e.g. recalibration data, is temporarily stored
+            calib_node_conf: the configuration file for the nodes during calibration;
+                default = settings.CALIBRATION_NODE_CONFIG_FILE
+            calib_device_conf: the configuration file for the entire devices during calibration;
+                default = settings.CALIBRATION_DEVICE_CONFIG_FILE
+            calib_spi_conf: the configuration file for the spi during calibration;
+                default = settings.CALIBRATION_SPI_CONFIG_FILE
+            calib_seed_file: the calibration seed file; default = settings.CALIBRATION_SEED
+            redis_url: the redis url where data, e.g. recalibration data, is temporarily stored;
+                default = settings.RQ_REDIS_URL
         """
-        self.calib_seed_file = calib_seed_file
-        self.calib_spi_conf = calib_spi_conf
-        self.calib_device_conf = calib_device_conf
-        self.calib_node_conf = calib_node_conf
+        data_dir = data_dir or settings.EXECUTOR_DATA_DIR
+        redis_url = redis_url or settings.RQ_REDIS_URL
+        self.calib_seed_file = calib_seed_file or settings.CALIBRATION_SEED
+        self.calib_spi_conf = calib_spi_conf or settings.CALIBRATION_SPI_CONFIG_FILE
+        self.calib_device_conf = (
+            calib_device_conf or settings.CALIBRATION_DEVICE_CONFIG_FILE
+        )
+        self.calib_node_conf = calib_node_conf or settings.CALIBRATION_NODE_CONFIG_FILE
         self.quantify_config = load_quantify_config(quantify_config_file)
         self.quantify_metadata = QuantifyMetadata.from_yaml(quantify_metadata_file)
         self.device_name = backend_config.general_config.name
@@ -135,31 +140,43 @@ class QuantifyExecutor(QuantumExecutor):
         }
         self._port_to_coupler = {port: u for u, port in self._coupler_to_port.items()}
         self.coordinator_name = f"{self.device_name}_executor"
-        no_gc_instruments_cache = self.__class__._non_gc_instruments.setdefault(
-            self.device_name, {}
+        # keyed by the metadata the clusters come from, so an executor of other hardware with
+        # the same device name never reuses them
+        self._instruments_key = str(Path(os.fsdecode(quantify_metadata_file)).resolve())
+        no_gc_instruments_cache = self.__class__._non_gc_instruments.get(
+            self._instruments_key, {}
         )
         try:
             self._coordinator = no_gc_instruments_cache[self.coordinator_name]
         except KeyError:
-            # make sure all previous connections are closed
+            # make sure all previous connections are closed, which leaves no cached instrument usable
             # FIXME: This global is unnatural but QCoDeS' delegation force us to make
             #   all instruments globals
             qblox_instruments.Cluster.close_all()
-            self._coordinator = InstrumentCoordinator(self.coordinator_name)
+            self.__class__._close_cached_instruments()
 
             # FIXME: Saving to the class variable just to escape the garbage collector
             #   since QCoDeS already keeps these instruments as globals
             #   and they raise errors if they already exist in QCoDeS
+            no_gc_instruments_cache = self.__class__._non_gc_instruments.setdefault(
+                self._instruments_key, {}
+            )
+            self._coordinator = InstrumentCoordinator(self.coordinator_name)
+            try:
+                clusters = self.quantify_metadata.get_clusters()
+                for cluster in clusters:
+                    if reset and are_clusters_resettable:
+                        cluster.reset()
+
+                    cluster_component = ClusterComponent(cluster)
+                    component_name = self._coordinator.add_component(cluster_component)
+                    no_gc_instruments_cache[component_name] = cluster_component
+            except Exception:
+                self._coordinator.close()
+                raise
+            # cached only once it has its clusters: cached before, a cluster that could not be
+            # reached left the next executor a coordinator without them, and every job failed
             no_gc_instruments_cache[self.coordinator_name] = self._coordinator
-
-            clusters = self.quantify_metadata.get_clusters()
-            for cluster in clusters:
-                if reset and are_clusters_resettable:
-                    cluster.reset()
-
-                cluster_component = ClusterComponent(cluster)
-                component_name = self._coordinator.add_component(cluster_component)
-                no_gc_instruments_cache[component_name] = cluster_component
 
         try:
             self._quantum_device = Instrument.find_instrument(
@@ -289,7 +306,14 @@ class QuantifyExecutor(QuantumExecutor):
         #   especially in automated tests
         qblox_instruments.Cluster.close_all()
         self._coordinator.close_all()
-        self.__class__._non_gc_instruments[self.device_name].clear()
+        self.__class__._non_gc_instruments.clear()
+
+    @classmethod
+    def _close_cached_instruments(cls) -> None:
+        for instruments in cls._non_gc_instruments.values():
+            for instrument in instruments.values():
+                instrument.close()
+        cls._non_gc_instruments.clear()
 
 
 def _extract_lo_frequencies(quantify_config: Any) -> Dict[str, float]:

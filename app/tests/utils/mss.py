@@ -202,17 +202,10 @@ def _verify_headers(headers):
     """
     bcc_nonce_ttl = 300
     try:
-        name = headers["x-id"]
-        nonce = headers["x-request-id"]
+        # the mock checks the signed headers are sent, not that the signature verifies
+        for key in ("x-id", "x-request-id", "x-signature"):
+            headers[key]
         timestamp = headers["x-timestamp"]
-        signature = headers["x-signature"]
-
-        message = f"{name}-{nonce}-{timestamp}"
-        # verify_ws_signature(
-        #         signature=signature,
-        #         message=message,
-        #         key_path=backend_conf.public_key_path,
-        # )
 
         current_timestamp = datetime.now().timestamp()
         timestamp_float = float(timestamp)

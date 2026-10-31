@@ -14,13 +14,13 @@ If you are reading this on GitHub, then you are looking at a mirror.
 
 ## Dependencies
 
-- [Python 3.12](https://www.python.org/)
+- [Python 3.13](https://www.python.org/)
 - [Redis](https://redis.io/)
 
 ## Quick Start
 
 - Ensure you have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed. 
- (_You could simply have python +3.12 installed instead._)
+ (_You could simply have python +3.13 installed instead._)
 
 ```shell
 wget -qO- https://astral.sh/uv/install.sh | sh
@@ -73,15 +73,15 @@ openssl rsa -pubout -in private-bcc-key.pem -out public-bcc-key.pem
 # then update the public_key_path for the backend in mss-config.toml of MSS
 ```
 
-- Copy the `dot-env-template.txt` file to `.env` and update the environment variables there appropriately.
+- Copy the `.env.example` file to `.env` and update the environment variables there appropriately.
 
 ```shell
-cp dot-env-template.txt .env
+cp .env.example .env
 ```
 
-_Note: If you don't want to use the simulator, set the variable `EXECUTOR_TYPE=quantify` in the `.env`_  
+_Note: If you don't want to use the simulator, set the variable `BCC_EXECUTOR_TYPE=quantify` in the `.env`_  
 
-- **If you have `EXECUTOR_TYPE=quantify`**, copy the quantify example config file `quantify-config.example.json` and `quantify-metadata.example.yml` into 
+- **If you have `BCC_EXECUTOR_TYPE=quantify`**, copy the quantify example config file `quantify-config.example.json` and `quantify-metadata.example.yml` into 
  the `quantify-config.json` and `quantify-metadata.yml` file and update the variables there in.    
  **Ignore this if you are using the qiskit pulse simulator**
 

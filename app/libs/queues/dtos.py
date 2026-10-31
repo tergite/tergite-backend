@@ -74,14 +74,14 @@ JobStage: TypeAlias = Literal[
     "final",
 ]
 
-_QUEUE_CONTEXT: Optional["QueueContext"] = None
+_QUEUE_CONTEXTS: dict[str, "QueueContext"] = {}
 
 
 def get_queue_context() -> "QueueContext":
-    """Retrieves the queue context for this process"""
-    global _QUEUE_CONTEXT
-    if _QUEUE_CONTEXT is None:
-        _QUEUE_CONTEXT = {
+    """Retrieves the queue context of the current device"""
+    queue_context = _QUEUE_CONTEXTS.get(settings.DEFAULT_PREFIX)
+    if queue_context is None:
+        queue_context = {
             "queue_prefix": settings.DEFAULT_PREFIX,
             "booking_db_url": settings.BOOKING_DB_URL,
             "jobs_store_url": settings.RQ_REDIS_URL,
@@ -99,15 +99,14 @@ def get_queue_context() -> "QueueContext":
             "default_recalibration_interval": settings.DEFAULT_RECALIBRATION_INTERVAL,
         }
         err_logger.info("Initializing queue context")
-        _QUEUE_CONTEXT = cast(QueueContext, _QUEUE_CONTEXT)
+        _QUEUE_CONTEXTS[settings.DEFAULT_PREFIX] = cast(QueueContext, queue_context)
 
-    return _QUEUE_CONTEXT
+    return _QUEUE_CONTEXTS[settings.DEFAULT_PREFIX]
 
 
 def clear_queue_context():
-    """Clears the queue context"""
-    global _QUEUE_CONTEXT
-    _QUEUE_CONTEXT = None
+    """Clears the queue contexts of all devices"""
+    _QUEUE_CONTEXTS.clear()
 
 
 @unique

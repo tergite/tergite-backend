@@ -28,11 +28,12 @@ setup_test_env()
 
 
 import importlib
+import importlib.util
 import logging
 import os
 import shutil
 import sys
-from contextlib import suppress
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import (
     Any,
@@ -50,6 +51,7 @@ from typing import (
 import numpy as np
 import pytest
 import redis
+import time_machine
 from fastapi.testclient import TestClient
 from pytest_lazy_fixtures import lf as lazy_fixture
 from pytest_mock import MockerFixture
@@ -65,18 +67,8 @@ from .utils.fixtures import load_fixture
 from .utils.mss import mock_sync_connect
 from .utils.rq import get_rq_pool_worker
 
-HAS_QISKIT_DYNAMICS = False
-HAS_QUANTIFY = False
-
-with suppress(ImportError):
-    import qiskit_dynamics
-
-    HAS_QISKIT_DYNAMICS = True
-
-with suppress(ImportError):
-    import quantify_scheduler
-
-    HAS_QUANTIFY = True
+HAS_QISKIT_DYNAMICS = importlib.util.find_spec("qiskit_dynamics") is not None
+HAS_QUANTIFY = importlib.util.find_spec("quantify_scheduler") is not None
 
 _redis_connection = redis.Redis.from_url(TEST_RQ_REDIS_URL)
 
@@ -252,10 +244,10 @@ def quantify_rest_client(
 ) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
     _patch_async_client(mocker)
-    os.environ["EXECUTOR_TYPE"] = "quantify"
-    os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX
-    os.environ["BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
-    os.environ["CALIBRATION_SEED"] = quantify_seed_file
+    os.environ["BCC_EXECUTOR_TYPE"] = "quantify"
+    os.environ["BCC_DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX
+    os.environ["BCC_BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
+    os.environ["BCC_CALIBRATION_SEED"] = quantify_seed_file
 
     from .utils.executors.quantify import MockQuantifyExecutor
     from .utils.tuner import mock_run_node
@@ -285,6 +277,25 @@ def quantify_rest_client(
 
 
 @pytest.fixture
+def fake_clock(mocker) -> Generator[time_machine.Traveller, Any, None]:
+    """A clock that jumps ahead instead of waiting: the mock executors' jobs shift it by
+    their duration, and _wait_on_rq_worker moves it on to the next scheduled job"""
+    with time_machine.travel(datetime.now(timezone.utc), tick=True) as clock:
+        # each mock only where its executor is installed, as CI installs one at a time
+        if HAS_QUANTIFY:
+            from .utils.executors.quantify import MockQuantifyExecutor
+
+            mocker.patch.object(MockQuantifyExecutor, "wait", side_effect=clock.shift)
+        if HAS_QISKIT_DYNAMICS:
+            from .utils.executors.qiskit import MockQiskitDynamicsExecutor
+
+            mocker.patch.object(
+                MockQiskitDynamicsExecutor, "wait", side_effect=clock.shift
+            )
+        yield clock
+
+
+@pytest.fixture
 def patched_mss_websockets(mocker) -> Generator[MockerFixture, Any, None]:
     """Patch the websocket used to connect to MSS"""
     mocker.patch(
@@ -294,21 +305,31 @@ def patched_mss_websockets(mocker) -> Generator[MockerFixture, Any, None]:
 
 
 @pytest.fixture
-def qiskit_1q_rest_client(mocker) -> Generator[TestClient, Any, None]:
+def qiskit_1q_rest_client(request, mocker) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
-    os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_1q"
-    os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_1Q
-    os.environ["BACKEND_SETTINGS"] = TEST_SIMQ1_BACKEND_SETTINGS_FILE
-    os.environ["CALIBRATION_SEED"] = TEST_QISKIT_1Q_SEED_FILE
+    os.environ["BCC_EXECUTOR_TYPE"] = "qiskit_pulse_1q"
+    os.environ["BCC_DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_1Q
+    os.environ["BCC_BACKEND_SETTINGS"] = TEST_SIMQ1_BACKEND_SETTINGS_FILE
+    os.environ["BCC_CALIBRATION_SEED"] = TEST_QISKIT_1Q_SEED_FILE
 
-    from .utils.executors.qiskit import MockQiskitDynamicsExecutor
+    from .utils.executors.qiskit import (
+        MockQiskitDynamicsExecutor,
+        StubQiskitDynamicsExecutor,
+    )
+
+    # only a test that checks the measured counts pays for simulating
+    executor_class = (
+        MockQiskitDynamicsExecutor
+        if request.node.get_closest_marker("simulated")
+        else StubQiskitDynamicsExecutor
+    )
 
     mocker.patch(
         "app.services.external.mss.service.connect", side_effect=mock_sync_connect
     )
     mocker.patch(
         "app.libs.quantum_executor.qiskit.executor.QiskitDynamicsExecutor",
-        new=MockQiskitDynamicsExecutor,
+        new=executor_class,
     )
     mocker.patch(
         "app.libs.quantum_executor.qiskit.backends.one_qubit.LinearDiscriminantAnalysis",
@@ -332,19 +353,29 @@ def qiskit_1q_rest_client(mocker) -> Generator[TestClient, Any, None]:
 
 
 @pytest.fixture
-def qiskit_2q_rest_client(mocker) -> Generator[TestClient, Any, None]:
+def qiskit_2q_rest_client(request, mocker) -> Generator[TestClient, Any, None]:
     """A test client for fast api when rq is running asynchronously"""
     _patch_async_client(mocker)
-    os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_2q"
-    os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_2Q
-    os.environ["BACKEND_SETTINGS"] = TEST_SIMQ2_BACKEND_SETTINGS_FILE
-    os.environ["CALIBRATION_SEED"] = TEST_QISKIT_2Q_SEED_FILE
+    os.environ["BCC_EXECUTOR_TYPE"] = "qiskit_pulse_2q"
+    os.environ["BCC_DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_2Q
+    os.environ["BCC_BACKEND_SETTINGS"] = TEST_SIMQ2_BACKEND_SETTINGS_FILE
+    os.environ["BCC_CALIBRATION_SEED"] = TEST_QISKIT_2Q_SEED_FILE
 
-    from .utils.executors.qiskit import MockQiskitDynamicsExecutor
+    from .utils.executors.qiskit import (
+        MockQiskitDynamicsExecutor,
+        StubQiskitDynamicsExecutor,
+    )
+
+    # only a test that checks the measured counts pays for simulating
+    executor_class = (
+        MockQiskitDynamicsExecutor
+        if request.node.get_closest_marker("simulated")
+        else StubQiskitDynamicsExecutor
+    )
 
     mocker.patch(
         "app.libs.quantum_executor.qiskit.executor.QiskitDynamicsExecutor",
-        new=MockQiskitDynamicsExecutor,
+        new=executor_class,
     )
     mocker.patch(
         "app.libs.quantum_executor.qiskit.backends.two_qubit.LinearDiscriminantAnalysis",
@@ -450,6 +481,16 @@ def sql_engine_spy(mocker):
     from sqlalchemy import create_engine
 
     return mocker.patch("app.utils.sql_db.create_engine", wraps=create_engine)
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _close_cached_instruments():
+    """Closes the dummy clusters MockQuantifyExecutor keeps from test to test"""
+    yield
+    if HAS_QUANTIFY:
+        from app.libs.quantum_executor.quantify.executor import QuantifyExecutor
+
+        QuantifyExecutor._close_cached_instruments()
 
 
 @pytest.fixture(autouse=True, scope="session")

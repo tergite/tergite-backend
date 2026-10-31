@@ -1,0 +1,83 @@
+# Rendered for one binary by pkg/render.sh, which replaces @PACKAGE@ and @BINARY@
+name: @PACKAGE@
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: science
+maintainer: tergite <contact@quantum.chalmersnextlabs.se>
+vendor: Chalmers Next Labs
+homepage: https://github.com/tergite/tergite-backend
+license: Apache-2.0
+description: The Backend Control Computer (BCC) of Tergite, between MSS and a quantum computer or its simulator.
+
+scripts:
+  preinstall: build/pkg-@BINARY@/preinstall.sh
+  postinstall: build/pkg-@BINARY@/postinstall.sh
+  preremove: build/pkg-@BINARY@/preremove.sh
+  postremove: build/pkg-@BINARY@/postremove.sh
+
+deb:
+  scripts:
+    templates: build/pkg-@BINARY@/debian/templates
+    config: build/pkg-@BINARY@/debian/config
+
+depends:
+  - openssl
+
+contents:
+  # Nuitka's standalone build, whose executable finds the folder through the link
+  - src: main.dist/
+    dst: /usr/lib/@PACKAGE@/
+    type: tree
+  - src: /usr/lib/@PACKAGE@/@BINARY@
+    dst: /usr/bin/@BINARY@
+    type: symlink
+
+  # one instance a DEFAULT_PREFIX, e.g. @BINARY@@lab1 reads /etc/bcc/lab1/backend.env
+  - src: pkg/bcc@.service
+    dst: /lib/systemd/system/@BINARY@@.service
+    packager: deb
+  - src: pkg/bcc@.service
+    dst: /lib/systemd/system/@BINARY@@.service
+    packager: rpm
+
+  - src: build/pkg-@BINARY@/provision.sh
+    dst: /usr/sbin/@BINARY@-provision
+    file_info:
+      mode: 0755
+
+  - src: .env.example
+    dst: /usr/share/@PACKAGE@/env.example
+  # what provisioning copies into an instance, for its executor
+  - src: backend_config.example.toml
+    dst: /usr/share/@PACKAGE@/examples/backend_config.example.toml
+  - src: calibration.seed.example.toml
+    dst: /usr/share/@PACKAGE@/examples/calibration.seed.example.toml
+  - src: quantify-config.example.json
+    dst: /usr/share/@PACKAGE@/examples/quantify-config.example.json
+  - src: quantify-metadata.example.yml
+    dst: /usr/share/@PACKAGE@/examples/quantify-metadata.example.yml
+  - src: calib_device_config.example.toml
+    dst: /usr/share/@PACKAGE@/examples/calib_device_config.example.toml
+  - src: node_config.example.toml
+    dst: /usr/share/@PACKAGE@/examples/node_config.example.toml
+  - src: spi_config.example.toml
+    dst: /usr/share/@PACKAGE@/examples/spi_config.example.toml
+  - src: app/tests/fixtures/backend_config.simq1.toml
+    dst: /usr/share/@PACKAGE@/examples/backend_config.simq1.toml
+  - src: app/tests/fixtures/backend_config.simq2.toml
+    dst: /usr/share/@PACKAGE@/examples/backend_config.simq2.toml
+  - src: app/tests/fixtures/qiskit_pulse_1q.seed.toml
+    dst: /usr/share/@PACKAGE@/examples/qiskit_pulse_1q.seed.toml
+  - src: app/tests/fixtures/qiskit_pulse_2q.seed.toml
+    dst: /usr/share/@PACKAGE@/examples/qiskit_pulse_2q.seed.toml
+  - src: LICENSE.txt
+    dst: /usr/share/doc/@PACKAGE@/LICENSE.txt
+
+  # shared by both packages; each instance's folder in it holds the only copy of its secrets
+  - dst: /etc/bcc
+    type: dir
+    file_info:
+      mode: 0750
+      owner: root
+      group: bcc

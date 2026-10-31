@@ -64,7 +64,7 @@ from .store import get_jobs_store
 from .utils import (
     apply_linear_discriminator,
     decompress_qobj,
-    get_executor_and_options,
+    get_executor_options,
     get_quantum_executor,
     get_rq_job_id,
     log_job_failure,
@@ -307,8 +307,7 @@ def postprocess(
 
     job_id = job.job_id
     working_folder = Path(context["postprocessing_folder"])
-    _, executor_options = get_executor_and_options()
-    backend_name = executor_options.backend_name
+    backend_name = get_executor_options().backend_name
 
     jobs_store = get_jobs_store()
     new_file = move_file(results_file_path, new_folder=working_folder, ext=".hdf5")
@@ -421,7 +420,7 @@ def recalibrate(
         results = executor.recalibrate()
 
         if isinstance(results, DeviceCalibration):
-            logging.info(f"Updating MSS...")
+            logging.info("Updating MSS...")
             mss_client = get_mss_client()
             response = mss_client.send_event(
                 DeviceEvent(

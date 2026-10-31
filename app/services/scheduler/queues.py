@@ -13,7 +13,7 @@
 #
 """Module containing all the queues relevant for this application"""
 from functools import cached_property
-from typing import Optional, Self
+from typing import Self
 
 from redis import Redis
 from rq import Queue as RqQueue
@@ -23,46 +23,43 @@ import settings
 from ...libs.queues.types import RunnerQueue, StaticQueue
 from ...utils.logging import err_logger
 from ...utils.redis import get_redis_connection
-from .tasks import (
-    execute,
-    postprocess,
-    postprocessing_failure_callback,
-    postprocessing_success_callback,
-    preprocess,
-)
 
-_QUEUE_POOL: Optional["QueuePool"] = None
+# the tasks go by import path, as importing them loads the executor's heavy libraries
+_TASKS_MODULE = f"{__package__}.tasks"
+
+_QUEUE_POOLS: dict[str, "QueuePool"] = {}
 
 
 def get_queue_pool() -> "QueuePool":
-    """Gets the queue pool"""
-    global _QUEUE_POOL
-    if _QUEUE_POOL is None:
-        _QUEUE_POOL = QueuePool.from_settings()
+    """Gets the queue pool of the current device"""
+    queue_pool = _QUEUE_POOLS.get(settings.DEFAULT_PREFIX)
+    if queue_pool is None:
+        queue_pool = QueuePool.from_settings()
+        _QUEUE_POOLS[settings.DEFAULT_PREFIX] = queue_pool
 
-    return _QUEUE_POOL
+    return queue_pool
 
 
 def clear_queue_pool(empty_queues: bool = False, ignore_errors: bool = False) -> None:
-    """Clears the queue pool
+    """Clears the queue pools of all devices
 
     Args:
-        empty_queues: Whether to empty the queues before clearing it
+        empty_queues: Whether to empty the queues before clearing them
         ignore_errors: Whether to ignore any errors raised by this function. Defaults to False
     """
-    global _QUEUE_POOL
-    if isinstance(_QUEUE_POOL, QueuePool) and empty_queues:
-        try:
-            _QUEUE_POOL.empty()
-        except ExceptionGroup as exp_group:
-            if ignore_errors:
-                err_logger.warning(
-                    f"errors emptying queue pool: {exp_group.exceptions}"
-                )
-            else:
-                raise exp_group
+    if empty_queues:
+        for queue_pool in _QUEUE_POOLS.values():
+            try:
+                queue_pool.empty()
+            except ExceptionGroup as exp_group:
+                if ignore_errors:
+                    err_logger.warning(
+                        f"errors emptying queue pool: {exp_group.exceptions}"
+                    )
+                else:
+                    raise exp_group
 
-    _QUEUE_POOL = None
+    _QUEUE_POOLS.clear()
 
 
 class QueuePool:
@@ -227,7 +224,7 @@ def get_preprocessing_queue(
     Returns:
         a RunnerQueue instance to be used in preprocessing
     """
-    kwargs["job_executor_func"] = preprocess
+    kwargs["job_executor_func"] = f"{_TASKS_MODULE}.preprocess"
     return RunnerQueue(
         f"{prefix}_preprocessing",
         connection,
@@ -264,7 +261,7 @@ def get_normal_execution_queue(
     Returns:
         a RunnerQueue instance to be used in normal execution
     """
-    kwargs["job_executor_func"] = execute
+    kwargs["job_executor_func"] = f"{_TASKS_MODULE}.execute"
     return RunnerQueue(
         f"{prefix}_normal_execution",
         connection,
@@ -302,7 +299,7 @@ def get_booked_execution_queue(
     Returns:
         a RunnerQueue instance to be used in booked execution
     """
-    kwargs["job_executor_func"] = execute
+    kwargs["job_executor_func"] = f"{_TASKS_MODULE}.execute"
     return RunnerQueue(
         f"{prefix}_booked_execution",
         connection,
@@ -370,9 +367,9 @@ def get_postprocessing_queue(
     Returns:
         a RunnerQueue instance to be used in preprocessing
     """
-    kwargs["job_executor_func"] = postprocess
-    kwargs["success_callback"] = postprocessing_success_callback
-    kwargs["failure_callback"] = postprocessing_failure_callback
+    kwargs["job_executor_func"] = f"{_TASKS_MODULE}.postprocess"
+    kwargs["success_callback"] = f"{_TASKS_MODULE}.postprocessing_success_callback"
+    kwargs["failure_callback"] = f"{_TASKS_MODULE}.postprocessing_failure_callback"
     return RunnerQueue(
         f"{prefix}_postprocessing",
         connection,

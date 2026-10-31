@@ -1,0 +1,23 @@
+#!/bin/sh
+# Creates the hidden _bcc account both packages' instances run as
+
+set -e
+
+if ! dscl . -read /Users/_bcc >/dev/null 2>&1; then
+	# the first id below 500, macOS's range for system accounts, that no user or group has
+	for id in $(seq 400 499); do
+		if [ -z "$(dscl . -search /Users UniqueID "$id")" ] &&
+			[ -z "$(dscl . -search /Groups PrimaryGroupID "$id")" ]; then
+			break
+		fi
+	done
+	dscl . -create /Groups/_bcc PrimaryGroupID "$id"
+	dscl . -create /Groups/_bcc Password '*'
+	dscl . -create /Users/_bcc UniqueID "$id"
+	dscl . -create /Users/_bcc PrimaryGroupID "$id"
+	dscl . -create /Users/_bcc UserShell /usr/bin/false
+	dscl . -create /Users/_bcc NFSHomeDirectory /var/empty
+	dscl . -create /Users/_bcc RealName "Tergite BCC"
+	dscl . -create /Users/_bcc Password '*'
+	dscl . -create /Users/_bcc IsHidden 1
+fi

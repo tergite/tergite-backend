@@ -82,7 +82,7 @@ All signed CLAs are emails to us at <quantum-nextlabs@chalmers.se>.
 
 - Ensure you have a [redis server](https://redis.io/docs/install/install-redis/) installed on your local machine.
 - Ensure you have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed. 
- (_You could simply have python +3.12 installed instead._)
+ (_You could simply have python +3.13 installed instead._)
 
 ```shell
 wget -qO- https://astral.sh/uv/install.sh | sh
@@ -137,139 +137,110 @@ pre-commit install
 pytest -n auto --dist=loadscope app
 ```
 
-## How to Run With Systemd
+## How to Install as a Service
+
+- Download the package for your machine from the release, a deb for amd64 or a pkg for macOS
+  arm64: `tergite-backend` runs real devices through quantify, `tergite-backend-simulator` runs
+  the qiskit simulators. They install side by side.
+
+- Install it. A deb asks for a first backend instance: its name, which is its `DEFAULT_PREFIX`,
+  executor, port, MSS URL and Redis.
+
+```shell
+sudo apt install ./tergite-backend_<version>_amd64.deb
+```
+
+- Create any other instance, or the first on macOS, which asks nothing.
+  `--executor`, `--port`, `--mss-url` and `--redis-url` override the defaults, and a Redis
+  password goes in `REDIS_PASSWORD`.
+
+```shell
+sudo bcc-provision lab1
+# or for a simulator
+# sudo bcc.simulator-provision sim1 --executor qiskit_pulse_2q --port 8002
+```
+
+- Edit the instance's configs in `/etc/bcc/<name>/` for the device, copy MSS's
+  `public-mss-key.pem` there unless MSS runs on the same machine, and give MSS the
+  `[[backends]]` entry and `public-bcc-key.pem` that provisioning printed.
+
+- Start the instance, and on every boot. Its data is in `/var/lib/bcc/<name>/`.
+
+```shell
+sudo systemctl enable --now bcc@lab1
+# or for a simulator: bcc.simulator@sim1
+journalctl -u bcc@lab1 -f
+```
+
+## Build Executable with [Nuitka](https://nuitka.net/)
+
+- Ensure you have a [redis server](https://redis.io/docs/install/install-redis/) installed on your local machine.
+- Ensure you have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed. 
+ (_You could simply have python +3.13 installed instead._)
+
+```shell
+wget -qO- https://astral.sh/uv/install.sh | sh
+# or use curl
+# curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
 - Clone the repo
 
 ```shell
 git clone git@github.com:tergite/tergite-backend.git
-```
-
-- Copy the `dot-env-template.txt` into the `.env` file and update the variables there in. Contact your teammates for
- the variables you are not sure of.
-
-```shell
 cd tergite-backend
-cp dot-env-template.txt .env
 ```
 
-- Copy the `quantify-config.example.json` into `quantify-config.json` and update the variables there in.
+- Install dependencies. Note that we can either use the simulators (`qiskit`) or connect to Qblox clusters (`quantify`).
+  To install for simulators, use `--extra qiskit` and to install for Qblox, use `--extra quantify`.  
+  **Take note that you can use both at the same time because they conflict with each other**.
 
 ```shell
-cp quantify-config.example.json quantify-config.json
+uv sync --dev --extra quantify
+# or for simulators only
+# uv sync --dev --extra qiskit
 ```
 
-- Copy the `quantify-metadata.example.yml` into `quantify-metadata.yml` and update the variables there in.
+- Activate your environment
 
 ```shell
-cp quantify-metadata.example.yml quantify-metadata.yml 
+source .venv/bin/activate
 ```
 
-- If you need some seed data (mandatory if you are to use a simulator), copy the `calibration.seed.example.toml` into `calibration.seed.toml` and update the variables there in.
+- Start the redis server in another terminal on port 6378
 
 ```shell
-cp calibration.seed.example.toml calibration.seed.toml
+redis-server --port 6378
 ```
 
-- Copy `bcc.service` to the systemd services folder
+- Build the main.py file
 
 ```shell
-sudo cp bcc.service /etc/systemd/system/bcc.service
+pkg/build.sh
+# or if you want the simulators, executor is qiskit
+# EXECUTOR=qiskit pkg/build.sh
 ```
 
-- Get the path to your conda bin:
+- After the build, the app will be at `main.dist/bcc` (or `main.dist/bcc.simulator` if EXECUTOR=qiskit), in
+  the folder it needs beside it. You can run it.
 
 ```shell
-YOUR_CONDA_BIN_PATH="$(conda info --base)/bin"
-```
+# serve the API, and run one heavy worker for preprocessing, executions and recalibrations
+# and `--light-workers` (default 1) for postprocessing and general tasks, stopping them all if
+# any stops; it reads the .env file named by BCC_ENV_FILE, and takes `--port`, `--host`,
+# `--forwarded-allow-ips` and `--workers`, the number of API processes ($WEB_CONCURRENCY or 1)
+BCC_ENV_FILE="$PWD/.env" main.dist/bcc start  # or just main.dist/bcc, as start is the default
+# or one at a time: `main.dist/bcc serve`, `main.dist/bcc rq --kind heavy`, `main.dist/bcc rq --kind light`
 
-
-- Extract also the path to this folder where `tergite-backend` is.
-
-```shell
-YOUR_PATH_TO_BCC=$(pwd)
-```
-
-- Get also the current user
-
-```shell
-YOUR_USER=$(whoami)
-```
-
-- Replace the variables `YOUR_CONDA_BIN_PATH` and `YOUR_PATH_TO_BCC` with the right values in `/etc/systemd/system/bcc.service`
-
-```shell
-sudo sed -i.bak "s:YOUR_USER:${YOUR_USER}:" /etc/systemd/system/bcc.service
-sudo sed -i.bak "s:YOUR_CONDA_BIN_PATH:${YOUR_CONDA_BIN_PATH}:" /etc/systemd/system/bcc.service
-sudo sed -i.bak "s:YOUR_PATH_TO_BCC:${YOUR_PATH_TO_BCC}:" /etc/systemd/system/bcc.service
-sudo rm /etc/systemd/system/bcc.service.bak
-```
-
-- Start BCC service
-
-```shell
-sudo systemctl start bcc.service
-```
-
-- Check the BCC service status
-
-```shell
-sudo systemctl status bcc.service
-```
-
-- Enable BCC to start on startup incase the server is ever restarted.
-
-
-```shell
-sudo systemctl enable bcc.service
-```
-
-## How to Run with Docker
-
-- Ensure you have [Docker](https://docs.docker.com/engine/install/) installed.
-- Create a `data` folder
-
-```shell
-mkdir data
-```
-
-- Create a proper `.env` file based on the `dot-env-template.txt` and put it in the `data` folder.
-
-```shell
-cp dot-env-template.txt data/.env
-```
-
-- Create a proper `quantify-config.yml` file if it is needed (i.e. if you don't want to run any of the simulators). 
-  Put it in the `data` folder.
-
-```shell
-cp quantify-config.example.yml data/quantify-config.yml
-```
-
-- Create a proper `quantify-metadata.yml` if it is needed (i.e. if you don't want to run any of the simulators).
-  Put it in the `data` folder.
-
-```shell
-cp quantify-metadata.example.yml quantify-metadata.yml 
-```
-
-- If you need some seed data (mandatory if you are to use a simulator), create the `calibration.seed.toml` file.
-  Put it in the `data` folder.
-
-```shell
-cp calibration.seed.example.toml calibration.seed.toml
-```
-
-- Create a proper `backend_config.toml` file. Put it in the `data` folder.
-
-```shell
-cp backend_config.example.toml data/backend_config.toml
-```
-
-- Run the docker container with the `data` folder mounted as a volume.
-
-```shell
-docker run --name tg-backend -v ./data:/data -e ENV_FILE="/data/.env" -e BACKEND_SETTINGS="/data/backend_config.toml" tergite/tergite-backend:latest 
+# serve several devices from one process: each device's env file once; its API is then at
+# /<its DEFAULT_PREFIX>/..., say http://localhost:8000/loke/bookings, a path naming no device
+# reaching the first; each device gets a heavy worker, and the light workers run every device's
+# queues, so the devices must share RQ_REDIS_URL; in the shell, BCC_<NAME>, e.g.
+# BCC_MAX_IDLE_TIME, sets every device's <NAME> over its env file, and BCC_<PREFIX>_<NAME>,
+# e.g. BCC_LOKE_MAX_IDLE_TIME, one device's over that; see .env.example
+main.dist/bcc start --env-file loke.env --env-file thor.env
+# or, as BCC_ENV_FILE may name several separated as in PATH
+BCC_ENV_FILE="$PWD/loke.env:$PWD/thor.env" main.dist/bcc start
 ```
 
 ## References

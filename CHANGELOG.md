@@ -7,6 +7,47 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Added
+
+- Added GitLab jobs that, on a `v*` tag, build the debs and macOS packages, upload them to the package registry and
+  link them from the GitLab release; the macOS ones run where `PUBLISH_MACOS_ARM64` is `true`, on a runner tagged `macos`
+- Added amd64 debs, for Debian 13 and Ubuntu 24.04 onwards, and macOS arm64 packages, `tergite-backend` and `tergite-backend-simulator`, running each
+  backend instance, named for its `DEFAULT_PREFIX`, as a `bcc@<name>` service set up by `bcc-provision`
+- Added `bcc start`, the default command, to the Nuitka binary, which runs the API, one RQ worker for preprocessing, executions and
+  recalibrations, and `--light-workers` (default 1) for postprocessing and general tasks as one process tree
+- Added `--env-file`, given once per device, to `bcc start`, `serve` and `rq`, which serves several devices from one
+  process, each device's API under `/<DEFAULT_PREFIX>/`, with a heavy worker per device and light workers shared by all
+- Added `--workers` to `bcc start` and `serve`, the number of API processes, defaulting as uvicorn does to
+  `$WEB_CONCURRENCY` or 1; `BCC_ENV_FILE` may name several env files, separated as in PATH, as `--env-file` does
+- Added `BCC_<NAME>` env variables, e.g. `BCC_MAX_IDLE_TIME`, which set every device's `<NAME>`, and
+  `BCC_<PREFIX>_<NAME>`, e.g. `BCC_LOKE_MAX_IDLE_TIME`, one device's over them
+
+### Changed
+
+- bcc needs Python 3.13 or later, and its debs and macOS packages are built with it: on 3.12 a Nuitka build
+  raised TypeError where anyio sorts exception groups, as CPython 3.12 refuses compiled functions there
+- The debs and macOS packages install `bcc` as Nuitka's standalone folder in `/usr/lib/<package>`, linked from the
+  PATH, instead of a onefile binary that unpacked itself into a temporary folder on every start
+- Changed `start_bcc.sh` to run `main.py start`, after decrypting a SOPS env file, instead of the API and six RQ
+  workers itself; it no longer installs sops, and `BCC_DEBUG` and `BCC_UVICORN_LOG_LEVEL` are gone with its uses of them
+- Renamed `dot-env-template.txt` to `.env.example`, which now also documents the env variables and serving several devices
+- Changed every env variable and env file key the backend reads to its `BCC_` name, e.g. `BCC_DEFAULT_PREFIX`: a bare
+  one is no longer read, and in an env file is an error, and `BCC_ENV_FILE` replaces `ENV_FILE`
+- Renamed the settings `BCC_PORT` and `BCC_MACHINE_ROOT_URL` to `PORT` and `MACHINE_ROOT_URL`, so their variables and
+  env file keys stay `BCC_PORT` and `BCC_MACHINE_ROOT_URL`
+- Changed the API to start without building a quantum executor or importing quantify, in about 2 s and 80 MB
+  instead of 10 s and 330 MB; a broken quantify config or metadata file now fails the heavy worker's start instead
+
+### Fixed
+
+- Fixed scheduled jobs never running: `bcc start` runs its workers with RQ's scheduler, so a booking's start and
+  end jobs and recalibration's start and repeats now run, which no release's workers did
+
+### Removed
+
+- Removed `bcc.service` and `start_bcc.sh`'s conda-based systemd mode, which the packages replace
+- Removed the Docker image and its release jobs; the debs and macOS packages, or `bcc` from a checkout, run the backend
+
 ## [2026.09.0-rc.1] - 2026-07-03
 
 ### Changed

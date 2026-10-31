@@ -77,7 +77,6 @@ from ..utils.strings import uuid_str
 from .dependencies import (
     MSSAuthDetails,
     get_backend_name,
-    get_bearer_token,
     get_booking_db,
     get_mss_token_claims_dep,
     get_queue_context_if_online,
@@ -88,6 +87,7 @@ from .dependencies import (
     lifespan,
     validate_job_file,
 )
+from .device_routing import DeviceRoutingMiddleware
 
 # application
 app = FastAPI(
@@ -118,11 +118,18 @@ app.add_exception_handler(InvalidJobIdInUploadedFileError, to_http_error(400))
 app.add_exception_handler(JobAlreadyCancelled, to_http_error(406))
 app.add_exception_handler(IsOfflineError, to_http_error(404))
 
-# setup CORS if CORS_ORIGINS are set
-if len(settings.CORS_ORIGINS) > 0:
+# setup CORS if any device's CORS_ORIGINS are set
+cors_origins = sorted(
+    {
+        origin
+        for device in settings.get_device_names()
+        for origin in settings.get_device_settings(device).CORS_ORIGINS
+    }
+)
+if len(cors_origins) > 0:
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.CORS_ORIGINS,
+        allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -178,6 +185,10 @@ async def log_requests(request: Request, call_next):
 
 
 # routing
+# added last, so outermost: the other middlewares and the routes run as the path's device
+app.add_middleware(DeviceRoutingMiddleware)
+
+
 @app.get("/", dependencies=[Depends(get_verified_mss_user_id)])
 async def root():
     return {"message": "Welcome to BCC machine"}

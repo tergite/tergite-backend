@@ -1,12 +1,16 @@
 stages:
   - tests
+  - package
+  - release
 
 variables:
-  PYTHON_VERSION: "3.12"
+  # pinned with its checksum, so that what packages a release is checked against this file
+  NFPM_VERSION: "2.48.0"
+  NFPM_SHA256: 6d7f9a28b2f397934403950fcbba83f598b08d02edbe79a0815b3b4897341750
+  PYTHON_VERSION: "3.13"
   REDIS_PORT: 6378
   TEST_RQ_MAX_QUEUE_WAIT_TIME: 45
   FF_NETWORK_PER_BUILD: 1
-  UV_CACHE_DIR: "$CI_PROJECT_DIR/.cache/uv"
 
 .setup_venv: &setup_venv
   image: python:${PYTHON_VERSION}
@@ -29,6 +33,8 @@ tests:
   parallel:
     matrix:
       - DEPS_GROUP: [ qiskit, quantify ]
+  variables:
+    UV_CACHE_DIR: "$CI_PROJECT_DIR/.cache/uv"
   script:
     - echo "Testing $DEPS_GROUP"
     # Install project dependencies
@@ -37,6 +43,7 @@ tests:
     # Check formatting
     - black --check app
     - isort --check-only app
+    - pyflakes app main.py settings.py
     # Run unit tests
     - pytest app
   cache:
@@ -44,3 +51,85 @@ tests:
     paths:
       - .cache/uv
       - .venv
+
+# On a v* tag, as .github/workflows/release.yml does on GitHub: the debs for amd64 and macOS
+# installers of bcc (quantify) and bcc.simulator (qiskit), each built on its platform as Nuitka
+# cannot cross-compile, uploaded to this project's package registry and linked from the release.
+.package: &package
+  stage: package
+  needs: []
+  # qiskit, jax and scipy make a build of an hour or more
+  timeout: 3h
+  parallel:
+    matrix:
+      - BINARY: bcc
+        EXECUTOR: quantify
+      - BINARY: bcc.simulator
+        EXECUTOR: qiskit
+  variables: &package_variables
+    # the Python the binaries are built with; uv would otherwise take the newest it can download
+    UV_PYTHON: "3.13"
+    # uv's own build of it, as Nuitka refuses e.g. Homebrew's on a Mac
+    UV_MANAGED_PYTHON: "1"
+  artifacts:
+    paths:
+      - published/
+    expire_in: 1 year
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/
+
+# its glibc 2.39 is the oldest the binaries then run on: Debian 13 and Ubuntu 24.04 onwards
+package linux:
+  <<: *package
+  image: tergite/tergite-nuitka:v2026.10.0
+  tags: [nuitka]
+  variables:
+    <<: *package_variables
+    # folders of the nuitka runner's host, kept between jobs
+    NUITKA_CACHE_DIR: /nuitka-cache/$CI_PROJECT_NAME/$CI_JOB_NAME_SLUG
+    UV_CACHE_DIR: /uv-cache
+    # uv cannot hard-link from a cache on another disk than the checkout
+    UV_LINK_MODE: copy
+  script:
+    - export VERSION=${CI_COMMIT_TAG#v}
+    - pkg/build-linux.sh
+    - curl -fsSL -o /tmp/nfpm.tar.gz "https://github.com/goreleaser/nfpm/releases/download/v$NFPM_VERSION/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+    - echo "$NFPM_SHA256  /tmp/nfpm.tar.gz" | sha256sum -c -
+    - tar -xzf /tmp/nfpm.tar.gz -C /usr/local/bin nfpm
+    - pkg/render.sh "$BINARY" >/dev/null
+    - mkdir -p dist
+    - ARCH=amd64 nfpm package -f "build/pkg-$BINARY/nfpm.yaml" -p deb -t dist/
+    # build-linux.sh skips apt where the image has its tools, so the deb's dependencies need fresh lists
+    - apt-get update -qq
+    - DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ./dist/*.deb
+    - pkg/smoke-test.sh "$BINARY"
+    - pkg/publish.sh dist/*.deb
+
+# A Mac with uv and ccache, registered with the shell executor and tagged macos, whose home
+# folder keeps Nuitka's and uv's own caches between builds; only where PUBLISH_MACOS_ARM64 is
+# exactly true, so that a pipeline without such a runner does not wait on it. SIGN_IDENTITY,
+# set in the CI/CD variables, signs the installers. Not smoke-tested, as provisioning an
+# instance needs the root a shell runner lacks.
+package macos:
+  <<: *package
+  tags: [macos]
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/ && $PUBLISH_MACOS_ARM64 == "true"
+  script:
+    - export VERSION=${CI_COMMIT_TAG#v}
+    - pkg/build.sh
+    - pkg/macos/build.sh "$BINARY"
+    - pkg/publish.sh dist/*.pkg
+
+release:
+  stage: release
+  image: alpine:3.20
+  needs:
+    - job: package linux
+    - job: package macos
+      optional: true
+  script:
+    - apk add --no-cache bash curl jq
+    - pkg/release.sh
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/

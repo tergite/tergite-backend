@@ -6,10 +6,10 @@ Documentation about configuring BCC
 
 To configure the entire application, we use `.env` files.   
 
-Just copy the [`dot-env-template.txt`](../dot-env-template.txt) to `env` and update the variables there in.
+Just copy the [`.env.example`](../.env.example) to `env` and update the variables there in.
 
 ```shell
-cp dot-env-template.txt .env
+cp .env.example .env
 ```
 
 ## QBLOX Instruments Configuration
@@ -43,7 +43,7 @@ visiting the [quantify_scheduler docs](https://quantify-os.org/docs/quantify-sch
 and the [QCoDeS drivers docs](https://microsoft.github.io/Qcodes/)._  
 
 _NOTE: You could choose to use a different name for your quantum executor config file e.g. `foobar.yml`.
-You however need to explicitly set this name in the `.env` file `QUANTIFY_CONFIG_FILE=foobar.yml`_  
+You however need to explicitly set this name in the `.env` file `BCC_QUANTIFY_CONFIG_FILE=foobar.yml`_  
 
 ### General Backend Configuration
 
@@ -62,7 +62,7 @@ start script as these are automatically loaded for you._
 
 You may wish to run a single-qubit simulator.  
 
-First update the `.env` file to contain `EXECUTOR_TYPE=qiskit_pulse_1q`.  
+First update the `.env` file to contain `BCC_EXECUTOR_TYPE=qiskit_pulse_1q`.  
 
 We already have a preconfigured [`backend_config.simq1.toml`](../app/tests/fixtures/backend_config.simq1.toml) for this in the 
 `app/tests/fixtures` folder.   
@@ -84,7 +84,7 @@ And run the application.
 
 You may wish to run a two-qubit-gate simulator.  
 
-First update the `.env` file to contain `EXECUTOR_TYPE=qiskit_pulse_2q`.  
+First update the `.env` file to contain `BCC_EXECUTOR_TYPE=qiskit_pulse_2q`.  
 
 We already have a preconfigured [`backend_config.simq2.toml`](../app/tests/fixtures/backend_config.simq2.toml) for this in the 
 `app/tests/fixtures` folder.   

@@ -15,13 +15,27 @@ from datetime import datetime
 from pathlib import Path
 from typing import Tuple
 
+import numpy as np
+from qiskit.pulse import Acquire
+
 from app.libs.qiskit.qobj import PulseQobj
-from app.libs.quantum_executor.qiskit.executor import QiskitDynamicsExecutor
+from app.libs.quantum_executor.base.experiment import NativeExperiment
+from app.libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
+from app.libs.quantum_executor.base.quantum_job.typing import QExperimentResult
+from app.libs.quantum_executor.qiskit.executor import (
+    QiskitDynamicsExecutor,
+    _QiskitDynMeasReturn,
+    _to_xarray,
+)
+from app.libs.quantum_executor.utils.logger import ExperimentLogger
 from app.services.scheduler.store import get_jobs_store
 from app.tests.utils.env import TEST_RQ_REDIS_URL
 
 
 class MockQiskitDynamicsExecutor(QiskitDynamicsExecutor):
+    # how a job's estimated duration passes; the fake_clock fixture moves its clock instead
+    wait = staticmethod(time.sleep)
+
     def preprocess(
         self, qobj: PulseQobj, job_id: str, results_folder: Path = None
     ) -> Tuple[float, str]:
@@ -45,11 +59,36 @@ class MockQiskitDynamicsExecutor(QiskitDynamicsExecutor):
         if job.estimated_duration:
             estimated_duration = job.estimated_duration
 
-        result = super(self.__class__, self).run(job_id, inputs_folder=inputs_folder)
+        result = super().run(job_id, inputs_folder=inputs_folder)
         end_timestamp = datetime.now()
         actual_duration = (end_timestamp - start_timestamp).total_seconds()
         sleep_duration = estimated_duration - actual_duration
         if sleep_duration > 0:
-            time.sleep(sleep_duration)
+            self.wait(sleep_duration)
 
         return result
+
+
+class StubQiskitDynamicsExecutor(MockQiskitDynamicsExecutor):
+    """Measures every acquired qubit at zero at once instead of simulating, which takes a
+    2-qubit job about 9 seconds; for tests that do not check the measured counts"""
+
+    def _run_native(
+        self,
+        experiment: NativeExperiment,
+        /,
+        *,
+        native_config: NativeQobjConfig,
+        logger: ExperimentLogger,
+    ) -> QExperimentResult:
+        meas_return = _QiskitDynMeasReturn.from_native_qobj_config(native_config)
+        channels = {
+            instruction.channel
+            for _, instruction in experiment.schedule.instructions
+            if isinstance(instruction, Acquire)
+        }
+        if meas_return == _QiskitDynMeasReturn.AVG:
+            shape = (len(channels), 2)
+        else:
+            shape = (native_config.shots, len(channels), 2)
+        return _to_xarray(data=np.zeros(shape), meas_return=meas_return)

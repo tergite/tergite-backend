@@ -15,19 +15,17 @@
 """Utility functions for the scheduler service"""
 import dataclasses
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple
 
 import numpy as np
 from numpy import typing as npt
 from redis import Redis
-from sklearn.utils.extmath import safe_sparse_dot
 
 import settings
 
 from ...libs.device_parameters import (
     DeviceCalibration,
 )
-from ...libs.quantum_executor.base.executor import QuantumExecutor
 from ...libs.quantum_executor.utils.serialization import iqx_rld
 from ...libs.queues.dtos import (
     ExecutorOptions,
@@ -46,7 +44,11 @@ from ...utils.redis_store import Collection
 from ..external.mss.dtos import DeviceEvent, DeviceEventName, EventResponse
 from ..external.mss.service import MssClient
 
-_QUANTUM_EXECUTOR_AND_OPTS: tuple[QuantumExecutor, ExecutorOptions] | None = None
+if TYPE_CHECKING:
+    from ...libs.quantum_executor.base.executor import QuantumExecutor
+
+_EXECUTOR_OPTIONS: dict[str, ExecutorOptions] = {}
+_QUANTUM_EXECUTORS_AND_OPTS: dict[str, tuple["QuantumExecutor", ExecutorOptions]] = {}
 
 
 _STAGE_TIMESTAMPS_MAP: Dict[Stage, Tuple[Tuple[JobStage, JobEvent], ...]] = {
@@ -75,15 +77,25 @@ _STAGE_STATUS_MAP: Dict[Stage, JobStatus] = {
 }
 
 
-def get_executor_and_options() -> Tuple[QuantumExecutor, ExecutorOptions]:
+def get_executor_options() -> ExecutorOptions:
+    """Gets the current device's executor options from the settings, without building
+    the executor"""
+    executor_options = _EXECUTOR_OPTIONS.get(settings.DEFAULT_PREFIX)
+    if executor_options is None:
+        executor_options = ExecutorOptions.from_settings()
+        _EXECUTOR_OPTIONS[settings.DEFAULT_PREFIX] = executor_options
+    return executor_options
+
+
+def get_executor_and_options() -> Tuple["QuantumExecutor", ExecutorOptions]:
     """Gets the executor and its options that will be passed around in the queue
 
     Returns:
-        the executor and executor options constructed from the above settings
+        the current device's executor and executor options
     """
-    global _QUANTUM_EXECUTOR_AND_OPTS
-    if _QUANTUM_EXECUTOR_AND_OPTS is None:
-        executor_options = ExecutorOptions.from_settings()
+    executor_and_options = _QUANTUM_EXECUTORS_AND_OPTS.get(settings.DEFAULT_PREFIX)
+    if executor_and_options is None:
+        executor_options = get_executor_options()
         executor = _init_executor(executor_options, reset=True)
         err_logger.info(
             f"QuantumExecutor initialised for backend '{executor_options.backend_name}'.'"
@@ -93,33 +105,34 @@ def get_executor_and_options() -> Tuple[QuantumExecutor, ExecutorOptions]:
         executor_options = dataclasses.replace(
             executor_options, backend_config=executor.backend_config
         )
-        _QUANTUM_EXECUTOR_AND_OPTS = (executor, executor_options)
-    return _QUANTUM_EXECUTOR_AND_OPTS
+        executor_and_options = (executor, executor_options)
+        _QUANTUM_EXECUTORS_AND_OPTS[settings.DEFAULT_PREFIX] = executor_and_options
+    return executor_and_options
 
 
-def get_quantum_executor() -> QuantumExecutor:
+def get_quantum_executor() -> "QuantumExecutor":
     """Returns the process-level QuantumExecutor."""
     executor, options = get_executor_and_options()
     return executor
 
 
 def clear_quantum_executor(ignore_errors: bool = False) -> None:
-    """Clears the global quantum executor.
+    """Clears the quantum executors and their options of all devices.
 
     Args:
         ignore_errors: If True, ignores any errors raised by executor.
     """
-    global _QUANTUM_EXECUTOR_AND_OPTS
-    if isinstance(_QUANTUM_EXECUTOR_AND_OPTS, tuple):
+    _EXECUTOR_OPTIONS.clear()
+    for executor, _ in _QUANTUM_EXECUTORS_AND_OPTS.values():
         try:
-            _QUANTUM_EXECUTOR_AND_OPTS[0].close()
+            executor.close()
         except Exception as exp:
             if ignore_errors:
                 err_logger.warning(f"QuantumExecutor closed error: {exp}")
             else:
                 raise exp
 
-    _QUANTUM_EXECUTOR_AND_OPTS = None
+    _QUANTUM_EXECUTORS_AND_OPTS.clear()
 
 
 def log_job_msg(message: str, level: LogLevel = LogLevel.INFO) -> None:
@@ -255,7 +268,7 @@ def update_job_results(
         {
             "status": JobStatus.SUCCESSFUL,
             "result": JobResult(memory=data),
-            "download_url": f"{settings.BCC_MACHINE_ROOT_URL}/logfiles/{job_id}",
+            "download_url": f"{settings.MACHINE_ROOT_URL}/logfiles/{job_id}",
             "updated_at": utc_now_str(),
         },
     )
@@ -320,7 +333,7 @@ def apply_linear_discriminator(
     data[:, 0] = iq_points.real
     data[:, 1] = iq_points.imag
 
-    scores = safe_sparse_dot(data, coefficients.T, dense_output=True) + intercept
+    scores = data @ coefficients.T + intercept
 
     return (scores.ravel() > 0).astype(np.int_)
 
@@ -347,7 +360,7 @@ def decompress_qobj(qobj_dict: Dict[str, Any]) -> Dict[str, Any]:
     return qobj_dict
 
 
-def _init_executor(options: ExecutorOptions, reset: bool = False) -> QuantumExecutor:
+def _init_executor(options: ExecutorOptions, reset: bool = False) -> "QuantumExecutor":
     """Initializes the executor
 
     Args:

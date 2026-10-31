@@ -12,10 +12,12 @@
 # that they have been altered from the originals.
 #
 """Tests for the scheduler that handles queueing of user's jobs"""
+import asyncio
 import copy
 import json
 import math
 import os
+import threading
 import time
 from contextlib import suppress
 from datetime import datetime, timedelta, timezone
@@ -34,6 +36,7 @@ from typing import (
 from uuid import uuid4
 
 import pytest
+import time_machine
 import toml
 from black.nodes import Generic
 from pydantic import ValidationError
@@ -45,7 +48,8 @@ from rq import SimpleWorker
 from rq.job import Job as RqJob
 from rq.suspension import is_suspended
 
-from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps
+from app.api.worker import preload_worker_globals
+from app.libs.queues.dtos import Job, JobStatus, Stage, Timestamps, get_queue_context
 from app.services.booking.models import Booking
 from app.tests.conftest import (
     CLIENT_AND_RQ_WORKER_TUPLES,
@@ -289,7 +293,7 @@ def test_admin_view_users(client, pagination: "PaginationInfo"):
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_delete_profile(
-    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture
+    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """DELETE '/me' should delete their own user profile"""
     with client as client:
@@ -326,7 +330,7 @@ def test_delete_profile(
         assert response.json() == {"detail": "user not found"}
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
 
@@ -343,7 +347,7 @@ def test_delete_profile(
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_admin_remove_user(
-    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture
+    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """DELETE '/users/{user_id}' by admin removes the user, and their bookings and jobs"""
     with client as client:
@@ -376,14 +380,14 @@ def test_admin_remove_user(
             client, current_user_id=other_user_id, user_id=curr_user_id, is_admin=True
         )
         assert response.status_code == 200
-        assert response.json() == {"status": "success", "detail": f"User deleted"}
+        assert response.json() == {"status": "success", "detail": "User deleted"}
 
         response = _view_own_profile(client, user_id=curr_user_id)
         assert response.status_code == 404
         assert response.json() == {"detail": "user not found"}
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
 
@@ -402,7 +406,7 @@ def test_admin_remove_user(
     "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-1]
 )
 def test_non_admin_remove_user(
-    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture
+    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """Non admin cannot remove the profile of any user"""
     with client as client:
@@ -432,7 +436,7 @@ def test_non_admin_remove_user(
         assert response.status_code == 200
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
         assert all([v.status == JobStatus.SUCCESSFUL for v in jobs_in_redis])
@@ -664,6 +668,7 @@ def test_unauthenticated_view_bookings_configs(client):
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="real simulator takes too long")
+@pytest.mark.simulated
 @pytest.mark.parametrize(
     "client, redis_conn, worker, job, expected_counts, device",
     _ALL_UPLOAD_JOB_PARAMS,
@@ -680,6 +685,7 @@ def test_submit_jobs_no_booking(
     redis_conn_spy,
     mss_conn_spy,
     sql_engine_spy,
+    fake_clock,
 ):
     """POST '/jobs' when there is no booking should run the jobs in FIFO (first in, first out)"""
     with client as client:
@@ -777,6 +783,7 @@ def test_submit_jobs_in_active_booking(
     job,
     jobs_folder,
     mocker: MockerFixture,
+    fake_clock,
 ):
     """POST '/jobs' when there is an active booking runs the booker jobs first then runs the other jobs after booking."""
 
@@ -804,7 +811,7 @@ def test_submit_jobs_in_active_booking(
         _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
         jobs_in_redis.sort(key=lambda v: v.timestamps.execution.start_timestamp)
@@ -839,6 +846,7 @@ def test_submit_jobs_in_idle_booking(
     job,
     jobs_folder,
     mocker,
+    fake_clock,
 ):
     """POST '/jobs' when there is an idle booking runs the non booker jobs even during the booking."""
     with client as client:
@@ -864,7 +872,7 @@ def test_submit_jobs_in_idle_booking(
         _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
 
@@ -898,6 +906,7 @@ def test_submit_jobs_in_idle_booking_before_another(
     job,
     jobs_folder,
     mocker,
+    fake_clock,
 ):
     """When there is an idle booking and another is next, only non booker jobs, short enough to fit in between, run."""
     with client as client:
@@ -933,7 +942,7 @@ def test_submit_jobs_in_idle_booking_before_another(
         _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
         jobs_in_db = _get_jobs_in_redis(redis_conn)
 
@@ -1006,6 +1015,7 @@ def test_submit_long_jobs_before_booking(
     job,
     jobs_folder,
     mocker,
+    fake_clock,
 ):
     """POST long jobs to '/jobs' before booking starts waitlists them but runs the shorter ones"""
     with client as client:
@@ -1032,7 +1042,7 @@ def test_submit_long_jobs_before_booking(
         _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
         jobs_in_db = _get_jobs_in_redis(redis_conn)
         jobs_in_db.sort(key=lambda v: v.start_utc)
@@ -1078,7 +1088,9 @@ def test_submit_jobs_without_token(client, redis_conn, worker, job, jobs_folder)
 @pytest.mark.parametrize(
     "client, redis_conn, worker, job", _ALL_INVALID_UPLOAD_JOB_PARAMS
 )
-def test_upload_invalid_job(client, redis_conn, worker, job, jobs_folder, mocker):
+def test_upload_invalid_job(
+    client, redis_conn, worker, job, jobs_folder, mocker, fake_clock
+):
     """POSTing an invalid structure of a job to '/jobs' fails"""
     # using context manager to ensure on_startup runs
     with client as client:
@@ -1106,7 +1118,9 @@ def test_upload_invalid_job(client, redis_conn, worker, job, jobs_folder, mocker
 
 @pytest.mark.timeout(60)
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
-def test_duplicate_job_upload(client, redis_conn, jobs_folder, worker, job, mocker):
+def test_duplicate_job_upload(
+    client, redis_conn, jobs_folder, worker, job, mocker, fake_clock
+):
     """Uploading two jobs of the same job_id returns an error"""
     with client as client:
         users = _create_many_users(client, raw_users=USERS[:1])
@@ -1146,7 +1160,7 @@ def test_duplicate_job_upload(client, redis_conn, jobs_folder, worker, job, mock
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
-def test_remove_job(client, redis_conn, jobs_folder, worker, job, mocker):
+def test_remove_job(client, redis_conn, jobs_folder, worker, job, mocker, fake_clock):
     """DELETE to '/jobs/{job_id}' deletes the given job if job belongs to user"""
     # using context manager to ensure on_startup runs
     with client as client:
@@ -1179,7 +1193,9 @@ def test_remove_job(client, redis_conn, jobs_folder, worker, job, mocker):
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
-def test_remove_another_users_job(client, redis_conn, jobs_folder, worker, job, mocker):
+def test_remove_another_users_job(
+    client, redis_conn, jobs_folder, worker, job, mocker, fake_clock
+):
     """DELETE to '/jobs/{job_id}' fails if the user does not own the given job"""
     # using context manager to ensure on_startup runs
     with client as client:
@@ -1213,7 +1229,9 @@ def test_remove_another_users_job(client, redis_conn, jobs_folder, worker, job, 
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
-def test_admin_remove_job(client, redis_conn, jobs_folder, worker, job, mocker):
+def test_admin_remove_job(
+    client, redis_conn, jobs_folder, worker, job, mocker, fake_clock
+):
     """DELETE to '/jobs/{job_id}' deletes the given job if user is admin"""
     # using context manager to ensure on_startup runs
     with client as client:
@@ -1248,7 +1266,7 @@ def test_admin_remove_job(client, redis_conn, jobs_folder, worker, job, mocker):
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_unauthenticated_remove_job(
-    client, redis_conn, jobs_folder, worker, job, mocker
+    client, redis_conn, jobs_folder, worker, job, mocker, fake_clock
 ):
     """Delete to /jobs/{job_id} returns 401 error when accessed outside MSS or without proper MSS headers"""
     # using context manager to ensure on_startup runs
@@ -1289,7 +1307,7 @@ def test_unauthenticated_remove_job(
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_cancel_future_booking(
-    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture
+    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """POST '/booking/{id}/cancel' for a future booking, deletes the booking and allows jobs to run without it."""
     with client as client:
@@ -1315,7 +1333,7 @@ def test_cancel_future_booking(
         assert response.status_code == 200
         assert got == expected
 
-        time.sleep(booking_info["starts_in"])
+        fake_clock.shift(booking_info["starts_in"])
         # Booking does not exist or work
         # submit many jobs from many users when booking starts
         raw_jobs = _get_raw_jobs(job, durations=[0.23, 1, 0.4, 0.5])
@@ -1397,7 +1415,7 @@ def test_admin_cancel_future_booking(client):
     "client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS[:-1]
 )
 def test_cancel_active_booking(
-    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture
+    client, worker, redis_conn, job, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """POST '/bookings/{id}/cancel' for an active booking fails."""
     with client as client:
@@ -1432,7 +1450,7 @@ def test_cancel_active_booking(
         _submit_multiple_jobs_v2(client, data=job_metadata_list)
 
         # Run the queue; try to wait for waitlist to transfer things to execution queue
-        _wait_on_rq_worker(worker, with_scheduler=True)
+        _wait_on_rq_worker(worker, with_scheduler=True, clock=fake_clock)
 
         jobs_in_redis = _get_jobs_in_redis(redis_conn)
 
@@ -1452,7 +1470,7 @@ def test_cancel_active_booking(
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_cancel_completed_booking(
-    client, worker, redis_conn, job, mocker: MockerFixture
+    client, worker, redis_conn, job, mocker: MockerFixture, fake_clock
 ):
     """POST '/bookings/{id}/cancel' for a completed booking fails."""
     with client as client:
@@ -1468,7 +1486,7 @@ def test_cancel_completed_booking(
         )
         booking = Booking.model_validate(response.json())
 
-        time.sleep(2)
+        fake_clock.shift(2)
 
         response = _cancel_booking(
             client, user_id=booker_user_id, booking_id=booking.id
@@ -1490,6 +1508,7 @@ def test_view_job(
     jobs_folder,
     mocker: MockerFixture,
     redis_conn_spy,
+    fake_clock,
 ):
     """GET '/jobs/{job_id}' by a user can show the job for the job_id if job belongs to them"""
     job_file_path = _save_job_file(folder=jobs_folder, job=job)
@@ -1637,7 +1656,7 @@ def test_admin_view_job(
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="real simulator takes too long")
 @pytest.mark.parametrize("client, _redis, worker, job, device", _VIEW_JOBS_PARAMS)
 def test_view_jobs(
-    client, _redis, worker, job, device, jobs_folder, mocker: MockerFixture
+    client, _redis, worker, job, device, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """GET '/jobs' by a user can show the paginated list of jobs that belong to them"""
     with client as client:
@@ -1726,7 +1745,7 @@ def test_view_jobs(
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="real simulator takes too long")
 @pytest.mark.parametrize("client, _redis, worker, job, device", _VIEW_JOBS_PARAMS)
 def test_view_jobs_by_status(
-    client, _redis, worker, job, device, jobs_folder, mocker: MockerFixture
+    client, _redis, worker, job, device, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """GET '/jobs' by a user can show the paginated list of jobs that belong to them"""
     with client as client:
@@ -1888,14 +1907,14 @@ def test_unauthenticated_view_jobs(
             client, mocker, data={"user_id": user_id, "job_id": job_ids[0]}
         )
         headers = _get_headers(token)
-        response = client.get(f"/jobs", headers=headers)
+        response = client.get("/jobs", headers=headers)
         assert response.status_code == 401
         assert response.json() == {"detail": "user not authenticated"}
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_cancel_job_via_mss(
-    client, redis_conn, jobs_folder, worker, job, mocker, redis_conn_spy
+    client, redis_conn, jobs_folder, worker, job, mocker, redis_conn_spy, fake_clock
 ):
     """An MSS POST to '/jobs/{id}/cancel' cancels the job of the job_id if the job belongs to the current user"""
     with client as client:
@@ -1965,7 +1984,7 @@ def test_cancel_job_via_mss(
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_cancel_job_directly(
-    client, redis_conn, jobs_folder, worker, job, mocker, redis_conn_spy
+    client, redis_conn, jobs_folder, worker, job, mocker, redis_conn_spy, fake_clock
 ):
     """A POST to '/jobs/{id}/cancel' with JWT token cancels the job of the job_id if the job belongs to user"""
     with client as client:
@@ -1978,7 +1997,6 @@ def test_cancel_job_directly(
         )
         job_info = job_metadata_list[0]
         job_id = job_info["job_id"]
-        user_id = job_info["user_id"]
 
         # submit many jobs from many users
         with open(job_info["file_path"], "rb") as file:
@@ -2036,7 +2054,9 @@ def test_cancel_job_directly(
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
-def test_cancel_another_users_job(client, redis_conn, jobs_folder, worker, job, mocker):
+def test_cancel_another_users_job(
+    client, redis_conn, jobs_folder, worker, job, mocker, fake_clock
+):
     """A user POST to '/jobs/{id}/cancel' for a job does is not for the current user errors out"""
     with client as client:
         cancellation_reason = "just testing"
@@ -2087,7 +2107,9 @@ def test_cancel_another_users_job(client, redis_conn, jobs_folder, worker, job, 
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
-def test_admin_cancel_job(client, redis_conn, jobs_folder, worker, job, mocker):
+def test_admin_cancel_job(
+    client, redis_conn, jobs_folder, worker, job, mocker, fake_clock
+):
     """A user POST to '/jobs/{id}/cancel' cancels the job of the job_id if the user is admin"""
     with client as client:
         cancellation_reason = "just testing"
@@ -2159,7 +2181,7 @@ def test_admin_cancel_job(client, redis_conn, jobs_folder, worker, job, mocker):
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
 def test_unauthenticated_cancel_job(
-    client, redis_conn, worker, job, jobs_folder, mocker: MockerFixture
+    client, redis_conn, worker, job, jobs_folder, mocker: MockerFixture, fake_clock
 ):
     """POST to `/jobs/{job_id}/cancel` raises 401 if not accessed through MSS"""
     with client as client:
@@ -2298,6 +2320,9 @@ def test_get_dynamic_properties(client, expected):
     """Get to '/dynamic-properties' retrieves the calibrated device parameters"""
     # using context manager to ensure on_startup runs
     with client as client:
+        # the heavy worker publishes its executor's calibration, e.g. the simulators'
+        # trained discriminators, once the API has started
+        preload_worker_globals(should_load_executor=True)
         user_id, _ = _create_user(client, USERS[0])
         headers = create_mss_headers(user_id)
 
@@ -2321,14 +2346,14 @@ def test_unauthenticated_get_dynamic_props(client, _expected):
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
 def test_init_recalibration_with_interval(
-    client, redis_conn: Redis, worker, quantify_seed_file
+    client, redis_conn: Redis, worker, quantify_seed_file, fake_clock
 ):
     """Init recalibration restarts the calibration sequence, changing the interval from the default"""
     with client as client:
         users = _create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
-        queue_prefix = client.app.state.QUEUE_CONTEXT["queue_prefix"]
+        queue_prefix = get_queue_context()["queue_prefix"]
         queue_name = f"{queue_prefix}_recalibration"
         queue = _get_queue_by_name(worker, queue_name)
         initial_interval = TEST_DEFAULT_RECALIBRATION_INTERVAL
@@ -2364,6 +2389,7 @@ def test_init_recalibration_with_interval(
             max_idle_time=initial_interval + max_queue_time,
             with_scheduler=True,
             queue=queue,
+            clock=fake_clock,
         )
 
         final_rq_job_id = queue.finished_job_registry.get_job_ids(start=-1, end=-1)[0]
@@ -2386,14 +2412,14 @@ def test_init_recalibration_with_interval(
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
 def test_init_recalibration_without_interval(
-    client, redis_conn: Redis, worker, quantify_seed_file
+    client, redis_conn: Redis, worker, quantify_seed_file, fake_clock
 ):
     """Init recalibration restarts the calibration sequence without interval continues with the default interval"""
     with client as client:
         users = _create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
-        queue_prefix = client.app.state.QUEUE_CONTEXT["queue_prefix"]
+        queue_prefix = get_queue_context()["queue_prefix"]
         queue_name = f"{queue_prefix}_recalibration"
         queue = _get_queue_by_name(worker, queue_name)
         initial_interval = TEST_DEFAULT_RECALIBRATION_INTERVAL
@@ -2419,6 +2445,7 @@ def test_init_recalibration_without_interval(
             max_idle_time=initial_interval + max_queue_time,
             with_scheduler=True,
             queue=queue,
+            clock=fake_clock,
         )
 
         final_rq_job_id = queue.finished_job_registry.get_job_ids(start=-1, end=-1)[0]
@@ -2439,16 +2466,46 @@ def test_init_recalibration_without_interval(
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
+def test_api_workers_start_a_device_one_at_a_time(quantify_rest_client, mocker):
+    from app.api import app, dependencies
+
+    starting, overlaps = [], []
+
+    def start_device():
+        starting.append(None)
+        overlaps.append(len(starting))
+        time.sleep(0.2)
+        starting.pop()
+
+    async def start_and_stop():
+        async with dependencies.lifespan(app):
+            pass
+
+    mocker.patch.object(dependencies, "_start_device", side_effect=start_device)
+    # threads share the Redis connections that separate worker processes would not
+    mocker.patch.object(dependencies, "clear_redis_connections")
+    workers = [
+        threading.Thread(target=asyncio.run, args=(start_and_stop(),)) for _ in range(3)
+    ]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
+
+    assert overlaps == [1, 1, 1]
+
+
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
 def test_init_recalibration_with_start_time(
-    client, redis_conn: Redis, worker, quantify_seed_file
+    client, redis_conn: Redis, worker, quantify_seed_file, fake_clock
 ):
     """POST /recalibration/cancel restarts the recalibration sequence at a given start time in future"""
     with client as client:
         users = _create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
-        queue_prefix = client.app.state.QUEUE_CONTEXT["queue_prefix"]
+        queue_prefix = get_queue_context()["queue_prefix"]
         queue_name = f"{queue_prefix}_recalibration"
         queue = _get_queue_by_name(worker, queue_name)
         initial_interval = TEST_DEFAULT_RECALIBRATION_INTERVAL
@@ -2473,6 +2530,7 @@ def test_init_recalibration_with_start_time(
             max_idle_time=initial_interval + max_queue_time,
             with_scheduler=True,
             queue=queue,
+            clock=fake_clock,
         )
 
         first_rq_job_id = queue.finished_job_registry.get_job_ids(start=0, end=1)[0]
@@ -2489,13 +2547,15 @@ def test_init_recalibration_with_start_time(
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.mark.parametrize("client, redis_conn, worker", CLIENT_AND_RQ_WORKER_TUPLES)
-def test_get_recalibration_info(client, redis_conn: Redis, worker, quantify_seed_file):
+def test_get_recalibration_info(
+    client, redis_conn: Redis, worker, quantify_seed_file, fake_clock
+):
     """Get /recalibration/info gets recalibration info retrieves the basic recalibration info"""
     with client as client:
         users = _create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
-        queue_prefix = client.app.state.QUEUE_CONTEXT["queue_prefix"]
+        queue_prefix = get_queue_context()["queue_prefix"]
         queue_name = f"{queue_prefix}_recalibration"
         queue = _get_queue_by_name(worker, queue_name)
         initial_interval = TEST_DEFAULT_RECALIBRATION_INTERVAL
@@ -2531,6 +2591,7 @@ def test_get_recalibration_info(client, redis_conn: Redis, worker, quantify_seed
             max_idle_time=initial_interval + max_queue_time,
             with_scheduler=True,
             queue=queue,
+            clock=fake_clock,
         )
 
         # get info after running the worker
@@ -2610,7 +2671,7 @@ def test_cancel_default_recalibration(client, redis_conn: Redis, worker):
         users = _create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
-        queue_prefix = client.app.state.QUEUE_CONTEXT["queue_prefix"]
+        queue_prefix = get_queue_context()["queue_prefix"]
         queue_name = f"{queue_prefix}_recalibration"
         queue = _get_queue_by_name(worker, queue_name)
 
@@ -2633,7 +2694,7 @@ def test_cancel_restarted_recalibration(client, redis_conn: Redis, worker):
         users = _create_many_users(client, raw_users=USERS)
         user = users[0]
         user_id = user["id"]
-        queue_prefix = client.app.state.QUEUE_CONTEXT["queue_prefix"]
+        queue_prefix = get_queue_context()["queue_prefix"]
         queue_name = f"{queue_prefix}_recalibration"
         queue = _get_queue_by_name(worker, queue_name)
 
@@ -2673,7 +2734,7 @@ def test_cancel_restarted_recalibration(client, redis_conn: Redis, worker):
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
-def test_switch_off(client, redis_conn, jobs_folder, worker, job, mocker):
+def test_switch_off(client, redis_conn, jobs_folder, worker, job, mocker, fake_clock):
     """POST '/switch/off' switches off the scheduler and does not allow jobs"""
     with client as client:
         users = _create_many_users(client, raw_users=USERS[:2])
@@ -2698,7 +2759,7 @@ def test_switch_off(client, redis_conn, jobs_folder, worker, job, mocker):
                 "/jobs", files={"upload_file": file}, headers=job_info["headers"]
             )
 
-        name = os.environ.get("DEFAULT_PREFIX")
+        name = os.environ.get("BCC_DEFAULT_PREFIX")
         assert response.status_code == 404
         assert response.json() == {"detail": f"{name} is offline"}
 
@@ -2709,7 +2770,7 @@ def test_switch_off(client, redis_conn, jobs_folder, worker, job, mocker):
 
 
 @pytest.mark.parametrize("client, redis_conn, worker, job", _SIMPLE_UPLOAD_JOB_PARAMS)
-def test_switch_on(client, redis_conn, jobs_folder, worker, job, mocker):
+def test_switch_on(client, redis_conn, jobs_folder, worker, job, mocker, fake_clock):
     """POST '/switch/on' switches on the scheduler and allowing jobs"""
     with client as client:
         users = _create_many_users(client, raw_users=USERS[:2])
@@ -3418,6 +3479,7 @@ def _wait_on_rq_worker(
     max_jobs: Optional[int] = None,
     with_scheduler: bool = False,
     queue: RqQueue = None,
+    clock: Optional[time_machine.Traveller] = None,
     **kwargs,
 ):
     """Waits for the worker to complete its worker
@@ -3427,6 +3489,8 @@ def _wait_on_rq_worker(
         max_idle_time: the number of seconds beyond which a timeout is raised
         with_scheduler: whether to run in a scheduler
         queue: the queue to wait on; defaults to the first queue i.e. the general queue
+        clock: the fake clock to move on to the next scheduled job when none is queued,
+            instead of waiting for it
         kwargs: extra kwargs to pass to the work() method of the worker.
             See the signature of that method
 
@@ -3462,6 +3526,14 @@ def _wait_on_rq_worker(
             max_jobs=max_jobs,
             **kwargs,
         )
+
+        if clock is not None and len(queue.jobs) == 0:
+            registry = queue.scheduled_job_registry
+            scheduled_times = [
+                registry.get_scheduled_time(job_id) for job_id in registry.get_job_ids()
+            ]
+            if scheduled_times and min(scheduled_times) > datetime.now(timezone.utc):
+                clock.move_to(min(scheduled_times))
 
         # refresh variables
         pending_jobs = queue.scheduled_job_registry.count + len(queue.jobs)

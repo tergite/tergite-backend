@@ -66,14 +66,14 @@ async def test_mss_reconnection(executor, settings_file, seed_file, mocker):
 
     connection_attempts = 2  # MSS_CONNECTION_MAX_ATTEMPTS
 
-    os.environ["EXECUTOR_TYPE"] = executor
-    os.environ["BACKEND_SETTINGS"] = settings_file
-    os.environ["MSS_MACHINE_ROOT_URL"] = "http://localhost:19999"
-    os.environ["MSS_CONNECTION_TIMEOUT"] = "0.05"
-    os.environ["MSS_CONNECTION_MAX_ATTEMPTS"] = f"{connection_attempts}"
+    os.environ["BCC_EXECUTOR_TYPE"] = executor
+    os.environ["BCC_BACKEND_SETTINGS"] = settings_file
+    os.environ["BCC_MSS_MACHINE_ROOT_URL"] = "http://localhost:19999"
+    os.environ["BCC_MSS_CONNECTION_TIMEOUT"] = "0.05"
+    os.environ["BCC_MSS_CONNECTION_MAX_ATTEMPTS"] = f"{connection_attempts}"
     # Large enough that the response-timeout path is never hit first.
-    os.environ["MSS_RESPONSE_TIMEOUT"] = "3600"
-    os.environ["CALIBRATION_SEED"] = f"{seed_file}"
+    os.environ["BCC_MSS_RESPONSE_TIMEOUT"] = "3600"
+    os.environ["BCC_CALIBRATION_SEED"] = f"{seed_file}"
 
     mock_connect = mocker.patch(
         "app.services.external.mss.service.connect",
@@ -102,10 +102,10 @@ async def test_calibration_seed_required_for_simulator(patched_mss_websockets):
     """Raises validation errors if calibration seed is not set for simulator."""
     remove_modules(["os", "app", "settings"])
 
-    os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_1q"
-    os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_1Q
-    os.environ["BACKEND_SETTINGS"] = TEST_SIMQ1_BACKEND_SETTINGS_FILE
-    os.environ["CALIBRATION_SEED"] = get_fixture_path("non-existent.toml")
+    os.environ["BCC_EXECUTOR_TYPE"] = "qiskit_pulse_1q"
+    os.environ["BCC_DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_1Q
+    os.environ["BCC_BACKEND_SETTINGS"] = TEST_SIMQ1_BACKEND_SETTINGS_FILE
+    os.environ["BCC_CALIBRATION_SEED"] = get_fixture_path("non-existent.toml")
 
     from sqlmodel import SQLModel
 
@@ -126,10 +126,10 @@ async def test_calibration_seed_broken_for_simulator(patched_mss_websockets):
     """Raises validation errors if calibration seed provided is broken for simulator only."""
     remove_modules(["os", "app", "settings"])
 
-    os.environ["EXECUTOR_TYPE"] = "qiskit_pulse_1q"
-    os.environ["DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_1Q
-    os.environ["BACKEND_SETTINGS"] = TEST_SIMQ1_BACKEND_SETTINGS_FILE
-    os.environ["CALIBRATION_SEED"] = get_fixture_path("broken.seed.toml")
+    os.environ["BCC_EXECUTOR_TYPE"] = "qiskit_pulse_1q"
+    os.environ["BCC_DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX_SIM_1Q
+    os.environ["BCC_BACKEND_SETTINGS"] = TEST_SIMQ1_BACKEND_SETTINGS_FILE
+    os.environ["BCC_CALIBRATION_SEED"] = get_fixture_path("broken.seed.toml")
 
     from sqlmodel import SQLModel
 
@@ -146,48 +146,42 @@ async def test_calibration_seed_broken_for_simulator(patched_mss_websockets):
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
-@pytest.mark.asyncio
-async def test_quantify_metadata_is_broken(patched_mss_websockets):
-    """Raises validation errors if quantify metadata conf file is broken"""
+def test_quantify_metadata_is_broken():
+    """The heavy worker's executor build raises if the quantify metadata file is broken"""
     remove_modules(["os", "app", "settings"])
 
-    os.environ["EXECUTOR_TYPE"] = "quantify"
-    os.environ["BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
-    os.environ["CALIBRATION_SEED"] = TEST_QUANTIFY_SEED_FILE
-    os.environ["QUANTIFY_CONFIG_FILE"] = TEST_QUANTIFY_CONFIG_FILE
-    os.environ["QUANTIFY_METADATA_FILE"] = TEST_BROKEN_QUANTIFY_METADATA_FILE
+    os.environ["BCC_EXECUTOR_TYPE"] = "quantify"
+    os.environ["BCC_BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
+    os.environ["BCC_CALIBRATION_SEED"] = TEST_QUANTIFY_SEED_FILE
+    os.environ["BCC_QUANTIFY_CONFIG_FILE"] = TEST_QUANTIFY_CONFIG_FILE
+    os.environ["BCC_QUANTIFY_METADATA_FILE"] = TEST_BROKEN_QUANTIFY_METADATA_FILE
 
     from sqlmodel import SQLModel
 
     SQLModel.metadata.clear()
 
-    with pytest.raises(ValidationError):
-        from app.api import app
+    from app.services.scheduler.utils import get_executor_and_options
 
-        # just to run the startup events
-        async with app.router.lifespan_context(app):
-            pass
+    with pytest.raises(ValidationError):
+        get_executor_and_options()
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
-@pytest.mark.asyncio
-async def test_quantify_config_is_broken(patched_mss_websockets):
-    """Raises validation errors if quantify config file is broken"""
+def test_quantify_config_is_broken():
+    """The heavy worker's executor build raises if the quantify config file is broken"""
     remove_modules(["os", "app", "settings"])
 
-    os.environ["EXECUTOR_TYPE"] = "quantify"
-    os.environ["BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
-    os.environ["CALIBRATION_SEED"] = TEST_QUANTIFY_SEED_FILE
-    os.environ["QUANTIFY_CONFIG_FILE"] = TEST_BROKEN_QUANTIFY_CONFIG_FILE
-    os.environ["QUANTIFY_METADATA_FILE"] = TEST_QUANTIFY_METADATA_FILE
+    os.environ["BCC_EXECUTOR_TYPE"] = "quantify"
+    os.environ["BCC_BACKEND_SETTINGS"] = TEST_BACKEND_SETTINGS_FILE
+    os.environ["BCC_CALIBRATION_SEED"] = TEST_QUANTIFY_SEED_FILE
+    os.environ["BCC_QUANTIFY_CONFIG_FILE"] = TEST_BROKEN_QUANTIFY_CONFIG_FILE
+    os.environ["BCC_QUANTIFY_METADATA_FILE"] = TEST_QUANTIFY_METADATA_FILE
 
     from sqlmodel import SQLModel
 
     SQLModel.metadata.clear()
 
-    with pytest.raises(ValidationError):
-        from app.api import app
+    from app.services.scheduler.utils import get_executor_and_options
 
-        # just to run the startup events
-        async with app.router.lifespan_context(app):
-            pass
+    with pytest.raises(ValidationError):
+        get_executor_and_options()

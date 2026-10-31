@@ -83,8 +83,6 @@ def get_private_key(key_file: Path, password: Optional[bytes]) -> RSAPrivateKey:
     Returns:
         the private key of the BCC
     """
-    global _BCC_PRIVATE_KEYS
-
     key_file_str = str(key_file)
 
     try:

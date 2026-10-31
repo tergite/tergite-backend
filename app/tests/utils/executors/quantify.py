@@ -22,6 +22,9 @@ from app.tests.utils.env import TEST_RQ_REDIS_URL
 
 
 class MockQuantifyExecutor(QuantifyExecutor):
+    # how a job's estimated duration passes; the fake_clock fixture moves its clock instead
+    wait = staticmethod(time.sleep)
+
     def preprocess(
         self, qobj: PulseQobj, job_id: str, results_folder: Path = None
     ) -> Tuple[float, str]:
@@ -45,11 +48,17 @@ class MockQuantifyExecutor(QuantifyExecutor):
         if job.estimated_duration:
             estimated_duration = job.estimated_duration
 
-        result = super(self.__class__, self).run(job_id, inputs_folder=inputs_folder)
+        result = super().run(job_id, inputs_folder=inputs_folder)
         end_timestamp = datetime.now()
         actual_duration = (end_timestamp - start_timestamp).total_seconds()
         sleep_duration = estimated_duration - actual_duration
         if sleep_duration > 0:
-            time.sleep(sleep_duration)
+            self.wait(sleep_duration)
 
         return result
+
+    def close(self) -> None:
+        """Stops the coordinator, but keeps it and the dummy clusters, which take a second
+        to build, in the instruments cache for the next test's executor; the session's
+        end closes them"""
+        self._coordinator.stop()

@@ -1,0 +1,26 @@
+#!/bin/sh
+# Asks for a first backend instance on a fresh install; postinstall provisions it
+
+set -e
+
+. /usr/share/debconf/confmodule
+
+# an upgrade asks nothing; a fresh install and dpkg-reconfigure do
+[ "$1" = configure ] && [ -n "$2" ] && exit 0
+
+db_input high @PACKAGE@/name || true
+db_go || true
+db_get @PACKAGE@/name
+[ -n "$RET" ] || exit 0
+
+db_input high @PACKAGE@/executor || true
+db_input high @PACKAGE@/port || true
+db_input high @PACKAGE@/mss_url || true
+db_input high @PACKAGE@/redis || true
+db_go || true
+db_get @PACKAGE@/redis
+if [ "$RET" = url ]; then
+	db_input high @PACKAGE@/redis_url || true
+	db_input high @PACKAGE@/redis_password || true
+	db_go || true
+fi

@@ -44,10 +44,7 @@ from ..services.scheduler import (
 )
 from ..services.scheduler.queues import clear_queue_pool, get_queue_pool
 from ..services.scheduler.store import clear_jobs_stores_registry
-from ..services.scheduler.utils import (
-    clear_quantum_executor,
-    get_executor_and_options,
-)
+from ..services.scheduler.utils import clear_quantum_executor, get_executor_options
 from ..utils.api import get_request_logs_store, verify_mss_signature
 from ..utils.datetime import get_utc_now
 from ..utils.exc import (
@@ -63,31 +60,34 @@ from ..utils.sql_db import clear_sql_engine_cache
 from ..utils.strings import validate_uuid4_str
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+# how long a device's start-up lock outlasts an API worker that stopped holding it
+_START_UP_LOCK_SECONDS = 300
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Handles functions to run before and after the application"""
-    get_bookings_sql_engine()
-    executor, executor_options = get_executor_and_options()
-
-    queue_context = get_queue_context()
-    queue_pool = get_queue_pool()
-    app.state.QUEUE_CONTEXT = queue_context
-    mss_client = get_mss_client()
-    redis_conn = get_redis_connection()
-
-    save_all_device_params(
-        redis=redis_conn,
-        backend_config=executor_options.backend_config,
-        mss_client=mss_client,
-    )
-    init_recalibration(queue_context, queues=queue_pool)
+    """Starts each device this process serves before the application, and stops them after"""
+    for device in settings.get_device_names():
+        # one API worker at a time, as starting a device restarts its recalibration
+        with (
+            settings.using_device(device),
+            # a start-up longer than the lock, as when MSS is down, outlives it unharmed
+            get_redis_connection().lock(
+                f"{device}:start-up",
+                timeout=_START_UP_LOCK_SECONDS,
+                raise_on_release_error=False,
+            ),
+        ):
+            _start_device()
 
     logging.info(f"starting app at {get_utc_now()}")
     yield
 
-    stop_recalibration(queue_context, queues=queue_pool, ignore_errors=True)
+    for device in settings.get_device_names():
+        with settings.using_device(device):
+            stop_recalibration(
+                get_queue_context(), queues=get_queue_pool(), ignore_errors=True
+            )
     clear_queue_pool(ignore_errors=True)
     clear_quantum_executor(ignore_errors=True)
     clear_queue_context()
@@ -104,8 +104,7 @@ def get_booking_db() -> Engine:
 
 def get_backend_name() -> str:
     """Dependency injector to get the backend name"""
-    _, executor_options = get_executor_and_options()
-    return executor_options.backend_name
+    return get_executor_options().backend_name
 
 
 def get_queue_context_if_online(
@@ -408,9 +407,23 @@ def get_verified_mss_details(request: Request) -> MSSAuthDetails:
         user_id = get_verified_mss_user_id(request)
         is_mss_admin = get_unverified_mss_is_admin(request)
         return MSSAuthDetails(user_id=user_id, job_id=job_id, is_mss_admin=is_mss_admin)
-    except NotAuthenticatedError as exp:
+    except NotAuthenticatedError:
         token = get_bearer_token(request)
         user_id, token_job_id = get_user_job_id_pair_from_token(token)
         if token_job_id != job_id:
             raise UnauthorizedError("forbidden")
         return MSSAuthDetails(user_id=user_id, job_id=job_id)
+
+
+def _start_device():
+    """Publishes the current device's parameters and starts its recalibration"""
+    get_bookings_sql_engine()
+    executor_options = get_executor_options()
+    queue_context = get_queue_context()
+    queue_pool = get_queue_pool()
+    save_all_device_params(
+        redis=get_redis_connection(),
+        backend_config=executor_options.backend_config,
+        mss_client=get_mss_client(),
+    )
+    init_recalibration(queue_context, queues=queue_pool)

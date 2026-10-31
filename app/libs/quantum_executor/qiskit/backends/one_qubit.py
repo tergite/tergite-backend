@@ -275,9 +275,9 @@ class QiskitPulse1Q(QiskitPulseBackend):
 
         lda_result = {}
         for i in range(len(lda_intercepts)):
-            lda_result[f"intercept"] = lda_intercepts[i]
-            lda_result[f"coef_0"] = lda_coefs[i][0]
-            lda_result[f"coef_1"] = lda_coefs[i][1]
+            lda_result["intercept"] = lda_intercepts[i]
+            lda_result["coef_0"] = lda_coefs[i][0]
+            lda_result["coef_1"] = lda_coefs[i][1]
 
         # Bring it to the right format
         return {

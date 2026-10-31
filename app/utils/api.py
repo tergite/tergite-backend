@@ -36,7 +36,6 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from fastapi import HTTPException, Request, Response, UploadFile
 from fastapi.exception_handlers import http_exception_handler
 from pydantic import BaseModel, ConfigDict, Field
-from redis import Redis
 
 import settings
 
@@ -47,8 +46,8 @@ from .redis_store import Collection, Schema
 
 ITEM = TypeVar("ITEM", bound=BaseModel)
 
-_MSS_PUBLIC_KEY: Optional[RSAPublicKey] = None
-_REQUEST_LOGS_STORE: Optional[Collection["RequestLog"]] = None
+_MSS_PUBLIC_KEYS: dict[Path, RSAPublicKey] = {}
+_REQUEST_LOGS_STORES: dict[str, Collection["RequestLog"]] = {}
 
 
 class CancellationDetails(BaseModel):
@@ -200,32 +199,30 @@ def to_http_error(
 
 
 def get_request_logs_store() -> Collection[RequestLog]:
-    """Gets the store for the given url for the request logs
+    """Gets the current device's store for the request logs
 
     Returns:
-        the RedisCollection containing the jobs
+        the RedisCollection containing the request logs
     """
-    global _REQUEST_LOGS_STORE
-    if _REQUEST_LOGS_STORE is None:
-        connection = get_redis_connection(url=settings.RQ_REDIS_URL)
-        _REQUEST_LOGS_STORE = Collection(
-            connection=connection,
+    request_logs_store = _REQUEST_LOGS_STORES.get(settings.DEFAULT_PREFIX)
+    if request_logs_store is None:
+        request_logs_store = Collection(
+            connection=get_redis_connection(url=settings.RQ_REDIS_URL),
             schema=RequestLog,
             default_ttl=settings.REQUEST_LOG_TTL,
             cleanup_interval=settings.REQUEST_LOG_CLEAN_INTERVAL,
         )
+        _REQUEST_LOGS_STORES[settings.DEFAULT_PREFIX] = request_logs_store
 
-    return _REQUEST_LOGS_STORE
+    return request_logs_store
 
 
-def encrypt_mss_jwt_token(
-    token: str, key_path: Path = settings.MSS_PUBLIC_KEY_PATH
-) -> str:
+def encrypt_mss_jwt_token(token: str, key_path: Optional[Path] = None) -> str:
     """Encrypts the token passed so that it is only readable by the right MSS instance
 
     Args:
         token: the raw token to encrypt
-        key_path: the file path to the RSA public key PEM file
+        key_path: the file path to the RSA public key PEM file; default = settings.MSS_PUBLIC_KEY_PATH
 
     Returns:
         the encrypted token
@@ -243,14 +240,14 @@ def encrypt_mss_jwt_token(
 
 
 def verify_mss_signature(
-    signature: str, message: str, key_path: Path = settings.MSS_PUBLIC_KEY_PATH
+    signature: str, message: str, key_path: Optional[Path] = None
 ) -> None:
     """Verifies that the given message is from MSS, given the signature
 
     Args:
         signature: the signature of the message signed by MSS
         message: the message from MSS
-        key_path: the file path to the RSA public key PEM file
+        key_path: the file path to the RSA public key PEM file; default = settings.MSS_PUBLIC_KEY_PATH
 
     Raises:
         InvalidSignature: if signature does not match with what would be expected from MSS
@@ -266,20 +263,20 @@ def verify_mss_signature(
     )
 
 
-def _get_mss_public_key(key_path: Path = settings.MSS_PUBLIC_KEY_PATH):
+def _get_mss_public_key(key_path: Optional[Path] = None):
     """Loads the public key for MSS given the path to the key file
 
     Args:
-        key_path: the file path to the RSA public key PEM file
+        key_path: the file path to the RSA public key PEM file; default = settings.MSS_PUBLIC_KEY_PATH
 
     Returns:
         the public key of the MSS
     """
-    global _MSS_PUBLIC_KEY
-
-    if not _MSS_PUBLIC_KEY:
+    key_path = key_path or settings.MSS_PUBLIC_KEY_PATH
+    mss_public_key = _MSS_PUBLIC_KEYS.get(key_path)
+    if mss_public_key is None:
         with open(key_path, "rb") as key_file:
-            data = key_file.read()
-            _MSS_PUBLIC_KEY = serialization.load_pem_public_key(data)
+            mss_public_key = serialization.load_pem_public_key(key_file.read())
+        _MSS_PUBLIC_KEYS[key_path] = mss_public_key
 
-    return _MSS_PUBLIC_KEY
+    return mss_public_key

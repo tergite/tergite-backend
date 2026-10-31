@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- An instance's LaunchDaemon, which @BINARY@-provision writes with @NAME@ replaced -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>se.chalmersnextlabs.@BINARY@.@NAME@</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/local/bin/@BINARY@</string>
+		<string>start</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>BCC_ENV_FILE</key>
+		<string>/usr/local/etc/bcc/@NAME@/backend.env</string>
+		<!-- the RQ workers fork a process for every job -->
+		<key>OBJC_DISABLE_INITIALIZE_FORK_SAFETY</key>
+		<string>YES</string>
+	</dict>
+	<key>UserName</key>
+	<string>_bcc</string>
+	<key>GroupName</key>
+	<string>_bcc</string>
+	<key>WorkingDirectory</key>
+	<string>/usr/local/var/bcc/@NAME@</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>10</integer>
+	<key>Umask</key>
+	<integer>23</integer>
+	<key>StandardOutPath</key>
+	<string>/usr/local/var/log/bcc/@NAME@.log</string>
+	<key>StandardErrorPath</key>
+	<string>/usr/local/var/log/bcc/@NAME@.log</string>
+</dict>
+</plist>

@@ -26,29 +26,33 @@ _JOB_STORES: dict[str, Collection[Job]] = {}
 
 
 def get_jobs_store(
-    url: RedisDsn | str = settings.RQ_REDIS_URL,
-    default_ttl: float = settings.JOBS_STORE_TTL,
-    cleanup_interval: float = settings.JOBS_STORE_CLEAN_INTERVAL,
+    url: RedisDsn | str | None = None,
+    default_ttl: float | None = None,
+    cleanup_interval: float | None = None,
 ) -> Collection[Job]:
     """Gets the store for the given url for the jobs
 
     Args:
-        url: the database URL for the redis server
-        default_ttl: the default TTL for the items saved
-        cleanup_interval: the cleanup interval for indexes of the jobs store
+        url: the database URL for the redis server; default = settings.RQ_REDIS_URL
+        default_ttl: the default TTL for the items saved; default = settings.JOBS_STORE_TTL
+        cleanup_interval: the cleanup interval for indexes of the jobs store;
+            default = settings.JOBS_STORE_CLEAN_INTERVAL
 
     Returns:
         the RedisCollection containing the jobs
     """
-    global _JOB_STORES
-    url = f"{url}"
+    url = f"{url or settings.RQ_REDIS_URL}"
     job_store = _JOB_STORES.get(url)
     if job_store is None:
         connection = get_redis_connection(url)
         job_store = _init_jobs_store(
             connection=connection,
-            default_ttl=default_ttl,
-            cleanup_interval=cleanup_interval,
+            default_ttl=settings.JOBS_STORE_TTL if default_ttl is None else default_ttl,
+            cleanup_interval=(
+                settings.JOBS_STORE_CLEAN_INTERVAL
+                if cleanup_interval is None
+                else cleanup_interval
+            ),
         )
         _JOB_STORES[url] = job_store
     return job_store
@@ -56,14 +60,11 @@ def get_jobs_store(
 
 def clear_jobs_stores_registry() -> None:
     """Clears the jobs stores registry"""
-    global _JOB_STORES
     _JOB_STORES.clear()
 
 
 def _init_jobs_store(
-    connection: Redis,
-    default_ttl: float = settings.JOBS_STORE_TTL,
-    cleanup_interval=settings.JOBS_STORE_CLEAN_INTERVAL,
+    connection: Redis, default_ttl: float, cleanup_interval: float
 ) -> Collection[Job]:
     """Initializes the store for the given redis connection for the jobs
 

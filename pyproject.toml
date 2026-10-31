@@ -37,7 +37,7 @@ maintainers = [
 version = "v2026.09.0-rc.1"
 description = "the Backend of the Tergite software stack of the WACQT Quantum Computer."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 keywords = ["quantum", "qiskit", "quantify"]
 license = {file = "LICENSE.txt"}
 classifiers = [
@@ -62,6 +62,8 @@ dependencies = [
     "cryptography~=45.0.2",
     "filelock~=3.18.0",
     "pydantic~=2.11.3",
+    # the API's device parameters and discriminators use it, with neither executor's extra
+    "numpy>=1.26.0",
 ]
 
 [project.optional-dependencies]
@@ -90,8 +92,10 @@ dev = [
     "httpx~=0.28.0",
     "black~=25.1.0",
     "isort~=6.0.0",
+    "pyflakes~=4.0",
     "freezegun~=1.5.1",
     "pytest-freezegun>=0.4.2",
+    "time-machine~=3.5.1",
     "pytest-lazy-fixtures>=1.1.2",
     "pytest-asyncio~=1.1.0",
     "pre-commit~=4.2.0",
@@ -101,6 +105,9 @@ dev = [
     "pytest-timeout~=2.3.1",
     "pytest-xdist~=3.8.0",
     "psutil~=7.0.0",
+    "nuitka>=4.3.1",
+    # compresses Nuitka's onefile binaries; nuitka's sdist does not declare its onefile extra
+    "zstandard>=0.15",
     # deps of deps
     # -----------
     # Adding these here to constrain their versions to
@@ -136,6 +143,9 @@ asyncio_default_fixture_loop_scope = "function"
 log_level = "ERROR"
 timeout = 120
 timeout_method = "thread"
+markers = [
+  "simulated: runs the qiskit simulator's jobs for real, for tests that check measured counts",
+]
 filterwarnings = [
   "ignore:This package has reached its end of life\\.:DeprecationWarning:quantify_scheduler\\..*",
   "ignore:qiskit\\.providers\\.models is deprecated since Qiskit 1\\.2 and will be removed in Qiskit 2\\.0\\.:DeprecationWarning:app\\.libs\\.quantum_executor\\.qiskit\\.backends\\..*",
