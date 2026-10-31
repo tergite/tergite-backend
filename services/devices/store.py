@@ -1,0 +1,31 @@
+# This code is part of Tergite
+#
+# (C) Copyright Chalmers Next Labs AB 2026
+#
+# This code is licensed under the Apache License, Version 2.0. You may
+# obtain a copy of this license in the LICENSE.txt file in the root directory
+# of this source tree or at http://www.apache.org/licenses/LICENSE-2.0.
+#
+# Any modifications or derivative works of this code must retain this
+# copyright notice, and modified files need to carry a notice indicating
+# that they have been altered from the originals.
+"""The devices' parameters and switches, in the SQL database"""
+from sqlmodel import Field, SQLModel
+
+
+class DeviceParametersRow(SQLModel, table=True):
+    """A backend's device info and calibration info, as JSON, that its heavy worker saves"""
+
+    __tablename__ = "device_parameters"
+
+    backend_name: str = Field(primary_key=True)
+    device_info: str
+    calibration_info: str
+
+
+class SwitchedOffDeviceRow(SQLModel, table=True):
+    """A device switched off, until it is switched on"""
+
+    __tablename__ = "switched_off_device"
+
+    device_name: str = Field(primary_key=True)

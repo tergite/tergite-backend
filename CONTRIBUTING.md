@@ -80,7 +80,6 @@ All signed CLAs are emails to us at <quantum-nextlabs@chalmers.se>.
 
 ## How to Test
 
-- Ensure you have a [redis server](https://redis.io/docs/install/install-redis/) installed on your local machine.
 - Ensure you have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed. 
  (_You could simply have python +3.13 installed instead._)
 
@@ -99,7 +98,7 @@ cd tergite-backend
 
 - Install dependencies. Note that we can either use the simulators (`qiskit`) or connect to Qblox clusters (`quantify`).
   To install for simulators, use `--extra qiskit` and to install for Qblox, use `--extra quantify`.  
-  **Take note that you can use both at the same time because they conflict with each other**.
+  **Take note that you cannot use both at the same time because they conflict with each other**.
 
 ```shell
 uv sync --dev --extra quantify
@@ -113,28 +112,27 @@ uv sync --dev --extra quantify
 source .venv/bin/activate
 ```
 
-- Start the redis server in another terminal on port 6378
+- Lint with black, isort and pyflakes, as CI does
 
 ```shell
-redis-server --port 6378
+black --check api libs services utils tests dev migrations main.py settings.py
+isort --check-only api libs services utils tests dev migrations main.py settings.py
+pyflakes api libs services utils tests dev migrations main.py settings.py
 ```
 
-- Lint with black
-
-```shell
-black --check app
-```
-
-- Optionally enable pre-commit hook to run black 
+- Optionally enable the pre-commit hook to run black and isort
 
 ```shell
 pre-commit install
 ```
 
-- Run the tests by running the command below at the root of the project. 
+- Run the tests by running the commands below at the root of the project: the most of them
+  on 4 workers, then alone those marked `real_time`, whose outcome depends on how fast the
+  machine works through the jobs against bookings.
 
 ```shell
-pytest -n auto --dist=loadscope app
+pytest tests -n 4 --dist=worksteal -m "not real_time"
+pytest tests -m real_time
 ```
 
 ## How to Install as a Service
@@ -144,15 +142,14 @@ pytest -n auto --dist=loadscope app
   the qiskit simulators. They install side by side.
 
 - Install it. A deb asks for a first backend instance: its name, which is its `DEFAULT_PREFIX`,
-  executor, port, MSS URL and Redis.
+  executor, port and MSS URL.
 
 ```shell
 sudo apt install ./tergite-backend_<version>_amd64.deb
 ```
 
 - Create any other instance, or the first on macOS, which asks nothing.
-  `--executor`, `--port`, `--mss-url` and `--redis-url` override the defaults, and a Redis
-  password goes in `REDIS_PASSWORD`.
+  `--executor`, `--port` and `--mss-url` override the defaults.
 
 ```shell
 sudo bcc-provision lab1
@@ -160,9 +157,10 @@ sudo bcc-provision lab1
 # sudo bcc.simulator-provision sim1 --executor qiskit_pulse_2q --port 8002
 ```
 
-- Edit the instance's configs in `/etc/bcc/<name>/` for the device, copy MSS's
-  `public-mss-key.pem` there unless MSS runs on the same machine, and give MSS the
-  `[[backends]]` entry and `public-bcc-key.pem` that provisioning printed.
+- Edit the instance's configs in `/etc/bcc/<name>/` for the device, and its starting
+  calibration in `/var/lib/bcc/<name>/calibration.seed.toml`, which recalibrations rewrite;
+  copy MSS's `public-mss-key.pem` to `/etc/bcc/<name>/` unless MSS runs on the same machine,
+  and give MSS the `[[backends]]` entry and `public-bcc-key.pem` that provisioning printed.
 
 - Start the instance, and on every boot. Its data is in `/var/lib/bcc/<name>/`.
 
@@ -174,7 +172,6 @@ journalctl -u bcc@lab1 -f
 
 ## Build Executable with [Nuitka](https://nuitka.net/)
 
-- Ensure you have a [redis server](https://redis.io/docs/install/install-redis/) installed on your local machine.
 - Ensure you have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed. 
  (_You could simply have python +3.13 installed instead._)
 
@@ -191,29 +188,7 @@ git clone git@github.com:tergite/tergite-backend.git
 cd tergite-backend
 ```
 
-- Install dependencies. Note that we can either use the simulators (`qiskit`) or connect to Qblox clusters (`quantify`).
-  To install for simulators, use `--extra qiskit` and to install for Qblox, use `--extra quantify`.  
-  **Take note that you can use both at the same time because they conflict with each other**.
-
-```shell
-uv sync --dev --extra quantify
-# or for simulators only
-# uv sync --dev --extra qiskit
-```
-
-- Activate your environment
-
-```shell
-source .venv/bin/activate
-```
-
-- Start the redis server in another terminal on port 6378
-
-```shell
-redis-server --port 6378
-```
-
-- Build the main.py file
+- Build the main.py file, which installs the dependencies of the executor first
 
 ```shell
 pkg/build.sh
@@ -226,16 +201,16 @@ pkg/build.sh
 
 ```shell
 # serve the API, and run one heavy worker for preprocessing, executions and recalibrations
-# and `--light-workers` (default 1) for postprocessing and general tasks, stopping them all if
+# and `--light-workers` (default 1) for postprocessing, stopping them all if
 # any stops; it reads the .env file named by BCC_ENV_FILE, and takes `--port`, `--host`,
 # `--forwarded-allow-ips` and `--workers`, the number of API processes ($WEB_CONCURRENCY or 1)
 BCC_ENV_FILE="$PWD/.env" main.dist/bcc start  # or just main.dist/bcc, as start is the default
-# or one at a time: `main.dist/bcc serve`, `main.dist/bcc rq --kind heavy`, `main.dist/bcc rq --kind light`
+# or one at a time: `main.dist/bcc serve`, `main.dist/bcc worker --kind heavy`, `main.dist/bcc worker --kind light`
 
 # serve several devices from one process: each device's env file once; its API is then at
 # /<its DEFAULT_PREFIX>/..., say http://localhost:8000/loke/bookings, a path naming no device
-# reaching the first; each device gets a heavy worker, and the light workers run every device's
-# queues, so the devices must share RQ_REDIS_URL; in the shell, BCC_<NAME>, e.g.
+# reaching the first; each device gets a heavy worker, and the light workers postprocess every
+# device's jobs; in the shell, BCC_<NAME>, e.g.
 # BCC_MAX_IDLE_TIME, sets every device's <NAME> over its env file, and BCC_<PREFIX>_<NAME>,
 # e.g. BCC_LOKE_MAX_IDLE_TIME, one device's over that; see .env.example
 main.dist/bcc start --env-file loke.env --env-file thor.env

@@ -22,23 +22,3 @@ Template: @PACKAGE@/mss_url
 Type: string
 Default: http://localhost:8002
 Description: URL of MSS:
-
-Template: @PACKAGE@/redis
-Type: select
-Choices-C: local, url
-Choices: local Redis, existing Redis
-Default: local
-Description: Redis for the job queues:
-
-Template: @PACKAGE@/redis_url
-Type: string
-Default: redis://redis.example.com:6379/0
-Description: URL of the existing Redis, without its password:
- With its ACL user if it has one, e.g. redis://bcc@redis.example.com:6379/0.
- The password is asked next.
-
-Template: @PACKAGE@/redis_password
-Type: password
-Description: Password of the Redis user:
- Stored only in the instance's backend.env, which root and the bcc account
- alone can read. Leave it empty if Redis has none.

@@ -15,7 +15,6 @@ If you are reading this on GitHub, then you are looking at a mirror.
 ## Dependencies
 
 - [Python 3.13](https://www.python.org/)
-- [Redis](https://redis.io/)
 
 ## Quick Start
 
@@ -28,7 +27,6 @@ wget -qO- https://astral.sh/uv/install.sh | sh
 # curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-- Ensure you have the [Redis](https://redis.io/) server running
 - Clone the repo
 
 ```shell
@@ -38,7 +36,7 @@ cd tergite-backend
 
 - Install dependencies. Note that we can either use the simulators (`qiskit`) or connect to Qblox clusters (`quantify`).
   To install for simulators, use `--extra qiskit` and to install for Qblox, use `--extra quantify`.  
-  **Take note that you can use both at the same time because they conflict with each other**.
+  **Take note that you cannot use both at the same time because they conflict with each other**.
 
 ```shell
 uv sync --dev --extra quantify
@@ -93,8 +91,8 @@ cp quantify-metadata.example.yml quantify-metadata.yml
 _Note: If you want to just run a dummy cluster, you can copy the one in the test fixtures_
 
 ```shell
-cp app/tests/fixtures/generic-quantify-config.yml quantify-config.json
-cp app/tests/fixtures/generic-quantify-config.json quantify-metadata.yml
+cp tests/fixtures/generic-quantify-config.json quantify-config.json
+cp tests/fixtures/generic-quantify-config.yml quantify-metadata.yml
 ```
 
 - Copy the backend example config file `backend_config.example.toml` into the `backend_config.toml` file and update the variables there in.
@@ -106,7 +104,7 @@ cp backend_config.example.toml backend_config.toml
 _Note: If you are running the simulator, you can copy the one in the test fixtures_
 
 ```shell
-cp app/tests/fixtures/backend_config.simq1.toml backend_config.toml
+cp tests/fixtures/backend_config.simq1.toml backend_config.toml
 ```
 
 - Copy the example file for initial device calibrations `calibration.seed.example.toml` into the `calibration.seed.toml` file and update the variables accordingly. 
@@ -118,14 +116,15 @@ cp calibration.seed.example.toml calibration.seed.toml
 - Run start script
 
 ```shell
-./start_bcc.sh
+./dev/start_bcc.sh
 ```
 
 - Open your browser at [http://localhost:8000/docs](http://localhost:8000/docs) to see the interactive API docs
 
 ## Documentation
 
-Find more documentation in the [docs folder](./docs)
+Find how the backend is built, and the conventions to follow when changing it, in [DESIGN.md](./DESIGN.md),
+and more documentation in the [docs folder](./docs)
 
 ## Contribution Guidelines
 
@@ -147,6 +146,11 @@ the [CHANGELOG.md](./CHANGELOG.md) file.
 ## License
 
 [Apache 2.0 License](./LICENSE.txt)
+
+## TODO
+
+- [ ] Give every public function a Google-style docstring, saying what it does for the caller and how to use
+  it, with `Args:`, `Returns:` and `Raises:` where they apply; many lack `Args:`
 
 ## Acknowledgements
 

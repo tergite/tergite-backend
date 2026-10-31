@@ -135,11 +135,11 @@ config.ini
 
 # hdf5 binary files
 *.hdf5
-!app/tests/fixtures/*.hdf5
+!tests/fixtures/*.hdf5
 
 # ssh keys
 *.pem
-!app/tests/fixtures/*.pem
+!tests/fixtures/*.pem
 
 Labber/
 
@@ -147,10 +147,9 @@ Labber/
 tmp/
 
 # quantum_executor
-.quantum-executor.lock
 
 # test data
-app/tests/data/
+tests/data/
 data/
 pytest-data/
 
@@ -173,9 +172,6 @@ backend_config.toml
 backend_config.**.toml
 !**/fixtures/backend_config**.toml
 !backend_config.example.toml
-
-# redis
-**.rdb
 
 # sqlite databases
 *.db

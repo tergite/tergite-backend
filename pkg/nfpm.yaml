@@ -63,13 +63,13 @@ contents:
     dst: /usr/share/@PACKAGE@/examples/node_config.example.toml
   - src: spi_config.example.toml
     dst: /usr/share/@PACKAGE@/examples/spi_config.example.toml
-  - src: app/tests/fixtures/backend_config.simq1.toml
+  - src: tests/fixtures/backend_config.simq1.toml
     dst: /usr/share/@PACKAGE@/examples/backend_config.simq1.toml
-  - src: app/tests/fixtures/backend_config.simq2.toml
+  - src: tests/fixtures/backend_config.simq2.toml
     dst: /usr/share/@PACKAGE@/examples/backend_config.simq2.toml
-  - src: app/tests/fixtures/qiskit_pulse_1q.seed.toml
+  - src: tests/fixtures/qiskit_pulse_1q.seed.toml
     dst: /usr/share/@PACKAGE@/examples/qiskit_pulse_1q.seed.toml
-  - src: app/tests/fixtures/qiskit_pulse_2q.seed.toml
+  - src: tests/fixtures/qiskit_pulse_2q.seed.toml
     dst: /usr/share/@PACKAGE@/examples/qiskit_pulse_2q.seed.toml
   - src: LICENSE.txt
     dst: /usr/share/doc/@PACKAGE@/LICENSE.txt

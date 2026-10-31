@@ -8,20 +8,14 @@ variables:
   NFPM_VERSION: "2.48.0"
   NFPM_SHA256: 6d7f9a28b2f397934403950fcbba83f598b08d02edbe79a0815b3b4897341750
   PYTHON_VERSION: "3.13"
-  REDIS_PORT: 6378
-  TEST_RQ_MAX_QUEUE_WAIT_TIME: 45
   FF_NETWORK_PER_BUILD: 1
 
 .setup_venv: &setup_venv
   image: python:${PYTHON_VERSION}
   before_script:
-    # Install redis
     - apt-get update
     # install dependencies for recalibration
     - if [ "$DEPS_GROUP" = "quantify" ]; then apt-get install libgl1 -y; fi
-    - apt-get install redis -y
-    # Run the redis server
-    - redis-server --daemonize yes --port "$REDIS_PORT"
     # install uv
     - pip install uv
     # Ensure uv uses the project-local venv for easier sourcing
@@ -41,13 +35,14 @@ tests:
     - uv sync --dev --extra $DEPS_GROUP
     - source .venv/bin/activate
     # Check formatting
-    - black --check app
-    - isort --check-only app
-    - pyflakes app main.py settings.py
+    - black --check api libs services utils tests dev migrations main.py settings.py
+    - isort --check-only api libs services utils tests dev migrations main.py settings.py
+    - pyflakes api libs services utils tests dev migrations main.py settings.py
     # Run unit tests
-    - pytest app
+    - pytest tests -n 4 --dist=worksteal -m "not real_time"
+    - pytest tests -m real_time
   cache:
-    key: "uv-cache-$EXTRA_NAME-$CI_COMMIT_REF_SLUG"
+    key: "uv-cache-$DEPS_GROUP-$CI_COMMIT_REF_SLUG"
     paths:
       - .cache/uv
       - .venv

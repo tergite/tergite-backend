@@ -10,23 +10,30 @@ Right now, we have implemented the following backends:
 If you want to implement a new executor, follow these steps below.
 
 ### 1. Create a class for your executor
-- The base class for any quantum is `QuantumExecutor`.
-- Add a new module for your executor in the `quantum_executor` library.
-- Inherit from that class to create your own executor.
+- The base class for any executor is `QuantumExecutor`, in `libs/quantum_executor/base/executor.py`.
+- Add a new package for your executor in `libs/quantum_executor/`, beside `quantify` and `qiskit`.
+- Inherit from that class to create your own executor, implementing `to_native_experiments`, `run_native`,
+  `recalibrate` (returning `None` if your backend does not recalibrate) and `close`.
+- If your backend needs some basic tune-up or training, such as a discriminator, do it when the executor is
+  constructed and put the result in its `backend_config`, as the qiskit simulators do; the heavy worker publishes
+  that config to MSS once the executor is loaded.
 
 ### 2. Implement a transpiler
 - Incoming jobs will be in the OpenPulse format.
 - Implement a logic to translate the OpenPulse circuit to the format which your backend takes.
-- This potentially involves interfacing the classes:
-  - `NativeExperiment`: To implement a logic on how to iterate over the OpenPulse instructions.
-  - `BaseProgram`: To translate the individual instructions.
-- Other classes in the `quantum_executor` library might have to be adapted or added.
+- This potentially involves:
+  - `NativeExperiment`, in `libs/quantum_executor/base/experiment.py`: the compiled experiment that
+    `to_native_experiments` returns and `run_native` runs.
+  - An `instruction.py` of your own, translating the individual instructions, as each existing executor has.
+- Other modules in `libs/quantum_executor` might have to be adapted or added.
 
 ### 3. Next steps
-- If your backend needs some basic tune-up or training for a discriminator, you can add these actions in the `scripts` folder.
+- Load your executor by its `BCC_EXECUTOR_TYPE` in `_init_executor` in `services/scheduler/utils.py`, which imports
+  each executor only when it is chosen, so that the others' dependencies need not be installed.
+- Add its dependencies as an extra in `pyproject.toml`, and to the Nuitka options at the top of `main.py`.
 - Add documentation for your executor.
-  - You probably have to update the `dot_env_template.txt` and the `quantify-config.example.yml`.
-- Add the executor to the factory such that it can be loaded from the execution worker.
+  - You probably have to update the `.env.example`, and add example configs beside `quantify-config.example.json`.
+  - Provisioning, in `pkg/provision.sh`, writes an instance's example configs for its executor.
 - Check whether all tests are running.
 
 For more intuition on how the executors are integrated into the stack, check out the existing ones in the source code.

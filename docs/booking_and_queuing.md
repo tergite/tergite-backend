@@ -12,11 +12,10 @@ book a time slot to accept only one user's jobs and waitlist other users' jobs.
 - [x] Run waitlisted jobs when booking becomes idle
 - [x] Creation of bookings overlapping with other bookings is not permitted
 - [x] Creation of bookings beyond the maximum per day is not permitted.
-- [x] User can delete their own booking as long as it has not yet expired.
+- [x] User can delete their own booking as long as it has not yet started.
 - [x] User can view all other user's bookings (paginated)
 - [x] Admin user can cancel any user's booking
 - [x] User can cancel a job that is yet to complete as long as it belongs to them.
-- [x] Can create root user (is admin) only once for a given app instance
 - [x] Admin user can delete any user (automatically cancelling all their jobs and bookings)
 - [x] User can delete their account, (automatically cancelling all their jobs and bookings)
 - [x] User can view their own user profiles
@@ -25,29 +24,19 @@ book a time slot to accept only one user's jobs and waitlist other users' jobs.
 
 ## Dependencies
 
-- [Redis](https://redis.io/)
-- [SQLite](https://www.sqlite.org/)
-- [rq](https://python-rq.org/)
+- [SQLite](https://www.sqlite.org/), or another database SQLAlchemy supports, which holds the bookings,
+  the jobs, the device parameters and switch, and MSS's nonces
 
 
 ## Operations (REST API)
 
-- Ensure you have [Anaconda/miniconda](https://www.anaconda.com/docs/getting-started/miniconda/install) 
- and [redis server/stack](https://redis.io/docs/latest/operate/oss_and_stack/install/archive/install-redis/) installed.
-
-_Note: the [RQ dashboard](https://github.com/nvie/rq-dashboard) will not work if `dev` optional dependencies are not included_  
-
-- Open another shell start the [RQ dashboard](https://github.com/nvie/rq-dashboard)
-
-```shell
-conda activate bookenv
-rq-dashboard
-```
+- Start BCC as the [README](../README.md#quick-start) says; it serves on `BCC_PORT`, 8000 by default.
+  The `x-mss-*` headers below stand for those MSS signs, as [auth.md](./auth.md) describes.
 
 - Through, MSS, create users e.g.
 
 ```shell
-curl -L 'http://127.0.0.1:5000/users' \
+curl -L 'http://127.0.0.1:8000/users' \
 -H 'Content-Type: application/json' \
 -H 'x-mss-request-id: 5655b4b8-a589-4b8b-89eb-5204625c141a' \
 -H 'x-mss-timestamp: 1754995916.082073' \
@@ -57,8 +46,7 @@ curl -L 'http://127.0.0.1:5000/users' \
 --data-raw '{
     "id": "0f29a380-3a02-4c6f-86f9-340574d747aa",
     "name": "John Doe",
-    "email": "johndoe@example.com",
-    "password": "some-password-for-john"
+    "email": "johndoe@example.com"
 }'
 ```
 
@@ -75,7 +63,7 @@ Responding with:
 - Through MSS, create a booking for one user e.g..
 
 ```shell
-curl -L 'http://127.0.0.1:5000/bookings' \
+curl -L 'http://127.0.0.1:8000/bookings' \
 -H 'Content-Type: application/json' \
 -H 'x-mss-request-id: 5655b4b8-a589-4b8b-89eb-5204625c141a' \
 -H 'x-mss-timestamp: 1754995916.082073' \
@@ -101,7 +89,7 @@ Responding with something like:
 - Through MSS, get token for submitting a job later e.g.
 
 ```shell
-curl -L 'http://127.0.0.1:5000/token' \
+curl -L 'http://127.0.0.1:8000/token' \
 -H 'Content-Type: application/json' \
 -H 'x-mss-request-id: 5655b4b8-a589-4b8b-89eb-5204625c141a' \
 -H 'x-mss-timestamp: 1754995916.082073' \
@@ -113,19 +101,20 @@ curl -L 'http://127.0.0.1:5000/token' \
 }'
 ```
 
-Responding with something like: 
+Responding with something like the following, whose `access_token` is the job's JWT encrypted with MSS's
+public key, which MSS decrypts before handing it to the user:
 
 ```json
 {
-  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWUsImlhdCI6MTUxNjIzOTAyMn0.KMUFsIDTnFmyG3nMiGM6H9FNFUROf3wh7SmqJp-QV30",
+  "access_token": "kVb3Qx0iGm4...base64 of the RSA-OAEP ciphertext...Wf9sYw==",
   "token_type": "bearer"
 }
 ```
 
-- Directly submit jobs using the `access_token` e.g.
+- Directly submit jobs using the decrypted `access_token` e.g.
 
 ```shell
-curl -L 'http://127.0.0.1:5000/jobs' \
+curl -L 'http://127.0.0.1:8000/jobs' \
 -H 'Content-Type: application/json' \
 -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWUsImlhdCI6MTUxNjIzOTAyMn0.KMUFsIDTnFmyG3nMiGM6H9FNFUROf3wh7SmqJp-QV30' \
 -F 'upload_file=@"/Users/johndoe/jobs/job_17be2242-ebd1-46c4-b249-8bbe018d321c.json"'
@@ -142,13 +131,10 @@ Responding like:
 }
 ```
 
-- Open [http://127.0.0.1:9181/](http://127.0.0.1:9181/) in your browser. 
-  You should find that the jobs only jobs by the owner (John) of the booking run during the booked slot
-
 - Through MSS, you can also view a given job you submitted.
 
 ```shell
-curl -L 'http://127.0.0.1:5000/jobs/17be2242-ebd1-46c4-b249-8bbe018d321c' \
+curl -L 'http://127.0.0.1:8000/jobs/17be2242-ebd1-46c4-b249-8bbe018d321c' \
 -H 'x-mss-request-id: 5655b4b8-a589-4b8b-89eb-5204625c141a' \
 -H 'x-mss-timestamp: 1754995916.082073' \
 -H 'x-mss-signature: MTA1ZjIyZTEtNmIyYS00YjBlLWE4YTEtMGMzNTMwOWNiNDIw' \
@@ -158,7 +144,7 @@ curl -L 'http://127.0.0.1:5000/jobs/17be2242-ebd1-46c4-b249-8bbe018d321c' \
 - Through MSS, you can cancel a job you submitted (or if you are admin)
 
 ```shell
-curl -L 'http://127.0.0.1:5000/jobs/17be2242-ebd1-46c4-b249-8bbe018d321c/cancel' \
+curl -L 'http://127.0.0.1:8000/jobs/17be2242-ebd1-46c4-b249-8bbe018d321c/cancel' \
 -H 'x-mss-request-id: 5655b4b8-a589-4b8b-89eb-5204625c141a' \
 -H 'x-mss-timestamp: 1754995916.082073' \
 -H 'x-mss-signature: MTA1ZjIyZTEtNmIyYS00YjBlLWE4YTEtMGMzNTMwOWNiNDIw' \
@@ -171,7 +157,7 @@ curl -L 'http://127.0.0.1:5000/jobs/17be2242-ebd1-46c4-b249-8bbe018d321c/cancel'
 - Through MSS, you can also delete a job you submitted (or if you are admin)
 
 ```shell
-curl -L -X DELETE 'http://127.0.0.1:5000/jobs/17be2242-ebd1-46c4-b249-8bbe018d321c' \
+curl -L -X DELETE 'http://127.0.0.1:8000/jobs/17be2242-ebd1-46c4-b249-8bbe018d321c' \
 -H 'x-mss-request-id: 5655b4b8-a589-4b8b-89eb-5204625c141a' \
 -H 'x-mss-timestamp: 1754995916.082073' \
 -H 'x-mss-signature: MTA1ZjIyZTEtNmIyYS00YjBlLWE4YTEtMGMzNTMwOWNiNDIw' \
@@ -182,7 +168,7 @@ curl -L -X DELETE 'http://127.0.0.1:5000/jobs/17be2242-ebd1-46c4-b249-8bbe018d32
 - Through MSS, you can also view a list of jobs.
 
 ```shell
-curl -L 'http://127.0.0.1:5000/jobs?skip=1&limit=10' \
+curl -L 'http://127.0.0.1:8000/jobs?skip=1&limit=10' \
 -H 'x-mss-request-id: 5655b4b8-a589-4b8b-89eb-5204625c141a' \
 -H 'x-mss-timestamp: 1754995916.082073' \
 -H 'x-mss-signature: MTA1ZjIyZTEtNmIyYS00YjBlLWE4YTEtMGMzNTMwOWNiNDIw' \
@@ -192,7 +178,7 @@ curl -L 'http://127.0.0.1:5000/jobs?skip=1&limit=10' \
 - Through MSS, you can also view a list of bookings.
 
 ```shell
-curl -L 'http://127.0.0.1:5000/bookings?skip=1&limit=10' \
+curl -L 'http://127.0.0.1:8000/bookings?skip=1&limit=10' \
 -H 'x-mss-request-id: 5655b4b8-a589-4b8b-89eb-5204625c141a' \
 -H 'x-mss-timestamp: 1754995916.082073' \
 -H 'x-mss-signature: MTA1ZjIyZTEtNmIyYS00YjBlLWE4YTEtMGMzNTMwOWNiNDIw' \
@@ -202,7 +188,7 @@ curl -L 'http://127.0.0.1:5000/bookings?skip=1&limit=10' \
 - Through MSS, you can cancel your own booking given that you know the booking ID.
 
 ```shell
-curl -L -X POST 'http://127.0.0.1:5000/bookings/68530559-b54d-4ffe-9f3b-d17bbf141c43/cancel' \
+curl -L -X POST 'http://127.0.0.1:8000/bookings/68530559-b54d-4ffe-9f3b-d17bbf141c43/cancel' \
 -H 'x-mss-request-id: 5655b4b8-a589-4b8b-89eb-5204625c141a' \
 -H 'x-mss-timestamp: 1754995916.082073' \
 -H 'x-mss-signature: MTA1ZjIyZTEtNmIyYS00YjBlLWE4YTEtMGMzNTMwOWNiNDIw' \
@@ -218,74 +204,59 @@ curl -L -X POST 'http://127.0.0.1:5000/bookings/68530559-b54d-4ffe-9f3b-d17bbf14
 - If `start_utc` falls in the span of another booking or `end_utc` falls in the span of another booking,
   an error is raised
 - Otherwise, the booking is saved to the list of bookings with its unique ID.
-- The cached view of the current 24-hour slice of the schedule is invalidated 
-  if the new booking's span overlaps with the span of that slice.
 
 _Note: The user must specify the backend they are booking when submitting request through MSS_.
 
 ### Deleting a booking
 
 - User requests to delete a Booking of the given ID
-- It is popped from the list of bookings.
-- If its span overlaps with the span of the cached view of the current 24-hour slice of the schedule,
-  the cached view is invalidated.
+- It is deleted from the list of bookings, unless it has started.
 
-### Managing normal and slot queues
+### Running the jobs
 
-- Workers associated with the `normal_execution` queue and the `booked_execution` queue 
-  run the jobs on the normal and the slot queues respectively.
-- The `waitlist` queue is not associated with any worker. 
-  It is just a First-In-First-Out (FIFO) data structure from which jobs can be
-  popped off and put on an appropriate execution queue.
-- Whenever a job is received, the cached 24-hour slice of schedule is checked to get
-  the booking that should be running now.   
-  If none is found, job is sent to `normal_execution` queue.  
-  If one is found, more checks are done to determine if the job is for that booking or not.
+- A job is a row of the jobs table, with its stage and its estimated duration, which
+  preprocessing, the compilation of its schedules, sets.
+- Each device's heavy worker runs, of the jobs the table holds, the execution the bookings let run
+  next, else the oldest preprocessing, else a recalibration that is due. A light worker
+  postprocesses the oldest executed job of every device.
+- A worker claims a job in one transaction, so no two workers run the same stage of a job.
+- A worker with nothing to claim waits until the API or the heavy worker wakes it, with a
+  datagram to the loopback port it names in `<storage root>/<device>/wakeups/`. A heavy worker
+  with a job waiting to execute also wakes itself at the next moment the rules below could pick
+  a different job: the active booking's end, its booker turning idle, or the next booking's
+  start. No worker waits more than `BCC_MAX_WORKER_WAIT_TIME`, 5 seconds by default.
+- [DESIGN.md §6](../DESIGN.md#6-queueing-the-dispatcher) describes this in full, with diagrams.
 
 ### When there is no active booking:
 
-- All jobs received are put into the `preprocessing` queue where they are compiled.
-- When a job is compiled, its absolute timings (and thus length) are determined.
-- If a job's length is greater than the available time on the `normal_execution` queue 
-  before the next time slot, it is put in the `waitlist` queue.  
-  _(Note that the pending jobs on the `normal_execution` queue are accounted for also when computing the available time.)_
-- Otherwise, it is put on the `normal_execution` queue.
+- The oldest preprocessed job that ends before the next booking starts runs next.
+  A longer job waits, and shorter ones run before it, until it fits.
+- A job that has waited longer than `MAX_EXECUTION_QUEUE_TIME`, a day by default, is failed, and its
+  user told, rather than left to wait.
 
 ### When a booking is active:
 
-- All jobs received are put into the preprocessing queue where they are compiled.
-- When a job is compiled, its absolute timings (and thus length) are determined.
-- Any job that does not belong to the user who booked the slot is immediately put in the `waitlist` queue.
-- Any job that has an explicit property `force_normal_queue=True`, is immediately put in the `waitlist` queue.
-- Otherwise, if a job's length is greater than the time left to the end of the slot,   
-  it fails immediately and alerts the user that the job is too long for the slot.  
+- The booker's oldest preprocessed job that ends before the booking does runs next.
+- A booker's job that finishes preprocessing during their booking, and is longer than what is
+  left of it, fails, and alerts the user that the job is too long for the slot.  
   _(The reason here is to allow the user to decide if they want to elongate 
   their time slot or just put the job on the normal queue.)_
-- If the job's length is less than the available time in the slot, it is put on the `booked_execution` queue.  
-  _(Note that the pending jobs on the `booked_execution` queue are accounted 
-  for also when computing the available time.)_
-- Jobs on the `booked_execution` queue run to completion.
-- If the idle time between subsequent jobs on the `booked_execution` queue 
-  exceeds `MAX_IDLE_TIME`, the next job from the general `waitlist` queue,
-  whose length is shorter than the available time to the **start of the next time slot**, 
-  is put on the `booked_execution` queue. 
-  This implies that if the booker submitted a job before the booking starts, 
-  it will not run automatically when the booking starts. It must wait for all the other jobs that are short enough.
+- A booker's job with `force_normal_queue=True`, and any other user's job, waits.
+- Once the booker has had no job executing for `MAX_IDLE_TIME`, the oldest job of anyone's
+  that ends before the next booking starts runs, one at a time, until the booker has a job
+  ready to execute that fits what is left of their booking.
+- A job under way when the booking ends runs to completion; then the rules for no active
+  booking apply.
 
-### Immediately after a booking ends:
+### Recalibration
 
-- All the jobs on the `booked_execution` queue are allowed to run to completion.
-- All jobs in the waitlist whose length is less or equal to the available time before 
-  the next time slot are moved to the `normal_execution` queue.  
-  _(Note that the pending jobs on the execution queue are accounted 
-  for also when computing the available time.)_
-- The jobs on the `normal_execution` queue start running.
-
+- A recalibration is a row with a due time. A heavy worker runs it when its device has no job to
+  run, having first scheduled the next one interval later.
 
 ## Constraints
 
 - A user can book only `MAX_SLOTS_PER_DAY` time slots per day. 
-- A time slot can not be shorter than `MIN_TIME_SLOT_LENGTH` seconds.
+- A time slot can not be shorter than `MIN_TIME_SLOT_LENGTH` seconds, nor longer than `MAX_TIME_SLOT_LENGTH`.
 - Each booking is associated with one backend and one user.
 - Each booking has a unique ID for easy querying and deletion.
 

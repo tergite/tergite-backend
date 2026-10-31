@@ -7,15 +7,31 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.11.0-rc.1] - 2026-10-31
+
+This is part of the tergite release v2026.11.0-rc.1.
+
 ### Added
 
+- Added a systemd watchdog to `bcc@.service`, `WatchdogSec=60s`: `bcc start`, and a `bcc worker` its unit runs alone,
+  tell systemd they are alive while on time, so a hung one is restarted
+- Added `GET /health`, unauthenticated, which `bcc start` asks every 5 s, killing an API that misses 3 in a row, as a
+  hung event loop left it running but deaf
+- Added `BCC_MAX_WORKER_START_TIME`, 10 minutes by default and 0 for none: `bcc start` kills a worker that has not
+  finished starting by then, e.g. stuck connecting to the clusters, which went unnoticed
+- Added `<seed>.tuner.json` beside the calibration seed file, tergite-tuner's results of the last recalibration, which
+  the next one starts from, as tergite-tuner keeps nothing between its sessions
+- Added `BCC_MAX_EXECUTION_QUEUE_TIME`, a day by default and 0 for none: a preprocessed job waiting longer to execute,
+  e.g. for room between bookings, is failed and its user told, where it waited indefinitely
+- Added `BCC_MAX_WORKER_WAIT_TIME`, the longest a worker with nothing to do waits before looking again, which bounds
+  how late a lost wake-up, a due recalibration or a dead worker's job is noticed; default 5 seconds, as before
 - Added GitLab jobs that, on a `v*` tag, build the debs and macOS packages, upload them to the package registry and
   link them from the GitLab release; the macOS ones run where `PUBLISH_MACOS_ARM64` is `true`, on a runner tagged `macos`
 - Added amd64 debs, for Debian 13 and Ubuntu 24.04 onwards, and macOS arm64 packages, `tergite-backend` and `tergite-backend-simulator`, running each
   backend instance, named for its `DEFAULT_PREFIX`, as a `bcc@<name>` service set up by `bcc-provision`
-- Added `bcc start`, the default command, to the Nuitka binary, which runs the API, one RQ worker for preprocessing, executions and
-  recalibrations, and `--light-workers` (default 1) for postprocessing and general tasks as one process tree
-- Added `--env-file`, given once per device, to `bcc start`, `serve` and `rq`, which serves several devices from one
+- Added `bcc start`, the default command, to the Nuitka binary, which runs the API, one worker for preprocessing, executions and
+  recalibrations, and `--light-workers` (default 1) for postprocessing as one process tree
+- Added `--env-file`, given once per device, to `bcc start`, `serve` and `worker`, which serves several devices from one
   process, each device's API under `/<DEFAULT_PREFIX>/`, with a heavy worker per device and light workers shared by all
 - Added `--workers` to `bcc start` and `serve`, the number of API processes, defaulting as uvicorn does to
   `$WEB_CONCURRENCY` or 1; `BCC_ENV_FILE` may name several env files, separated as in PATH, as `--env-file` does
@@ -24,6 +40,34 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- Changed the expired MSS nonces to be deleted by the workers as they look for work, instead of by every request
+  from MSS
+- Changed the quantify extra's tergite-tuner to 2026.10.0rc3 or a later 2026.10 release, which keeps its sessions
+  in memory instead of Redis
+- Changed `GET /jobs` to list 100 jobs unless `limit` asks for more, up to 1000, where it listed all of them; page
+  through with `skip`
+- Changed the job supervisor log to plain lines, as Python's logging writes them, without the ANSI colour codes
+- Changed a recalibration's calibration to hold every stored value, not only those the run set, so it no longer
+  fails on values the run leaves alone, such as `acq_delay`, with tergite-tuner's exact `read_result` matching
+- Changed the jobs to be kept in the bookings database, `BCC_BOOKING_DB_URL`, instead of Redis; jobs stored in
+  Redis before upgrading are no longer listed, so let the queues empty first
+- Changed whether a device is switched off to be kept in the bookings database instead of Redis; a device switched
+  off before upgrading is on after it, so switch it off again
+- Changed the device parameters and MSS's request nonces to be kept in the bookings database instead of Redis
+- Changed the bookings database to be created and upgraded with Alembic as the API and the workers start, instead of by SQLModel;
+  an existing one is kept as it is, but for its unused `user.password` column, which is dropped
+- Changed the 422 for a booking that starts in the past or lasts outside the device's limits to give its message
+  as `detail`, as the other errors do, instead of pydantic's list of errors
+- Changed the workers to take their jobs and recalibrations from the bookings database instead of RQ's queues, and
+  `bcc rq --kind` to `bcc worker --kind`; work queued in RQ before upgrading is dropped, so let the queues empty first.
+  An idle worker waits on a UDP port of 127.0.0.1, which the API wakes it on
+- Changed a booker's job submitted before their booking to run in it, ahead of other users' jobs, instead of waiting
+  behind them
+- Changed the settings to be read with pydantic-settings: the `BCC_` names are the same, but now match whatever their
+  case, and an empty value counts as unset rather than as an empty string
+- Changed the BCC to keep no password for a user: it hashed the one MSS sends and checked it nowhere, so
+  `bcrypt` is no longer needed
+- Moved `start_bcc.sh` to `dev/start_bcc.sh`, with the other development tooling; it runs from any folder as before
 - bcc needs Python 3.13 or later, and its debs and macOS packages are built with it: on 3.12 a Nuitka build
   raised TypeError where anyio sorts exception groups, as CPython 3.12 refuses compiled functions there
 - The debs and macOS packages install `bcc` as Nuitka's standalone folder in `/usr/lib/<package>`, linked from the
@@ -40,13 +84,88 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
-- Fixed scheduled jobs never running: `bcc start` runs its workers with RQ's scheduler, so a booking's start and
-  end jobs and recalibration's start and repeats now run, which no release's workers did
+- Fixed a packaged instance's quantify recalibration failing to rewrite its calibration seed, which provisioning put
+  in the service's read-only `/etc/bcc/<name>/`; it now goes in `/var/lib/bcc/<name>/`, so move an existing one there
+  and point `BCC_CALIBRATION_SEED` at it
+- Fixed the calibration a heavy worker publishes at start giving its couplers no control or target qubit; they are
+  named from the device config's `coupling_dict`, and a coupler missing from it is refused at start
+- Fixed a recalibration's results reaching only MSS and the seed file: jobs ran on the old qubit frequencies and were
+  discriminated with the old calibration, which `/dynamic-properties` still served, until the heavy worker restarted
+- Fixed a light worker serving several devices postprocessing the first device's jobs before any other's; it now
+  takes the devices in turn
+- Fixed a recalibration whose worker died or was killed showing as under way in `/recalibration/info` from then on;
+  a heavy worker starting marks it failed
+- Fixed a worker stuck in a call its time limit cannot interrupt, e.g. an instrument driver's, stalling its device until
+  someone restarted the backend; `bcc start` now kills a worker past its deadline, which restarts the backend
+- Fixed an unreachable MSS stopping the workers, and failing a job that had succeeded when its results could not be
+  sent; the workers keep the events MSS cannot take, in order, and send them once it can
+- Fixed a reply from MSS being awaited past `BCC_MSS_RESPONSE_TIMEOUT` while other messages kept arriving, each of
+  which restarted the wait
+- Fixed an event to MSS whose connection dropped before MSS replied timing out, which failed a job that had succeeded;
+  the event is sent again on the new connection
+- Fixed a restart of the API alone overwriting, in Redis and MSS, the calibration the heavy worker published, e.g. the
+  simulators' trained discriminators, so that jobs were discriminated wrongly until the worker restarted; the heavy
+  worker alone publishes the device's properties and calibration now
+- Fixed `BCC_ARE_CLUSTERS_RESETTABLE` being ignored: the quantify executor never reset its clusters, whatever it was set to
+- Fixed bookings and recalibrations never taking effect: no release's workers ran RQ's scheduler, so a booking's
+  start and end, and recalibration's start and repeats, never ran
+- Fixed replayed MSS requests being accepted while the first was still running, or after it crashed: the nonce is
+  now claimed before the route runs, instead of recorded after it
+- Fixed cancelling a job leaving its rq job queued: cancellation looked for an rq job id that was never used, so the
+  rq job still ran and took whatever job was next in its queue
+- Fixed queue durations going negative: cancelling a job lowered the total duration of every queue it was not in,
+  so the scheduler thought more time was free before a booking than there was
+- Fixed the running job's time being left out of an execution queue's duration, so a job could be queued as fitting
+  before a booking, or in what was left of one, when it did not
+- Fixed switching one device off taking every device served from the same Redis offline
+- Fixed devices on one Redis sharing their jobs, so one device listed, and could cancel, another's, and sharing one
+  executor lock in the working folder; jobs stored before upgrading are no longer listed
+- Fixed failed jobs not reaching MSS, and some staying `executing`: a job failing in preprocessing, execution or
+  postprocessing, or too long for its booking, is now marked failed and sent to MSS
+- Fixed one failed recalibration ending recalibration for good, and `/recalibration/cancel` not stopping a
+  recalibration that was running; the interval now runs from one recalibration's start to the next's
+- Fixed finished jobs being cancellable, which turned a successful or failed job `cancelled`, and deleting a
+  cancelled job failing with a 500; cancelling a finished job now answers 406
+- Fixed MSS admins being refused, with 401 or 404, the jobs and bookings of a device they had not yet fetched a
+  job token from
+- Fixed deleting a user leaving their running jobs to finish, and leaving other users' jobs waiting on the
+  waitlist until a later booking ended, when the user's booking was under way
+- Fixed two API workers being able to book the same slot, and a first request for a new user, or a duplicate
+  `POST /users`, failing with 500 when it raced another; a duplicate user now answers 409
+- Fixed `/switch/on` and `/switch/off` freezing every other request on their API worker, for up to 120 s, while
+  they waited on MSS
+- Fixed `GET /recalibration/info` failing with 500 when one recalibration was queued and another scheduled
+- Fixed `/recalibration/init` scheduling a `start_timestamp` without a timezone in the server's local time, not UTC
+- Fixed a backend config without `online_date` getting the time the backend was started, not when it was read
+- Fixed a booker's job being queued when it fit the booking's whole length but not the time left in it, and a job
+  whose booking ended during its preprocessing waiting on the waitlist for ever; it now goes to the normal queue
+- Fixed recalibration with several clusters in the quantify metadata recalibrating the whole device once per
+  cluster and keeping the last; as tergite_tuner works through one cluster, recalibration now refuses several
+- Fixed misleading status codes: an offline device now answers 503, not 404; a job that does not exist 404, not
+  403; and MSS refusing or not answering a request 502 or 504, not 500
+- Fixed MSS-signed requests whose `x-mss-is-admin`, method or path could be changed in transit, as only the user,
+  nonce and timestamp were signed; MSS must sign the new message too, so the two are upgraded together
+- Fixed every job token being expired when issued on a device whose `BCC_CURRENT_DATE` is in the past: its expiry is
+  now counted from the real time, as PyJWT checks it
+- Fixed a process building quantify executors for two configs failing with AttributeError on the second, which closed
+  every cluster before the components cached for the first
 
 ### Removed
 
+- Removed Redis, which nothing needs since tergite-tuner 2026.10.0rc2: `BCC_RQ_REDIS_URL` and the `BCC_REDIS_*`
+  settings are ignored, and the deb and `bcc-provision` no longer ask for one
+- Removed RQ and `BCC_MAX_GENERAL_QUEUE_TIME`, and the `storage_id` of jobs and the RQ job ids of bookings, which only
+  RQ's queues read; macOS no longer needs `OBJC_DISABLE_INITIALIZE_FORK_SAFETY`, as nothing forks
+- Removed `BCC_JOBS_STORE_CLEAN_INTERVAL`: a job older than `BCC_JOBS_STORE_TTL` is deleted as another is stored
+- Removed `BCC_REQUEST_LOG_TTL` and `BCC_REQUEST_LOG_CLEAN_INTERVAL`, with the two weeks of requests the BCC kept in
+  Redis and read nowhere; MSS's nonces are still kept for `MSS_NONCE_TTL`
+- Removed `BCC_IS_ASYNC`, which ran each job inside the API request that queued it; the jobs run on the workers only
 - Removed `bcc.service` and `start_bcc.sh`'s conda-based systemd mode, which the packages replace
 - Removed the Docker image and its release jobs; the debs and macOS packages, or `bcc` from a checkout, run the backend
+
+### Contributors
+
+- Martin Ahindura
 
 ## [2026.09.0-rc.1] - 2026-07-03
 
