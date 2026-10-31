@@ -32,10 +32,19 @@ class MssNonceRow(SQLModel, table=True):
 def claim_mss_nonce(
     db_engine: Engine, device_name: str, nonce: str, ttl: float
 ) -> bool:
-    """Claims the nonce for the device, for the ttl in seconds, deleting the expired ones
+    """Claims the nonce MSS signed a request with, so that the request cannot be replayed
+
+    A nonce is kept for ttl seconds, past which the timestamp MSS signed with it is refused
+    as too old anyway.
+
+    Args:
+        db_engine: the SQL database the nonces are kept in
+        device_name: the name of the device the request was sent to
+        nonce: the request's `x-mss-request-id`
+        ttl: the seconds to keep the nonce for, the device's `mss_nonce_ttl`
 
     Returns:
-        whether the nonce was new, as no other request has claimed it
+        whether the nonce was new; False if another request claimed it first
     """
     now = get_utc_now()
     with Session(db_engine) as session:
