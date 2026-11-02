@@ -28,16 +28,27 @@ from pydantic import ValidationError
 from libs.device_parameters import DeviceCalibration
 from libs.qiskit.qobj import PulseQobj
 from libs.qiskit_providers.utils import json_decoder
-from libs.quantum_executor.base.executor import preprocess_qobj, run_job
+from libs.quantum_executor.base.circuits import CircuitJobParams
+from libs.quantum_executor.base.executor import (
+    preprocess_circuits,
+    preprocess_qobj,
+    run_job,
+)
 from libs.quantum_executor.base.quantum_job import (
     MeasLvl,
+    discriminate_circuit_results,
     discriminate_results,
+    get_circuit_iq_memory,
     read_job_from_hdf5,
     xarray_to_list,
 )
 from libs.quantum_executor.base.quantum_job.dtos import QuantumJob
 from libs.queues.dtos import Job, JobStatus, Memory, Stage
-from utils.exc import JobAlreadyCancelled, PostProcessingError
+from utils.exc import (
+    JobAlreadyCancelled,
+    PostProcessingError,
+    UnsupportedCircuitError,
+)
 
 from ..devices import get_device_calibration_info, save_device_calibration
 from .dtos import JobFile
@@ -68,9 +79,9 @@ def preprocess(device: DeviceResources, job: Job, job_file: Path) -> Job:
         the job, with its estimated duration
     """
     with _fail_on_error(device, job.job_id):
-        job_dict = _read_job_file(job_file)
+        job_file_content = _read_job_file(job_file)
         update_job_stage(device.jobs_store, job_id=job.job_id, stage=Stage.PRE_PROC_W)
-        duration = _estimate_duration(device, job_dict)
+        duration = _estimate_duration(device, job_file_content)
         return device.jobs_store.update(job.job_id, {"estimated_duration": duration})
 
 
@@ -170,7 +181,7 @@ def _fail_on_error(device: DeviceResources, job_id: str) -> Iterator[None]:
     except JobAlreadyCancelled as exp:
         logging.error(f"{exp}")
         raise
-    except ValidationError as exp:
+    except (ValidationError, UnsupportedCircuitError) as exp:
         _fail_job(device, job_id=job_id, reason=f"{exp}")
         raise
     except Exception as exp:
@@ -179,22 +190,33 @@ def _fail_on_error(device: DeviceResources, job_id: str) -> Iterator[None]:
         raise
 
 
-def _read_job_file(job_file: Path) -> dict:
+def _read_job_file(job_file: Path) -> JobFile:
     """Reads the uploaded job file, which validates it"""
     with job_file.open() as file:
-        return JobFile.model_validate_json(file.read()).model_dump()
+        return JobFile.model_validate_json(file.read())
 
 
-def _estimate_duration(device: DeviceResources, job_dict: dict) -> float:
-    """Compiles the job's qobj on the executor, and gets the seconds it would take"""
-    qobj = decompress_qobj(job_dict["params"]["qobj"])
+def _estimate_duration(device: DeviceResources, job_file: JobFile) -> float:
+    """Compiles the job's qobj, or its circuits, on the executor, and gets the seconds it
+    would take"""
+    if isinstance(job_file.params, CircuitJobParams):
+        with device.executor_lock:
+            duration, _ = preprocess_circuits(
+                device.executor,
+                job_file.params,
+                job_id=job_file.job_id,
+                results_folder=device.settings.preprocessed_job_pool,
+            )
+        return duration
+
+    qobj = decompress_qobj(job_file.model_dump()["params"]["qobj"])
     # In-place decode complex values: [[a,b],[c,d],...] -> [a + ib,c + id,...]
     json_decoder.decode_pulse_qobj(qobj)
     with device.executor_lock:
         duration, _ = preprocess_qobj(
             device.executor,
             PulseQobj.from_dict(qobj),
-            job_id=job_dict["job_id"],
+            job_id=job_file.job_id,
             results_folder=device.settings.preprocessed_job_pool,
         )
     return duration
@@ -209,12 +231,19 @@ def _get_memory(
     Raises:
         NotImplementedError: meas_level {meas_level} is not supported
     """
+    is_gate_level = quantum_job.readouts is not None
     if quantum_job.meas_level == MeasLvl.DISCRIMINATED:
         discriminator = functools.partial(apply_linear_discriminator, calibration)
+        if is_gate_level:
+            return discriminate_circuit_results(
+                quantum_job, discriminator=discriminator
+            )
         return discriminate_results(
             quantum_job, discriminator=discriminator, calibration=calibration
         )
     if quantum_job.meas_level == MeasLvl.INTEGRATED:
+        if is_gate_level:
+            return get_circuit_iq_memory(quantum_job)
         return xarray_to_list(quantum_job)
     raise NotImplementedError(f"meas_level {quantum_job.meas_level} is not supported")
 

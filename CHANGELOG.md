@@ -7,6 +7,17 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Added
+
+- Added gate-level jobs: `POST /jobs` takes OpenQASM 3 circuits, with `shots`, `meas_level` and `meas_return`,
+  in place of a qobj, and the quantify executor compiles them with the device's own calibration; their memory
+  has a qobj's shapes, each measurement in its circuit's classical bit
+
+### Fixed
+
+- Fixed a quantify job with `meas_return` avg failing in postprocessing, as its averaged results, which have no
+  repetitions, could not be read back
+
 ## [2026.11.0-rc.3] - 2026-10-31
 
 ### Changed

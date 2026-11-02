@@ -693,6 +693,12 @@ class _BackendDeviceConfig(BaseModel):
     fixed_duration_couplers: Tuple[str, ...] = ()
     reverse_phase_qubits: Tuple[str, ...] = ()
 
+    @property
+    def qubit_numbers(self) -> List[int]:
+        """The numbers in the qubits' ids, in order, e.g. [12, 13] of q13 and q12: the
+        qubit of index i in a job's circuit is the i-th"""
+        return sorted(_get_number(qubit_id) for qubit_id in self.qubit_ids)
+
     @computed_field
     @property
     def coupling_map(self) -> List[Tuple[int, int]]:
