@@ -36,6 +36,7 @@ from libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig, Quantu
 from libs.quantum_executor.base.quantum_job.typing import QExperimentResult
 from libs.quantum_executor.utils.logger import ExperimentLogger
 from utils.compat import TUID, create_exp_folder, gen_tuid
+from utils.exc import UnsupportedCircuitError
 
 
 class QuantumExecutor(abc.ABC):
@@ -222,6 +223,9 @@ def preprocess_circuits(
     Returns:
         tuple of the duration and the path to the pickle file containing the experiments
         metadata
+
+    Raises:
+        UnsupportedCircuitError: circuits {names} measure no qubit
     """
     native_config = NativeQobjConfig.from_circuit_job_params(
         params, n_qubits=executor.backend_config.general_config.num_qubits
@@ -238,6 +242,17 @@ def preprocess_circuits(
 
     try:
         experiments = executor.to_circuit_experiments(params.circuits, native_config)
+        # an experiment without acquisitions has no results to save, which would leave
+        # every other circuit's results without their own on reading them back
+        unmeasured = [
+            circuit.name
+            for circuit, expt in zip(params.circuits, experiments)
+            if not expt.readout.measurements
+        ]
+        if unmeasured:
+            raise UnsupportedCircuitError(
+                f"circuits {', '.join(unmeasured)} measure no qubit"
+            )
         total_duration = sum(expt.duration for expt in experiments)
 
         results_file_path = _get_expt_metadata_file(job_id, folder=results_folder)

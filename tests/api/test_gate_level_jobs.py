@@ -199,6 +199,25 @@ def test_unsupported_circuit_fails_its_job_with_the_reason(
 
 
 @pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)
+def test_circuit_that_measures_nothing_fails_its_job(
+    client, worker, jobs_folder, mocker, fake_clock
+):
+    """A circuit without measurements has no results, which would leave the other
+    circuits' results unread, so the job fails naming it"""
+    circuits = [
+        get_circuit("idle", "x $0;", num_clbits=0),
+        get_circuit("measured", "x $0;\nc[0] = measure $0;", num_clbits=1),
+    ]
+    job = get_circuit_job(circuits, shots=_SHOTS)
+
+    with client as client:
+        got = _run_job(client, worker, job, mocker=mocker, jobs_folder=jobs_folder)
+
+    assert got.status == JobStatus.FAILED
+    assert got.failure_reason == "circuits idle measure no qubit"
+
+
+@pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)
 def test_cz_of_uncoupled_qubits_fails_its_job(
     client, worker, jobs_folder, mocker, fake_clock
 ):
