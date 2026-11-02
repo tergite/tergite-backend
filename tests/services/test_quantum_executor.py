@@ -104,12 +104,17 @@ def test_executors_of_two_quantify_configs_are_built_one_after_another(tmp_path)
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
-@pytest.mark.parametrize("tuner_error", [None, RuntimeError("tuner failed")])
+@pytest.mark.parametrize(
+    "tuner_error",
+    [None, RuntimeError("tuner failed"), TimeoutError("took longer than 4 seconds")],
+    ids=["succeeded", "failed", "timed-out"],
+)
 def test_executor_reaches_its_clusters_after_a_recalibration(
     tmp_path, mocker, tuner_error
 ):
-    """tergite_tuner closes every cluster as it connects its own, so the executor
-    reconnects its clusters once a recalibration ends, whether it succeeded or not"""
+    """tergite_tuner closes every cluster as it connects its own, so the executor's next
+    job reconnects them, whether the recalibration succeeded, failed or ran out of time
+    """
     import qblox_instruments
 
     from libs.quantum_executor.quantify.executor import QuantifyExecutor
@@ -135,8 +140,9 @@ def test_executor_reaches_its_clusters_after_a_recalibration(
 
     try:
         executor.recalibrate()
-    except RuntimeError:
+    except (RuntimeError, TimeoutError):
         pass
+    executor._connect_if_stale()
 
     executor._coordinator.stop()
     assert executor._coordinator.components()
@@ -148,7 +154,7 @@ def test_recalibration_may_take_the_transmons_names_and_close_every_instrument(
 ):
     """tergite_tuner creates transmons by the device's qubits' names, and its
     Cluster.close_all is QCoDeS's Instrument.close_all, so the executor gives the names
-    up first and gets its quantum devices anew after"""
+    up first and its next job gets the quantum devices anew"""
     from qcodes import Instrument
     from quantify_scheduler.device_under_test.transmon_element import (
         BasicTransmonElement,
@@ -178,6 +184,7 @@ def test_recalibration_may_take_the_transmons_names_and_close_every_instrument(
     )
 
     executor.recalibrate()
+    executor._connect_if_stale()
 
     device = executor._gate_level_device
     assert Instrument.is_valid(device) and Instrument.is_valid(executor._quantum_device)
