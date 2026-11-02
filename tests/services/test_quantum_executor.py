@@ -103,6 +103,45 @@ def test_executors_of_two_quantify_configs_are_built_one_after_another(tmp_path)
     assert other_executor.quantify_metadata.root
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
+@pytest.mark.parametrize("tuner_error", [None, RuntimeError("tuner failed")])
+def test_executor_reaches_its_clusters_after_a_recalibration(
+    tmp_path, mocker, tuner_error
+):
+    """tergite_tuner closes every cluster as it connects its own, so the executor
+    reconnects its clusters once a recalibration ends, whether it succeeded or not"""
+    import qblox_instruments
+
+    from libs.quantum_executor.quantify.executor import QuantifyExecutor
+
+    from ..utils.env import TEST_QUANTIFY_CONFIG_FILE, TEST_QUANTIFY_METADATA_FILE
+
+    def recalibrate(**kwargs):
+        qblox_instruments.Cluster.close_all()
+        if tuner_error is not None:
+            raise tuner_error
+
+    mocker.patch(
+        "libs.quantum_executor.quantify.executor.recalibrate", side_effect=recalibrate
+    )
+    executor = QuantifyExecutor(
+        quantify_config_file=TEST_QUANTIFY_CONFIG_FILE,
+        quantify_metadata_file=TEST_QUANTIFY_METADATA_FILE,
+        backend_config=BackendConfig.from_toml(
+            _BACKEND_CONFIG_PATH, seed_file=_CALIBRATION_SEED_FILE
+        ),
+        **_get_calibration_kwargs(tmp_path),
+    )
+
+    try:
+        executor.recalibrate()
+    except RuntimeError:
+        pass
+
+    executor._coordinator.stop()
+    assert executor._coordinator.components()
+
+
 def _get_calibration_kwargs(data_dir: Path) -> dict:
     """Gets the data directory and calibration files a QuantifyExecutor needs"""
     from ..utils.env import (

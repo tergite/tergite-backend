@@ -17,6 +17,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 - Fixed a quantify job with `meas_return` avg failing in postprocessing, as its averaged results, which have no
   repetitions, could not be read back
+- Fixed every quantify job after a recalibration failing with "'InstrumentCoordinator' object and its
+  delegates have no attribute 'components'" until the heavy worker restarted; the executor reconnects its clusters
 
 ## [2026.11.0-rc.3] - 2026-10-31
 
