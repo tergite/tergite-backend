@@ -7,6 +7,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed a simulator job that measured some qubits but not those before them failing with "error during post
+  processing"; qiskit-dynamics returns a column for every memory slot up to the last, and the unmeasured ones are skipped
+
 ## [2026.11.0-rc.3] - 2026-10-31
 
 ### Changed

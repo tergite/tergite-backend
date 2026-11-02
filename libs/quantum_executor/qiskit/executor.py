@@ -13,10 +13,12 @@
 # that they have been altered from the originals.
 import enum
 from pathlib import Path
-from typing import List
+from typing import List, Sequence
 
 import numpy as np
+import qiskit.pulse as qiskit_pulse
 from numpy import typing as npt
+from qiskit.pulse import Schedule
 from qiskit.result import Result as qiskitResult
 from qiskit_dynamics import DynamicsBackend
 
@@ -82,7 +84,11 @@ class QiskitDynamicsExecutor(QuantumExecutor):
         )
         result: qiskitResult = job.result()
         memory: npt.NDArray[np.floating] = result.data()["memory"]
-        return _to_xarray(data=memory, meas_return=meas_return)
+        return _to_xarray(
+            data=memory,
+            meas_return=meas_return,
+            slots=_get_acquired_slots(experiment.schedule),
+        )
 
     def to_native_experiments(
         self, qobj: PulseQobj, native_config: NativeQobjConfig, /
@@ -211,7 +217,9 @@ def _to_complex(
 
 
 def _to_xarray(
-    data: npt.NDArray[np.floating], meas_return: _QiskitDynMeasReturn
+    data: npt.NDArray[np.floating],
+    meas_return: _QiskitDynMeasReturn,
+    slots: Sequence[int],
 ) -> QExperimentResult:
     """Constructs an xarray dataset from the given data and meas_return type
 
@@ -255,6 +263,8 @@ def _to_xarray(
     Args:
         data: the data to convert.
         meas_return: the _QiskitDynMeasReturn type
+        slots: the memory slots the experiment acquired into, each a qubit's; the data has
+            a column for every slot up to the last, so those of unmeasured qubits are left out
 
     Returns:
         the xarray.Dataset representation of the data of format
@@ -292,9 +302,6 @@ def _to_xarray(
         # array([[re1_1 + j im1_1, ..., re1_N + j im1_N], ..., [reM_1 + j imM_1, ..., reM_N + j imM_N]])
         acquisitions = _to_complex(real=data[:, :, 0], imaginary=data[:, :, 1])
 
-    # no_of_acq_per_channel = number of shots if meas_return = 'single'  or 1 if meas_return = 'avg'.
-    no_of_acq_channels = acquisitions.shape[1]
-
     # The index seems unnecessary
     # from https://quantify-os.org/docs/quantify-scheduler/v0.22.1/reference/acquisition_protocols.html#single-sideband-complex-integration
 
@@ -304,6 +311,24 @@ def _to_xarray(
                 data=np.expand_dims(acquisitions[:, i], 1),
                 dims=["repetition", f"acq_index_{i}"],
             )
-            for i in range(no_of_acq_channels)
+            for i in slots
         },
+    )
+
+
+def _get_acquired_slots(schedule: Schedule) -> List[int]:
+    """Gets the memory slots the schedule acquires into, in order
+
+    Args:
+        schedule: the schedule of an experiment
+
+    Returns:
+        the indexes of the memory slots its acquisitions write
+    """
+    return sorted(
+        {
+            instruction.mem_slot.index
+            for _, instruction in schedule.instructions
+            if isinstance(instruction, qiskit_pulse.Acquire)
+        }
     )
