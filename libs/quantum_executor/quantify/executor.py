@@ -151,6 +151,8 @@ class QuantifyExecutor(QuantumExecutor):
             f"{self.device_name}_gate_level", self.quantify_config
         )
         apply_calibration(self._gate_level_device, backend_config)
+        # whether a recalibration left the clusters and quantum devices to get anew
+        self._is_stale = False
 
     def recalibrate(self, **kwargs) -> DeviceCalibration | None:
         """Recalibrates the executor
@@ -162,25 +164,30 @@ class QuantifyExecutor(QuantumExecutor):
         if cluster is None:
             return None
 
-        # tergite_tuner creates its own transmons by these names
+        # tergite_tuner creates its own transmons by these names, and closes every cluster
+        # as it connects its own, this executor's too; the next job gets them anew, not this
+        # recalibration, whose time limit could interrupt that halfway
+        self._is_stale = True
         remove_elements(self._gate_level_device)
-        try:
-            results = self._recalibrate_cluster(*cluster)
-            if isinstance(results, DeviceCalibration):
-                logging.info(
-                    f"calibration complete. Saving to {self.calib_seed_file}..."
-                )
-                _save_calibration_seed(results, self.calib_seed_file)
-                # so that the jobs after it run on it, not on the calibration it began with
-                self.backend_config = self.backend_config.model_copy(
-                    update={"calibration_config": results.to_calibration_config()}
-                )
-                self.drive_frequencies = _extract_drive_frequencies(self.backend_config)
-        finally:
-            # tergite_tuner closes every cluster as it connects its own, this executor's too
-            self._coordinator = self._create_coordinator(should_reset_clusters=False)
-            self._load_quantum_devices()
+        results = self._recalibrate_cluster(*cluster)
+        if isinstance(results, DeviceCalibration):
+            logging.info(f"calibration complete. Saving to {self.calib_seed_file}...")
+            _save_calibration_seed(results, self.calib_seed_file)
+            # so that the jobs after it run on it, not on the calibration it began with
+            self.backend_config = self.backend_config.model_copy(
+                update={"calibration_config": results.to_calibration_config()}
+            )
+            self.drive_frequencies = _extract_drive_frequencies(self.backend_config)
         return results
+
+    def _connect_if_stale(self) -> None:
+        """Connects the clusters and gets both quantum devices anew, if a recalibration
+        left them closed"""
+        if not self._is_stale:
+            return
+        self._coordinator = self._create_coordinator(should_reset_clusters=False)
+        self._load_quantum_devices()
+        self._is_stale = False
 
     def _load_quantum_devices(self) -> None:
         """Gets both quantum devices anew, with the calibration's transmons on the
@@ -236,6 +243,7 @@ class QuantifyExecutor(QuantumExecutor):
         Raises:
             UnsupportedCircuitError: a circuit has a gate or qubits the device lacks
         """
+        self._connect_if_stale()
         qubit_ids = self.backend_config.device_config.qubit_numbers
         element_names = [get_element_name(qubit_id) for qubit_id in qubit_ids]
         edge_names = get_edge_names(self._gate_level_device)
@@ -286,6 +294,7 @@ class QuantifyExecutor(QuantumExecutor):
         if self._experiment_delay > 0:
             time.sleep(self._experiment_delay)
 
+        self._connect_if_stale()
         # Stop any running sequences.
         self._coordinator.stop()
 
@@ -398,7 +407,9 @@ class QuantifyExecutor(QuantumExecutor):
 
     def close(self) -> None:
         """Stops and closes the clusters, those of every other QuantifyExecutor too"""
-        self._coordinator.stop()
+        # a recalibration's tuner has closed them already
+        if not self._is_stale:
+            self._coordinator.stop()
         # FIXME: This global is unnatural but QCoDeS is forcing us to do this
         #   Unfortunately, this means closing one instance of this class closes
         #   all clusters of all other instances. But if we don't, __init__ will be a problem
