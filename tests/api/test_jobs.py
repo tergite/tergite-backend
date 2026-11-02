@@ -1461,6 +1461,35 @@ def test_finished_job_is_sent_to_mss_with_its_results(
 
 
 @pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
+def test_job_cancelled_directly_is_sent_to_mss(
+    client, jobs_folder, worker, job, mocker, mock_mss, fake_clock
+):
+    """A job cancelled with its job token, not through MSS, still reaches MSS as cancelled"""
+    with client as client:
+        users = create_many_users(client, raw_users=USERS[:1])
+        raw_jobs = get_raw_jobs(job, durations=[0.2])
+        job_info = get_job_submission_metadata(
+            client, jobs=raw_jobs, users=users, mocker=mocker, jobs_folder=jobs_folder
+        )[0]
+        submit_jobs(client, data=[job_info])
+
+        client.post(
+            f"/jobs/{job_info['job_id']}/cancel",
+            json={"reason": "just testing"},
+            headers=job_info["headers"],
+        )
+
+        job_updates = [
+            event["data"]
+            for event in mock_mss.sent_events
+            if event["name"] == "job_updated"
+        ]
+        assert job_updates[-1]["job_id"] == job_info["job_id"]
+        assert job_updates[-1]["status"] == "cancelled"
+        assert job_updates[-1]["cancellation_reason"] == "just testing"
+
+
+@pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_worker_deadline_covers_the_whole_time_limit_of_its_stage(
     client, jobs_folder, worker, job, mocker
 ):

@@ -7,6 +7,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed a job cancelled with its job token, as the SDK cancels, staying pending in MSS for good; the
+  cancellation is now sent to MSS, as every other change of a job's status is
+
 ## [2026.11.0-rc.3] - 2026-10-31
 
 ### Changed
