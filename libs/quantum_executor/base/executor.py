@@ -70,6 +70,7 @@ class QuantumExecutor(abc.ABC):
         """
         pass
 
+    @abc.abstractmethod
     def to_circuit_experiments(
         self, circuits: List[QasmCircuit], native_config: NativeQobjConfig, /
     ) -> List[CircuitExperiment]:
@@ -83,11 +84,8 @@ class QuantumExecutor(abc.ABC):
         Returns:
             an experiment per circuit, in the circuits' order, named as
             get_experiment_name names them
-
-        Raises:
-            NotImplementedError: {executor} does not run gate-level jobs
         """
-        raise NotImplementedError(f"{type(self).__name__} does not run gate-level jobs")
+        pass
 
     @abc.abstractmethod
     def run_native(

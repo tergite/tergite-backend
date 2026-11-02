@@ -719,8 +719,12 @@ A job file's `params` are one of two (`JobFile` in
   `Reset`, `Delay`, `Barrier`), decomposing the rest; circuit qubit `i` is the device's `i`-th
   qubit by the number in its id. The executor compiles them with the device's own calibration:
   quantify against a `QuantumDevice` of a transmon per qubit and a `CouplerEdge` per coupler
-  (`quantify/device.py`), its operations one after the other but for consecutive measurements,
-  which start together. Each measurement is acquired on its own channel, numbered in the order
+  (`quantify/device.py`), each shot after the qobj path's idle and its operations one after the
+  other but for consecutive measurements, or delays, of distinct qubits, which start together;
+  the simulators to a qiskit-pulse schedule of the pulses the SDK built before
+  (`qiskit/circuits.py`), each operation as soon as its qubits are free and every measurement
+  at the end, as qiskit-dynamics measures at one time only. A circuit that measures no qubit is
+  refused, as it has no results. Each measurement is acquired on its own channel, numbered in the order
   the circuit measures; the `CircuitReadout` saved with the results names each channel's qubit
   and classical bit, and postprocessing puts every measurement in its bit, bit 0 the least
   significant, a later measurement of a bit replacing an earlier one.

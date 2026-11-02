@@ -10,8 +10,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 ### Added
 
 - Added gate-level jobs: `POST /jobs` takes OpenQASM 3 circuits, with `shots`, `meas_level` and `meas_return`,
-  in place of a qobj, and the quantify executor compiles them with the device's own calibration; their memory
-  has a qobj's shapes, each measurement in its circuit's classical bit
+  in place of a qobj, and the quantify executor and the simulators compile them with the device's own
+  calibration; their memory has a qobj's shapes, each measurement in its circuit's classical bit
 
 ### Fixed
 

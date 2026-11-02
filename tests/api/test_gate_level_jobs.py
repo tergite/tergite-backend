@@ -17,23 +17,38 @@ transmon's acquisitions are made those of a state the test chooses.
 from pathlib import Path
 from typing import Any, Dict, Generator, List
 
+import numpy as np
 import pytest
 import toml
 from pytest_lazy_fixtures import lf as lazy_fixture
 from pytest_mock import MockerFixture
+from sqlalchemy import create_engine
 
 from libs.queues.dtos import Job, JobStatus
 from tests.utils.circuits import get_circuit, get_circuit_job
-from tests.utils.env import TEST_QUANTIFY_SEED_FILE
+from tests.utils.env import TEST_BOOKING_DB_URL, TEST_QUANTIFY_SEED_FILE
 from tests.utils.jobs import (
     get_job_submission_metadata,
     get_stored_jobs,
     submit_jobs,
 )
-from tests.utils.params import HAS_QUANTIFY, USERS
+from tests.utils.params import HAS_QISKIT_DYNAMICS, HAS_QUANTIFY, USERS
 from tests.utils.users import create_many_users
 
 _SHOTS = 20
+_SIMULATED_SHOTS = 100
+_SIM_1Q_CLIENT_AND_WORKER = pytest.param(
+    lazy_fixture("qiskit_1q_rest_client"),
+    lazy_fixture("qiskit_1q_worker"),
+    marks=pytest.mark.skipif(not HAS_QISKIT_DYNAMICS, reason="requires qiskit"),
+    id="qiskit_pulse_1q",
+)
+_SIM_2Q_CLIENT_AND_WORKER = pytest.param(
+    lazy_fixture("qiskit_2q_rest_client"),
+    lazy_fixture("qiskit_2q_worker"),
+    marks=pytest.mark.skipif(not HAS_QISKIT_DYNAMICS, reason="requires qiskit"),
+    id="qiskit_pulse_2q",
+)
 # frequencies within reach of the dummy hardware config's local oscillators, which the
 # test seed's q13 and q14 are not, and a coupler of q12 and q13 whose CZ plays a pulse
 _REACHABLE_QUBIT_FREQUENCIES = {"q13": 5.2e9, "q14": 4.7e9}
@@ -258,6 +273,158 @@ def test_invalid_circuit_job_is_refused_at_upload(
 
     assert response.status_code == 400
     assert response.json()["detail"].startswith("Invalid file: ")
+
+
+# (circuits, the share of each circuit's shots expected in each state, at least)
+_SIMULATED_JOBS = [
+    pytest.param(
+        [get_circuit("x", "x $0;\nc[0] = measure $0;", num_clbits=1)],
+        [{"0x1": 0.8}],
+        id="x-on-qubit-0",
+    ),
+    pytest.param(
+        [get_circuit("partial", "x $1;\nc[0] = measure $1;", num_clbits=2)],
+        [{"0x1": 0.8}],
+        id="qubit-1-alone-into-clbit-0",
+    ),
+    pytest.param(
+        [
+            get_circuit(
+                "permuted",
+                "x $0;\nc[1] = measure $0;\nc[0] = measure $1;",
+                num_clbits=2,
+            )
+        ],
+        [{"0x2": 0.8}],
+        id="permuted-clbits",
+    ),
+    pytest.param(
+        [
+            get_circuit("first", "c[0] = measure $0;", num_clbits=1),
+            get_circuit("second", "x $1;\nc[1] = measure $1;", num_clbits=2),
+        ],
+        [{"0x0": 0.8}, {"0x2": 0.8}],
+        id="two-circuits",
+    ),
+    pytest.param(
+        [
+            get_circuit(
+                "bell",
+                "rz(-pi/2) $0;\nrx(-pi/2) $0;\nrz(-pi/2) $0;\nrz(-pi/2) $1;\n"
+                "rx(-pi/2) $1;\nrz(-pi/2) $1;\ncz $0, $1;\nrz(-pi/2) $1;\n"
+                "rx(-pi/2) $1;\nrz(-pi/2) $1;\nc[0] = measure $0;\nc[1] = measure $1;",
+                num_clbits=2,
+            )
+        ],
+        [{"0x0": 0.25, "0x3": 0.25}],
+        id="bell",
+    ),
+]
+
+
+@pytest.mark.simulated
+# a 2-qubit simulation takes seconds, beside other workers more
+@pytest.mark.timeout(600)
+@pytest.mark.parametrize("circuits, expected_shares", _SIMULATED_JOBS)
+@pytest.mark.parametrize("client, worker", [_SIM_2Q_CLIENT_AND_WORKER])
+def test_simulated_memory_is_in_clbit_order(
+    client, worker, circuits, expected_shares, jobs_folder, mocker, fake_clock
+):
+    job = get_circuit_job(circuits, shots=_SIMULATED_SHOTS)
+
+    with client as client:
+        got = _run_job(client, worker, job, mocker=mocker, jobs_folder=jobs_folder)
+
+    assert got.status == JobStatus.SUCCESSFUL
+    assert [len(memory) for memory in got.result.memory] == [_SIMULATED_SHOTS] * len(
+        circuits
+    )
+    for memory, shares in zip(got.result.memory, expected_shares):
+        for state, share in shares.items():
+            assert memory.count(state) >= share * _SIMULATED_SHOTS, memory
+
+
+@pytest.mark.simulated
+@pytest.mark.timeout(600)
+@pytest.mark.parametrize("client, worker", [_SIM_1Q_CLIENT_AND_WORKER])
+def test_one_qubit_simulator_runs_an_x(client, worker, jobs_folder, mocker, fake_clock):
+    circuit = get_circuit("x", "x $0;\nc[0] = measure $0;", num_clbits=1)
+    job = get_circuit_job([circuit], shots=_SIMULATED_SHOTS)
+
+    with client as client:
+        got = _run_job(client, worker, job, mocker=mocker, jobs_folder=jobs_folder)
+
+    assert got.status == JobStatus.SUCCESSFUL
+    assert got.result.memory[0].count("0x1") >= 0.8 * _SIMULATED_SHOTS
+
+
+@pytest.mark.simulated
+@pytest.mark.timeout(600)
+@pytest.mark.parametrize("client, worker", [_SIM_2Q_CLIENT_AND_WORKER])
+def test_simulated_iq_memory_is_in_clbit_order(
+    client, worker, jobs_folder, mocker, fake_clock
+):
+    from services.devices import get_device_calibration_info
+    from services.scheduler.utils import apply_linear_discriminator
+
+    circuit = get_circuit(
+        "iq", "x $0;\nc[1] = measure $0;\nc[0] = measure $1;", num_clbits=2
+    )
+    job = get_circuit_job([circuit], shots=_SIMULATED_SHOTS, meas_level=1)
+
+    with client as client:
+        got = _run_job(client, worker, job, mocker=mocker, jobs_folder=jobs_folder)
+        calibration = get_device_calibration_info(
+            create_engine(TEST_BOOKING_DB_URL), backend_name="qiskit_pulse_2q"
+        )
+
+    [memory] = got.result.memory
+    points = np.array([[complex(*point) for point in shot] for shot in memory])
+    # clbit 0 holds qubit 1, left in 0; clbit 1 holds qubit 0, flipped to 1
+    states = [
+        apply_linear_discriminator(calibration, qubit, points[:, clbit])
+        for clbit, qubit in enumerate([1, 0])
+    ]
+    assert got.status == JobStatus.SUCCESSFUL
+    assert points.shape == (_SIMULATED_SHOTS, 2)
+    assert np.mean(states[0]) <= 0.2
+    assert np.mean(states[1]) >= 0.8
+
+
+@pytest.mark.parametrize(
+    "meas_return, expected_shape",
+    [("single", (_SHOTS, 2, 2)), ("avg", (1, 2, 2))],
+)
+@pytest.mark.parametrize("client, worker", [_SIM_2Q_CLIENT_AND_WORKER])
+def test_simulator_iq_memory_has_a_point_per_measured_clbit(
+    client, worker, meas_return, expected_shape, jobs_folder, mocker, fake_clock
+):
+    circuit = get_circuit("iq", "c[2] = measure $0;\nc[0] = measure $1;", num_clbits=3)
+    job = get_circuit_job(
+        [circuit], shots=_SHOTS, meas_level=1, meas_return=meas_return
+    )
+
+    with client as client:
+        got = _run_job(client, worker, job, mocker=mocker, jobs_folder=jobs_folder)
+
+    assert got.status == JobStatus.SUCCESSFUL
+    assert np.shape(got.result.memory[0]) == expected_shape
+
+
+@pytest.mark.parametrize("client, worker", [_SIM_2Q_CLIENT_AND_WORKER])
+def test_simulator_refuses_a_gate_after_a_measurement(
+    client, worker, jobs_folder, mocker, fake_clock
+):
+    circuit = get_circuit("mid", "c[0] = measure $0;\nx $1;", num_clbits=1)
+    job = get_circuit_job([circuit], shots=_SHOTS)
+
+    with client as client:
+        got = _run_job(client, worker, job, mocker=mocker, jobs_folder=jobs_folder)
+
+    assert got.status == JobStatus.FAILED
+    assert got.failure_reason == (
+        "the simulator measures each qubit once, at the end of the circuit"
+    )
 
 
 def _run_job(
