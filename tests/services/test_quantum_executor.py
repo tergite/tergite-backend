@@ -142,6 +142,52 @@ def test_executor_reaches_its_clusters_after_a_recalibration(
     assert executor._coordinator.components()
 
 
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
+def test_recalibration_may_take_the_transmons_names_and_close_every_instrument(
+    tmp_path, mocker
+):
+    """tergite_tuner creates transmons by the device's qubits' names, and its
+    Cluster.close_all is QCoDeS's Instrument.close_all, so the executor gives the names
+    up first and gets its quantum devices anew after"""
+    from qcodes import Instrument
+    from quantify_scheduler.device_under_test.transmon_element import (
+        BasicTransmonElement,
+    )
+
+    from libs.quantum_executor.quantify.executor import QuantifyExecutor
+
+    from ..utils.env import TEST_QUANTIFY_CONFIG_FILE, TEST_QUANTIFY_METADATA_FILE
+
+    executor = QuantifyExecutor(
+        quantify_config_file=TEST_QUANTIFY_CONFIG_FILE,
+        quantify_metadata_file=TEST_QUANTIFY_METADATA_FILE,
+        backend_config=BackendConfig.from_toml(
+            _BACKEND_CONFIG_PATH, seed_file=_CALIBRATION_SEED_FILE
+        ),
+        **_get_calibration_kwargs(tmp_path),
+    )
+    transmon_names = set(executor._gate_level_device.elements())
+
+    def recalibrate(**kwargs):
+        for name in transmon_names:
+            Instrument(name)
+        Instrument.close_all()
+
+    mocker.patch(
+        "libs.quantum_executor.quantify.executor.recalibrate", side_effect=recalibrate
+    )
+
+    executor.recalibrate()
+
+    device = executor._gate_level_device
+    assert Instrument.is_valid(device) and Instrument.is_valid(executor._quantum_device)
+    assert set(device.elements()) == transmon_names
+    for name in transmon_names:
+        element = device.get_element(name)
+        assert isinstance(element, BasicTransmonElement)
+        assert Instrument.is_valid(element)
+
+
 def _get_calibration_kwargs(data_dir: Path) -> dict:
     """Gets the data directory and calibration files a QuantifyExecutor needs"""
     from ..utils.env import (

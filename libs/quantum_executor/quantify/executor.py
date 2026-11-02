@@ -51,6 +51,7 @@ from libs.quantum_executor.quantify.device import (
     apply_calibration,
     get_edge_names,
     get_element_name,
+    release_elements,
 )
 from libs.quantum_executor.quantify.experiment import QuantifyExperiment
 from libs.quantum_executor.quantify.utils.config import (
@@ -161,21 +162,37 @@ class QuantifyExecutor(QuantumExecutor):
         if cluster is None:
             return None
 
+        # tergite_tuner creates its own transmons by these names
+        release_elements(self._gate_level_device)
         try:
             results = self._recalibrate_cluster(*cluster)
+            if isinstance(results, DeviceCalibration):
+                logging.info(
+                    f"calibration complete. Saving to {self.calib_seed_file}..."
+                )
+                _save_calibration_seed(results, self.calib_seed_file)
+                # so that the jobs after it run on it, not on the calibration it began with
+                self.backend_config = self.backend_config.model_copy(
+                    update={"calibration_config": results.to_calibration_config()}
+                )
+                self.drive_frequencies = _extract_drive_frequencies(self.backend_config)
         finally:
             # tergite_tuner closes every cluster as it connects its own, this executor's too
             self._coordinator = self._create_coordinator(should_reset_clusters=False)
-        if isinstance(results, DeviceCalibration):
-            logging.info(f"calibration complete. Saving to {self.calib_seed_file}...")
-            _save_calibration_seed(results, self.calib_seed_file)
-            # so that the jobs after it run on it, not on the calibration it started with
-            self.backend_config = self.backend_config.model_copy(
-                update={"calibration_config": results.to_calibration_config()}
-            )
-            self.drive_frequencies = _extract_drive_frequencies(self.backend_config)
-            apply_calibration(self._gate_level_device, self.backend_config)
+            self._reload_quantum_devices()
         return results
+
+    def _reload_quantum_devices(self) -> None:
+        """Gets both quantum devices anew, with the calibration's transmons on the
+        gate-level one: tergite_tuner's Instrument.close_all may have closed them"""
+        self._quantum_device = _get_quantum_device(
+            self.device_name, self.quantify_config
+        )
+        self._compilation_config = self._quantum_device.generate_compilation_config()
+        self._gate_level_device = _get_quantum_device(
+            f"{self.device_name}_gate_level", self.quantify_config
+        )
+        apply_calibration(self._gate_level_device, self.backend_config)
 
     def to_native_experiments(
         self, qobj: PulseQobj, native_config: NativeQobjConfig, /

@@ -195,6 +195,21 @@ def apply_calibration(device: QuantumDevice, backend_config: BackendConfig) -> N
         )
 
 
+def release_elements(device: QuantumDevice) -> None:
+    """Closes the device's coupler edges and transmons, and takes them off it, so that
+    another instrument may take their names, as tergite_tuner's transmons do
+
+    Args:
+        device: the quantum device that gate-level jobs compile against
+    """
+    for name in list(device.edges()):
+        device.remove_edge(name)
+        _close_instrument(name)
+    for name in list(device.elements()):
+        device.remove_element(name)
+        _close_instrument(name)
+
+
 def get_edge_names(device: QuantumDevice) -> List[str]:
     """Gets the names of the device's edges, each {parent}_{child}
 
@@ -324,3 +339,9 @@ def _get_value(value: Optional[CalibrationValue]) -> float:
 def _to_timegrid(seconds: float) -> float:
     """Gets the time on the Qblox time grid nearest the given one, in seconds"""
     return round(seconds / QBLOX_TIMEGRID_INTERVAL) * QBLOX_TIMEGRID_INTERVAL
+
+
+def _close_instrument(name: str) -> None:
+    """Closes the instrument QCoDeS keeps by the name, if it keeps one"""
+    if Instrument.exist(name):
+        Instrument.find_instrument(name).close()
