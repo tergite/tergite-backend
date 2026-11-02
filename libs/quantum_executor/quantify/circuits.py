@@ -40,8 +40,9 @@ def get_circuit_schedule(
     """Gets the gate-level schedule of the circuit, for the device's transmons
 
     Each shot starts after an idle as long as the qobj path's, in which the qubits relax.
-    The operations run one after the other, but for consecutive measurements of distinct
-    qubits, which start together; what follows them waits for the longest. Each
+    The operations run one after the other, but for consecutive measurements, or
+    consecutive delays, of distinct qubits, which start together; what follows them waits
+    for the longest. Each
     measurement is acquired on its gate's channel, with the protocol and bin mode of the
     native config.
 
@@ -70,27 +71,36 @@ def get_circuit_schedule(
     # the schedulable the next operation follows; None follows the last one added
     after: Optional[Schedulable] = schedule.add(IdlePulse(duration=INITIAL_RESET_VALUE))
     after_duration = 0.0
+    # consecutive measurements, or delays, of distinct qubits start together
+    group_kind: Optional[type] = None
     group_start: Optional[Schedulable] = None
     group_qubits: Set[int] = set()
     for gate in circuit.gates:
         if isinstance(gate, gates.Measure):
             element = element_names[gate.qubit]
+            operation = _get_measure(gate, element, native_config)
             duration = _get_measure_duration(element, measure_durations)
-            measure = _get_measure(gate, element, native_config)
-            if group_start is not None and gate.qubit not in group_qubits:
-                schedulable = schedule.add(measure, ref_op=group_start, ref_pt="start")
-                group_qubits.add(gate.qubit)
-                if duration > after_duration:
-                    after, after_duration = schedulable, duration
-            else:
-                group_start = after = schedule.add(measure, ref_op=after)
-                group_qubits, after_duration = {gate.qubit}, duration
+            qubits = {gate.qubit}
+        elif isinstance(gate, gates.Delay):
+            duration = _to_timegrid(gate.duration)
+            if duration <= 0:
+                continue
+            operation, qubits = IdlePulse(duration=duration), set(gate.qubits)
+        else:
+            group_kind, group_qubits = None, set()
+            for operation in _get_operations(gate, element_names, edge_names):
+                schedule.add(operation, ref_op=after)
+                after = None
             continue
 
-        group_start, group_qubits = None, set()
-        for operation in _get_operations(gate, element_names, edge_names):
-            schedule.add(operation, ref_op=after)
-            after = None
+        if group_kind is type(gate) and group_qubits.isdisjoint(qubits):
+            schedulable = schedule.add(operation, ref_op=group_start, ref_pt="start")
+            group_qubits |= qubits
+            if duration > after_duration:
+                after, after_duration = schedulable, duration
+        else:
+            group_start = after = schedule.add(operation, ref_op=after)
+            group_kind, group_qubits, after_duration = type(gate), qubits, duration
     return schedule
 
 
@@ -141,8 +151,8 @@ def _get_measure(
 def _get_operations(
     gate: gates.Gate, element_names: Sequence[str], edge_names: Collection[str]
 ) -> List[Operation]:
-    """Gets the quantify operations of a native gate but a measurement; a barrier has
-    none, as the operations run one after the other
+    """Gets the quantify operations of a native gate but a measurement or a delay; a
+    barrier has none, as the operations run one after the other
 
     Raises:
         UnsupportedCircuitError: qubits {a} and {b} have no coupler
@@ -165,9 +175,6 @@ def _get_operations(
         return [_get_cz(gate, element_names, edge_names)]
     if isinstance(gate, gates.Reset):
         return [Reset(element_names[gate.qubit])]
-    if isinstance(gate, gates.Delay):
-        duration = _to_timegrid(gate.duration)
-        return [IdlePulse(duration=duration)] if duration > 0 else []
     return []
 
 

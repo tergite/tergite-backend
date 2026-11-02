@@ -97,6 +97,33 @@ def test_measurements_of_one_qubit_follow_each_other(quantum_device):
     assert got == pytest.approx([0.0, measure_duration])
 
 
+def test_consecutive_delays_of_distinct_qubits_start_together(quantum_device):
+    """qiskit splits a delay of several qubits into one per qubit, which idle together"""
+    circuit = _get_circuit(
+        [
+            gates.Delay(qubits=(0,), duration=1e-6),
+            gates.Delay(qubits=(1,), duration=2e-6),
+            gates.Rxy(0, math.pi, 0.0),
+        ]
+    )
+
+    first_delay, second_delay, after = _get_start_times(quantum_device, circuit)
+
+    assert first_delay == second_delay == 0.0
+    assert after == pytest.approx(2e-6)
+
+
+def test_delays_of_one_qubit_follow_each_other(quantum_device):
+    circuit = _get_circuit(
+        [
+            gates.Delay(qubits=(0,), duration=1e-6),
+            gates.Delay(qubits=(0,), duration=1e-6),
+        ]
+    )
+
+    assert _get_start_times(quantum_device, circuit) == pytest.approx([0.0, 1e-6])
+
+
 def test_measurements_are_acquired_on_their_channels(quantum_device):
     from libs.quantum_executor.quantify.circuits import get_circuit_schedule
 
