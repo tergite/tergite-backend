@@ -22,6 +22,17 @@ import main
 from services.scheduler import WorkerDeadline
 
 
+@pytest.fixture(autouse=True)
+def use_spawned_processes():
+    """Starts the tests' processes by spawning, as macOS does: forking a pytest worker in
+    which an earlier test left threads, such as jax's, can deadlock the child on a lock one
+    of them held, and the test then waits until pytest-timeout kills the worker"""
+    start_method = multiprocessing.get_start_method()
+    multiprocessing.set_start_method("spawn", force=True)
+    yield
+    multiprocessing.set_start_method(start_method, force=True)
+
+
 @pytest.fixture
 def started_processes():
     """The processes a test starts, killed after it if alive, as some ignore SIGTERM, which
