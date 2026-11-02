@@ -99,3 +99,7 @@ class MssRejectedError(BaseBccException):
 
 class MssTimeoutError(BaseBccException):
     """Error when MSS does not answer a request of ours in time"""
+
+
+class UnsupportedCircuitError(BaseBccException):
+    """Error when a gate-level job's circuit cannot be compiled for the device"""

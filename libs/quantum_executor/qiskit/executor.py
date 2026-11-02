@@ -13,7 +13,7 @@
 # that they have been altered from the originals.
 import enum
 from pathlib import Path
-from typing import List, Sequence
+from typing import List, Sequence, Union
 
 import numpy as np
 import qiskit.pulse as qiskit_pulse
@@ -23,8 +23,11 @@ from qiskit.result import Result as qiskitResult
 from qiskit_dynamics import DynamicsBackend
 
 from libs.qiskit.qobj import PulseQobj
+from libs.quantum_executor.base.circuits import CircuitExperiment, QasmCircuit
 from libs.quantum_executor.base.executor import QuantumExecutor
 from libs.quantum_executor.base.experiment import NativeExperiment
+from libs.quantum_executor.base.qasm import to_native_circuit
+from libs.quantum_executor.qiskit.circuits import get_circuit_schedule
 from libs.quantum_executor.qiskit.experiment import QiskitDynamicsExperiment
 
 from ...device_parameters import BackendConfig
@@ -61,7 +64,7 @@ class QiskitDynamicsExecutor(QuantumExecutor):
 
     def run_native(
         self,
-        experiment: NativeExperiment,
+        experiment: Union[NativeExperiment, CircuitExperiment[Schedule]],
         /,
         *,
         native_config: NativeQobjConfig,
@@ -70,7 +73,7 @@ class QiskitDynamicsExecutor(QuantumExecutor):
         """Simulates the native experiment
 
         Args:
-            experiment: the native experiment to run
+            experiment: the native experiment to run, of a qobj or of a circuit
             native_config: native config for the qobj
             logger: the logger for the given experiment
 
@@ -112,6 +115,39 @@ class QiskitDynamicsExecutor(QuantumExecutor):
             for idx, expt in enumerate(qobj.experiments)
         ]
         return native_experiments
+
+    def to_circuit_experiments(
+        self, circuits: List[QasmCircuit], native_config: NativeQobjConfig, /
+    ) -> List[CircuitExperiment[Schedule]]:
+        """Compiles the circuits of a gate-level job to pulse schedules from the simulated
+        device's calibration, each circuit qubit i being the i-th qubit by its number
+
+        Args:
+            circuits: the circuits of the job
+            native_config: the native config for the job
+
+        Returns:
+            an experiment per circuit, each measurement acquired into the memory slot of
+            its channel
+
+        Raises:
+            UnsupportedCircuitError: a circuit has a gate or qubits the simulator lacks
+        """
+        dt = self.backend_config.general_config.dt
+        qubit_ids = self.backend_config.device_config.qubit_numbers
+        experiments = []
+        for idx, circuit in enumerate(circuits):
+            native_circuit = to_native_circuit(circuit, dt=dt)
+            schedule = get_circuit_schedule(native_circuit, self.backend_config)
+            experiments.append(
+                CircuitExperiment(
+                    name=get_experiment_name(circuit.name, idx + 1),
+                    schedule=schedule,
+                    duration=schedule.duration * dt,
+                    readout=native_circuit.to_readout(qubit_ids),
+                )
+            )
+        return experiments
 
     def close(self):
         """Does nothing, as the simulator holds no resources to free"""

@@ -7,8 +7,21 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Added
+
+- Added gate-level jobs: `POST /jobs` takes OpenQASM 3 circuits, with `shots`, `meas_level` and `meas_return`,
+  in place of a qobj, and the quantify executor and the simulators compile them with the device's own
+  calibration; their memory has a qobj's shapes, each measurement in its circuit's classical bit
+
+### Changed
+
+- Changed the `basis_gates` each device publishes to MSS to the gates gate-level jobs are transpiled to (rz, sx,
+  x, rx, measure, reset and delay, and cz where it has couplers), from the names of its config's gate settings
+
 ### Fixed
 
+- Fixed a quantify job with `meas_return` avg failing in postprocessing, as its averaged results, which have no
+  repetitions, could not be read back
 - Fixed every quantify job after a recalibration failing with "'InstrumentCoordinator' object and its
   delegates have no attribute 'components'" until the heavy worker restarted; the executor reconnects its clusters
 - Fixed a simulator job that measured some qubits but not those before them failing with "error during post

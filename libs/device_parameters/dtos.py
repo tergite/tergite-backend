@@ -53,6 +53,9 @@ if TYPE_CHECKING:
 
 _CalibValueType = TypeVar("_CalibValueType", int, float, str)
 _DOWNCONVERT_FREQUENCY = 4.4e9
+# the gates a gate-level job's circuits are transpiled to, which every executor compiles;
+# cz too on a device with couplers
+GATE_LEVEL_BASIS_GATES = ("rz", "sx", "x", "rx", "measure", "reset", "delay")
 
 
 class Device(BaseModel):
@@ -106,7 +109,10 @@ class Device(BaseModel):
             number_of_resonators=conf.general_config.num_resonators,
             last_online=conf.general_config.online_date,
             is_online=conf.general_config.is_active,
-            basis_gates=list(conf.gates.keys()),
+            basis_gates=[
+                *GATE_LEVEL_BASIS_GATES,
+                *(["cz"] if conf.device_config.coupling_dict else []),
+            ],
             coupling_map=conf.device_config.coupling_map,
             coordinates=conf.device_config.coordinates,
             is_simulator=conf.general_config.simulator,
@@ -688,10 +694,34 @@ class _BackendDeviceConfig(BaseModel):
     meas_map: List[List[int]] = []
     qubit_parameters: List[str] = []
     resonator_parameters: List[str] = []
+
+    @field_validator("qubit_ids")
+    @classmethod
+    def check_qubit_order(cls, qubit_ids: List[str]) -> List[str]:
+        """Requires the qubits in the order of their numbers: a gate-level circuit's
+        qubit i is the i-th by number, and the coupling map sent to MSS indexes qubits
+        by their place in this list, so the two must agree
+
+        Raises:
+            ValueError: qubit_ids {ids} are not in the order of their numbers
+        """
+        numbers = [_get_number(qubit_id) for qubit_id in qubit_ids]
+        if numbers != sorted(numbers):
+            raise ValueError(
+                f"qubit_ids {qubit_ids} are not in the order of their numbers"
+            )
+        return qubit_ids
+
     coupler_parameters: List[str] = []
     discriminator_parameters: Dict[str, List[str]] = {}
     fixed_duration_couplers: Tuple[str, ...] = ()
     reverse_phase_qubits: Tuple[str, ...] = ()
+
+    @property
+    def qubit_numbers(self) -> List[int]:
+        """The numbers in the qubits' ids, in order, e.g. [12, 13] of q13 and q12: the
+        qubit of index i in a job's circuit is the i-th"""
+        return sorted(_get_number(qubit_id) for qubit_id in self.qubit_ids)
 
     @computed_field
     @property

@@ -1,5 +1,5 @@
 {
-  "basis_gates": ["x"],
+  "basis_gates": ["rz", "sx", "x", "rx", "measure", "reset", "delay", "cz"],
   "characterized": true,
   "coordinates": [],
   "coupling_dict": { "u0": ["q0", "q1"] },

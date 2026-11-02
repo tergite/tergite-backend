@@ -76,11 +76,17 @@ quantify = [
     "networkx~=3.4.2",
     "h5py>=3.14.0",
     "xarray",
+    # parses the OpenQASM 3 circuits of gate-level jobs; 2.5 and later segfault as the
+    # interpreter exits once pyarrow 24, which qblox-instruments brings, is loaded
+    "qiskit>=2.1,<2.5",
+    "qiskit-qasm3-import>=0.6.0",
 ]
 qiskit = [
     "qiskit-dynamics>=0.5.1,<0.6.0",
     "jax>=0.5.1",
     "qiskit~=0.45.0",
+    # parses the OpenQASM 3 circuits of gate-level jobs
+    "qiskit-qasm3-import>=0.4.2",
     "h5py>=3.12.1",
     "xarray",
     "scikit-learn",
