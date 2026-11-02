@@ -53,6 +53,9 @@ if TYPE_CHECKING:
 
 _CalibValueType = TypeVar("_CalibValueType", int, float, str)
 _DOWNCONVERT_FREQUENCY = 4.4e9
+# the gates a gate-level job's circuits are transpiled to, which every executor compiles;
+# cz too on a device with couplers
+GATE_LEVEL_BASIS_GATES = ("rz", "sx", "x", "rx", "measure", "reset", "delay")
 
 
 class Device(BaseModel):
@@ -106,7 +109,10 @@ class Device(BaseModel):
             number_of_resonators=conf.general_config.num_resonators,
             last_online=conf.general_config.online_date,
             is_online=conf.general_config.is_active,
-            basis_gates=list(conf.gates.keys()),
+            basis_gates=[
+                *GATE_LEVEL_BASIS_GATES,
+                *(["cz"] if conf.device_config.coupling_dict else []),
+            ],
             coupling_map=conf.device_config.coupling_map,
             coordinates=conf.device_config.coordinates,
             is_simulator=conf.general_config.simulator,

@@ -13,6 +13,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   in place of a qobj, and the quantify executor and the simulators compile them with the device's own
   calibration; their memory has a qobj's shapes, each measurement in its circuit's classical bit
 
+### Changed
+
+- Changed the `basis_gates` each device publishes to MSS to the gates gate-level jobs are transpiled to (rz, sx,
+  x, rx, measure, reset and delay, and cz where it has couplers), from the names of its config's gate settings
+
 ### Fixed
 
 - Fixed a quantify job with `meas_return` avg failing in postprocessing, as its averaged results, which have no

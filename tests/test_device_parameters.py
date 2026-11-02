@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 import pytest
 import time_machine
 
-from libs.device_parameters import BackendConfig, DeviceCalibration
+from libs.device_parameters import BackendConfig, Device, DeviceCalibration
 from libs.device_parameters.dtos import _BackendGeneralConfig
 from tests.utils.fixtures import get_fixture_path
 
@@ -84,3 +84,28 @@ def test_qubits_out_of_the_order_of_their_numbers_are_refused(tmp_path):
 
     with pytest.raises(ValueError, match="not in the order of their numbers"):
         BackendConfig.from_toml(swapped, get_fixture_path("qiskit_pulse_2q.seed.toml"))
+
+
+@pytest.mark.parametrize(
+    "settings, seed, expected_cz",
+    [
+        ("backend_config.simq1.toml", "qiskit_pulse_1q.seed.toml", []),
+        ("backend_config.simq2.toml", "qiskit_pulse_2q.seed.toml", ["cz"]),
+    ],
+)
+def test_device_lists_the_gates_gate_level_jobs_compile(settings, seed, expected_cz):
+    """basis_gates are what the SDK transpiles to, not the config's gate settings"""
+    config = BackendConfig.from_toml(get_fixture_path(settings), get_fixture_path(seed))
+
+    got = Device.from_config(config)
+
+    assert got.basis_gates == [
+        "rz",
+        "sx",
+        "x",
+        "rx",
+        "measure",
+        "reset",
+        "delay",
+        *expected_cz,
+    ]

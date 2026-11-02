@@ -1,5 +1,5 @@
 {
-  "basis_gates": ["u", "h", "x"],
+  "basis_gates": ["rz", "sx", "x", "rx", "measure", "reset", "delay", "cz"],
   "characterized": true,
   "coordinates": [
     [0, 0],
