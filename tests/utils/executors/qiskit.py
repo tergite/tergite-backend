@@ -12,13 +12,13 @@
 #
 
 import numpy as np
-from qiskit.pulse import Acquire
 
 from libs.quantum_executor.base.experiment import NativeExperiment
 from libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
 from libs.quantum_executor.base.quantum_job.typing import QExperimentResult
 from libs.quantum_executor.qiskit.executor import (
     QiskitDynamicsExecutor,
+    _get_acquired_slots,
     _QiskitDynMeasReturn,
     _to_xarray,
 )
@@ -38,13 +38,10 @@ class StubQiskitDynamicsExecutor(QiskitDynamicsExecutor):
         logger: ExperimentLogger,
     ) -> QExperimentResult:
         meas_return = _QiskitDynMeasReturn.from_native_qobj_config(native_config)
-        channels = {
-            instruction.channel
-            for _, instruction in experiment.schedule.instructions
-            if isinstance(instruction, Acquire)
-        }
+        slots = _get_acquired_slots(experiment.schedule)
+        # a column for every slot up to the last, as qiskit-dynamics returns
         if meas_return == _QiskitDynMeasReturn.AVG:
-            shape = (len(channels), 2)
+            shape = (slots[-1] + 1, 2)
         else:
-            shape = (native_config.shots, len(channels), 2)
-        return _to_xarray(data=np.zeros(shape), meas_return=meas_return)
+            shape = (native_config.shots, slots[-1] + 1, 2)
+        return _to_xarray(data=np.zeros(shape), meas_return=meas_return, slots=slots)
