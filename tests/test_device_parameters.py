@@ -68,3 +68,19 @@ def test_a_coupler_missing_from_the_coupling_dict_is_refused():
 
     with pytest.raises(ValueError, match="u0"):
         DeviceCalibration.from_config(config)
+
+
+def test_qubits_out_of_the_order_of_their_numbers_are_refused(tmp_path):
+    """A circuit's qubit i is the i-th by number, and the coupling map MSS gets indexes
+    qubits by their place in qubit_ids, so a config whose two orders differ is refused
+    """
+    settings = get_fixture_path("backend_config.simq2.toml")
+    swapped = tmp_path / "backend_config.toml"
+    swapped.write_text(
+        open(settings)
+        .read()
+        .replace('qubit_ids = [ "q0", "q1" ]', 'qubit_ids = [ "q1", "q0" ]')
+    )
+
+    with pytest.raises(ValueError, match="not in the order of their numbers"):
+        BackendConfig.from_toml(swapped, get_fixture_path("qiskit_pulse_2q.seed.toml"))

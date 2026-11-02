@@ -688,6 +688,24 @@ class _BackendDeviceConfig(BaseModel):
     meas_map: List[List[int]] = []
     qubit_parameters: List[str] = []
     resonator_parameters: List[str] = []
+
+    @field_validator("qubit_ids")
+    @classmethod
+    def check_qubit_order(cls, qubit_ids: List[str]) -> List[str]:
+        """Requires the qubits in the order of their numbers: a gate-level circuit's
+        qubit i is the i-th by number, and the coupling map sent to MSS indexes qubits
+        by their place in this list, so the two must agree
+
+        Raises:
+            ValueError: qubit_ids {ids} are not in the order of their numbers
+        """
+        numbers = [_get_number(qubit_id) for qubit_id in qubit_ids]
+        if numbers != sorted(numbers):
+            raise ValueError(
+                f"qubit_ids {qubit_ids} are not in the order of their numbers"
+            )
+        return qubit_ids
+
     coupler_parameters: List[str] = []
     discriminator_parameters: Dict[str, List[str]] = {}
     fixed_duration_couplers: Tuple[str, ...] = ()
