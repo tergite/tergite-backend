@@ -144,7 +144,11 @@ class QuantifyExecutor(QuantumExecutor):
         if cluster is None:
             return None
 
-        results = self._recalibrate_cluster(*cluster)
+        try:
+            results = self._recalibrate_cluster(*cluster)
+        finally:
+            # tergite_tuner closes every cluster as it connects its own, this executor's too
+            self._coordinator = self._create_coordinator(should_reset_clusters=False)
         if isinstance(results, DeviceCalibration):
             logging.info(f"calibration complete. Saving to {self.calib_seed_file}...")
             _save_calibration_seed(results, self.calib_seed_file)
@@ -309,7 +313,9 @@ class QuantifyExecutor(QuantumExecutor):
     def _close_cached_instruments(cls) -> None:
         for instruments in cls._non_gc_instruments.values():
             for instrument in instruments.values():
-                instrument.close()
+                # Instrument.close_all, which tergite_tuner calls, may have closed it
+                if Instrument.is_valid(instrument):
+                    instrument.close()
         cls._non_gc_instruments.clear()
 
 

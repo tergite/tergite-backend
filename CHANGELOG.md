@@ -7,6 +7,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed every quantify job after a recalibration failing with "'InstrumentCoordinator' object and its
+  delegates have no attribute 'components'" until the heavy worker restarted; the executor reconnects its clusters
+
 ## [2026.11.0-rc.3] - 2026-10-31
 
 ### Changed
