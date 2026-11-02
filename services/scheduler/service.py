@@ -53,6 +53,7 @@ from ..devices import get_device_calibration_info
 from . import dispatcher
 from .dtos import RecalibrationInfo
 from .resources import DeviceResources
+from .utils import update_job_in_mss
 from .wakeups import wake_workers
 
 
@@ -191,7 +192,7 @@ def cancel_job(
     if reason is None:
         reason = "Cancelled by a user"
 
-    return device.jobs_store.update(
+    cancelled_job = device.jobs_store.update(
         job_id,
         {
             "status": JobStatus.CANCELLED,
@@ -199,6 +200,9 @@ def cancel_job(
             "updated_at": utc_now_str(),
         },
     )
+    # a job cancelled with its job token, not through MSS, is news to MSS
+    update_job_in_mss(device.bookings_db, device.mss_client, payload=cancelled_job)
+    return cancelled_job
 
 
 def delete_job(

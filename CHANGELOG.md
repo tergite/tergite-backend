@@ -13,6 +13,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   delegates have no attribute 'components'" until the heavy worker restarted; the executor reconnects its clusters
 - Fixed a simulator job that measured some qubits but not those before them failing with "error during post
   processing"; qiskit-dynamics returns a column for every memory slot up to the last, and the unmeasured ones are skipped
+- Fixed a job cancelled with its job token, as the SDK cancels, staying pending in MSS for good; the
+  cancellation is now sent to MSS, as every other change of a job's status is
 
 ## [2026.11.0-rc.3] - 2026-10-31
 
