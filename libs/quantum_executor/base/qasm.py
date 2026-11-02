@@ -16,6 +16,8 @@
 import math
 from typing import List, Sequence
 
+# qasm3.loads imports this parser on first use, which would add 130 ms to the first job
+import qiskit_qasm3_import  # noqa: F401
 from qiskit import QuantumCircuit, qasm3
 from qiskit.circuit import CircuitInstruction, ControlFlowOp, Delay
 
