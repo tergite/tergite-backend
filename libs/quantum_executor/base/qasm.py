@@ -16,9 +16,8 @@
 import math
 from typing import List, Sequence
 
-# qasm3.loads imports this parser on first use, which would add 130 ms to the first job
-import qiskit_qasm3_import  # noqa: F401
-from qiskit import QuantumCircuit, qasm3
+import qiskit_qasm3_import
+from qiskit import QuantumCircuit
 from qiskit.circuit import CircuitInstruction, ControlFlowOp, Delay
 
 from utils.exc import UnsupportedCircuitError
@@ -83,7 +82,9 @@ def _load_circuit(circuit: QasmCircuit) -> QuantumCircuit:
         UnsupportedCircuitError: circuit {name} is not valid OpenQASM 3: {error}
     """
     try:
-        return qasm3.loads(circuit.qasm)
+        # qiskit.qasm3.loads wraps this, but imports it only on its first call, which
+        # would add 130 ms to each backend's first job
+        return qiskit_qasm3_import.parse(circuit.qasm)
     except Exception as exp:
         raise UnsupportedCircuitError(
             f"circuit {circuit.name} is not valid OpenQASM 3: {exp}"
