@@ -51,7 +51,7 @@ from libs.quantum_executor.quantify.device import (
     apply_calibration,
     get_edge_names,
     get_element_name,
-    release_elements,
+    remove_elements,
 )
 from libs.quantum_executor.quantify.experiment import QuantifyExperiment
 from libs.quantum_executor.quantify.utils.config import (
@@ -163,7 +163,7 @@ class QuantifyExecutor(QuantumExecutor):
             return None
 
         # tergite_tuner creates its own transmons by these names
-        release_elements(self._gate_level_device)
+        remove_elements(self._gate_level_device)
         try:
             results = self._recalibrate_cluster(*cluster)
             if isinstance(results, DeviceCalibration):
@@ -179,10 +179,10 @@ class QuantifyExecutor(QuantumExecutor):
         finally:
             # tergite_tuner closes every cluster as it connects its own, this executor's too
             self._coordinator = self._create_coordinator(should_reset_clusters=False)
-            self._reload_quantum_devices()
+            self._load_quantum_devices()
         return results
 
-    def _reload_quantum_devices(self) -> None:
+    def _load_quantum_devices(self) -> None:
         """Gets both quantum devices anew, with the calibration's transmons on the
         gate-level one: tergite_tuner's Instrument.close_all may have closed them"""
         self._quantum_device = _get_quantum_device(

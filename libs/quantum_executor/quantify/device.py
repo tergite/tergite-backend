@@ -195,7 +195,7 @@ def apply_calibration(device: QuantumDevice, backend_config: BackendConfig) -> N
         )
 
 
-def release_elements(device: QuantumDevice) -> None:
+def remove_elements(device: QuantumDevice) -> None:
     """Closes the device's coupler edges and transmons, and takes them off it, so that
     another instrument may take their names, as tergite_tuner's transmons do
 
