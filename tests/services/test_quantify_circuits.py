@@ -46,6 +46,26 @@ def quantum_device() -> Generator[Any, Any, None]:
     device.close()
 
 
+def test_each_shot_starts_after_the_qubits_relax(quantum_device):
+    """The first operation of a shot waits as long as the qobj path's first ones do, so
+    that a shot does not start in the state the last one left"""
+    from quantify_scheduler.backends.graph_compilation import SerialCompiler
+
+    from libs.quantum_executor.quantify.circuits import get_circuit_schedule
+    from libs.quantum_executor.quantify.instruction import INITIAL_RESET_VALUE
+
+    circuit = _get_circuit([gates.Measure(qubit=0, clbit=0, channel=0)])
+    schedule = get_circuit_schedule(
+        circuit, _NATIVE_CONFIG, **_get_kwargs(quantum_device)
+    )
+    compiled = SerialCompiler("test").compile(
+        schedule, config=quantum_device.generate_compilation_config()
+    )
+
+    idle, measure = list(schedule.schedulables)
+    assert compiled.schedulables[measure]["abs_time"] == INITIAL_RESET_VALUE
+
+
 def test_consecutive_measurements_of_distinct_qubits_start_together(quantum_device):
     circuit = _get_circuit(
         [
@@ -95,7 +115,7 @@ def test_measurements_are_acquired_on_their_channels(quantum_device):
         operation.data["gate_info"]["acq_channel_override"]: operation.data[
             "gate_info"
         ]["device_elements"]
-        for operation in schedule.operations.values()
+        for operation in _get_gate_operations(schedule)
     }
     assert got == {0: ["q14"], 1: ["q12"]}
 
@@ -112,7 +132,7 @@ def test_cz_runs_on_the_coupler_of_its_qubits_in_either_order(
         circuit, _NATIVE_CONFIG, **_get_kwargs(quantum_device)
     )
 
-    [operation] = schedule.operations.values()
+    [operation] = _get_gate_operations(schedule)
     assert operation.data["gate_info"]["device_elements"] == ["q12", "q13"]
 
 
@@ -173,7 +193,7 @@ def _get_measure_duration(quantum_device, element: str) -> float:
 
 def _get_start_times(quantum_device, circuit: gates.NativeCircuit) -> List[float]:
     """Gets when each operation of the circuit's compiled schedule starts, in the order
-    they were added"""
+    they were added, from the end of the idle each shot starts with"""
     from quantify_scheduler.backends.graph_compilation import SerialCompiler
 
     from libs.quantum_executor.quantify.circuits import get_circuit_schedule
@@ -184,4 +204,20 @@ def _get_start_times(quantum_device, circuit: gates.NativeCircuit) -> List[float
     compiled = SerialCompiler("test").compile(
         schedule, config=quantum_device.generate_compilation_config()
     )
-    return [compiled.schedulables[label]["abs_time"] for label in schedule.schedulables]
+    from libs.quantum_executor.quantify.instruction import INITIAL_RESET_VALUE
+
+    _, *times = [
+        compiled.schedulables[label]["abs_time"] for label in schedule.schedulables
+    ]
+    return [time - INITIAL_RESET_VALUE for time in times]
+
+
+def _get_gate_operations(schedule) -> List[Any]:
+    """Gets the schedule's operations but the idle each shot starts with"""
+    from quantify_scheduler.operations.pulse_library import IdlePulse
+
+    return [
+        operation
+        for operation in schedule.operations.values()
+        if not isinstance(operation, IdlePulse)
+    ]

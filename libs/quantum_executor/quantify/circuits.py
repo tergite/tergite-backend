@@ -27,6 +27,7 @@ from utils.exc import UnsupportedCircuitError
 from ..base import gates
 from ..base.quantum_job.dtos import NativeQobjConfig
 from .device import QBLOX_TIMEGRID_INTERVAL
+from .instruction import INITIAL_RESET_VALUE
 
 
 def get_circuit_schedule(
@@ -38,6 +39,7 @@ def get_circuit_schedule(
 ) -> Schedule:
     """Gets the gate-level schedule of the circuit, for the device's transmons
 
+    Each shot starts after an idle as long as the qobj path's, in which the qubits relax.
     The operations run one after the other, but for consecutive measurements of distinct
     qubits, which start together; what follows them waits for the longest. Each
     measurement is acquired on its gate's channel, with the protocol and bin mode of the
@@ -66,7 +68,7 @@ def get_circuit_schedule(
 
     schedule = Schedule(circuit.name, repetitions=native_config.shots)
     # the schedulable the next operation follows; None follows the last one added
-    after: Optional[Schedulable] = None
+    after: Optional[Schedulable] = schedule.add(IdlePulse(duration=INITIAL_RESET_VALUE))
     after_duration = 0.0
     group_start: Optional[Schedulable] = None
     group_qubits: Set[int] = set()
