@@ -843,6 +843,9 @@ The suite runs in one environment, `.venv` (`uv sync --dev`), which has every de
   executors and tasks; the files at the top test the rest.
 - The simulated devices' tests run their jobs on QuTiP, as a circuit takes milliseconds; the
   device on clusters runs `MockQuantifyExecutor` on dummy clusters.
+- The simulated chip device recalibrates in one test, the whole of tergite-tuner's nodes
+  from its rough seed, then runs gate-level jobs on what the tuner found: some three
+  minutes, on one worker, with a timeout of its own.
 - The suite runs on 4 pytest-xdist workers, `--dist=worksteal`, as each has its own temporary
   root and database: about 3 times as fast as one. The tests marked
   `real_time`, whose outcome depends on how fast the machine works through the jobs against

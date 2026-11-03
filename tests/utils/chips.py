@@ -22,12 +22,14 @@ from tests.utils.fixtures import get_fixture_path
 
 
 def get_chip_config() -> ChipConfig:
-    """Gets the test chip, of q12, q13 and q14 and the coupler of q12 and q13
+    """Gets the test chip, of q12 and q13 and their coupler, of the simulated chip
+    device's backend config
 
     Returns:
         the chip's true parameters
     """
-    return ChipConfig.model_validate(toml.load(get_fixture_path("simulated_chip.toml")))
+    settings = toml.load(get_fixture_path("backend_config.chip.toml"))
+    return ChipConfig.model_validate(settings["simulator"]["chip"])
 
 
 def get_chip_backend_config(directory: Path) -> BackendConfig:

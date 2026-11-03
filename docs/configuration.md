@@ -191,3 +191,21 @@ cp tests/fixtures/backend_config.simq2.toml backend_config.toml
 cp tests/fixtures/qiskit_pulse_2q.seed.toml calibration.seed.toml
 ./dev/start_bcc.sh
 ```
+
+They also hold a simulated chip device, two transmons and their coupler behind a dummy
+cluster, with tergite-tuner's configs to calibrate it: its device config guesses each
+frequency within the tuner's sweeps but not at the chip's, and its seed is as rough, so its
+first recalibration finds the chip, in some three minutes, and jobs then run on what it
+found (`tests/services/test_simulated_chip_calibration.py`):
+
+```shell
+# on the root of the project
+cp tests/fixtures/backend_config.chip.toml backend_config.toml
+cp tests/fixtures/chip.seed.toml calibration.seed.toml
+cp tests/fixtures/dummy-quantify-config.json quantify-config.json
+cp tests/fixtures/dummy-quantify-metadata.yml quantify-metadata.yml
+cp tests/fixtures/chip_calib_device_config.toml device_config.calib.toml
+cp tests/fixtures/chip_node_config.toml node_config.calib.toml
+cp tests/fixtures/dummy_spi_config.calib.toml spi_config.calib.toml
+./dev/start_bcc.sh
+```

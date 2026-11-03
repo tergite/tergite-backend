@@ -15,10 +15,10 @@ from typing import Any, Dict
 
 import pytest
 import time_machine
-import toml
 
 from libs.device_parameters import BackendConfig, Device, DeviceCalibration
 from libs.device_parameters.dtos import ChipConfig, _BackendGeneralConfig
+from tests.utils.chips import get_chip_config
 from tests.utils.fixtures import get_fixture_path
 
 
@@ -113,19 +113,13 @@ def test_device_lists_the_gates_gate_level_jobs_compile(settings, seed, expected
     ]
 
 
-def test_a_simulator_section_takes_a_chip(tmp_path):
-    chip = toml.load(get_fixture_path("simulated_chip.toml"))
-    settings = tmp_path / "backend_config.toml"
-    settings.write_text(
-        open(get_fixture_path("backend_config.simq2.toml")).read()
-        + toml.dumps({"chip": chip}).replace("[chip", "[simulator.chip")
-    )
-
+def test_a_simulator_section_takes_a_chip():
     config = BackendConfig.from_toml(
-        settings, get_fixture_path("qiskit_pulse_2q.seed.toml")
+        get_fixture_path("backend_config.chip.toml"),
+        get_fixture_path("dummy_quantify.seed.toml"),
     )
 
-    assert config.simulator.chip == ChipConfig.model_validate(chip)
+    assert sorted(config.simulator.chip.qubits) == ["q12", "q13"]
     assert config.simulator.chip.couplers["q12_q13"].couplings == {
         "q12": 0.1e9,
         "q13": 0.1e9,
@@ -136,7 +130,7 @@ def test_a_simulator_section_takes_a_chip(tmp_path):
     "change, error",
     [
         ({"qubits": {"q12": {"t2": 2e-4}}}, "longer than twice t1"),
-        ({"resonators": {"q14": None}}, r"qubits \['q14'\] have no resonator"),
+        ({"resonators": {"q13": None}}, r"qubits \['q13'\] have no resonator"),
         ({"couplers": {"q12_q13": {"couplings": {"q13": None}}}}, "two qubits"),
         (
             {"couplers": {"q12_q13": {"couplings": {"q13": None, "q14": 1e8}}}},
@@ -158,7 +152,7 @@ def test_a_simulator_section_takes_a_chip(tmp_path):
     ],
 )
 def test_an_impossible_chip_is_refused(change, error):
-    chip = _merge(toml.load(get_fixture_path("simulated_chip.toml")), change)
+    chip = _merge(get_chip_config().model_dump(), change)
 
     with pytest.raises(ValueError, match=error):
         ChipConfig.model_validate(chip)
