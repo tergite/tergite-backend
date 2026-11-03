@@ -9,16 +9,16 @@
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
-"""Jobs that take the test_duration in their qobj's header: preprocessing estimates it, and
-running waits out what is left of it"""
+"""Jobs that take the test_duration in their first circuit's metadata: preprocessing
+estimates it, and running waits out what is left of it"""
 import time
 from datetime import datetime
 from pathlib import Path
 
 from pytest_mock import MockerFixture
 
-from libs.qiskit.qobj import PulseQobj
 from libs.quantum_executor.base import executor as base_executor
+from libs.quantum_executor.base.circuits import CircuitJobParams
 
 # how a job's duration passes; the fake_clock fixture moves its clock instead
 wait = time.sleep
@@ -28,20 +28,22 @@ _test_durations: dict[str, float] = {}
 
 def use_test_durations(mocker: MockerFixture) -> None:
     """Makes the tasks preprocess and run jobs that take their test_duration"""
-    mocker.patch("services.scheduler.tasks.preprocess_qobj", new=_preprocess_qobj)
+    mocker.patch(
+        "services.scheduler.tasks.preprocess_circuits", new=_preprocess_circuits
+    )
     mocker.patch("services.scheduler.tasks.run_job", new=_run_job)
 
 
-def _preprocess_qobj(
+def _preprocess_circuits(
     executor: base_executor.QuantumExecutor,
-    qobj: PulseQobj,
+    params: CircuitJobParams,
     job_id: str,
     results_folder: Path,
 ) -> tuple[float, str]:
-    _, results_file = base_executor.preprocess_qobj(
-        executor, qobj, job_id=job_id, results_folder=results_folder
+    _, results_file = base_executor.preprocess_circuits(
+        executor, params, job_id=job_id, results_folder=results_folder
     )
-    duration = qobj.header.to_dict().get("test_duration")
+    duration = params.circuits[0].metadata.get("test_duration")
     _test_durations[job_id] = duration
     return duration, results_file
 

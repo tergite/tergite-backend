@@ -12,24 +12,20 @@ If you want to implement a new executor, follow these steps below.
 ### 1. Create a class for your executor
 - The base class for any executor is `QuantumExecutor`, in `libs/quantum_executor/base/executor.py`.
 - Add a new package for your executor in `libs/quantum_executor/`, beside `quantify` and `qiskit`.
-- Inherit from that class to create your own executor, implementing `to_circuit_experiments`,
-  `to_native_experiments`, `run_native`, `recalibrate` (returning `None` if your backend does not recalibrate)
-  and `close`.
+- Inherit from that class to create your own executor, implementing `to_circuit_experiments`, `run_native`,
+  `recalibrate` (returning `None` if your backend does not recalibrate) and `close`.
 - If your backend needs some basic tune-up or training, such as a discriminator, do it when the executor is
   constructed and put the result in its `backend_config`, as the qiskit simulators do; the heavy worker publishes
   that config to MSS once the executor is loaded.
 
 ### 2. Implement a transpiler
-- Incoming jobs are OpenQASM 3 circuits, or, until the SDK of the last release is gone, OpenPulse qobjs.
+- Incoming jobs are OpenQASM 3 circuits, which may hold OpenPulse `cal` blocks and `defcal`s.
 - `to_native_circuit`, in `libs/quantum_executor/base/qasm.py`, translates a circuit into native gates
   (`libs/quantum_executor/base/gates.py`); compile those, with the device's calibration, into the schedule your
   backend runs, acquiring each `Measure` on its `channel`, and return them as `CircuitExperiment`s whose readout
-  `NativeCircuit.to_readout` gives.
-- For a qobj, implement a logic to translate the OpenPulse experiment to the format which your backend takes.
-- This potentially involves:
-  - `NativeExperiment`, in `libs/quantum_executor/base/experiment.py`: the compiled experiment that
-    `to_native_experiments` returns and `run_native` runs.
-  - An `instruction.py` of your own, translating the individual instructions, as each existing executor has.
+  `NativeCircuit.to_readout` gives. `run_native` runs each of them.
+- A backend that cannot play pulse-level blocks (`PulseBlock`, in `libs/quantum_executor/base/gates.py`) refuses
+  them with an `UnsupportedCircuitError`, as the qiskit simulators do in `libs/quantum_executor/qiskit/circuits.py`.
 - Other modules in `libs/quantum_executor` might have to be adapted or added.
 
 ### 3. Next steps

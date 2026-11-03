@@ -69,7 +69,7 @@ def test_recalibration_reaches_what_the_device_runs_and_serves(
     client, worker, mock_mss
 ):
     """The light workers discriminate with what /dynamic-properties serves, and the
-    executor translates with its calibration's frequencies, so neither waits for a restart
+    executor compiles with its calibration, so neither waits for a restart
     """
     with client as client:
         before = client.get("/dynamic-properties", headers=create_mss_headers()).json()
@@ -89,12 +89,6 @@ def test_recalibration_reaches_what_the_device_runs_and_serves(
         assert before != recalibrated
         assert after == recalibrated
         assert executor.backend_config.calibration_config == calibration_config
-        assert executor.drive_frequencies == {
-            f"q{int(float(str(qubit['id']).lstrip('q'))):02d}.01": float(
-                qubit["frequency"]
-            )
-            for qubit in calibration_config.qubit
-        }
 
 
 @pytest.mark.skipif(not HAS_QUANTIFY, reason="the simulators do not recalibrate")

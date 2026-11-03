@@ -37,7 +37,9 @@ from utils.exc import UnsupportedCircuitError
 from ..base import gates
 from ..base.quantum_job.dtos import NativeQobjConfig
 from .device import QBLOX_TIMEGRID_INTERVAL
-from .instruction import INITIAL_RESET_VALUE
+
+# the seconds each shot idles first, for the qubits to relax
+INITIAL_RESET_VALUE = 500e-6
 
 
 @dataclass(frozen=True)
@@ -59,7 +61,7 @@ def get_circuit_schedule(
 ) -> Schedule:
     """Gets the gate-level schedule of the circuit, for the device's transmons
 
-    Each shot starts after an idle as long as the qobj path's, in which the qubits relax.
+    Each shot starts after an idle of INITIAL_RESET_VALUE, in which the qubits relax.
     The operations run one after the other, but for consecutive measurements, or
     consecutive delays, of distinct qubits, which start together; what follows them waits
     for the longest. Each

@@ -13,7 +13,7 @@
 
 import numpy as np
 
-from libs.quantum_executor.base.experiment import NativeExperiment
+from libs.quantum_executor.base.circuits import CircuitExperiment
 from libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
 from libs.quantum_executor.base.quantum_job.typing import QExperimentResult
 from libs.quantum_executor.qiskit.executor import (
@@ -31,7 +31,7 @@ class StubQiskitDynamicsExecutor(QiskitDynamicsExecutor):
 
     def run_native(
         self,
-        experiment: NativeExperiment,
+        experiment: CircuitExperiment,
         /,
         *,
         native_config: NativeQobjConfig,

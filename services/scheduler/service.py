@@ -24,7 +24,6 @@ from typing import List, Optional
 from fastapi import UploadFile
 from sqlmodel import or_
 
-from libs.quantum_executor.base.circuits import CircuitJobParams
 from libs.quantum_executor.base.gates import PulseBlock
 from libs.quantum_executor.base.pulse_limits import (
     check_pulse_limits,
@@ -393,8 +392,6 @@ def _check_pulse_level_job(
     upload_file.file.seek(0)
     job_file = JobFile.model_validate_json(upload_file.file.read())
     upload_file.file.seek(0)
-    if not isinstance(job_file.params, CircuitJobParams):
-        return
     backend_config = device.executor_options.backend_config
     dt = backend_config.general_config.dt
     try:

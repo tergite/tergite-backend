@@ -2,78 +2,19 @@
   {
     "job_id": "aaf5cea8-cd3d-4e9b-b468-d74ae52b2360",
     "params": {
-      "qobj": {
-        "qobj_id": "a55444a5-ecb7-4dca-a319-6ef26ffc94bd",
-        "header": {
-          "backend_name": "qiskit_pulse_1q",
-          "backend_version": "1.0.0",
-          "test_duration": 2.1
-        },
-        "config": {
-          "meas_level": 2,
-          "meas_return": "single",
-          "pulse_library": [],
-          "qubit_lo_freq": [0.0],
-          "meas_lo_freq": [0.0],
-          "memory_slot_size": 100,
-          "shots": 1024,
-          "memory_slots": 1,
-          "memory": false,
-          "parametric_pulses": [
-            "constant",
-            "zero",
-            "square",
-            "sawtooth",
-            "triangle",
-            "cos",
-            "sin",
-            "gaussian",
-            "gaussian_deriv",
-            "sech",
-            "sech_deriv",
-            "gaussian_square",
-            "drag"
-          ],
-          "init_qubits": true,
-          "n_qubits": 1
-        },
-        "schema_version": "1.2.0",
-        "type": "PULSE",
-        "experiments": [
-          {
-            "instructions": [
-              {
-                "name": "setf",
-                "t0": 0,
-                "ch": "m0",
-                "frequency": 0.0
-              },
-              {
-                "name": "parametric_pulse",
-                "t0": 0,
-                "ch": "m0",
-                "pulse_shape": "constant",
-                "parameters": {
-                  "duration": 0,
-                  "amp": [0.0, 0.0]
-                }
-              },
-              {
-                "name": "acquire",
-                "t0": 300,
-                "duration": 0,
-                "qubits": [0],
-                "memory_slot": [0]
-              }
-            ],
-            "header": {
-              "memory_slots": 1,
-              "name": "circuit-85",
-              "metadata": {}
-            }
+      "circuits": [
+        {
+          "name": "measure",
+          "qasm": "OPENQASM 3.0;\ninclude \"stdgates.inc\";\nbit[1] c;\nc[0] = measure $0;\n",
+          "num_clbits": 1,
+          "metadata": {
+            "test_duration": 2.1
           }
-        ]
-      }
+        }
+      ],
+      "shots": 1024,
+      "meas_level": 2,
+      "meas_return": "single"
     }
   }
 ]

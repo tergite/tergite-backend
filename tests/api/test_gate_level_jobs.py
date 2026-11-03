@@ -32,7 +32,12 @@ from tests.utils.jobs import (
     get_stored_jobs,
     submit_jobs,
 )
-from tests.utils.params import HAS_QISKIT_DYNAMICS, HAS_QUANTIFY, USERS
+from tests.utils.params import (
+    CLIENT_AND_WORKER_TUPLES,
+    HAS_QISKIT_DYNAMICS,
+    HAS_QUANTIFY,
+    USERS,
+)
 from tests.utils.users import create_many_users
 
 _SHOTS = 20
@@ -282,6 +287,32 @@ def test_invalid_circuit_job_is_refused_at_upload(
 
     assert response.status_code == 400
     assert response.json()["detail"].startswith("Invalid file: ")
+
+
+@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
+def test_qobj_job_of_an_old_sdk_is_refused_at_upload(
+    client, worker, jobs_folder, mocker, fake_clock
+):
+    qobj = {"qobj_id": "q", "header": {}, "config": {"shots": 10}, "experiments": []}
+    job = {"job_id": "c3d1f0a2-5b6e-4f7a-8c9d-0e1f2a3b4c5d", "params": {"qobj": qobj}}
+
+    with client as client:
+        users = create_many_users(client, raw_users=USERS[:1])
+        [job_info] = get_job_submission_metadata(
+            client, jobs=[job], users=users, mocker=mocker, jobs_folder=jobs_folder
+        )
+        with open(job_info["file_path"], "rb") as file:
+            response = client.post(
+                "/jobs", files={"upload_file": file}, headers=job_info["headers"]
+            )
+        worker.run(is_burst=True)
+
+    assert response.status_code == 400
+    assert (
+        "the backend takes OpenQASM 3 circuits only, not a qobj; "
+        "upgrade the tergite SDK to send them"
+    ) in response.json()["detail"]
+    assert get_stored_jobs() == []
 
 
 # (circuits, the share of each circuit's shots expected in each state, at least)

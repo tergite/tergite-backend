@@ -10,12 +10,11 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests for the pure steps of the scheduler's tasks"""
-from types import SimpleNamespace
-
 import numpy as np
 import pytest
 import xarray as xr
 
+from libs.quantum_executor.base.circuits import CircuitReadout, Measurement
 from libs.quantum_executor.base.quantum_job.dtos import (
     MeasLvl,
     MeasRet,
@@ -38,7 +37,7 @@ def test_raw_results_are_refused():
 
 
 def _get_job(meas_level: MeasLvl, data: np.ndarray) -> QuantumJob:
-    """Gets a one-channel job of one experiment, which measures nothing in its qobj"""
+    """Gets a job of one experiment, which measures one qubit on its one channel"""
     dataset = xr.Dataset({"0": xr.DataArray(data, dims=("repetition", "acq"))})
     return QuantumJob(
         tuid="t",
@@ -46,6 +45,6 @@ def _get_job(meas_level: MeasLvl, data: np.ndarray) -> QuantumJob:
         meas_level=meas_level,
         meas_return_cols=1,
         n_qubits=1,
+        readouts=[CircuitReadout("exp", 1, (Measurement(12, 0),))],
         raw_results={"exp~0": dataset},
-        qobj=SimpleNamespace(experiments=[SimpleNamespace(instructions=[])]),
     )

@@ -36,7 +36,6 @@ from quantify_scheduler.instrument_coordinator import InstrumentCoordinator
 from quantify_scheduler.instrument_coordinator.components.qblox import ClusterComponent
 
 from libs.device_parameters.dtos import BackendConfig
-from libs.qiskit.qobj import PulseQobj
 from libs.quantum_executor.base.circuits import CircuitExperiment, QasmCircuit
 from libs.quantum_executor.base.executor import QuantumExecutor
 from libs.quantum_executor.base.qasm import to_native_circuit
@@ -56,13 +55,11 @@ from libs.quantum_executor.quantify.device import (
     get_frame_frequencies,
     remove_elements,
 )
-from libs.quantum_executor.quantify.experiment import QuantifyExperiment
 from libs.quantum_executor.quantify.utils.config import (
     InstrumentConfig,
     QuantifyMetadata,
     load_quantify_config,
 )
-from libs.quantum_executor.quantify.utils.portclock import get_hardware_map
 from libs.quantum_executor.utils.logger import ExperimentLogger
 from utils.compat import MeasurementMode, SPIMode
 
@@ -119,22 +116,9 @@ class QuantifyExecutor(QuantumExecutor):
         self.quantify_metadata = QuantifyMetadata.from_yaml(quantify_metadata_file)
         self.device_name = backend_config.general_config.name
         self.is_cluster_reset_allowed = is_cluster_reset_allowed
-        self.lo_frequencies = _extract_lo_frequencies(self.quantify_config)
-        self.drive_frequencies = _extract_drive_frequencies(backend_config)
-
-        qubit_ids = backend_config.device_config.qubit_ids
-        coupling_dict = backend_config.device_config.coupling_dict
-
-        self.hardware_map = get_hardware_map(
-            qubit_ids=qubit_ids, coupling_dict=coupling_dict
-        )
 
         set_datadir(data_dir)
-        super().__init__(
-            data_dir=data_dir,
-            hardware_map=self.hardware_map,
-            backend_config=backend_config,
-        )
+        super().__init__(data_dir=data_dir, backend_config=backend_config)
         self._experiment_delay = self.quantify_metadata.experiment_delay
 
         self.coordinator_name = f"{self.device_name}_executor"
@@ -144,16 +128,11 @@ class QuantifyExecutor(QuantumExecutor):
         self._coordinator = self._get_coordinator(
             should_reset_clusters=should_reset and is_cluster_reset_allowed
         )
+        self._compiler = SerialCompiler(name=f"{self.device_name}_compiler")
         self._quantum_device = _get_quantum_device(
             self.device_name, self.quantify_config
         )
-        self._compiler = SerialCompiler(name=f"{self.device_name}_compiler")
-        self._compilation_config = self._quantum_device.generate_compilation_config()
-        # gate-level jobs compile against transmons, which pulse-level ones must not see
-        self._gate_level_device = _get_quantum_device(
-            f"{self.device_name}_gate_level", self.quantify_config
-        )
-        apply_calibration(self._gate_level_device, backend_config)
+        apply_calibration(self._quantum_device, backend_config)
         # whether a recalibration left the clusters and quantum devices to get anew
         self._is_stale = False
 
@@ -171,7 +150,7 @@ class QuantifyExecutor(QuantumExecutor):
         # as it connects its own, this executor's too; the next job gets them anew, not this
         # recalibration, whose time limit could interrupt that halfway
         self._is_stale = True
-        remove_elements(self._gate_level_device)
+        remove_elements(self._quantum_device)
         results = self._recalibrate_cluster(*cluster)
         if isinstance(results, DeviceCalibration):
             logging.info(f"calibration complete. Saving to {self.calib_seed_file}...")
@@ -180,7 +159,6 @@ class QuantifyExecutor(QuantumExecutor):
             self.backend_config = self.backend_config.model_copy(
                 update={"calibration_config": results.to_calibration_config()}
             )
-            self.drive_frequencies = _extract_drive_frequencies(self.backend_config)
         return results
 
     def add_pulse_calibration(
@@ -203,51 +181,21 @@ class QuantifyExecutor(QuantumExecutor):
         return calibration.model_copy(update={"frames": frames, "defcals": defcals})
 
     def _connect_if_stale(self) -> None:
-        """Connects the clusters and gets both quantum devices anew, if a recalibration
+        """Connects the clusters and gets the quantum device anew, if a recalibration
         left them closed"""
         if not self._is_stale:
             return
         self._coordinator = self._create_coordinator(should_reset_clusters=False)
-        self._load_quantum_devices()
+        self._load_quantum_device()
         self._is_stale = False
 
-    def _load_quantum_devices(self) -> None:
-        """Gets both quantum devices anew, with the calibration's transmons on the
-        gate-level one: tergite_tuner's Instrument.close_all may have closed them"""
+    def _load_quantum_device(self) -> None:
+        """Gets the quantum device anew, with the calibration's transmons:
+        tergite_tuner's Instrument.close_all may have closed them"""
         self._quantum_device = _get_quantum_device(
             self.device_name, self.quantify_config
         )
-        self._compilation_config = self._quantum_device.generate_compilation_config()
-        self._gate_level_device = _get_quantum_device(
-            f"{self.device_name}_gate_level", self.quantify_config
-        )
-        apply_calibration(self._gate_level_device, self.backend_config)
-
-    def to_native_experiments(
-        self, qobj: PulseQobj, native_config: NativeQobjConfig, /
-    ) -> List[QuantifyExperiment]:
-        """Constructs quantify experiments from the PulseQobj instance
-
-        Args:
-            qobj: the Pulse qobject containing the experiments
-            native_config: the native config for the qobj
-
-        Returns:
-            list of QuantifyExperiment's
-        """
-        native_experiments = [
-            QuantifyExperiment.from_qobj_expt(
-                name=get_experiment_name(expt.header.name, idx + 1),
-                expt=expt,
-                qobj_config=qobj.config,
-                hardware_map=self.hardware_map,
-                native_config=native_config,
-                lo_frequencies=self.lo_frequencies,
-                drive_frequencies=self.drive_frequencies,
-            )
-            for idx, expt in enumerate(qobj.experiments)
-        ]
-        return native_experiments
+        apply_calibration(self._quantum_device, self.backend_config)
 
     def to_circuit_experiments(
         self, circuits: List[QasmCircuit], native_config: NativeQobjConfig, /
@@ -268,13 +216,13 @@ class QuantifyExecutor(QuantumExecutor):
         self._connect_if_stale()
         qubit_ids = self.backend_config.device_config.qubit_numbers
         element_names = [get_element_name(qubit_id) for qubit_id in qubit_ids]
-        edge_names = get_edge_names(self._gate_level_device)
+        edge_names = get_edge_names(self._quantum_device)
         measure_durations = self._get_measure_durations(element_names)
         frames = DeviceFrames(
             dt=self.backend_config.general_config.dt,
-            frequencies=get_frame_frequencies(self._gate_level_device),
+            frequencies=get_frame_frequencies(self._quantum_device),
         )
-        compilation_config = self._gate_level_device.generate_compilation_config()
+        compilation_config = self._quantum_device.generate_compilation_config()
 
         experiments = []
         for idx, circuit in enumerate(circuits):
@@ -302,16 +250,16 @@ class QuantifyExecutor(QuantumExecutor):
 
     def run_native(
         self,
-        experiment: Union[QuantifyExperiment, CircuitExperiment[Schedule]],
+        experiment: CircuitExperiment[Schedule],
         *,
         native_config: NativeQobjConfig,
         logger: ExperimentLogger,
     ) -> QExperimentResult:
-        """Compiles the experiment and runs it on the clusters
+        """Compiles the experiment of a circuit and runs it on the clusters
 
         Args:
-            experiment: the native experiment to run, of a qobj or of a circuit
-            native_config: native config for the qobj
+            experiment: the experiment to run
+            native_config: native config for the job
             logger: the logger for the given experiment, which also logs its schedule
                 and Q1ASM programs
 
@@ -325,12 +273,9 @@ class QuantifyExecutor(QuantumExecutor):
         # Stop any running sequences.
         self._coordinator.stop()
 
-        compilation_config = self._compilation_config
-        if isinstance(experiment, CircuitExperiment):
-            compilation_config = self._gate_level_device.generate_compilation_config()
         compiled_schedule = self._compiler.compile(
             schedule=experiment.schedule,
-            config=compilation_config,
+            config=self._quantum_device.generate_compilation_config(),
         )
 
         logger.log_Q1ASM_programs(compiled_schedule)
@@ -348,9 +293,9 @@ class QuantifyExecutor(QuantumExecutor):
         out those the device lacks, as their qubits are not calibrated"""
         durations = {}
         for name in element_names:
-            if name not in self._gate_level_device.elements():
+            if name not in self._quantum_device.elements():
                 continue
-            measure = self._gate_level_device.get_element(name).measure
+            measure = self._quantum_device.get_element(name).measure
             durations[name] = get_measure_duration(
                 pulse_duration=measure.pulse_duration(),
                 acq_delay=measure.acq_delay(),
@@ -453,44 +398,6 @@ class QuantifyExecutor(QuantumExecutor):
                 if Instrument.is_valid(instrument):
                     instrument.close()
         cls._non_gc_instruments.clear()
-
-
-def _extract_lo_frequencies(quantify_config: Any) -> Dict[str, float]:
-    modulation_frequencies = (
-        getattr(quantify_config.hardware_options, "modulation_frequencies", {}) or {}
-    )
-    results: Dict[str, float] = {}
-    for key, entry in modulation_frequencies.items():
-        lo_freq = getattr(entry, "lo_freq", None)
-        if lo_freq is None and isinstance(entry, dict):
-            lo_freq = entry.get("lo_freq")
-        if lo_freq is None:
-            continue
-        results[key] = float(lo_freq)
-
-    return results
-
-
-def _extract_drive_frequencies(backend_config: BackendConfig) -> Dict[str, float]:
-    calibration_config = backend_config.calibration_config
-    if calibration_config is None:
-        return {}
-
-    results: Dict[str, float] = {}
-    for qubit in calibration_config.qubit:
-        qubit_id = qubit.get("id")
-        frequency_hz = qubit.get("frequency")
-        if qubit_id is None or frequency_hz is None:
-            continue
-
-        results[_to_drive_clock(qubit_id)] = float(frequency_hz)
-
-    return results
-
-
-def _to_drive_clock(qubit_id: Any) -> str:
-    stripped = str(qubit_id).strip().lstrip("q")
-    return f"q{int(float(stripped)):02d}.01"
 
 
 def _save_calibration_seed(calibration: DeviceCalibration, file: Path) -> None:

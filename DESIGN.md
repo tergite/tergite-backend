@@ -22,7 +22,7 @@ in [tergite-frontend](https://github.com/tergite/tergite-frontend).
 | --- | --- | --- | --- |
 | **API** | `api/` | Python 3.13+, FastAPI, uvicorn | The REST API MSS and the SDK call: jobs, bookings, users, the device's properties, recalibration and switch. |
 | **Workers** | `services/scheduler/` | the same process image, `main.py worker` | Run each job's stages and the recalibrations, claiming them from the SQL database. |
-| **Executors** | `libs/quantum_executor/` | quantify-scheduler and Qblox, or qiskit-dynamics and JAX | Compile jobs, OpenQASM 3 circuits or OpenPulse qobjs, to the device's native programs and run them. |
+| **Executors** | `libs/quantum_executor/` | quantify-scheduler and Qblox, or qiskit-dynamics and JAX | Compile jobs' OpenQASM 3 circuits, and the OpenPulse they may hold, to the device's native programs and run them. |
 
 The two executors' dependencies conflict, so an installation carries one: the `quantify` extra,
 packaged as `tergite-backend`, or the `qiskit` extra, packaged as `tergite-backend-simulator`.
@@ -105,7 +105,7 @@ sequenceDiagram
     A->>D: insert the job, stage PRE_PROC_Q
     A->>H: wake-up datagram
     H->>D: claim: PRE_PROC_W
-    H->>H: compile the circuits or qobj, estimate its duration
+    H->>H: compile the circuits, estimate their duration
     H->>D: EXEC_Q, or failed if a booker's job outlasts their booking
     H->>D: claim the job the bookings let run: EXEC_W
     H->>H: run on the instruments or the simulator
@@ -147,9 +147,7 @@ roots (§5.2). `tests/test_styleguide.py` checks the direction.
 ├── libs/                    # imports no app code but utils
 │   ├── quantum_executor/    # base/, quantify/, qiskit/: compiling and running the jobs
 │   ├── device_parameters/   # BackendConfig, Device, DeviceCalibration
-│   ├── queues/              # Job, Stage, JobStatus, ExecutorOptions
-│   ├── qiskit/              # qiskit's Pulse Qobj, vendored as qiskit 1.x dropped it
-│   └── qiskit_providers/    # qiskit's JSON encoder and decoder, vendored likewise
+│   └── queues/              # Job, Stage, JobStatus, ExecutorOptions
 ├── utils/                   # config, SQL, logging, datetimes, exceptions, strings
 ├── migrations/              # Alembic's revisions of the SQL database
 ├── tests/
@@ -704,53 +702,55 @@ storage root.
 
 A `QuantumExecutor` ([libs/quantum_executor/base/executor.py](libs/quantum_executor/base/executor.py))
 holds the state a device's jobs run with — the instruments' coordinator, or the simulator — and
-implements `to_native_experiments`, `to_circuit_experiments`, `run_native`, `recalibrate` and
-`close`. The module functions `preprocess_qobj`, `preprocess_circuits` and `run_job` drive it:
-preprocessing compiles the job into experiments and estimates their duration, which the
-bookings need; execution runs them and writes the IQ points; postprocessing, in a light worker,
-discriminates them into each shot's register.
+implements `to_circuit_experiments`, `run_native`, `recalibrate` and `close`. The module
+functions `preprocess_circuits` and `run_job` drive it: preprocessing compiles the job into
+experiments and estimates their duration, which the bookings need; execution runs them and
+writes the IQ points; postprocessing, in a light worker, discriminates them into each shot's
+register.
 
-A job file's `params` are one of two (`JobFile` in
-[services/scheduler/dtos.py](services/scheduler/dtos.py), told apart by their key):
+A job file's `params` are those of a gate-level job (`CircuitJobParams`, in `JobFile` of
+[services/scheduler/dtos.py](services/scheduler/dtos.py)): OpenQASM 3 circuits, with `shots`,
+`meas_level` 1 or 2 and `meas_return`. `base/qasm.py` parses each with `openpulse`, which
+reads OpenQASM 3 and the OpenPulse it may hold, and translates its gates into native ones
+(`base/gates.py`: `Rxy`, `Rz`, `CZ`, `Measure`, `Reset`, `Delay`, `Barrier`), decomposing the
+rest by a table, by the program's own gate definitions, or by those of OpenQASM's
+`stdgates.inc`; control flow and gate modifiers are refused. Its OpenPulse is pulse-level
+(`base/pulses.py`): a `cal` block, or a `defcal` in place of the gate it matches by name,
+physical qubits and parameters, plays on the frames the device publishes, named after its
+ports (`q12_drive`, `q12_readout`, `q12_q13_coupler`): OpenPulse's waveform generators or
+arrays of samples, phase and frequency shifts and sets, delays, barriers, and `capture_v1`
+into a classical bit, read out as a measurement of the frame's qubit. Each block runs its
+frames side by side, from where what precedes it ends (`quantify/circuits.py`); the
+simulators refuse pulse-level blocks. A pulse-level job is let in only for a project MSS
+says may send one, when it asks for the job's token (`MSSTokenClaims.is_pulse_allowed`,
+signed as the token's `pulse` claim), and only within the limits the device's operators
+set in its backend config's `pulse_limits` (`base/pulse_limits.py`): amplitude and energy
+by kind of frame, how far a frame's frequency may move, samples per waveform, the
+duration of a capture and of a shot's pulse-level blocks. A device that sets none takes
+no pulse-level jobs. Both are checked at upload, refusing with the reason, and the limits
+again before the job runs. A device that takes them publishes its frames and its x, sx, rz
+and cz as `defcal`s with its calibration (`quantify/defcals.py`): each gate compiled on the
+device and its pulses written as declared samples, delays and phase shifts, so a job that
+copies one plays exactly what the gate does; measure, which a job may not define, is left out.
+Circuit qubit `i` is the device's `i`-th qubit by the number in its id. The executor compiles them with the device's own calibration:
+quantify against a `QuantumDevice` of a transmon per qubit and a `CouplerEdge` per coupler
+(`quantify/device.py`), each shot after an idle in which the qubits relax and its operations
+one after the other but for consecutive measurements, or delays, of distinct qubits, which
+start together;
+the simulators to a qiskit-pulse schedule of the pulses the SDK built before
+(`qiskit/circuits.py`), each operation as soon as its qubits are free and every measurement
+at the end, as qiskit-dynamics measures at one time only. A circuit that measures no qubit is
+refused, as it has no results. Each measurement is acquired on its own channel, numbered in the order
+the circuit measures; the `CircuitReadout` saved with the results names each channel's qubit
+and classical bit, and postprocessing puts every measurement in its bit, bit 0 the least
+significant, a later measurement of a bit replacing an earlier one.
+`dev/check_gate_level.py` checks a device's configs for these jobs without its instruments:
+the calibration and LDA values they need, couplers whose CZ plays no pulse, and what the
+compiler refuses of the hardware config, or would give an NCO beyond ±500 MHz.
 
-- **`circuits`, a gate-level job** (`CircuitJobParams`): OpenQASM 3 circuits, with `shots`,
-  `meas_level` 1 or 2 and `meas_return`. `base/qasm.py` parses each with `openpulse`, which
-  reads OpenQASM 3 and the OpenPulse it may hold, and translates its gates into native ones
-  (`base/gates.py`: `Rxy`, `Rz`, `CZ`, `Measure`, `Reset`, `Delay`, `Barrier`), decomposing the
-  rest by a table, by the program's own gate definitions, or by those of OpenQASM's
-  `stdgates.inc`; control flow and gate modifiers are refused. Its OpenPulse is pulse-level
-  (`base/pulses.py`): a `cal` block, or a `defcal` in place of the gate it matches by name,
-  physical qubits and parameters, plays on the frames the device publishes, named after its
-  ports (`q12_drive`, `q12_readout`, `q12_q13_coupler`): OpenPulse's waveform generators or
-  arrays of samples, phase and frequency shifts and sets, delays, barriers, and `capture_v1`
-  into a classical bit, read out as a measurement of the frame's qubit. Each block runs its
-  frames side by side, from where what precedes it ends (`quantify/circuits.py`); the
-  simulators refuse pulse-level blocks. A pulse-level job is let in only for a project MSS
-  says may send one, when it asks for the job's token (`MSSTokenClaims.is_pulse_allowed`,
-  signed as the token's `pulse` claim), and only within the limits the device's operators
-  set in its backend config's `pulse_limits` (`base/pulse_limits.py`): amplitude and energy
-  by kind of frame, how far a frame's frequency may move, samples per waveform, the
-  duration of a capture and of a shot's pulse-level blocks. A device that sets none takes
-  no pulse-level jobs. Both are checked at upload, refusing with the reason, and the limits
-  again before the job runs. A device that takes them publishes its frames and its x, sx, rz
-  and cz as `defcal`s with its calibration (`quantify/defcals.py`): each gate compiled on the
-  device and its pulses written as declared samples, delays and phase shifts, so a job that
-  copies one plays exactly what the gate does; measure, which a job may not define, is left out. Circuit qubit `i` is the device's `i`-th qubit by the number in its id. The executor compiles them with the device's own calibration:
-  quantify against a `QuantumDevice` of a transmon per qubit and a `CouplerEdge` per coupler
-  (`quantify/device.py`), each shot after the qobj path's idle and its operations one after the
-  other but for consecutive measurements, or delays, of distinct qubits, which start together;
-  the simulators to a qiskit-pulse schedule of the pulses the SDK built before
-  (`qiskit/circuits.py`), each operation as soon as its qubits are free and every measurement
-  at the end, as qiskit-dynamics measures at one time only. A circuit that measures no qubit is
-  refused, as it has no results. Each measurement is acquired on its own channel, numbered in the order
-  the circuit measures; the `CircuitReadout` saved with the results names each channel's qubit
-  and classical bit, and postprocessing puts every measurement in its bit, bit 0 the least
-  significant, a later measurement of a bit replacing an earlier one.
-  `dev/check_gate_level.py` checks a device's configs for these jobs without its instruments:
-  the calibration and LDA values they need, couplers whose CZ plays no pulse, and what the
-  compiler refuses of the hardware config, or would give an NCO beyond ±500 MHz.
-- **`qobj`, a Pulse Qobj** the SDK compiled from the calibration MSS publishes, kept for one
-  release after gate-level jobs and then deleted with `libs/qiskit/`.
+A job file whose `params` hold a `qobj`, the Pulse Qobj an SDK older than gate-level jobs
+sends, is refused at upload with 400: "the backend takes OpenQASM 3 circuits only, not a qobj;
+upgrade the tergite SDK to send them".
 
 | `BCC_EXECUTOR_TYPE` | Executor | Extra |
 | --- | --- | --- |
@@ -906,7 +906,7 @@ rules, and code a change touches is brought in line with them.
 5. **Data is a struct; state gets a class.** Data is a Pydantic model, a frozen `@dataclass`,
    an `Enum` or an `Exception`. Its only methods are derived views of its own fields and
    conversions named `from_*` or `to_*`, even when a conversion reads a file or a store to fill
-   itself in (`DeviceResources.from_settings`, `NativeQobjConfig.from_pulse_qobj_config`). A
+   itself in (`DeviceResources.from_settings`, `BackendConfig.from_toml`). A
    component that owns state across calls (a live websocket, an instrument coordinator, a
    trained discriminator, the dispatcher) is a class with behaviour.
 6. **Stateless behaviour is a module-level function** taking explicit arguments. No objects
@@ -986,8 +986,6 @@ On top of the [style guide](#style-guide):
   messages callers can expect.
 - **Type hints everywhere.** DTOs are Pydantic models, never bare dicts crossing a service
   boundary.
-- **Vendored code** (`libs/qiskit/`, `libs/qiskit_providers/`) keeps upstream's order and
-  style, so that it can be compared with upstream.
 
 ### Adding things to BCC — where to start
 

@@ -155,7 +155,7 @@ def test_recalibration_may_take_the_transmons_names_and_close_every_instrument(
 ):
     """tergite_tuner creates transmons by the device's qubits' names, and its
     Cluster.close_all is QCoDeS's Instrument.close_all, so the executor gives the names
-    up first and its next job gets the quantum devices anew"""
+    up first and its next job gets the quantum device anew"""
     from qcodes import Instrument
     from quantify_scheduler.device_under_test.transmon_element import (
         BasicTransmonElement,
@@ -173,7 +173,7 @@ def test_recalibration_may_take_the_transmons_names_and_close_every_instrument(
         ),
         **_get_calibration_kwargs(tmp_path),
     )
-    transmon_names = set(executor._gate_level_device.elements())
+    transmon_names = set(executor._quantum_device.elements())
 
     def recalibrate(**kwargs):
         for name in transmon_names:
@@ -187,8 +187,8 @@ def test_recalibration_may_take_the_transmons_names_and_close_every_instrument(
     executor.recalibrate()
     executor._connect_if_stale()
 
-    device = executor._gate_level_device
-    assert Instrument.is_valid(device) and Instrument.is_valid(executor._quantum_device)
+    device = executor._quantum_device
+    assert Instrument.is_valid(device)
     assert set(device.elements()) == transmon_names
     for name in transmon_names:
         element = device.get_element(name)

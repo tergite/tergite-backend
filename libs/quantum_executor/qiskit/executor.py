@@ -13,7 +13,7 @@
 # that they have been altered from the originals.
 import enum
 from pathlib import Path
-from typing import List, Sequence, Union
+from typing import List, Sequence
 
 import numpy as np
 import qiskit.pulse as qiskit_pulse
@@ -22,13 +22,10 @@ from qiskit.pulse import Schedule
 from qiskit.result import Result as qiskitResult
 from qiskit_dynamics import DynamicsBackend
 
-from libs.qiskit.qobj import PulseQobj
 from libs.quantum_executor.base.circuits import CircuitExperiment, QasmCircuit
 from libs.quantum_executor.base.executor import QuantumExecutor
-from libs.quantum_executor.base.experiment import NativeExperiment
 from libs.quantum_executor.base.qasm import to_native_circuit
 from libs.quantum_executor.qiskit.circuits import get_circuit_schedule
-from libs.quantum_executor.qiskit.experiment import QiskitDynamicsExperiment
 
 from ...device_parameters import BackendConfig
 from ..base.quantum_job import MeasRet, QDataset, get_experiment_name
@@ -64,17 +61,17 @@ class QiskitDynamicsExecutor(QuantumExecutor):
 
     def run_native(
         self,
-        experiment: Union[NativeExperiment, CircuitExperiment[Schedule]],
+        experiment: CircuitExperiment[Schedule],
         /,
         *,
         native_config: NativeQobjConfig,
         logger: ExperimentLogger,
     ) -> QExperimentResult:
-        """Simulates the native experiment
+        """Simulates the experiment of a circuit
 
         Args:
-            experiment: the native experiment to run, of a qobj or of a circuit
-            native_config: native config for the qobj
+            experiment: the experiment to run
+            native_config: native config for the job
             logger: the logger for the given experiment
 
         Returns:
@@ -92,29 +89,6 @@ class QiskitDynamicsExecutor(QuantumExecutor):
             meas_return=meas_return,
             slots=_get_acquired_slots(experiment.schedule),
         )
-
-    def to_native_experiments(
-        self, qobj: PulseQobj, native_config: NativeQobjConfig, /
-    ) -> List[QiskitDynamicsExperiment]:
-        """Constructs qiskit dynamics experiments from the PulseQobj instance
-
-        Args:
-            qobj: the Pulse qobject containing the experiments
-            native_config: the native config for the qobj
-
-        Returns:
-            list of QiskitDynamicsExperiment's
-        """
-        native_experiments = [
-            QiskitDynamicsExperiment.from_qobj_expt(
-                name=get_experiment_name(expt.header.name, idx + 1),
-                expt=expt,
-                qobj_config=qobj.config,
-                backend_config=self.backend_config,
-            )
-            for idx, expt in enumerate(qobj.experiments)
-        ]
-        return native_experiments
 
     def to_circuit_experiments(
         self, circuits: List[QasmCircuit], native_config: NativeQobjConfig, /
