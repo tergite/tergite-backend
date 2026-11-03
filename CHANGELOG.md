@@ -43,6 +43,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- Fixed recalibrating a device with couplers, which failed at Ramsey 12: the node, run one qubit at a time, compiled a
+  device holding the edge of a qubit it lacked, so it now runs without the couplers
 - Fixed the first wait before reconnecting to MSS being a second whatever `mss_max_reconnection_delay` said, which
   held every first retry to a second however low it was set
 - Fixed a quantify job with `meas_return` avg failing in postprocessing, as its averaged results, which have no
