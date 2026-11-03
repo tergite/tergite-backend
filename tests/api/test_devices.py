@@ -32,6 +32,31 @@ from tests.utils.users import (
     create_user,
 )
 
+# what each test device publishes for pulse-level jobs: the quantify one sets pulse limits,
+# its couplers have no calibrated frequency, so no frames, but their cz's phase shifts; the
+# simulators take no pulse-level jobs
+PULSE_CALIBRATIONS = {
+    "system_test": {
+        "frames": [
+            ("q12_drive", "drive", [0]),
+            ("q12_readout", "readout", [0]),
+            ("q13_drive", "drive", [1]),
+            ("q13_readout", "readout", [1]),
+            ("q14_drive", "drive", [2]),
+            ("q14_readout", "readout", [2]),
+        ],
+        "defcals": [
+            *((gate, [qubit]) for qubit in range(3) for gate in ("x", "sx", "rz")),
+            ("cz", [0, 1]),
+            ("cz", [1, 0]),
+            ("cz", [0, 2]),
+            ("cz", [2, 0]),
+        ],
+    },
+    "qiskit_pulse_1q": {"frames": None, "defcals": None},
+    "qiskit_pulse_2q": {"frames": None, "defcals": None},
+}
+
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
 def test_only_the_heavy_worker_publishes_the_device_and_its_calibration(
@@ -62,6 +87,33 @@ def test_only_the_heavy_worker_publishes_the_device_and_its_calibration(
         assert initialized["data"] == static_properties
         assert recalibrated["name"] == "recalibrated"
         assert recalibrated["data"] == dynamic_properties
+
+
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_the_heavy_worker_publishes_the_frames_and_defcals_of_pulse_level_jobs(
+    client, mock_mss
+):
+    with client as client:
+        close_device_resources(
+            preload_worker_globals(
+                settings.get_device_settings(), should_load_executor=True
+            )
+        )
+
+    [recalibrated] = [
+        event for event in mock_mss.sent_events if event["name"] == "recalibrated"
+    ]
+    calibration = recalibrated["data"]
+    expected = PULSE_CALIBRATIONS[calibration["name"]]
+    if expected["frames"] is None:
+        assert (calibration["frames"], calibration["defcals"]) == (None, None)
+        return
+    frames = [(v["name"], v["kind"], v["qubits"]) for v in calibration["frames"]]
+    defcals = [(v["gate"], v["qubits"]) for v in calibration["defcals"]]
+    assert frames == expected["frames"]
+    assert defcals == expected["defcals"]
+    assert all(v["frequency"] > 0 for v in calibration["frames"])
+    assert all(v["program"].startswith("defcal ") for v in calibration["defcals"])
 
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
@@ -137,6 +189,9 @@ def test_get_dynamic_properties(client, expected):
         response = client.get("/dynamic-properties", headers=headers)
         got = response.json()
         assert response.status_code == 200
+        # what a device publishes for pulse-level jobs has its own test
+        for key in ("frames", "defcals"):
+            got.pop(key)
         assert remove_dates(got) == expected
 
 
