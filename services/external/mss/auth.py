@@ -14,6 +14,7 @@
 
 """Utilities for handling authentication of the connection to MSS"""
 import base64
+import functools
 import time
 import uuid
 from pathlib import Path
@@ -66,8 +67,10 @@ def sign_message(private_key: RSAPrivateKey, message: str) -> str:
     return base64.b64encode(signature).decode()
 
 
+@functools.cache
 def get_private_key(key_file: Path, password: Optional[bytes]) -> RSAPrivateKey:
-    """Loads the private key for BCC
+    """Loads the private key for BCC, once for each file and password, as loading an RSA key
+    takes about 0.3 s; later calls get the key loaded first
 
     Args:
         key_file: the path to the private key file

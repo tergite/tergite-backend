@@ -95,6 +95,34 @@ def test_mss_client_reconnects_as_often_as_the_settings_say(mocker, monkeypatch)
     assert mock_sleep.call_count == expected_connect_calls - 1
 
 
+@pytest.mark.timeout(30)
+def test_mss_client_waits_no_longer_than_the_settings_say(mocker, monkeypatch):
+    monkeypatch.setenv("BCC_MSS_MACHINE_ROOT_URL", "http://localhost:19999")
+    monkeypatch.setenv("BCC_MSS_CONNECTION_TIMEOUT", "0.05")
+    monkeypatch.setenv("BCC_MSS_CONNECTION_MAX_ATTEMPTS", "3")
+    monkeypatch.setenv("BCC_MSS_MAX_RECONNECTION_DELAY", "0.5")
+    monkeypatch.setenv("BCC_MSS_RESPONSE_TIMEOUT", "3600")
+    _reload_settings()
+    mocker.patch(
+        "services.external.mss.service.connect",
+        side_effect=OSError("Connection refused"),
+    )
+    mock_sleep = mocker.patch("time.sleep")
+    device_settings = settings.get_device_settings()
+    private_key = get_private_key(
+        device_settings.private_key_file, device_settings.private_key_password
+    )
+    mss_client = MssClient.from_settings(device_settings, private_key)
+    switched_on = DeviceEvent(
+        name=DeviceEventName.SWITCHED_ON, data=DeviceSwitchData(date=get_utc_now())
+    )
+
+    with pytest.raises(MssTimeoutError):
+        mss_client.send_event(switched_on)
+
+    assert [call.args[0] for call in mock_sleep.call_args_list] == [0.5, 0.5, 0.5]
+
+
 def test_calibration_seed_required_for_simulator(patched_mss_websockets, monkeypatch):
     """Raises validation errors if calibration seed is not set for simulator."""
     monkeypatch.setenv("BCC_EXECUTOR_TYPE", "qiskit_pulse_1q")

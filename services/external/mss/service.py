@@ -199,7 +199,7 @@ class MssClient:
         """
         if deadline is None:
             deadline = time.monotonic() + self._response_timeout
-        delay = 1
+        delay = min(1, self._max_reconnection_delay)
         attempts = 0
         if max_reconnections is None:
             max_reconnections = self._max_reconnections

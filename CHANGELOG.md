@@ -35,6 +35,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- Fixed the first wait before reconnecting to MSS being a second whatever `mss_max_reconnection_delay` said, which
+  held every first retry to a second however low it was set
 - Fixed a quantify job with `meas_return` avg failing in postprocessing, as its averaged results, which have no
   repetitions, could not be read back
 - Fixed every quantify job after a recalibration failing with "'InstrumentCoordinator' object and its

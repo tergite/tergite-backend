@@ -191,7 +191,9 @@ def test_submit_jobs_no_booking(
         # create many users and their tokens
         users = create_many_users(client)
 
-        durations = [0.4, 3, 4, 1.1, 2.9, 0.3, 0.1]
+        # the last the shortest, which a queue that ran the shortest first would run first;
+        # no more, as each is a simulation that takes seconds on the 2-qubit simulator
+        durations = [0.4, 3, 0.1]
         raw_jobs = get_raw_jobs(job, durations)
         # Creating this job metadata list first because it takes up a lot of time
         job_metadata_list = get_job_submission_metadata(
