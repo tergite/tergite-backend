@@ -16,7 +16,7 @@
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Tuple
+from typing import TYPE_CHECKING, Dict, Tuple
 
 import numpy as np
 from numpy import typing as npt
@@ -211,7 +211,7 @@ def mark_job_failed(
 def update_job_results(
     jobs_store: JobsStore,
     job_id: str,
-    data: List[List[str]],
+    result: JobResult,
     machine_root_url: str,
 ) -> Job:
     """Updates the results of the job and returns the updated job
@@ -219,7 +219,7 @@ def update_job_results(
     Args:
         jobs_store: the device's jobs
         job_id: the unique identifier of the job
-        data: the discriminated results from the quantum job
+        result: the job's memory, and how it ran
         machine_root_url: the URL this device's API is reached at
 
     Returns:
@@ -229,7 +229,7 @@ def update_job_results(
         job_id,
         {
             "status": JobStatus.SUCCESSFUL,
-            "result": JobResult(memory=data),
+            "result": result,
             "download_url": f"{machine_root_url}/logfiles/{job_id}",
             "updated_at": utc_now_str(),
         },

@@ -160,6 +160,37 @@ def test_quantify_iq_memory_of_each_shot_is_in_clbit_order(
     assert got.result.memory == [[_to_pairs(clbit_points)] * _SHOTS]
 
 
+@pytest.mark.parametrize(
+    "meas_level, meas_return", [(2, "single"), (1, "avg")], ids=["counts", "averaged"]
+)
+@pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)
+def test_quantify_result_says_how_the_job_ran(
+    client, worker, meas_level, meas_return, jobs_folder, mocker, fake_clock
+):
+    """A client reads the memory back without the job's payload"""
+    circuits = [
+        get_circuit("first", "x $0;\nc[0] = measure $0;", num_clbits=1),
+        get_circuit("second", "c[2] = measure $1;", num_clbits=3),
+    ]
+    job = get_circuit_job(
+        circuits, shots=_SHOTS, meas_level=meas_level, meas_return=meas_return
+    )
+
+    with client as client:
+        got = _run_job(client, worker, job, mocker=mocker, jobs_folder=jobs_folder)
+
+    result = got.result
+    assert (result.shots, result.meas_level, result.meas_return) == (
+        _SHOTS,
+        meas_level,
+        meas_return,
+    )
+    assert [(c.name, c.num_clbits) for c in result.circuits] == [
+        ("first", 1),
+        ("second", 3),
+    ]
+
+
 @pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)
 def test_quantify_averaged_iq_memory_has_one_point_per_clbit(
     client, worker, jobs_folder, mocker, fake_clock

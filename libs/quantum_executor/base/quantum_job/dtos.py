@@ -262,6 +262,8 @@ class QuantumJob:
     job_id: Optional[str] = None
     memory_slot_size: int = 100
     raw_results: Optional[QJobResult] = None
+    # the shots of each circuit; none of a file saved before they were kept
+    shots: Optional[int] = None
 
     @property
     def is_local(self) -> bool:

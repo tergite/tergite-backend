@@ -302,6 +302,7 @@ class CircuitExptMetadata:
             n_qubits=self.native_config.n_qubits,
             readouts=[expt.readout for expt in experiments],
             raw_results=raw_results,
+            shots=self.native_config.shots,
         )
 
     def to_dict(self) -> dict:

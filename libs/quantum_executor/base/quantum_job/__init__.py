@@ -78,6 +78,7 @@ def read_job_from_hdf5(file: Path) -> QuantumJob:
         meas_return_cols = hdf5_file.attrs["meas_return_cols"]
         n_qubits = hdf5_file.attrs["n_qubits"]
         job_id = hdf5_file.attrs.get("job_id")
+        shots = hdf5_file.attrs.get("shots")
         raw_results = _extract_results_from_hdf5(hdf5_file)
         readouts = _read_readouts_from_hdf5(hdf5_file)
 
@@ -90,6 +91,7 @@ def read_job_from_hdf5(file: Path) -> QuantumJob:
         raw_results=raw_results,
         job_id=job_id,
         readouts=readouts,
+        shots=None if shots is None else int(shots),
     )
 
 
@@ -108,6 +110,8 @@ def save_job_in_hdf5(job: QuantumJob, file: Path):
         hdf5_file.attrs["n_qubits"] = job.n_qubits
         hdf5_file.attrs["memory_slot_size"] = job.memory_slot_size
         hdf5_file.attrs["job_id"] = job.job_id
+        if job.shots is not None:
+            hdf5_file.attrs["shots"] = job.shots
         hdf5_file.attrs["local"] = job.is_local
 
         _save_readouts_to_hdf5(hdf5_file, readouts=job.readouts)

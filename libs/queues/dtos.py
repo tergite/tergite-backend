@@ -129,11 +129,24 @@ class JobStatus(str, Enum):
         return self in (JobStatus.CANCELLED, JobStatus.FAILED, JobStatus.SUCCESSFUL)
 
 
+class JobResultCircuit(BaseModel):
+    """What a job's result needs of one of its circuits"""
+
+    name: str
+    num_clbits: int
+
+
 class JobResult(BaseModel):
     """The results of the job"""
 
     model_config = ConfigDict(extra="allow")
     memory: Memory = Field(default_factory=list)
+    # how the job ran, sent with its memory, so that a client can read the memory back
+    # without the job's payload
+    shots: Optional[int] = None
+    meas_level: Optional[Literal[1, 2]] = None
+    meas_return: Optional[Literal["single", "avg"]] = None
+    circuits: Optional[List[JobResultCircuit]] = None
 
 
 class Job(BaseModel):
