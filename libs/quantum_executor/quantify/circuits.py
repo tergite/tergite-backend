@@ -313,6 +313,9 @@ def _get_frame_operations(
     if isinstance(op, gates.Play):
         pulse = _get_numerical_pulse(op, port, clock, frames.dt)
         return [(pulse, len(op.samples) * frames.dt)]
+    # FIXME: the qobj path flipped the sign of a phase shift on a drive whose LO sits below
+    #   its frequency; these pass the phase as is. Check on hardware which way a frame with
+    #   its LO below its RF turns before relying on pulse-level phases.
     if isinstance(op, gates.ShiftPhase):
         shift = ShiftClockPhase(phase_shift=math.degrees(op.phase), clock=clock)
         return [(shift, QBLOX_TIMEGRID_INTERVAL)]
