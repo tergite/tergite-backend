@@ -63,6 +63,8 @@ dependencies = [
     "pydantic-settings~=2.16.2",
     "python-dotenv~=1.2.2",
     "alembic~=1.16",
+    # parses gate-level jobs' OpenQASM 3, and the OpenPulse it may hold, for either executor
+    "openpulse>=1.0.1",
 ]
 
 [project.optional-dependencies]
@@ -76,17 +78,11 @@ quantify = [
     "networkx~=3.4.2",
     "h5py>=3.14.0",
     "xarray",
-    # parses the OpenQASM 3 circuits of gate-level jobs; 2.5 and later segfault as the
-    # interpreter exits once pyarrow 24, which qblox-instruments brings, is loaded
-    "qiskit>=2.1,<2.5",
-    "qiskit-qasm3-import>=0.6.0",
 ]
 qiskit = [
     "qiskit-dynamics>=0.5.1,<0.6.0",
     "jax>=0.5.1",
     "qiskit~=0.45.0",
-    # parses the OpenQASM 3 circuits of gate-level jobs
-    "qiskit-qasm3-import>=0.4.2",
     "h5py>=3.12.1",
     "xarray",
     "scikit-learn",

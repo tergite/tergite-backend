@@ -188,7 +188,7 @@ def test_unsupported_circuit_fails_its_job_with_the_reason(
         got = _run_job(client, worker, job, mocker=mocker, jobs_folder=jobs_folder)
 
     assert got.status == JobStatus.FAILED
-    assert got.failure_reason == "gate if_else is not supported"
+    assert got.failure_reason == "if statements are not supported"
 
 
 @pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)

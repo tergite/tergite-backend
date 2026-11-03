@@ -1803,6 +1803,19 @@ wheels = [
 ]
 
 [[package]]
+name = "openpulse"
+version = "1.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "antlr4-python3-runtime" },
+    { name = "openqasm3", extra = ["parser"] },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4b/41/0cdb6190148de664b7b200b65496a20a54b952567eb4d040e3f4117b4473/openpulse-1.0.1.tar.gz", hash = "sha256:4c184e3012907ec35f04202ed72621037b1a06d70195769576bfc9e62c01bf94", size = 519151, upload-time = "2024-10-01T16:59:17.386Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/75/41/429b613fe56124f5714f0d7ff5c1a2c74913e3db2fdde3fd13bf732a116f/openpulse-1.0.1-py3-none-any.whl", hash = "sha256:75fb2d4d7f74db3a86027719744541fcb725e1f5b79e14b78dc5b34ed8c66e87", size = 537758, upload-time = "2024-10-01T16:59:15.568Z" },
+]
+
+[[package]]
 name = "openqasm3"
 version = "1.0.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2629,38 +2642,11 @@ name = "qiskit"
 version = "0.45.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "qiskit-terra", marker = "extra == 'extra-15-tergite-backend-qiskit'" },
+    { name = "qiskit-terra" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/73/3c/65f6c970037fa75c3ee137ad095c61cccc22e8bfe57d5b37b79beade86ee/qiskit-0.45.3.tar.gz", hash = "sha256:5ce758114f1025fd7e289eecdef58704faefc57c3b220793b1b49b75db7980ad", size = 10362, upload-time = "2024-02-01T01:24:29.421Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/2d/3b/d0b915b49417d7690e2e5242c79502b5a6b5b1b4a56a18a31262662e5472/qiskit-0.45.3-py3-none-any.whl", hash = "sha256:37ad2b627ca27cc1f8db600e0ca36b4a610a67f68b7fd2a4156477cc643b597d", size = 9619, upload-time = "2024-02-01T01:24:27.372Z" },
-]
-
-[[package]]
-name = "qiskit"
-version = "2.4.2"
-source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "platform_machine != 'ARM64' or sys_platform != 'win32'",
-]
-dependencies = [
-    { name = "dill", marker = "extra == 'extra-15-tergite-backend-quantify'" },
-    { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-15-tergite-backend-quantify'" },
-    { name = "rustworkx", marker = "extra == 'extra-15-tergite-backend-quantify'" },
-    { name = "scipy", marker = "extra == 'extra-15-tergite-backend-quantify'" },
-    { name = "stevedore", marker = "extra == 'extra-15-tergite-backend-quantify'" },
-    { name = "typing-extensions", marker = "extra == 'extra-15-tergite-backend-quantify'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/86/32/36d51b8f79b86e82fa41d402b4175a204140bbc1c75bdadca980fdaf70e9/qiskit-2.4.2.tar.gz", hash = "sha256:b9844e28336fdbed0d53f8cf82a681d0365574dd68d04ef877d1619971462ad6", size = 4089826, upload-time = "2026-06-12T18:59:55.118Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/6f/1c/8a2818a21f9375a30695c30648801465dc9cb01fc6cf1d92ac69fe85b14c/qiskit-2.4.2-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:9ff8ed0f047af28a7e6946c5fc5801b09f700c1720232c22343ec0c8a17f6397", size = 9345349, upload-time = "2026-06-14T10:02:34.855Z" },
-    { url = "https://files.pythonhosted.org/packages/34/e1/07f65537832c3ac96ab491c2b556f20f301ca43ef6d060e75afe0b6727ba/qiskit-2.4.2-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:0bdc0e4d302f25208409fb618c5fd963e775924f0a3d8886be42b9bc34c87a71", size = 8328417, upload-time = "2026-06-12T18:59:45.911Z" },
-    { url = "https://files.pythonhosted.org/packages/7c/78/d7a12575cc89e43431712b6e7920b7e45f5ba5e66897ef67b109fe5e09b0/qiskit-2.4.2-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:85f8a1e0cb72e2fd5e8c615634a91a3a83f64d98ea8c1c6ec7eeb73367379f96", size = 8620233, upload-time = "2026-06-12T18:59:48.057Z" },
-    { url = "https://files.pythonhosted.org/packages/95/0c/ea8cbaf4ee1de9f7b060c7343eb077a12a7beb868919d1060c3fb612a8f8/qiskit-2.4.2-cp310-abi3-manylinux_2_28_ppc64le.whl", hash = "sha256:76c4d7d9abf91e7689e834800a8f6ea2eb0b2cb5d2aa5f5822faaf78d0334584", size = 9675835, upload-time = "2026-06-14T10:02:37.54Z" },
-    { url = "https://files.pythonhosted.org/packages/43/3b/0b48969a222a6add7b1a34fa5525dab14de18cd644d905bc4f26283880ff/qiskit-2.4.2-cp310-abi3-manylinux_2_28_s390x.whl", hash = "sha256:b3b9f9a3c02b4ffcd1d34ddd1479d0089626b7469c82f977f48fac1846c2855f", size = 9175120, upload-time = "2026-06-14T10:02:39.767Z" },
-    { url = "https://files.pythonhosted.org/packages/bf/e9/c934221566f4cd0588d3c8440fba460cea99f34485a4b1cf086446dc6def/qiskit-2.4.2-cp310-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:11a569903b300a8c3478a3abbda3644e7cec133210f3e106aa48dfc5b5340136", size = 9327641, upload-time = "2026-06-12T18:59:50.162Z" },
-    { url = "https://files.pythonhosted.org/packages/f9/44/df0346b7d54d6213fbb5b15dd593ff09f5a36b9fc5db57ced5926632a9cc/qiskit-2.4.2-cp310-abi3-win_amd64.whl", hash = "sha256:0810c78b1d635f859f743daaeef3b98e5b36555da82d076e56ff677da108fba7", size = 9105646, upload-time = "2026-06-12T18:59:52.486Z" },
 ]
 
 [[package]]
@@ -2672,7 +2658,7 @@ dependencies = [
     { name = "matplotlib" },
     { name = "multiset" },
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" } },
-    { name = "qiskit", version = "0.45.3", source = { registry = "https://pypi.org/simple" } },
+    { name = "qiskit" },
     { name = "scipy" },
     { name = "sympy" },
 ]
@@ -2682,34 +2668,20 @@ wheels = [
 ]
 
 [[package]]
-name = "qiskit-qasm3-import"
-version = "0.6.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "openqasm3", extra = ["parser"], marker = "extra == 'extra-15-tergite-backend-qiskit' or extra == 'extra-15-tergite-backend-quantify'" },
-    { name = "qiskit", version = "0.45.3", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-15-tergite-backend-qiskit'" },
-    { name = "qiskit", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-15-tergite-backend-quantify'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/ea/e4/0229893ae295763a9273e47a7b1a8f10599ee49c2963750440d56a4b0023/qiskit_qasm3_import-0.6.0.tar.gz", hash = "sha256:6b763ee58538b33eaf5aaa8126b687f3c03f26c4d28e6a4f04f9be24a6b184ff", size = 37141, upload-time = "2025-06-10T16:34:11.287Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3e/7e/b8bbfbf1acfe0b40872727ef4741b54794beb65da34c4c327dc31a73d35d/qiskit_qasm3_import-0.6.0-py3-none-any.whl", hash = "sha256:2109b65a6859bec4a51e7b61bd525365f298f67f19b3952bf602423c6d21d697", size = 29490, upload-time = "2025-06-10T16:34:10.035Z" },
-]
-
-[[package]]
 name = "qiskit-terra"
 version = "0.45.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "dill", marker = "extra == 'extra-15-tergite-backend-qiskit'" },
-    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-15-tergite-backend-qiskit'" },
-    { name = "ply", marker = "extra == 'extra-15-tergite-backend-qiskit'" },
-    { name = "psutil", marker = "extra == 'extra-15-tergite-backend-qiskit'" },
-    { name = "python-dateutil", marker = "extra == 'extra-15-tergite-backend-qiskit'" },
-    { name = "rustworkx", marker = "extra == 'extra-15-tergite-backend-qiskit'" },
-    { name = "scipy", marker = "extra == 'extra-15-tergite-backend-qiskit'" },
-    { name = "stevedore", marker = "extra == 'extra-15-tergite-backend-qiskit'" },
-    { name = "symengine", marker = "(platform_machine == 'aarch64' and extra == 'extra-15-tergite-backend-qiskit') or (platform_machine == 'amd64' and extra == 'extra-15-tergite-backend-qiskit') or (platform_machine == 'arm64' and extra == 'extra-15-tergite-backend-qiskit') or (platform_machine == 'ppc64le' and extra == 'extra-15-tergite-backend-qiskit') or (platform_machine == 'x86_64' and extra == 'extra-15-tergite-backend-qiskit') or (extra == 'extra-15-tergite-backend-qiskit' and extra == 'extra-15-tergite-backend-quantify')" },
-    { name = "sympy", marker = "extra == 'extra-15-tergite-backend-qiskit'" },
+    { name = "dill" },
+    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" } },
+    { name = "ply" },
+    { name = "psutil" },
+    { name = "python-dateutil" },
+    { name = "rustworkx" },
+    { name = "scipy" },
+    { name = "stevedore" },
+    { name = "symengine", marker = "platform_machine == 'aarch64' or platform_machine == 'amd64' or platform_machine == 'arm64' or platform_machine == 'ppc64le' or platform_machine == 'x86_64'" },
+    { name = "sympy" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a5/63/70fedee4c584f6262b23f09286af239317d8b0e8b0032db6db288872ec89/qiskit-terra-0.45.3.tar.gz", hash = "sha256:fa3c5d9f54abd5f38fa79c1b1490ff984358377a2d6ed3c17ad2f06fd94243f8", size = 5192914, upload-time = "2024-02-01T01:23:32.629Z" }
 wheels = [
@@ -2995,8 +2967,7 @@ name = "rustworkx"
 version = "0.17.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-15-tergite-backend-qiskit'" },
-    { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-15-tergite-backend-quantify'" },
+    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" } },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e7/b0/66d96f02120f79eeed86b5c5be04029b6821155f31ed4907a4e9f1460671/rustworkx-0.17.1.tar.gz", hash = "sha256:59ea01b4e603daffa4e8827316c1641eef18ae9032f0b1b14aa0181687e3108e", size = 399407, upload-time = "2025-09-15T16:29:46.429Z" }
 wheels = [
@@ -3301,7 +3272,7 @@ name = "sympy"
 version = "1.14.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "mpmath", marker = "extra == 'extra-15-tergite-backend-qiskit'" },
+    { name = "mpmath" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/83/d3/803453b36afefb7c2bb238361cd4ae6125a569b4db67cd9e79846ba2d68c/sympy-1.14.0.tar.gz", hash = "sha256:d3d3fe8df1e5a0b42f0e7bdf50541697dbe7d23746e894990c030e2b05e72517", size = 7793921, upload-time = "2025-04-27T18:05:01.611Z" }
 wheels = [
@@ -3328,6 +3299,7 @@ dependencies = [
     { name = "filelock" },
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-15-tergite-backend-qiskit'" },
     { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" }, marker = "extra != 'extra-15-tergite-backend-qiskit' or extra == 'extra-15-tergite-backend-quantify'" },
+    { name = "openpulse" },
     { name = "pandas" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -3346,9 +3318,8 @@ dependencies = [
 qiskit = [
     { name = "h5py" },
     { name = "jax" },
-    { name = "qiskit", version = "0.45.3", source = { registry = "https://pypi.org/simple" } },
+    { name = "qiskit" },
     { name = "qiskit-dynamics" },
-    { name = "qiskit-qasm3-import" },
     { name = "scikit-learn" },
     { name = "xarray" },
 ]
@@ -3357,8 +3328,6 @@ quantify = [
     { name = "networkx" },
     { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" } },
     { name = "qblox-instruments" },
-    { name = "qiskit", version = "2.4.2", source = { registry = "https://pypi.org/simple" } },
-    { name = "qiskit-qasm3-import" },
     { name = "quantify-core" },
     { name = "quantify-scheduler" },
     { name = "tergite-tuner" },
@@ -3395,6 +3364,7 @@ requires-dist = [
     { name = "networkx", marker = "extra == 'quantify'", specifier = "~=3.4.2" },
     { name = "numpy", specifier = ">=1.26.0" },
     { name = "numpy", marker = "extra == 'quantify'", specifier = ">=2.0" },
+    { name = "openpulse", specifier = ">=1.0.1" },
     { name = "pandas", specifier = "~=2.3.3" },
     { name = "pydantic", specifier = "~=2.11.3" },
     { name = "pydantic-settings", specifier = "~=2.16.2" },
@@ -3403,10 +3373,7 @@ requires-dist = [
     { name = "pyyaml", specifier = "~=6.0.2" },
     { name = "qblox-instruments", marker = "extra == 'quantify'", specifier = "~=0.14.2" },
     { name = "qiskit", marker = "extra == 'qiskit'", specifier = "~=0.45.0" },
-    { name = "qiskit", marker = "extra == 'quantify'", specifier = ">=2.1,<2.5" },
     { name = "qiskit-dynamics", marker = "extra == 'qiskit'", specifier = ">=0.5.1,<0.6.0" },
-    { name = "qiskit-qasm3-import", marker = "extra == 'qiskit'", specifier = ">=0.4.2" },
-    { name = "qiskit-qasm3-import", marker = "extra == 'quantify'", specifier = ">=0.6.0" },
     { name = "quantify-core", marker = "extra == 'quantify'", specifier = ">=0.8.1" },
     { name = "quantify-scheduler", marker = "extra == 'quantify'", specifier = "~=0.22.2" },
     { name = "scikit-learn", marker = "extra == 'qiskit'" },
