@@ -9,6 +9,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- Added how a gate-level job ran to the result it sends MSS: its shots, `meas_level`, `meas_return` and each circuit's
+  name and number of classical bits, so the SDK reads a job's result back without its payload
 - Added gate-level jobs: `POST /jobs` takes OpenQASM 3 circuits, with `shots`, `meas_level` and `meas_return`,
   in place of a qobj, and the quantify executor and the simulators compile them with the device's own
   calibration; their memory has a qobj's shapes, each measurement in its circuit's classical bit

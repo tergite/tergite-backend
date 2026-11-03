@@ -357,6 +357,8 @@ class QuantumJob:
     raw_results: Optional[QJobResult] = None
     # a gate-level job's, in the order of its experiments, in place of a qobj
     readouts: Optional[List[CircuitReadout]] = None
+    # a gate-level job's shots of each circuit; none of a qobj's, or of a file saved before
+    shots: Optional[int] = None
 
     @property
     def is_local(self) -> bool:

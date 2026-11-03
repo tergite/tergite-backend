@@ -42,8 +42,15 @@ from libs.quantum_executor.base.quantum_job import (
     read_job_from_hdf5,
     xarray_to_list,
 )
-from libs.quantum_executor.base.quantum_job.dtos import QuantumJob
-from libs.queues.dtos import Job, JobStatus, Memory, Stage
+from libs.quantum_executor.base.quantum_job.dtos import MeasRet, QuantumJob
+from libs.queues.dtos import (
+    Job,
+    JobResult,
+    JobResultCircuit,
+    JobStatus,
+    Memory,
+    Stage,
+)
 from utils.exc import (
     JobAlreadyCancelled,
     PostProcessingError,
@@ -145,7 +152,7 @@ def postprocess(device: DeviceResources, job: Job, results_file: str) -> str:
         job = update_job_results(
             jobs_store,
             job_id=job_id,
-            data=_get_memory(quantum_job, calibration),
+            result=_get_job_result(quantum_job, calibration),
             machine_root_url=device.settings.machine_root_url,
         )
         update_job_in_mss(device.bookings_db, device.mss_client, payload=job)
@@ -220,6 +227,30 @@ def _estimate_duration(device: DeviceResources, job_file: JobFile) -> float:
             results_folder=device.settings.preprocessed_job_pool,
         )
     return duration
+
+
+def _get_job_result(
+    quantum_job: QuantumJob, calibration: Optional[DeviceCalibration]
+) -> JobResult:
+    """Gets the job's result: its memory, and how it ran, so that a client reads the memory
+    back without the job's payload; a qobj's has its memory alone
+
+    Raises:
+        NotImplementedError: meas_level {meas_level} is not supported
+    """
+    memory = _get_memory(quantum_job, calibration)
+    if quantum_job.readouts is None:
+        return JobResult(memory=memory)
+    return JobResult(
+        memory=memory,
+        shots=quantum_job.shots,
+        meas_level=quantum_job.meas_level.value,
+        meas_return="avg" if quantum_job.meas_return == MeasRet.AVERAGED else "single",
+        circuits=[
+            JobResultCircuit(name=readout.name, num_clbits=readout.num_clbits)
+            for readout in quantum_job.readouts
+        ],
+    )
 
 
 def _get_memory(
