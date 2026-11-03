@@ -22,6 +22,10 @@ from tests.utils.fixtures import get_fixture_path
 _PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
 # set when pytest-xdist runs the tests, e.g. gw3; each worker has its own files
 _XDIST_WORKER = os.getenv("PYTEST_XDIST_WORKER", "gw0")
+# OpenBLAS, and the OpenMP and MKL builds of BLAS, start a thread for each core they see:
+# under a CI runner's CPU quota, four xdist workers' threads starve one another, and the
+# simulators' many small matrix exponentials take a two-qubit job test past its timeout
+_BLAS_THREAD_VARIABLES = ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS")
 
 # made on import, as the settings read it before any fixture runs; the suite runs in it.
 # Removed at exit, not by a fixture, as xdist's controller imports this but runs no fixture
@@ -107,6 +111,9 @@ def setup_test_env():
 
     It should be run before any imports
     """
+    for variable in _BLAS_THREAD_VARIABLES:
+        environ.setdefault(variable, "1")
+
     environ["BCC_APP_SETTINGS"] = "test"
     environ["BCC_DEFAULT_PREFIX"] = TEST_DEFAULT_PREFIX
     environ["BCC_STORAGE_ROOT"] = TEST_STORAGE_ROOT
