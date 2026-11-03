@@ -48,6 +48,7 @@ from libs.quantum_executor.quantify.circuits import (
     get_circuit_schedule,
     get_measure_duration,
 )
+from libs.quantum_executor.quantify.defcals import get_pulse_calibration
 from libs.quantum_executor.quantify.device import (
     apply_calibration,
     get_edge_names,
@@ -181,6 +182,25 @@ class QuantifyExecutor(QuantumExecutor):
             )
             self.drive_frequencies = _extract_drive_frequencies(self.backend_config)
         return results
+
+    def add_pulse_calibration(
+        self, calibration: DeviceCalibration
+    ) -> DeviceCalibration:
+        """Adds to the calibration the frames the device's pulse-level jobs may play on and
+        its gates' defcals, as its gate-level jobs play them; none if its backend config
+        sets no pulse limits, as it then takes no pulse-level jobs
+
+        Args:
+            calibration: the device's calibration, of this executor's backend config
+
+        Returns:
+            the calibration, with the frames and defcals where the device takes
+            pulse-level jobs
+        """
+        if self.backend_config.pulse_limits is None:
+            return calibration
+        frames, defcals = get_pulse_calibration(self.backend_config)
+        return calibration.model_copy(update={"frames": frames, "defcals": defcals})
 
     def _connect_if_stale(self) -> None:
         """Connects the clusters and gets both quantum devices anew, if a recalibration
