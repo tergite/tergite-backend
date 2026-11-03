@@ -15,6 +15,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Added pulse-level jobs on the quantify executor: a gate-level job's OpenQASM 3 may hold OpenPulse `cal`
   blocks and `defcal`s, which play OpenPulse's waveforms and capture IQ points on the frames each device
   publishes (`q12_drive`, `q12_readout`, `q12_q13_coupler`); the simulators refuse them
+- Added limits to pulse-level jobs: a device takes them only from projects MSS says may send them, as
+  `is_pulse_allowed` on asking for a job's token, and only within the `pulse_limits` of its backend config,
+  checked at upload and before they run; a device without `pulse_limits` refuses them all
 - Added `dev/check_gate_level.py`, which checks the configs of each device env file for gate-level jobs,
   without the instruments: missing calibration or LDA values, couplers whose CZ plays no pulse, and ports the
   compiler refuses or whose LO puts an NCO beyond ±500 MHz

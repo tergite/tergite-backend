@@ -35,6 +35,9 @@ class MSSTokenClaims(BaseModel):
 
     job_id: str
     user_id: str
+    # whether the job's project may send pulse-level jobs, which MSS says on asking for
+    # the token; an MSS that does not say lets none
+    is_pulse_allowed: bool = False
 
 
 class UserProfile(BaseModel):

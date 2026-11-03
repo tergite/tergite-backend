@@ -177,6 +177,17 @@ def test_circuit_wider_than_the_simulator_is_refused(backend_config):
         get_circuit_schedule(circuit, backend_config)
 
 
+def test_pulse_level_block_is_refused(backend_config):
+    """The simulators simulate the calibrated pulses of gates, not pulses of a job's own"""
+    from libs.quantum_executor.qiskit.circuits import get_circuit_schedule
+
+    frame = gates.Frame(kind="drive", qubit_ids=(0,))
+    block = gates.PulseBlock(operations=(gates.Play(frame=frame, samples=(0.1,)),))
+
+    with pytest.raises(UnsupportedCircuitError, match="run on the quantify executor"):
+        get_circuit_schedule(_get_circuit([block]), backend_config)
+
+
 def _get_circuit(native_gates: List[gates.Gate]) -> gates.NativeCircuit:
     """Gets a circuit of the gates on the simulator's two qubits"""
     return gates.NativeCircuit(

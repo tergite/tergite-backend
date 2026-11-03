@@ -19,6 +19,7 @@ from functools import cached_property
 from os import PathLike
 from typing import (
     TYPE_CHECKING,
+    Annotated,
     Any,
     Callable,
     Dict,
@@ -763,6 +764,27 @@ class _BackendCalibrationConfig(BaseModel):
     coupler: List[Dict[str, Union[float, str]]] = []
 
 
+FrameKind = Literal["drive", "readout", "coupler"]
+_NonNegative = Annotated[float, Field(ge=0)]
+
+
+class PulseLimits(BaseModel):
+    """What a device's pulse-level jobs may play, which its operators set in the backend
+    config's pulse_limits: amplitudes as fractions of full scale, energies in full scale
+    squared times seconds, on one frame. A kind of frame a limit by kind leaves out may not
+    be played"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_amplitude: Dict[FrameKind, _NonNegative]
+    max_frequency_offset: _NonNegative
+    max_energy_per_shot: Dict[FrameKind, _NonNegative]
+    max_energy_per_job: Dict[FrameKind, _NonNegative]
+    max_pulse_duration: _NonNegative
+    max_samples_per_waveform: Annotated[int, Field(ge=0)]
+    max_capture_duration: _NonNegative
+
+
 class BackendConfig(BaseModel):
     """The configration as read from the file"""
 
@@ -771,6 +793,8 @@ class BackendConfig(BaseModel):
     device_config: _BackendDeviceConfig
     gates: Dict[str, Dict[str, Any]] = {}
     calibration_config: Optional[_BackendCalibrationConfig] = None
+    # none takes no pulse-level jobs
+    pulse_limits: Optional[PulseLimits] = None
 
     @classmethod
     def from_toml(cls, file: PathLike, seed_file: PathLike):
@@ -800,6 +824,7 @@ class BackendConfig(BaseModel):
             device_config=_BackendDeviceConfig(**config.get("device_config", {})),
             gates={k: dict(v) for k, v in config.get("gates", {}).items()},
             calibration_config=calibration_config,
+            pulse_limits=config.get("pulse_limits"),
         )
 
     @model_validator(mode="after")

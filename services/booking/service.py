@@ -39,6 +39,7 @@ from utils.strings import get_random_name
 from .dtos import (
     Booking,
     BookingsConfig,
+    MSSTokenClaims,
     NewBookingInfo,
     NewUserInfo,
     User,
@@ -355,6 +356,7 @@ def create_mss_jwt_token(
     ttl: float,
     algorithm: str = "HS256",
     current_timestamp: Optional[datetime] = None,
+    is_pulse_allowed: bool = False,
 ) -> str:
     """Creates a JWT token that works for jobs submitted via MSS
 
@@ -369,6 +371,7 @@ def create_mss_jwt_token(
         algorithm: the algorithm to use to sign the JWT
         current_timestamp: the current timestamp; default = now, by the real clock that
             verifies the token, not BCC_CURRENT_DATE
+        is_pulse_allowed: whether the job may be pulse-level, as MSS says of its project
 
     Returns:
         the JWT token
@@ -376,16 +379,16 @@ def create_mss_jwt_token(
     current_timestamp = current_timestamp or get_utc_now()
 
     exp = current_timestamp + timedelta(seconds=ttl)
-    payload = dict(job=job_id, exp=exp, sub=user.id)
+    payload = dict(job=job_id, exp=exp, sub=user.id, pulse=is_pulse_allowed)
     return jwt.encode(payload, secret_key, algorithm=algorithm)
 
 
-def get_user_job_id_pair_from_token(
+def get_mss_token_claims(
     token: str,
     secret_key: str,
     algorithm: str = "HS256",
-) -> tuple[str, str]:
-    """Gets the user_id and the job_id from the given JWT token
+) -> MSSTokenClaims:
+    """Gets the user_id, the job_id and the pulse-level permission from the given JWT token
 
     Args:
         token: the JWT token of the user
@@ -393,7 +396,7 @@ def get_user_job_id_pair_from_token(
         algorithm: the algorithm used to encode the JWT
 
     Returns:
-        the tuple of user_id, job_id from the token
+        the claims of the token; a token signed before the permission was has none
 
     Raises:
         NotAuthenticatedError: not authenticated
@@ -404,7 +407,11 @@ def get_user_job_id_pair_from_token(
         if user_id is None:
             raise ValueError("user_id is None")
 
-        return user_id, job_id
+        return MSSTokenClaims(
+            user_id=user_id,
+            job_id=job_id,
+            is_pulse_allowed=payload.get("pulse") is True,
+        )
     except (InvalidTokenError, KeyError, ValueError) as exp:
         logging.error(exp)
         raise NotAuthenticatedError("not authenticated")

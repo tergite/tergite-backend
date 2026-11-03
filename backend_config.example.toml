@@ -324,3 +324,18 @@ coef_1 = 887.7905115161115
 intercept = 27.886206575432258
 coef_0 = 2929.2382879657407
 coef_1 = -1233.2987098430888
+
+# What the device's pulse-level jobs may play: OpenPulse cal blocks and defcals, from the
+# projects MSS lets send them. Without this section the device refuses them all, so set
+# it only with limits chosen for this chip, its fridge and its amplifiers.
+# Amplitudes are fractions of full scale; energies are full scale squared times seconds,
+# on one frame; a kind of frame (drive, readout, coupler) left out may not be played.
+#
+# [pulse_limits]
+# max_amplitude = { drive = 0.5, readout = 0.3 }
+# max_frequency_offset = 20e6           # Hz a frame may move from its calibrated frequency
+# max_energy_per_shot = { drive = 1e-8, readout = 1e-7 }
+# max_energy_per_job = { drive = 1e-4, readout = 1e-3 }
+# max_pulse_duration = 50e-6            # s of a circuit's pulse-level blocks in a shot
+# max_samples_per_waveform = 16384
+# max_capture_duration = 16e-6          # s of one capture

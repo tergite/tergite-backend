@@ -113,6 +113,32 @@ def test_port_the_hardware_config_lacks_does_not_compile(tmp_path):
     assert message.startswith("does not compile on q12:mw-q12.01: ")
 
 
+def test_device_without_pulse_limits_is_warned_of(tmp_path):
+    """A device that sets no pulse limits refuses pulse-level jobs, which is no error of
+    its gate-level ones"""
+    from dev.check_gate_level import Finding, check_configs
+
+    seed = get_gate_level_seed()
+    seed["calibration_config"]["coupler"] = seed["calibration_config"]["coupler"][:1]
+    seed_file = tmp_path / "seed.toml"
+    seed_file.write_text(toml.dumps(seed))
+    backend_config = BackendConfig.from_toml(
+        TEST_BACKEND_SETTINGS_FILE, seed_file=str(seed_file)
+    ).model_copy(update={"pulse_limits": None})
+
+    findings = check_configs(backend_config, _get_hardware_config(None))
+
+    assert (
+        Finding(
+            False,
+            "device",
+            "sets no pulse_limits in its backend config, so it refuses pulse-level jobs",
+        )
+        in findings
+    )
+    assert [f for f in findings if f.is_error] == []
+
+
 def test_device_without_calibration_is_an_error():
     """A device with no calibration is an error, as gate-level jobs compile from it"""
     from dev.check_gate_level import Finding, check_configs

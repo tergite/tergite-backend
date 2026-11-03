@@ -30,10 +30,10 @@ from .service import (
     get_booking,
     get_many_bookings,
     get_many_user_profiles,
+    get_mss_token_claims,
     get_next_booking,
     get_or_create_user,
     get_user,
-    get_user_job_id_pair_from_token,
     get_user_profile,
 )
 
@@ -57,6 +57,6 @@ __all__ = [
     "get_next_booking",
     "get_or_create_user",
     "get_user",
-    "get_user_job_id_pair_from_token",
+    "get_mss_token_claims",
     "get_user_profile",
 ]

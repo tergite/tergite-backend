@@ -200,6 +200,7 @@ def get_job_submission_metadata(
     users: List[dict],
     mocker: MockerFixture,
     jobs_folder: Path,
+    is_pulse_allowed: bool = False,
 ) -> List["JobSubmissionMetadata"]:
     """Generates a list of job submission metadata to use when submitting jobs
 
@@ -212,6 +213,7 @@ def get_job_submission_metadata(
         users: the list of users to use to submit the jobs in a round-robin style
         mocker: the mocker for intercepting the generation of the user token
         jobs_folder: the folder in which the job files are to be saved temporarily before submission
+        is_pulse_allowed: whether MSS lets the jobs be pulse-level, as for their project
 
     Returns:
         a list of job submission metadata
@@ -224,7 +226,14 @@ def get_job_submission_metadata(
         user_id = curr_user["id"]
         job_id = job_info["job_id"]
 
-        token, _ = get_token(client, data={"user_id": user_id, "job_id": job_id})
+        token, _ = get_token(
+            client,
+            data={
+                "user_id": user_id,
+                "job_id": job_id,
+                "is_pulse_allowed": is_pulse_allowed,
+            },
+        )
 
         results.append(
             {

@@ -20,8 +20,8 @@ as ``bcc start`` takes them:
     uv run python -m dev.check_gate_level loke.env thor.env
 
 For each device the quantify executor runs, it reports as errors what would fail its
-gate-level jobs or their counts, and as warnings what leaves them a gate fewer; it exits 1 if
-it found an error. It compiles one circuit for each port and clock that gate-level jobs play,
+gate-level jobs or their counts, and as warnings what leaves them a gate fewer, or the device
+without pulse-level jobs; it exits 1 if it found an error. It compiles one circuit for each port and clock that gate-level jobs play,
 as a job does, so what the compiler refuses of the hardware config shows; and it checks the
 frequency each sequencer's NCO would get, which only the instrument refuses.
 """
@@ -120,6 +120,15 @@ def check_configs(backend_config: BackendConfig, hardware_config: Any) -> List[F
         *_check_qubits(backend_config, calibration),
         *_check_couplers(backend_config, calibration),
     ]
+    if backend_config.pulse_limits is None:
+        findings.append(
+            Finding(
+                False,
+                "device",
+                "sets no pulse_limits in its backend config, so it refuses pulse-level "
+                "jobs",
+            )
+        )
     subjects_with_errors = {finding.subject for finding in findings if finding.is_error}
     return [
         *findings,

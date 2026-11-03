@@ -422,7 +422,14 @@ def test_quantify_runs_a_gate_by_its_defcal(
     job = get_circuit_job([circuit], shots=_SHOTS)
 
     with client as client:
-        got = _run_job(client, worker, job, mocker=mocker, jobs_folder=jobs_folder)
+        got = _run_job(
+            client,
+            worker,
+            job,
+            mocker=mocker,
+            jobs_folder=jobs_folder,
+            is_pulse_allowed=True,
+        )
 
     assert got.status == JobStatus.SUCCESSFUL
     assert got.result.memory == [["0x1"] * _SHOTS]
@@ -444,7 +451,14 @@ def test_quantify_captures_the_iq_point_of_each_shot_of_a_cal_block(
     job = get_circuit_job([circuit], shots=_SHOTS, meas_level=1)
 
     with client as client:
-        got = _run_job(client, worker, job, mocker=mocker, jobs_folder=jobs_folder)
+        got = _run_job(
+            client,
+            worker,
+            job,
+            mocker=mocker,
+            jobs_folder=jobs_folder,
+            is_pulse_allowed=True,
+        )
 
     assert got.status == JobStatus.SUCCESSFUL
     [shots] = got.result.memory
@@ -453,38 +467,108 @@ def test_quantify_captures_the_iq_point_of_each_shot_of_a_cal_block(
 
 
 @pytest.mark.parametrize("client, worker", [_SIM_2Q_CLIENT_AND_WORKER])
-def test_simulator_refuses_a_pulse_level_block(
+def test_a_device_without_pulse_limits_refuses_a_pulse_level_job_at_upload(
     client, worker, jobs_folder, mocker, fake_clock
 ):
-    circuit = get_circuit(
-        "pulses",
-        'defcalgrammar "openpulse";\n'
-        "cal { play(q12_drive, constant(0.1, 4dt)); }\nc[0] = measure $0;",
-        num_clbits=1,
-    )
-    job = get_circuit_job([circuit], shots=_SHOTS)
+    """The simulators set no pulse limits, as they run no pulses, so they take no
+    pulse-level job, even one its project may send"""
+    job = get_circuit_job([_get_pulse_circuit(amplitude=0.1)], shots=_SHOTS)
 
     with client as client:
-        got = _run_job(client, worker, job, mocker=mocker, jobs_folder=jobs_folder)
+        response = _upload_job(
+            client, job, mocker=mocker, jobs_folder=jobs_folder, is_pulse_allowed=True
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "the device takes no pulse-level jobs: its operators have set no pulse limits"
+    )
+
+
+@pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)
+def test_a_pulse_level_job_its_project_may_not_send_is_refused_at_upload(
+    client, worker, jobs_folder, mocker, fake_clock
+):
+    """MSS says on asking for a job's token whether its project may send pulse-level
+    jobs; one it does not let through is refused, before it is stored"""
+    job = get_circuit_job([_get_pulse_circuit(amplitude=0.1)], shots=_SHOTS)
+
+    with client as client:
+        response = _upload_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == (
+        "the job's project may not send pulse-level jobs"
+    )
+    assert get_stored_jobs() == []
+
+
+@pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)
+def test_a_pulse_level_job_beyond_the_limits_is_refused_at_upload(
+    client, worker, jobs_folder, mocker, fake_clock
+):
+    job = get_circuit_job([_get_pulse_circuit(amplitude=0.9)], shots=_SHOTS)
+
+    with client as client:
+        response = _upload_job(
+            client, job, mocker=mocker, jobs_folder=jobs_folder, is_pulse_allowed=True
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "the amplitude of a waveform on q12_drive, 0.9, is beyond the device's limit "
+        "of 0.8"
+    )
+
+
+@pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)
+def test_a_pulse_level_job_is_checked_again_before_it_runs(
+    client, worker, jobs_folder, mocker, fake_clock
+):
+    """The limits are checked where the job runs too, whatever way its file came: here,
+    the frames' calibration the executor reads is gone after the upload"""
+    job = get_circuit_job([_get_pulse_circuit(amplitude=0.1)], shots=_SHOTS)
+    mocker.patch(
+        "libs.quantum_executor.base.executor.get_calibrated_frame_frequencies",
+        return_value={},
+    )
+
+    with client as client:
+        got = _run_job(
+            client,
+            worker,
+            job,
+            mocker=mocker,
+            jobs_folder=jobs_folder,
+            is_pulse_allowed=True,
+        )
 
     assert got.status == JobStatus.FAILED
-    assert got.failure_reason == (
-        "pulse-level blocks, cal and defcal, run on the quantify executor, not on the "
-        "simulators"
-    )
+    assert got.failure_reason == "frame q12_drive is not one of the device's"
 
 
 def _run_job(
-    client, worker, job: Dict[str, Any], mocker: MockerFixture, jobs_folder: Path
+    client,
+    worker,
+    job: Dict[str, Any],
+    mocker: MockerFixture,
+    jobs_folder: Path,
+    is_pulse_allowed: bool = False,
 ) -> Job:
-    """Uploads the job as a user, and runs the worker until it is done
+    """Uploads the job as a user, its project letting it be pulse-level or not, and runs
+    the worker until it is done
 
     Returns:
         the job as the device stores it
     """
     users = create_many_users(client, raw_users=USERS[:1])
     job_metadata = get_job_submission_metadata(
-        client, jobs=[job], users=users, mocker=mocker, jobs_folder=jobs_folder
+        client,
+        jobs=[job],
+        users=users,
+        mocker=mocker,
+        jobs_folder=jobs_folder,
+        is_pulse_allowed=is_pulse_allowed,
     )
     submit_jobs(client, data=job_metadata)
     worker.run(is_burst=True)
@@ -495,3 +579,41 @@ def _run_job(
 def _to_pairs(points: List[complex]) -> List[List[float]]:
     """Gets each IQ point as [re, im], as the memory holds it"""
     return [[point.real, point.imag] for point in points]
+
+
+def _upload_job(
+    client,
+    job: Dict[str, Any],
+    mocker: MockerFixture,
+    jobs_folder: Path,
+    is_pulse_allowed: bool = False,
+):
+    """Uploads the job as a user, its project letting it be pulse-level or not
+
+    Returns:
+        the response to the upload
+    """
+    users = create_many_users(client, raw_users=USERS[:1])
+    [metadata] = get_job_submission_metadata(
+        client,
+        jobs=[job],
+        users=users,
+        mocker=mocker,
+        jobs_folder=jobs_folder,
+        is_pulse_allowed=is_pulse_allowed,
+    )
+    with open(metadata["file_path"], "rb") as file:
+        return client.post(
+            "/jobs", files={"upload_file": file}, headers=metadata["headers"]
+        )
+
+
+def _get_pulse_circuit(amplitude: float) -> Dict[str, Any]:
+    """Gets a circuit that plays a pulse of the amplitude on q12's drive, then measures"""
+    return get_circuit(
+        "pulses",
+        'defcalgrammar "openpulse";\n'
+        f"cal {{ play(q12_drive, constant({amplitude}, 40ns)); }}\n"
+        "c[0] = measure $0;",
+        num_clbits=1,
+    )
