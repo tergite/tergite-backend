@@ -34,14 +34,10 @@ git clone git@github.com:tergite/tergite-backend.git
 cd tergite-backend
 ```
 
-- Install dependencies. Note that we can either use the simulators (`qiskit`) or connect to Qblox clusters (`quantify`).
-  To install for simulators, use `--extra qiskit` and to install for Qblox, use `--extra quantify`.  
-  **Take note that you cannot use both at the same time because they conflict with each other**.
+- Install dependencies, the same for a device on Qblox clusters and for a simulated one
 
 ```shell
-uv sync --dev --extra quantify
-# or for simulators only
-# uv sync --dev --extra qiskit
+uv sync --dev
 ```
 
 - Activate your environment
@@ -77,11 +73,9 @@ openssl rsa -pubout -in private-bcc-key.pem -out public-bcc-key.pem
 cp .env.example .env
 ```
 
-_Note: If you don't want to use the simulator, set the variable `BCC_EXECUTOR_TYPE=quantify` in the `.env`_  
-
-- **If you have `BCC_EXECUTOR_TYPE=quantify`**, copy the quantify example config file `quantify-config.example.json` and `quantify-metadata.example.yml` into 
+- **For a device on Qblox clusters**, copy the quantify example config file `quantify-config.example.json` and `quantify-metadata.example.yml` into 
  the `quantify-config.json` and `quantify-metadata.yml` file and update the variables there in.    
- **Ignore this if you are using the qiskit pulse simulator**
+ **Ignore this for a simulated device**, which needs neither
 
 ```shell
 cp quantify-config.example.json quantify-config.json
@@ -101,10 +95,12 @@ cp tests/fixtures/generic-quantify-config.yml quantify-metadata.yml
 cp backend_config.example.toml backend_config.toml
 ```
 
-_Note: If you are running the simulator, you can copy the one in the test fixtures_
+_Note: For a simulated device, which runs its jobs on QuTiP, you can copy one of the test fixtures, with its
+calibration seed; its `[simulator]` section is what makes it simulated (see [docs/configuration.md](docs/configuration.md))_
 
 ```shell
 cp tests/fixtures/backend_config.simq1.toml backend_config.toml
+cp tests/fixtures/qiskit_pulse_1q.seed.toml calibration.seed.toml
 ```
 
 - Copy the example file for initial device calibrations `calibration.seed.example.toml` into the `calibration.seed.toml` file and update the variables accordingly. 
