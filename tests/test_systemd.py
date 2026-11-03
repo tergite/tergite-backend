@@ -30,6 +30,26 @@ def test_systemd_is_told_on_its_notify_socket(notify_socket):
     assert notify_socket.recv(64) == b"WATCHDOG=1"
 
 
+def test_a_notification_systemd_has_no_room_for_is_dropped(notify_socket):
+    """A notification sent while systemd has left the ones before unread, more than
+    Linux's 10 or macOS's buffer hold, is dropped rather than waited on or raised"""
+    errors = []
+
+    def notify_unread():
+        try:
+            for _ in range(1000):
+                notify_systemd("WATCHDOG=1")
+        except Exception as exp:
+            errors.append(exp)
+
+    sender = threading.Thread(target=notify_unread, daemon=True)
+    sender.start()
+    sender.join(timeout=10)
+
+    assert not sender.is_alive() and errors == []
+    assert notify_socket.recv(64) == b"WATCHDOG=1"
+
+
 def test_nothing_is_told_without_systemd(monkeypatch):
     monkeypatch.delenv("NOTIFY_SOCKET", raising=False)
 
