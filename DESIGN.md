@@ -718,8 +718,14 @@ A job file's `params` are one of two (`JobFile` in
   reads OpenQASM 3 and the OpenPulse it may hold, and translates its gates into native ones
   (`base/gates.py`: `Rxy`, `Rz`, `CZ`, `Measure`, `Reset`, `Delay`, `Barrier`), decomposing the
   rest by a table, by the program's own gate definitions, or by those of OpenQASM's
-  `stdgates.inc`; control flow, gate modifiers and, as yet, `cal` and `defcal` blocks are
-  refused. Circuit qubit `i` is the device's `i`-th qubit by the number in its id. The executor compiles them with the device's own calibration:
+  `stdgates.inc`; control flow and gate modifiers are refused. Its OpenPulse is pulse-level
+  (`base/pulses.py`): a `cal` block, or a `defcal` in place of the gate it matches by name,
+  physical qubits and parameters, plays on the frames the device publishes, named after its
+  ports (`q12_drive`, `q12_readout`, `q12_q13_coupler`): OpenPulse's waveform generators or
+  arrays of samples, phase and frequency shifts and sets, delays, barriers, and `capture_v1`
+  into a classical bit, read out as a measurement of the frame's qubit. Each block runs its
+  frames side by side, from where what precedes it ends (`quantify/circuits.py`); the
+  simulators refuse pulse-level blocks. Circuit qubit `i` is the device's `i`-th qubit by the number in its id. The executor compiles them with the device's own calibration:
   quantify against a `QuantumDevice` of a transmon per qubit and a `CouplerEdge` per coupler
   (`quantify/device.py`), each shot after the qobj path's idle and its operations one after the
   other but for consecutive measurements, or delays, of distinct qubits, which start together;

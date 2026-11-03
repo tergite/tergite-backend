@@ -14,10 +14,12 @@ import math
 from typing import Any, Dict, Generator, List
 
 import pytest
+import toml
 
 from libs.device_parameters import BackendConfig
 from libs.quantum_executor.base import gates
 from libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
+from tests.utils.circuits import get_gate_level_seed
 from tests.utils.env import TEST_BACKEND_SETTINGS_FILE, TEST_QUANTIFY_SEED_FILE
 from tests.utils.params import HAS_QUANTIFY
 from utils.exc import UnsupportedCircuitError
@@ -28,6 +30,10 @@ _ELEMENTS = ["q12", "q13", "q14"]
 _NATIVE_CONFIG = NativeQobjConfig.from_measurement_settings(
     meas_level=2, meas_return="single", shots=1, n_qubits=3
 )
+_DRIVE = gates.Frame(kind="drive", qubit_ids=(12,))
+_READOUT = gates.Frame(kind="readout", qubit_ids=(12,))
+_COUPLER = gates.Frame(kind="coupler", qubit_ids=(12, 13))
+_NS = 1e-9
 
 
 @pytest.fixture
@@ -40,6 +46,25 @@ def quantum_device() -> Generator[Any, Any, None]:
     device = QuantumDevice("test_gate_level_circuits")
     backend_config = BackendConfig.from_toml(
         TEST_BACKEND_SETTINGS_FILE, seed_file=TEST_QUANTIFY_SEED_FILE
+    )
+    apply_calibration(device, backend_config)
+    yield device
+    device.close()
+
+
+@pytest.fixture
+def calibrated_device(tmp_path) -> Generator[Any, Any, None]:
+    """A quantum device without hardware, from the seed the gate-level jobs run on, whose
+    coupler of q12 and q13 is calibrated"""
+    from quantify_scheduler.device_under_test.quantum_device import QuantumDevice
+
+    from libs.quantum_executor.quantify.device import apply_calibration
+
+    seed_file = tmp_path / "seed.toml"
+    seed_file.write_text(toml.dumps(get_gate_level_seed()))
+    device = QuantumDevice("test_pulse_level_circuits")
+    backend_config = BackendConfig.from_toml(
+        TEST_BACKEND_SETTINGS_FILE, seed_file=str(seed_file)
     )
     apply_calibration(device, backend_config)
     yield device
@@ -188,6 +213,89 @@ def test_transmons_are_named_as_the_hardware_config_names_ports(qubit_id, expect
     assert get_element_name(qubit_id) == expected
 
 
+def test_a_pulse_block_follows_what_precedes_it_and_runs_its_frames_side_by_side(
+    calibrated_device,
+):
+    block = gates.PulseBlock(
+        operations=(
+            gates.Play(frame=_DRIVE, samples=(0.1,) * 10),
+            gates.Play(frame=_READOUT, samples=(0.2,) * 20),
+            gates.Play(frame=_COUPLER, samples=(0.1,) * 4),
+        )
+    )
+    circuit = _get_circuit([gates.Rxy(0, math.pi, 0.0), block])
+
+    got = _get_pulse_times(calibrated_device, circuit)
+
+    rotation_end = got[("Rxy", "q12:mw")] + 56 * _NS
+    assert got[("NumericalPulse", "q12:mw")] == pytest.approx(rotation_end)
+    assert got[("NumericalPulse", "q12:res")] == pytest.approx(rotation_end)
+    assert got[("NumericalPulse", "q12_q13:fl")] == pytest.approx(rotation_end)
+
+
+def test_operations_of_a_frame_follow_each_other_on_the_time_grid(calibrated_device):
+    """A frame's next operation starts on the 4 ns grid after its last ends, and a phase
+    update takes a grid interval, as a sequencer takes one update at a time"""
+    block = gates.PulseBlock(
+        operations=(
+            gates.Play(frame=_DRIVE, samples=(0.1,) * 10),
+            gates.ShiftPhase(frame=_DRIVE, phase=0.5),
+            gates.Play(frame=_READOUT, samples=(0.2,) * 20),
+            gates.Capture(frame=_READOUT, duration=16 * _NS, clbit=0, channel=0),
+        )
+    )
+
+    got = _get_pulse_times(calibrated_device, _get_circuit([block]))
+
+    start = got[("NumericalPulse", "q12:mw")]
+    assert got[("ShiftClockPhase", "q12.01")] == pytest.approx(start + 12 * _NS)
+    assert got[("SSBIntegrationComplex", "q12:res")] == pytest.approx(start + 20 * _NS)
+
+
+def test_what_follows_a_pulse_block_starts_once_its_frames_are_done(calibrated_device):
+    block = gates.PulseBlock(
+        operations=(
+            gates.Play(frame=_DRIVE, samples=(0.1,) * 8),
+            gates.Play(frame=_READOUT, samples=(0.2,) * 20),
+            gates.Capture(frame=_READOUT, duration=16 * _NS, clbit=0, channel=0),
+        )
+    )
+    circuit = _get_circuit([block, gates.Rxy(1, math.pi, 0.0)])
+
+    got = _get_pulse_times(calibrated_device, circuit)
+
+    start = got[("NumericalPulse", "q12:mw")]
+    assert got[("Rxy", "q13:mw")] == pytest.approx(start + 36 * _NS)
+
+
+def test_a_frame_whose_frequency_changes_starts_each_shot_at_its_own(calibrated_device):
+    """Each shot runs the program anew, so a frame's frequency a block changes is set to
+    its calibrated one as the shot starts"""
+    block = gates.PulseBlock(
+        operations=(gates.ShiftFrequency(frame=_DRIVE, frequency=-1e6),)
+    )
+    circuit = _get_circuit([block])
+
+    schedule = _get_schedule(calibrated_device, circuit)
+
+    reset, shift = [
+        operation
+        for operation in _get_all_operations(schedule)
+        if type(operation).__name__ == "SetClockFrequency"
+    ]
+    drive_frequency = calibrated_device.get_element("q12").clock_freqs.f01()
+    assert reset.data["pulse_info"][0]["clock_freq_new"] == drive_frequency
+    assert shift.data["pulse_info"][0]["clock_freq_new"] == drive_frequency - 1e6
+
+
+def test_a_frame_the_device_has_not_is_refused(calibrated_device):
+    frame = gates.Frame(kind="drive", qubit_ids=(15,))
+    block = gates.PulseBlock(operations=(gates.Play(frame=frame, samples=(0.1,)),))
+
+    with pytest.raises(UnsupportedCircuitError, match="frame q15_drive is not one of"):
+        _get_schedule(calibrated_device, _get_circuit([block]))
+
+
 def _get_circuit(native_gates: List[gates.Gate]) -> gates.NativeCircuit:
     """Gets a circuit of the gates on the three qubits of the test device"""
     return gates.NativeCircuit(
@@ -248,3 +356,44 @@ def _get_gate_operations(schedule) -> List[Any]:
         for operation in schedule.operations.values()
         if not isinstance(operation, IdlePulse)
     ]
+
+
+def _get_schedule(quantum_device, circuit: gates.NativeCircuit) -> Any:
+    """Gets the circuit's schedule, its pulse-level blocks on the device's frames"""
+    from libs.quantum_executor.quantify.circuits import (
+        DeviceFrames,
+        get_circuit_schedule,
+    )
+    from libs.quantum_executor.quantify.device import get_frame_frequencies
+
+    frames = DeviceFrames(dt=_NS, frequencies=get_frame_frequencies(quantum_device))
+    return get_circuit_schedule(
+        circuit, _NATIVE_CONFIG, **_get_kwargs(quantum_device), frames=frames
+    )
+
+
+def _get_pulse_times(quantum_device, circuit: gates.NativeCircuit) -> Dict[Any, float]:
+    """Gets when each operation of the circuit's compiled schedule starts, in seconds, by
+    its kind, as the timing table writes it, and its port, or its clock where it has no
+    port"""
+    from quantify_scheduler.backends.graph_compilation import SerialCompiler
+
+    compiled = SerialCompiler("test").compile(
+        _get_schedule(quantum_device, circuit),
+        config=quantum_device.generate_compilation_config(),
+    )
+    return {
+        (str(row.operation).split("(")[0], row.port or row.clock): row.abs_time
+        for _, row in compiled.timing_table.data.iterrows()
+    }
+
+
+def _get_all_operations(schedule) -> List[Any]:
+    """Gets the schedule's operations, those of the schedules within it too"""
+    operations = []
+    for operation in schedule.operations.values():
+        if hasattr(operation, "operations"):
+            operations.extend(_get_all_operations(operation))
+        else:
+            operations.append(operation)
+    return operations

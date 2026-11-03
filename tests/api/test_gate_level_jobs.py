@@ -405,6 +405,75 @@ def test_simulator_refuses_a_gate_after_a_measurement(
     )
 
 
+@pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)
+def test_quantify_runs_a_gate_by_its_defcal(
+    client, worker, jobs_folder, mocker, fake_clock
+):
+    from tests.utils.executors.quantify import use_excited_transmons
+
+    use_excited_transmons(mocker, excited={"q12"})
+    circuit = get_circuit(
+        "defcal",
+        'defcalgrammar "openpulse";\n'
+        "defcal x $0 { play(q12_drive, gaussian(0.3, 40ns, 10ns)); }\n"
+        "x $0;\nc[0] = measure $0;",
+        num_clbits=1,
+    )
+    job = get_circuit_job([circuit], shots=_SHOTS)
+
+    with client as client:
+        got = _run_job(client, worker, job, mocker=mocker, jobs_folder=jobs_folder)
+
+    assert got.status == JobStatus.SUCCESSFUL
+    assert got.result.memory == [["0x1"] * _SHOTS]
+
+
+@pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)
+def test_quantify_captures_the_iq_point_of_each_shot_of_a_cal_block(
+    client, worker, jobs_folder, mocker, fake_clock
+):
+    circuit = get_circuit(
+        "capture",
+        'defcalgrammar "openpulse";\n'
+        "cal {\n"
+        "    play(q12_readout, constant(0.2, 1us));\n"
+        "    c[0] = capture_v1(q12_readout, 800ns);\n"
+        "}",
+        num_clbits=1,
+    )
+    job = get_circuit_job([circuit], shots=_SHOTS, meas_level=1)
+
+    with client as client:
+        got = _run_job(client, worker, job, mocker=mocker, jobs_folder=jobs_folder)
+
+    assert got.status == JobStatus.SUCCESSFUL
+    [shots] = got.result.memory
+    assert len(shots) == _SHOTS
+    assert all(len(points) == 1 and len(points[0]) == 2 for points in shots)
+
+
+@pytest.mark.parametrize("client, worker", [_SIM_2Q_CLIENT_AND_WORKER])
+def test_simulator_refuses_a_pulse_level_block(
+    client, worker, jobs_folder, mocker, fake_clock
+):
+    circuit = get_circuit(
+        "pulses",
+        'defcalgrammar "openpulse";\n'
+        "cal { play(q12_drive, constant(0.1, 4dt)); }\nc[0] = measure $0;",
+        num_clbits=1,
+    )
+    job = get_circuit_job([circuit], shots=_SHOTS)
+
+    with client as client:
+        got = _run_job(client, worker, job, mocker=mocker, jobs_folder=jobs_folder)
+
+    assert got.status == JobStatus.FAILED
+    assert got.failure_reason == (
+        "pulse-level blocks, cal and defcal, run on the quantify executor, not on the "
+        "simulators"
+    )
+
+
 def _run_job(
     client, worker, job: Dict[str, Any], mocker: MockerFixture, jobs_folder: Path
 ) -> Job:

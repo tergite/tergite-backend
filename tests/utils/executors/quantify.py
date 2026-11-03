@@ -72,11 +72,12 @@ def get_iq_point(transmon: str, state: int) -> complex:
 
 
 def _get_measured_transmons(schedule: Schedule) -> Dict[int, str]:
-    """Gets the transmon each acquisition channel of the gate-level schedule measures"""
+    """Gets the transmon each acquisition channel of the gate-level schedule measures; a
+    pulse-level block, a schedule within it, measures none"""
     return {
         operation.data["gate_info"]["acq_channel_override"]: operation.data[
             "gate_info"
         ]["device_elements"][0]
         for operation in schedule.operations.values()
-        if operation.data["gate_info"].get("operation_type") == "measure"
+        if operation.data.get("gate_info", {}).get("operation_type") == "measure"
     }

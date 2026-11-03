@@ -17,9 +17,8 @@
 """Translates the OpenQASM 3 circuits of gate-level jobs into native gates"""
 import functools
 import math
-import operator
 from dataclasses import dataclass, field, fields, is_dataclass
-from typing import Callable, Dict, FrozenSet, Iterator, List, Mapping, Sequence
+from typing import Dict, FrozenSet, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 import openpulse
 from openpulse import ast
@@ -28,35 +27,9 @@ from utils.exc import UnsupportedCircuitError
 
 from . import gates
 from .circuits import QasmCircuit
+from .expressions import get_number, get_seconds
+from .pulses import get_pulse_block
 
-_SECONDS_PER_UNIT = {"s": 1.0, "ms": 1e-3, "us": 1e-6, "ns": 1e-9}
-# OpenQASM's constants, by their ASCII and their Unicode names
-_CONSTANTS = {
-    "pi": math.pi,
-    "π": math.pi,
-    "tau": math.tau,
-    "τ": math.tau,
-    "euler": math.e,
-    "ℇ": math.e,
-}
-_FUNCTIONS: Dict[str, Callable[[float], float]] = {
-    "sin": math.sin,
-    "cos": math.cos,
-    "tan": math.tan,
-    "arcsin": math.asin,
-    "arccos": math.acos,
-    "arctan": math.atan,
-    "exp": math.exp,
-    "log": math.log,
-    "sqrt": math.sqrt,
-}
-_BINARY_OPERATIONS: Dict[str, Callable[[float, float], float]] = {
-    "+": operator.add,
-    "-": operator.sub,
-    "*": operator.mul,
-    "/": operator.truediv,
-    "**": operator.pow,
-}
 # the statements refused by name, which their AST classes do not say plainly
 _STATEMENT_NAMES = {
     "BranchingStatement": "if statements",
@@ -101,6 +74,10 @@ class _Scope:
     qubits: Dict[str, List[int]] = field(default_factory=dict)
     clbits: Dict[str, List[int]] = field(default_factory=dict)
     definitions: Dict[str, ast.QuantumGateDefinition] = field(default_factory=dict)
+    # each gate's defcals, by its name and physical qubits
+    defcals: Dict[Tuple[str, Tuple[int, ...]], List[ast.CalibrationDefinition]] = field(
+        default_factory=dict
+    )
     native_gates: List[gates.Gate] = field(default_factory=list)
 
 
@@ -109,9 +86,12 @@ def to_native_circuit(circuit: QasmCircuit, dt: float) -> gates.NativeCircuit:
 
     Gates beyond the native ones are decomposed into them, up to a global phase: those of
     OpenQASM's standard library that a table names, the rest of it and any gate the program
-    defines by its definition. The qubits are physical, as $2, or declared, numbered in the
-    order of their declarations; the classical bits are numbered likewise. Each
-    measurement is acquired on its own channel, numbered in the order the circuit measures.
+    defines by its definition. A gate a defcal of the program matches, by its name, its
+    physical qubits and its parameters, is that defcal's pulses instead, and a cal block is
+    its own pulses (pulses.py). The qubits are physical, as $2, or declared, numbered in
+    the order of their declarations; the classical bits are numbered likewise. Each
+    measurement, and each capture, is acquired on its own channel, numbered in the order
+    the circuit acquires.
 
     Args:
         circuit: the circuit as uploaded
@@ -126,7 +106,7 @@ def to_native_circuit(circuit: QasmCircuit, dt: float) -> gates.NativeCircuit:
             OpenQASM has {m}
         UnsupportedCircuitError: gate {name} is not supported
         UnsupportedCircuitError: gate {name} has a parameter that is not a number
-        UnsupportedCircuitError: delay unit {unit} is not supported
+        UnsupportedCircuitError: unit {unit} is not supported
         UnsupportedCircuitError: {statements} are not supported
     """
     program = _parse(circuit)
@@ -190,11 +170,22 @@ def _add_statement(scope: _Scope, statement: ast.Statement) -> None:
                 f"include {statement.filename} is not supported"
             )
     elif isinstance(statement, ast.CalibrationGrammarDeclaration):
-        pass
-    elif isinstance(statement, (ast.CalibrationStatement, ast.CalibrationDefinition)):
-        raise UnsupportedCircuitError(
-            "pulse-level blocks, cal and defcal, are not supported"
+        if statement.name != "openpulse":
+            raise UnsupportedCircuitError(
+                f"calibration grammar {statement.name} is not supported"
+            )
+    elif isinstance(statement, ast.CalibrationStatement):
+        scope.native_gates.append(
+            get_pulse_block(
+                statement.body,
+                parameters={},
+                clbits=scope.clbits,
+                dt=scope.dt,
+                first_channel=_count_acquisitions(scope),
+            )
         )
+    elif isinstance(statement, ast.CalibrationDefinition):
+        _add_defcal(scope, statement)
     elif isinstance(statement, ast.QubitDeclaration):
         _add_register(scope.qubits, statement.qubit.name, _get_size(statement.size))
     elif isinstance(statement, ast.ClassicalDeclaration):
@@ -214,7 +205,7 @@ def _add_statement(scope: _Scope, statement: ast.Statement) -> None:
         qubits = _get_operand_qubits(scope, statement.qubits)
         scope.native_gates.append(gates.Barrier(qubits=tuple(qubits)))
     elif isinstance(statement, ast.DelayInstruction):
-        seconds = _get_seconds(statement.duration, scope.dt)
+        seconds = get_seconds(statement.duration, scope.dt)
         for qubit in _get_operand_qubits(scope, statement.qubits):
             scope.native_gates.append(gates.Delay(qubits=(qubit,), duration=seconds))
     else:
@@ -242,6 +233,28 @@ def _add_clbit_register(scope: _Scope, declaration: ast.ClassicalDeclaration) ->
     _add_register(
         scope.clbits, declaration.identifier.name, _get_size(declaration.type.size)
     )
+
+
+def _add_defcal(scope: _Scope, defcal: ast.CalibrationDefinition) -> None:
+    """Keeps the defcal, for the gates it matches
+
+    Raises:
+        UnsupportedCircuitError: a defcal of other than physical qubits is not supported
+        UnsupportedCircuitError: a defcal with a result, as of measure, is not supported
+    """
+    if not all(
+        isinstance(qubit, ast.Identifier) and qubit.name.startswith("$")
+        for qubit in defcal.qubits
+    ):
+        raise UnsupportedCircuitError(
+            "a defcal of other than physical qubits, as $0, is not supported"
+        )
+    if defcal.return_type is not None:
+        raise UnsupportedCircuitError(
+            "a defcal with a result, as of measure, is not supported"
+        )
+    qubits = tuple(int(qubit.name[1:]) for qubit in defcal.qubits)
+    scope.defcals.setdefault((defcal.name.name, qubits), []).append(defcal)
 
 
 def _add_gate(
@@ -273,7 +286,7 @@ def _add_gate(
     if gate.duration is not None:
         raise UnsupportedCircuitError(f"gate {name} with a duration is not supported")
     try:
-        params = [_get_number(argument, parameters) for argument in gate.arguments]
+        params = [get_number(argument, parameters) for argument in gate.arguments]
     except UnsupportedCircuitError as exp:
         raise UnsupportedCircuitError(
             f"gate {name} has a parameter that is not a number"
@@ -281,6 +294,19 @@ def _add_gate(
 
     operands = [_get_qubits(scope, qubit, local_qubits) for qubit in gate.qubits]
     for qubits in _broadcast(operands):
+        defcal_parameters = _match_defcal(scope, name, qubits, params)
+        if defcal_parameters is not None:
+            defcal, parameters_by_name = defcal_parameters
+            scope.native_gates.append(
+                get_pulse_block(
+                    defcal.body,
+                    parameters=parameters_by_name,
+                    clbits=scope.clbits,
+                    dt=scope.dt,
+                    first_channel=_count_acquisitions(scope),
+                )
+            )
+            continue
         decomposition = _get_decomposition(name, qubits, params)
         if decomposition is not None:
             scope.native_gates.extend(decomposition)
@@ -291,6 +317,39 @@ def _add_gate(
         if definition is None or name in defining:
             raise UnsupportedCircuitError(f"gate {name} is not supported")
         _add_defined_gates(scope, definition, qubits, params, defining | {name})
+
+
+def _match_defcal(
+    scope: _Scope, name: str, qubits: Sequence[int], params: Sequence[float]
+) -> Optional[Tuple[ast.CalibrationDefinition, Dict[str, complex]]]:
+    """The last defcal of the gate on the qubits whose parameters match, as a parameter
+    it names takes any value and one it writes as a number only that, with the values of
+    its named parameters; None if none matches"""
+    for defcal in reversed(scope.defcals.get((name, tuple(qubits)), [])):
+        if len(defcal.arguments) != len(params):
+            continue
+        parameters: Dict[str, complex] = {}
+        for argument, value in zip(defcal.arguments, params):
+            if isinstance(argument, ast.ClassicalArgument):
+                parameters[argument.name.name] = value
+            elif abs(get_number(argument, {}) - value) > 1e-9:
+                break
+        else:
+            return defcal, parameters
+    return None
+
+
+def _count_acquisitions(scope: _Scope) -> int:
+    """The number of the measurements and captures translated so far, which is the
+    channel of the next"""
+    measures = sum(isinstance(gate, gates.Measure) for gate in scope.native_gates)
+    captures = sum(
+        isinstance(op, gates.Capture)
+        for gate in scope.native_gates
+        if isinstance(gate, gates.PulseBlock)
+        for op in gate.operations
+    )
+    return measures + captures
 
 
 def _add_defined_gates(
@@ -341,7 +400,7 @@ def _add_measurement(scope: _Scope, statement: ast.QuantumMeasurementStatement) 
             "is not supported"
         )
     for qubit, clbit in zip(qubits, clbits):
-        channel = sum(isinstance(gate, gates.Measure) for gate in scope.native_gates)
+        channel = _count_acquisitions(scope)
         scope.native_gates.append(
             gates.Measure(qubit=qubit, clbit=clbit, channel=channel)
         )
@@ -392,7 +451,7 @@ def _get_bits(
         return list(bits)
     try:
         [[index_expression]] = operand.indices
-        return [bits[int(_get_number(index_expression, {}))]]
+        return [bits[int(get_number(index_expression, {}))]]
     except (ValueError, TypeError, IndexError, UnsupportedCircuitError) as exp:
         raise UnsupportedCircuitError(
             f"{kind} {name} is indexed by other than one number of its own"
@@ -416,59 +475,9 @@ def _broadcast(operands: List[List[int]]) -> Iterator[List[int]]:
         yield [qubits[index] if len(qubits) > 1 else qubits[0] for qubits in operands]
 
 
-def _get_number(expression: ast.Expression, parameters: Mapping[str, float]) -> float:
-    """The number the expression comes to, its identifiers the parameters given or
-    OpenQASM's constants
-
-    Raises:
-        UnsupportedCircuitError: {expression} is not a number
-    """
-    if isinstance(expression, (ast.IntegerLiteral, ast.FloatLiteral)):
-        return float(expression.value)
-    if isinstance(expression, ast.Identifier):
-        if expression.name in parameters:
-            return parameters[expression.name]
-        if expression.name in _CONSTANTS:
-            return _CONSTANTS[expression.name]
-    elif isinstance(expression, ast.UnaryExpression):
-        if expression.op.name == "-":
-            return -_get_number(expression.expression, parameters)
-    elif isinstance(expression, ast.BinaryExpression):
-        operation = _BINARY_OPERATIONS.get(expression.op.name)
-        if operation is not None:
-            return operation(
-                _get_number(expression.lhs, parameters),
-                _get_number(expression.rhs, parameters),
-            )
-    elif isinstance(expression, ast.FunctionCall):
-        function = _FUNCTIONS.get(expression.name.name)
-        if function is not None and len(expression.arguments) == 1:
-            return function(_get_number(expression.arguments[0], parameters))
-    raise UnsupportedCircuitError(f"{type(expression).__name__} is not a number")
-
-
-def _get_seconds(duration: ast.Expression, dt: float) -> float:
-    """The seconds of a delay's duration, counted in dt or in a unit of time
-
-    Raises:
-        UnsupportedCircuitError: delay unit {unit} is not supported
-        UnsupportedCircuitError: a delay of other than a duration is not supported
-    """
-    if not isinstance(duration, ast.DurationLiteral):
-        raise UnsupportedCircuitError(
-            "a delay of other than a duration is not supported"
-        )
-    unit = duration.unit.name
-    if unit == "dt":
-        return float(duration.value) * dt
-    if unit not in _SECONDS_PER_UNIT:
-        raise UnsupportedCircuitError(f"delay unit {unit} is not supported")
-    return float(duration.value) * _SECONDS_PER_UNIT[unit]
-
-
 def _get_size(size: ast.Expression | None) -> int:
     """The size of a register as declared, one if it states none"""
-    return 1 if size is None else int(_get_number(size, {}))
+    return 1 if size is None else int(get_number(size, {}))
 
 
 def _get_decomposition(

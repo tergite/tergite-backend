@@ -62,6 +62,7 @@ def get_circuit_schedule(
             circuit
         UnsupportedCircuitError: the simulator resets a qubit only before it operates on it
         UnsupportedCircuitError: qubits {a} and {b} have no coupler
+        UnsupportedCircuitError: pulse-level blocks run on the quantify executor ...
     """
     calibration = DeviceCalibration.from_config(backend_config)
     qubits = _get_qubit_calibrations(calibration, backend_config)
@@ -75,6 +76,11 @@ def get_circuit_schedule(
     free_at = [0] * circuit.num_qubits
     measures: List[gates.Measure] = []
     for gate in circuit.gates:
+        if isinstance(gate, gates.PulseBlock):
+            raise UnsupportedCircuitError(
+                "pulse-level blocks, cal and defcal, run on the quantify executor, not on "
+                "the simulators"
+            )
         if isinstance(gate, gates.Measure):
             measures.append(gate)
             continue
