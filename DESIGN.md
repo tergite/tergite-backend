@@ -728,6 +728,9 @@ A job file's `params` are one of two (`JobFile` in
   the circuit measures; the `CircuitReadout` saved with the results names each channel's qubit
   and classical bit, and postprocessing puts every measurement in its bit, bit 0 the least
   significant, a later measurement of a bit replacing an earlier one.
+  `dev/check_gate_level.py` checks a device's configs for these jobs without its instruments:
+  the calibration and LDA values they need, couplers whose CZ plays no pulse, and what the
+  compiler refuses of the hardware config, or would give an NCO beyond ±500 MHz.
 - **`qobj`, a Pulse Qobj** the SDK compiled from the calibration MSS publishes, kept for one
   release after gate-level jobs and then deleted with `libs/qiskit/`.
 
