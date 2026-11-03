@@ -6,11 +6,13 @@ Description: Name of a backend instance to create now:
  @BINARY@@<name> service and the backend in MSS. Leave it empty to create
  none; `sudo @BINARY@-provision <name>` creates one at any time.
 
-Template: @PACKAGE@/executor
+Template: @PACKAGE@/device
 Type: select
-Choices: @EXECUTORS@
-Default: @DEFAULT_EXECUTOR@
-Description: Executor of the instance:
+Choices: cluster, sim_1q, sim_2q
+Default: cluster
+Description: Device of the instance:
+ cluster runs a device on Qblox clusters; sim_1q and sim_2q simulate one
+ transmon, or two and their coupler, on QuTiP.
 
 Template: @PACKAGE@/port
 Type: string

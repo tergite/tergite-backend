@@ -15,7 +15,7 @@ variables:
   before_script:
     - apt-get update
     # install dependencies for recalibration
-    - if [ "$DEPS_GROUP" = "quantify" ]; then apt-get install libgl1 -y; fi
+    - apt-get install libgl1 -y
     # install uv
     - pip install uv
     # Ensure uv uses the project-local venv for easier sourcing
@@ -24,15 +24,11 @@ variables:
 tests:
   stage: tests
   <<: *setup_venv
-  parallel:
-    matrix:
-      - DEPS_GROUP: [ qiskit, quantify ]
   variables:
     UV_CACHE_DIR: "$CI_PROJECT_DIR/.cache/uv"
   script:
-    - echo "Testing $DEPS_GROUP"
     # Install project dependencies
-    - uv sync --dev --extra $DEPS_GROUP
+    - uv sync --dev
     - source .venv/bin/activate
     # Check formatting
     - black --check api libs services utils tests dev migrations main.py settings.py
@@ -42,25 +38,19 @@ tests:
     - pytest tests -n 4 --dist=worksteal -m "not real_time"
     - pytest tests -m real_time
   cache:
-    key: "uv-cache-$DEPS_GROUP-$CI_COMMIT_REF_SLUG"
+    key: "uv-cache-$CI_COMMIT_REF_SLUG"
     paths:
       - .cache/uv
       - .venv
 
-# On a v* tag, as .github/workflows/release.yml does on GitHub: the debs for amd64 and macOS
-# installers of bcc (quantify) and bcc.simulator (qiskit), each built on its platform as Nuitka
-# cannot cross-compile, uploaded to this project's package registry and linked from the release.
+# On a v* tag, as .github/workflows/release.yml does on GitHub: the deb for amd64 and the macOS
+# installer of bcc, each built on its platform as Nuitka cannot cross-compile, uploaded to this
+# project's package registry and linked from the release.
 .package: &package
   stage: package
   needs: []
-  # qiskit, jax and scipy make a build of an hour or more
+  # quantify, qutip and scipy can make a build of an hour or more
   timeout: 3h
-  parallel:
-    matrix:
-      - BINARY: bcc
-        EXECUTOR: quantify
-      - BINARY: bcc.simulator
-        EXECUTOR: qiskit
   variables: &package_variables
     # the Python the binaries are built with; uv would otherwise take the newest it can download
     UV_PYTHON: "3.13"
@@ -91,13 +81,13 @@ package linux:
     - curl -fsSL -o /tmp/nfpm.tar.gz "https://github.com/goreleaser/nfpm/releases/download/v$NFPM_VERSION/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
     - echo "$NFPM_SHA256  /tmp/nfpm.tar.gz" | sha256sum -c -
     - tar -xzf /tmp/nfpm.tar.gz -C /usr/local/bin nfpm
-    - pkg/render.sh "$BINARY" >/dev/null
+    - pkg/render.sh >/dev/null
     - mkdir -p dist
-    - ARCH=amd64 nfpm package -f "build/pkg-$BINARY/nfpm.yaml" -p deb -t dist/
+    - ARCH=amd64 nfpm package -f build/pkg-bcc/nfpm.yaml -p deb -t dist/
     # build-linux.sh skips apt where the image has its tools, so the deb's dependencies need fresh lists
     - apt-get update -qq
     - DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ./dist/*.deb
-    - pkg/smoke-test.sh "$BINARY"
+    - pkg/smoke-test.sh
     - pkg/publish.sh dist/*.deb
 
 # A Mac with uv and ccache, registered with the shell executor and tagged macos, whose home
@@ -113,7 +103,7 @@ package macos:
   script:
     - export VERSION=${CI_COMMIT_TAG#v}
     - pkg/build.sh
-    - pkg/macos/build.sh "$BINARY"
+    - pkg/macos/build.sh
     - pkg/publish.sh dist/*.pkg
 
 release:

@@ -34,6 +34,7 @@ from quantify_scheduler.backends.graph_compilation import SerialCompiler
 from quantify_scheduler.device_under_test.quantum_device import QuantumDevice
 from quantify_scheduler.instrument_coordinator import InstrumentCoordinator
 from quantify_scheduler.instrument_coordinator.components.qblox import ClusterComponent
+from tergite_tuner.utils.types.enums import MeasurementMode, SPIMode
 
 from libs.device_parameters.dtos import BackendConfig
 from libs.quantum_executor.base.circuits import CircuitExperiment, QasmCircuit
@@ -49,7 +50,6 @@ from libs.quantum_executor.quantify.utils.config import (
     load_quantify_config,
 )
 from libs.quantum_executor.utils.logger import ExperimentLogger
-from utils.compat import MeasurementMode, SPIMode
 
 from ...device_parameters import DeviceCalibration
 from .utils.calibration import recalibrate

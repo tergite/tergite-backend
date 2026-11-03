@@ -19,7 +19,6 @@ jobs:
     strategy:
       matrix:
         python-version: [ "3.13" ]
-        deps-group: [ "qiskit", "quantify" ]
 
     steps:
       - uses: actions/checkout@v6
@@ -28,10 +27,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
-          cache-suffix: ${{ matrix.deps-group }}
       - name: Run tests
         run: |
-          uv sync --dev --extra ${{ matrix.deps-group }}
+          uv sync --dev
           uv run black --check api libs services utils tests dev migrations main.py settings.py
           uv run isort --check-only api libs services utils tests dev migrations main.py settings.py
           uv run pyflakes api libs services utils tests dev migrations main.py settings.py

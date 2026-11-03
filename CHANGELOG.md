@@ -34,6 +34,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   x, rx, measure, reset and delay, and cz where it has couplers), from the names of its config's gate settings
 - Changed `POST /jobs` to take OpenQASM 3 circuits only, deleting the qobj path: an older SDK's qobj job is now
   refused with 400, "the backend takes OpenQASM 3 circuits only, not a qobj", so send circuits, pulses as OpenPulse
+- Changed the backend to install as one package with no extras, one `bcc` binary replacing `bcc` and `bcc.simulator`,
+  and deleted the qiskit-dynamics simulators: `BCC_EXECUTOR_TYPE=qiskit_pulse_1q`/`qiskit_pulse_2q` is now refused, a
+  simulated device being executor type `quantify` with a `[simulator]` section in its backend config
 
 ### Fixed
 

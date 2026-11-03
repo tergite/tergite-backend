@@ -2,20 +2,22 @@
 
 The executor is the core component to run the quantum circuit on a backend.
 It manages the access to the instruments or sets up the simulator in case the backend is a simulator.
-Right now, we have implemented the following backends:
-- "quantify": This is interfacing to qblox quantify via quantify and the recommended option, because the WACQT quantum processor is running on that platform. It can be run in the dummy mode, check out the [configuration manual](./configuration.md) on how to do it.
-- "qiskit_pulse_1q": Single qubit simulator using qiskit-dynamics
-- "qiskit_pulse_2q": Two-qubit gate simulator using qiskit-dynamics
+Right now, `BCC_EXECUTOR_TYPE=quantify` is the only executor type, and it runs a device on one of two executors:
+- `QuantifyExecutor`, in `libs/quantum_executor/quantify/executor.py`: quantify-scheduler schedules on Qblox clusters,
+  real or dummy; check out the [configuration manual](./configuration.md) on how to run dummy ones.
+- `QutipExecutor`, in `libs/quantum_executor/quantify/qutip_executor.py`: a simulated device, chosen by a `[simulator]`
+  section in its backend config, whose circuits are compiled as on clusters and played on QuTiP; see
+  [Simulated Devices](./configuration.md#simulated-devices).
 
 If you want to implement a new executor, follow these steps below.
 
 ### 1. Create a class for your executor
 - The base class for any executor is `QuantumExecutor`, in `libs/quantum_executor/base/executor.py`.
-- Add a new package for your executor in `libs/quantum_executor/`, beside `quantify` and `qiskit`.
+- Add a new package for your executor in `libs/quantum_executor/`, beside `quantify`.
 - Inherit from that class to create your own executor, implementing `to_circuit_experiments`, `run_native`,
   `recalibrate` (returning `None` if your backend does not recalibrate) and `close`.
 - If your backend needs some basic tune-up or training, such as a discriminator, do it when the executor is
-  constructed and put the result in its `backend_config`, as the qiskit simulators do; the heavy worker publishes
+  constructed and put the result in its `backend_config`, as `QutipExecutor` does with its discriminators; the heavy worker publishes
   that config to MSS once the executor is loaded.
 
 ### 2. Implement a transpiler
@@ -24,17 +26,18 @@ If you want to implement a new executor, follow these steps below.
   (`libs/quantum_executor/base/gates.py`); compile those, with the device's calibration, into the schedule your
   backend runs, acquiring each `Measure` on its `channel`, and return them as `CircuitExperiment`s whose readout
   `NativeCircuit.to_readout` gives. `run_native` runs each of them.
-- A backend that cannot play pulse-level blocks (`PulseBlock`, in `libs/quantum_executor/base/gates.py`) refuses
-  them with an `UnsupportedCircuitError`, as the qiskit simulators do in `libs/quantum_executor/qiskit/circuits.py`.
+- A backend that cannot play pulse-level blocks (`PulseBlock`, in `libs/quantum_executor/base/gates.py`), or another
+  part of a circuit, refuses it with an `UnsupportedCircuitError`, as the simulator does a gate after a measurement in
+  `libs/quantum_executor/quantify/simulator.py`.
 - Other modules in `libs/quantum_executor` might have to be adapted or added.
 
 ### 3. Next steps
-- Load your executor by its `BCC_EXECUTOR_TYPE` in `_init_executor` in `services/scheduler/utils.py`, which imports
-  each executor only when it is chosen, so that the others' dependencies need not be installed.
-- Add its dependencies as an extra in `pyproject.toml`, and to the Nuitka options at the top of `main.py`.
+- Load your executor in `_init_executor` in `services/scheduler/utils.py`, by a new `BCC_EXECUTOR_TYPE` (the
+  `executor_type` of `DeviceSettings`, in `utils/config.py`) or by a section of the backend config, as the simulator is.
+- Add its dependencies to `pyproject.toml`, and to the Nuitka options at the top of `main.py`.
 - Add documentation for your executor.
   - You probably have to update the `.env.example`, and add example configs beside `quantify-config.example.json`.
-  - Provisioning, in `pkg/provision.sh`, writes an instance's example configs for its executor.
+  - Provisioning, in `pkg/provision.sh`, writes an instance's example configs for its device.
 - Check whether all tests are running.
 
 For more intuition on how the executors are integrated into the stack, check out the existing ones in the source code.

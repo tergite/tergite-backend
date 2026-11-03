@@ -1,6 +1,7 @@
 #!/bin/sh
-# Creates a backend instance: `sudo @BINARY@-provision <name> [--executor E] [--port P]
-# [--mss-url URL]`.
+# Creates a backend instance: `sudo @BINARY@-provision <name> [--device D] [--port P]
+# [--mss-url URL]`, D being cluster, a device on Qblox clusters, or sim_1q or sim_2q, a
+# simulated one with one transmon, or two and their coupler.
 # <name> is its DEFAULT_PREFIX, which names /etc/bcc/<name>, /var/lib/bcc/<name> and the
 # @BINARY@@<name> service, or on macOS /usr/local/etc/bcc/<name>, /usr/local/var/bcc/<name>
 # and a LaunchDaemon. Writes backend.env, a key pair and the example configs, and leaves an
@@ -25,18 +26,18 @@ examples=$share_dir/examples
 
 main() {
 	name=$1
-	[ -n "$name" ] || fail "usage: @BINARY@-provision <name> [--executor E] [--port P] [--mss-url URL]"
+	[ -n "$name" ] || fail "usage: @BINARY@-provision <name> [--device D] [--port P] [--mss-url URL]"
 	shift
 	case $name in
 		*[!A-Za-z0-9_-]*) fail "the name '$name' may only have letters, digits, _ and -" ;;
 	esac
 
-	executor=@DEFAULT_EXECUTOR@
+	device=cluster
 	port=@DEFAULT_PORT@
 	mss_url=http://localhost:8002
 	while [ $# -gt 0 ]; do
 		case $1 in
-			--executor) executor=$2 ;;
+			--device) device=$2 ;;
 			--port) port=$2 ;;
 			--mss-url) mss_url=$2 ;;
 			*) fail "unknown option $1" ;;
@@ -62,7 +63,7 @@ main() {
 	mkdir -p "$dir" "$data/storage"
 	chown "root:$group" "$dir"
 	chown -R "$group:$group" "$data"
-	copy_examples "$executor"
+	copy_examples "$device"
 	# MSS knows the backend by its DEFAULT_PREFIX; the first name is [general_config]'s
 	awk -v name="$name" '!is_named && /^name = / { print "name = \"" name "\""; is_named = 1; next } { print }' \
 		"$dir/backend_config.toml" >"$dir/backend_config.toml.new"
@@ -86,7 +87,7 @@ main() {
 		# Written by @BINARY@-provision. Every other setting, and what it does, is in
 		# $share_dir/env.example.
 		BCC_DEFAULT_PREFIX=$name
-		BCC_EXECUTOR_TYPE=$executor
+		BCC_EXECUTOR_TYPE=quantify
 		BCC_APP_SETTINGS=production
 		BCC_PORT=$port
 		BCC_MACHINE_ROOT_URL=http://$host:$port
@@ -135,25 +136,27 @@ main() {
 
 copy_examples() {
 	case $1 in
-		quantify)
+		cluster)
 			install -m 0640 "$examples/backend_config.example.toml" "$dir/backend_config.toml"
 			install_seed "$examples/calibration.seed.example.toml"
 			install -m 0640 "$examples/quantify-config.example.json" "$dir/quantify-config.json"
 			install -m 0640 "$examples/quantify-metadata.example.yml" "$dir/quantify-metadata.yml"
-			install -m 0640 "$examples/calib_device_config.example.toml" "$dir/device_config.calib.toml"
-			install -m 0640 "$examples/node_config.example.toml" "$dir/node_config.calib.toml"
-			install -m 0640 "$examples/spi_config.example.toml" "$dir/spi_config.calib.toml"
 			;;
-		qiskit_pulse_1q)
+		sim_1q)
 			install -m 0640 "$examples/backend_config.simq1.toml" "$dir/backend_config.toml"
 			install_seed "$examples/qiskit_pulse_1q.seed.toml"
 			;;
-		qiskit_pulse_2q)
+		sim_2q)
 			install -m 0640 "$examples/backend_config.simq2.toml" "$dir/backend_config.toml"
 			install_seed "$examples/qiskit_pulse_2q.seed.toml"
 			;;
-		*) fail "@BINARY@ runs no executor '$1'" ;;
+		*) fail "@BINARY@ knows no device '$1'; it takes cluster, sim_1q or sim_2q" ;;
 	esac
+	# the settings refuse any device without the tuner's configs, though a simulated one never
+	# recalibrates
+	install -m 0640 "$examples/calib_device_config.example.toml" "$dir/device_config.calib.toml"
+	install -m 0640 "$examples/node_config.example.toml" "$dir/node_config.calib.toml"
+	install -m 0640 "$examples/spi_config.example.toml" "$dir/spi_config.calib.toml"
 }
 
 # the seed in the data folder, the service's own, as each recalibration rewrites it and

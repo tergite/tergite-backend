@@ -9,18 +9,18 @@
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
-"""Runs main.py with the qiskit executor's simulation stubbed out, so that the performance
+"""Runs main.py with the QuTiP executor's simulation stubbed out, so that the performance
 baselines measure the scheduler and not the physics; dev/perf/record.sh runs the heavy worker
 with it
 
-The qiskit executor is swapped before main.py builds one, so BCC_ENV_FILE must name the
+The QuTiP executor is swapped before main.py builds one, so BCC_ENV_FILE must name the
 device's env file: settings is read on import, before main.py could set it.
 """
 
-import libs.quantum_executor.qiskit.executor as qiskit_executor
+import libs.quantum_executor.quantify.qutip_executor as qutip_executor
 import main
 from dev.perf.stub_executor import StubExecutor
 
 if __name__ == "__main__":
-    qiskit_executor.QiskitDynamicsExecutor = StubExecutor
+    qutip_executor.QutipExecutor = StubExecutor
     main.main()

@@ -24,10 +24,7 @@ from libs.quantum_executor.base.qasm import to_native_circuit
 from libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
 from tests.utils.circuits import get_gate_level_seed, get_qasm
 from tests.utils.env import TEST_BACKEND_SETTINGS_FILE, TEST_QUANTIFY_SEED_FILE
-from tests.utils.params import HAS_QUANTIFY
 from utils.exc import UnsupportedCircuitError
-
-pytestmark = pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 
 _ELEMENTS = ["q12", "q13", "q14"]
 _NATIVE_CONFIG = NativeQobjConfig.from_measurement_settings(

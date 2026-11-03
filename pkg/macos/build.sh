@@ -1,17 +1,17 @@
 #!/bin/sh
-# Packages a built binary as a macOS installer: from the repo root, with VERSION set,
-# `pkg/macos/build.sh bcc` or `pkg/macos/build.sh bcc.simulator`. SIGN_IDENTITY, a
-# "Developer ID Installer" certificate's name, signs it; without one Gatekeeper blocks it.
+# Packages the built binary as a macOS installer: from the repo root, with VERSION set,
+# `pkg/macos/build.sh`. SIGN_IDENTITY, a "Developer ID Installer" certificate's name, signs it;
+# without one Gatekeeper blocks it.
 
 set -e
 
-binary=$1
-[ -n "$binary" ] && [ -n "$VERSION" ] || {
-	echo "usage: VERSION=<version> $0 bcc|bcc.simulator" >&2
+[ -n "$VERSION" ] || {
+	echo "usage: VERSION=<version> $0" >&2
 	exit 1
 }
 
-package=$(pkg/render.sh "$binary")
+binary=bcc
+package=$(pkg/render.sh)
 rendered=build/pkg-$binary
 output=dist/$package-$VERSION-macos-$(uname -m).pkg
 root=$(mktemp -d)

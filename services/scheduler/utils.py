@@ -295,38 +295,13 @@ def _init_executor(
     Returns:
         An initialized quantum executor
     """
-    executor_type = options.executor_type
     backend_config = options.backend_config
-
-    if executor_type == "qiskit_pulse_1q":
-        # only import this if the executor is of the qiskit_pulse so
-        # that the rest of the code is independent of qiskit
-        from libs.quantum_executor.qiskit.executor import QiskitDynamicsExecutor
-
-        return QiskitDynamicsExecutor.new_one_qubit(
-            backend_config=backend_config,
-            data_dir=options.data_directory,
-            should_reset=should_reset,
-        )
-
-    elif executor_type == "qiskit_pulse_2q":
-        # only import this if the executor is of the qiskit_pulse so
-        # that the rest of the code is independent of qiskit
-        from libs.quantum_executor.qiskit.executor import QiskitDynamicsExecutor
-
-        return QiskitDynamicsExecutor.new_two_qubit(
-            backend_config=backend_config,
-            data_dir=options.data_directory,
-            should_reset=should_reset,
-        )
 
     if backend_config.simulator is not None:
         from libs.quantum_executor.quantify.qutip_executor import QutipExecutor
 
         return QutipExecutor(backend_config, data_dir=options.data_directory)
 
-    # only import this if the executor is of the quantify so
-    # that the rest of the code is independent of quantify
     from libs.quantum_executor.quantify.executor import QuantifyExecutor
 
     return QuantifyExecutor(

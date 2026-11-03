@@ -65,7 +65,6 @@ from tests.utils.params import (
     ALL_INVALID_UPLOAD_JOB_PARAMS,
     ALL_UPLOAD_JOB_PARAMS,
     FASTAPI_CLIENTS,
-    HAS_QUANTIFY,
     SIMPLE_UPLOAD_JOB_PARAMS,
     USERS,
     VIEW_JOB_PARAMS,
@@ -166,7 +165,6 @@ def test_job_token_for_another_job_is_refused(client):
         assert response.status_code == 403
 
 
-@pytest.mark.simulated
 # the 2-qubit simulation alone takes about a minute on a fast machine, beside other workers more
 @pytest.mark.timeout(600)
 @pytest.mark.parametrize(
@@ -557,10 +555,6 @@ def test_job_whose_booking_ended_in_preprocessing_runs(
 
 
 @pytest.mark.real_time
-@pytest.mark.skipif(
-    not HAS_QUANTIFY,
-    reason="the simulators compile for long enough to reorder the jobs before the booking",
-)
 @pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_submit_long_jobs_before_booking(
     client,

@@ -9,38 +9,38 @@
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
-"""The qiskit executor with its simulation stubbed out, for dev/perf/stub_worker.py"""
+"""The QuTiP executor with its simulation stubbed out, for dev/perf/stub_worker.py"""
 
-import numpy as np
+from quantify_scheduler import Schedule
 
-import libs.quantum_executor.qiskit.executor as qiskit_executor
 from libs.quantum_executor.base.circuits import CircuitExperiment
 from libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
 from libs.quantum_executor.base.quantum_job.typing import QExperimentResult
+from libs.quantum_executor.quantify import simulator
+from libs.quantum_executor.quantify.qutip_executor import QutipExecutor
 from libs.quantum_executor.utils.logger import ExperimentLogger
 
 
-class StubExecutor(qiskit_executor.QiskitDynamicsExecutor):
-    """Preprocesses and postprocesses as the qiskit executor does, but measures every
-    acquired qubit at zero at once instead of simulating it"""
+class StubExecutor(QutipExecutor):
+    """Compiles and reads out as the QuTiP executor does, but reads every acquisition of
+    the ground state instead of simulating the schedule"""
 
     def run_native(
         self,
-        experiment: CircuitExperiment,
+        experiment: CircuitExperiment[Schedule],
         /,
         *,
         native_config: NativeQobjConfig,
         logger: ExperimentLogger,
     ) -> QExperimentResult:
-        meas_return = qiskit_executor._QiskitDynMeasReturn.from_native_qobj_config(
-            native_config
+        compiled = self._compiler.compile(
+            schedule=experiment.schedule,
+            config=self._quantum_device.generate_compilation_config(),
         )
-        slots = qiskit_executor._get_acquired_slots(experiment.schedule)
-        # a column for every slot up to the last, as qiskit-dynamics returns
-        if meas_return == qiskit_executor._QiskitDynMeasReturn.AVG:
-            shape = (slots[-1] + 1, 2)
-        else:
-            shape = (native_config.shots, slots[-1] + 1, 2)
-        return qiskit_executor._to_xarray(
-            data=np.zeros(shape), meas_return=meas_return, slots=slots
+        events = simulator._get_events(compiled, self._simulated)
+        model = simulator._Model.create(self._simulated, sorted(events.elements))
+        ground_state = model.get_ground_state()
+        states = {start: ground_state for start, _, _, _ in events.acquisitions}
+        return simulator._read_out(
+            events.acquisitions, states, model, native_config.shots, self._rng
         )

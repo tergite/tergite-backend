@@ -14,7 +14,7 @@ this document is the map that ties them together.
 `tergite-backend` is the device-facing half of the [Tergite stack](https://tergite.github.io/)
 for the WACQT quantum computers. A BCC runs the jobs of one or more quantum devices: real
 devices through Qblox clusters with [quantify](https://quantify-os.org/), or simulated ones
-with [qiskit-dynamics](https://qiskit-community.github.io/qiskit-dynamics/). Users never reach
+compiled as on clusters and played on [QuTiP](https://qutip.org/). Users never reach
 it directly except to upload a job: everything else comes through MSS, the Main Service Server
 in [tergite-frontend](https://github.com/tergite/tergite-frontend).
 
@@ -22,10 +22,10 @@ in [tergite-frontend](https://github.com/tergite/tergite-frontend).
 | --- | --- | --- | --- |
 | **API** | `api/` | Python 3.13+, FastAPI, uvicorn | The REST API MSS and the SDK call: jobs, bookings, users, the device's properties, recalibration and switch. |
 | **Workers** | `services/scheduler/` | the same process image, `main.py worker` | Run each job's stages and the recalibrations, claiming them from the SQL database. |
-| **Executors** | `libs/quantum_executor/` | quantify-scheduler and Qblox, or qiskit-dynamics and JAX | Compile jobs' OpenQASM 3 circuits, and the OpenPulse they may hold, to the device's native programs and run them. |
+| **Executors** | `libs/quantum_executor/` | quantify-scheduler, and Qblox or QuTiP | Compile jobs' OpenQASM 3 circuits, and the OpenPulse they may hold, to the device's native programs and run them. |
 
-The two executors' dependencies conflict, so an installation carries one: the `quantify` extra,
-packaged as `tergite-backend`, or the `qiskit` extra, packaged as `tergite-backend-simulator`.
+The backend installs as one package, `tergite-backend`, with no extras: every installation runs
+both devices on clusters and simulated ones.
 
 ## 2. System context
 
@@ -145,7 +145,7 @@ roots (§5.2). `tests/test_styleguide.py` checks the direction.
 │   ├── devices/             # the device's properties, calibration and switch
 │   └── external/mss/        # the client to MSS, its events, signatures and nonces
 ├── libs/                    # imports no app code but utils
-│   ├── quantum_executor/    # base/, quantify/, qiskit/: compiling and running the jobs
+│   ├── quantum_executor/    # base/, quantify/: compiling and running the jobs, on clusters or QuTiP
 │   ├── device_parameters/   # BackendConfig, Device, DeviceCalibration
 │   └── queues/              # Job, Stage, JobStatus, ExecutorOptions
 ├── utils/                   # config, SQL, logging, datetimes, exceptions, strings
@@ -210,7 +210,7 @@ lock, and, in a heavy worker, the executor.
   recalibration. On shutdown it stops the recalibrations and closes the resources.
 - A **worker** migrates under the same lock, as it may start before the API. A heavy worker
   loads the executor, whose instruments it resets; the executor may refine the backend config
-  (the simulators train their discriminators), so the heavy worker alone saves the device's
+  (a simulated device draws its discriminators), so the heavy worker alone saves the device's
   properties and calibration in the database and sends them to MSS as `initialized`.
 
 ### 5.3 Per-request pipeline
@@ -720,9 +720,8 @@ physical qubits and parameters, plays on the frames the device publishes, named 
 ports (`q12_drive`, `q12_readout`, `q12_q13_coupler`): OpenPulse's waveform generators or
 arrays of samples, phase and frequency shifts and sets, delays, barriers, and `capture_v1`
 into a classical bit, read out as a measurement of the frame's qubit. Each block runs its
-frames side by side, from where what precedes it ends (`quantify/circuits.py`); the
-simulators refuse pulse-level blocks. A pulse-level job is let in only for a project MSS
-says may send one, when it asks for the job's token (`MSSTokenClaims.is_pulse_allowed`,
+frames side by side, from where what precedes it ends (`quantify/circuits.py`). A pulse-level
+job is let in only for a project MSS says may send one, when it asks for the job's token (`MSSTokenClaims.is_pulse_allowed`,
 signed as the token's `pulse` claim), and only within the limits the device's operators
 set in its backend config's `pulse_limits` (`base/pulse_limits.py`): amplitude and energy
 by kind of frame, how far a frame's frequency may move, samples per waveform, the
@@ -736,11 +735,11 @@ Circuit qubit `i` is the device's `i`-th qubit by the number in its id. The exec
 quantify against a `QuantumDevice` of a transmon per qubit and a `CouplerEdge` per coupler
 (`quantify/device.py`), each shot after an idle in which the qubits relax and its operations
 one after the other but for consecutive measurements, or delays, of distinct qubits, which
-start together;
-the simulators to a qiskit-pulse schedule of the pulses the SDK built before
-(`qiskit/circuits.py`), each operation as soon as its qubits are free and every measurement
-at the end, as qiskit-dynamics measures at one time only. A circuit that measures no qubit is
-refused, as it has no results. Each measurement is acquired on its own channel, numbered in the order
+start together. A simulated device compiles the same way, for a `QuantumDevice` without
+hardware, and plays the schedule on QuTiP (`quantify/simulator.py`), which reads a qubit
+without collapsing it, so it refuses a gate on a qubit after its measurement. A circuit that
+measures no qubit is refused, as it has no results. Each measurement is acquired on its own
+channel, numbered in the order
 the circuit measures; the `CircuitReadout` saved with the results names each channel's qubit
 and classical bit, and postprocessing puts every measurement in its bit, bit 0 the least
 significant, a later measurement of a bit replacing an earlier one.
@@ -752,14 +751,17 @@ A job file whose `params` hold a `qobj`, the Pulse Qobj an SDK older than gate-l
 sends, is refused at upload with 400: "the backend takes OpenQASM 3 circuits only, not a qobj;
 upgrade the tergite SDK to send them".
 
-| `BCC_EXECUTOR_TYPE` | Executor | Extra |
-| --- | --- | --- |
-| `quantify` | `QuantifyExecutor`: quantify-scheduler schedules on Qblox clusters, real or dummy (`quantify-config.json`, `quantify-metadata.yml`); recalibrates with tergite-tuner | `quantify` |
-| `qiskit_pulse_1q` | `QiskitDynamicsExecutor.new_one_qubit`: one transmon | `qiskit` |
-| `qiskit_pulse_2q` | `QiskitDynamicsExecutor.new_two_qubit`: two transmons and their coupler | `qiskit` |
+`BCC_EXECUTOR_TYPE` is `quantify`, the only type; `_init_executor` in
+`services/scheduler/utils.py` picks the executor by the backend config:
 
-`_init_executor` in `services/scheduler/utils.py` imports each only when it is chosen, so the
-rest of the code runs with either extra. Adding one: [docs/executors.md](docs/executors.md).
+| Backend config | Executor |
+| --- | --- |
+| no `[simulator]` section | `QuantifyExecutor`: quantify-scheduler schedules on Qblox clusters, real or dummy (`quantify-config.json`, `quantify-metadata.yml`); recalibrates with tergite-tuner |
+| a `[simulator]` section | `QutipExecutor`: the same schedules played on QuTiP, a model of the device's transmons and couplers drawn from its calibration; never recalibrates |
+
+It imports each only when it is chosen, so a process that runs no executor, such as the API,
+never takes the seconds quantify and QuTiP take to import. Adding one:
+[docs/executors.md](docs/executors.md).
 
 ## 12. Configuration
 
@@ -768,7 +770,7 @@ them all, and see [docs/configuration.md](docs/configuration.md). Beside it, the
 file names:
 
 - `backend_config.toml` — the device's qubits, resonators, couplers and gates, and for a
-  simulator its `simulator_config`;
+  simulated device its `[simulator]` section;
 - `calibration.seed.toml` — the calibration a device starts with, which each quantify
   recalibration rewrites, keeping tergite-tuner's own results beside it as
   `calibration.seed.tuner.json`;
@@ -784,13 +786,12 @@ encrypted with a Hashicorp Vault key (`sops_hc_vault__`) into the environment, t
 ## 13. Deployment
 
 BCC installs from its release's deb (amd64) or macOS arm64 installer: Nuitka's standalone
-build, `bcc` from the quantify extra or `bcc.simulator` from the qiskit one, each in its own
-package so they install side by side. Each instance is a device: `bcc-provision <name>` writes
-`/etc/bcc/<name>/` (its `backend.env`, a key pair and the example configs) and its calibration
-seed into `/var/lib/bcc/<name>/`, which recalibrations rewrite while `/etc` is read-only to the
-service; the `bcc@<name>` systemd service runs it from there, logging to the journal; on
-macOS the paths are under `/usr/local/` and a LaunchDaemon runs it. The deb asks debconf for a
-first instance. See
+build, `bcc`. Each instance is a device on clusters or a simulated one: `bcc-provision <name>
+[--device cluster|sim_1q|sim_2q]` writes `/etc/bcc/<name>/` (its `backend.env`, a key pair and
+the example configs) and its calibration seed into `/var/lib/bcc/<name>/`, which recalibrations
+rewrite while `/etc` is read-only to the service; the `bcc@<name>` systemd service runs it from
+there, logging to the journal; on macOS the paths are under `/usr/local/` and a LaunchDaemon
+runs it. The deb asks debconf for a first instance. See
 [CONTRIBUTING.md](CONTRIBUTING.md#how-to-install-as-a-service).
 
 ## 14. Testing
@@ -801,10 +802,7 @@ first instance. See
 | e2e | tergite-frontend's [`dev/e2e_native_test.sh`](https://github.com/tergite/tergite-frontend/blob/main/dev/e2e_native_test.sh), MSS and its dashboard against this checkout | `BACKEND_PATH=../tergite-backend ./dev/e2e_native_test.sh`, from tergite-frontend |
 | Performance | `dev/perf/` — Locust on a simulator device with a stubbed MSS and simulation | `./dev/perf/record.sh <dir>`, then `python3 dev/perf/compare.py dev/perf/baselines <dir>` |
 
-Each extra runs the suite in its own environment: `.venv` (`uv sync --dev --extra quantify`)
-and one synced with `UV_PROJECT_ENVIRONMENT=.venv-qiskit uv sync --dev --extra qiskit`. A test
-needing the other extra is skipped (`HAS_QUANTIFY`, `HAS_QISKIT_DYNAMICS` in
-`tests/utils/params.py`).
+The suite runs in one environment, `.venv` (`uv sync --dev`), which has every dependency.
 
 - `tests/conftest.py` calls `setup_test_env()` **before any app import**, as `settings` reads
   the env file when imported; keep that ordering when adding fixtures.
@@ -817,8 +815,8 @@ needing the other extra is skipped (`HAS_QUANTIFY`, `HAS_QISKIT_DYNAMICS` in
   that matches their job.
 - `tests/api/` drives each router through the test client; `tests/services/` tests the
   executors and tasks; the files at the top test the rest.
-- The simulators' tests use a stub executor; `@pytest.mark.simulated` runs one for real, for
-  tests that check measured counts.
+- The simulated devices' tests run their jobs on QuTiP, as a circuit takes milliseconds; the
+  device on clusters runs `MockQuantifyExecutor` on dummy clusters.
 - The suite runs on 4 pytest-xdist workers, `--dist=worksteal`, as each has its own temporary
   root and database: about 3 times as fast as one. The tests marked
   `real_time`, whose outcome depends on how fast the machine works through the jobs against
@@ -837,15 +835,15 @@ Both GitHub Actions ([.github/workflows](.github/workflows)) and GitLab CI
 ([.gitlab-ci.yml](.gitlab-ci.yml)) are maintained; GitLab is the source of truth (GitHub is a
 mirror — see §16).
 
-On every push and merge request, `tests` runs for each extra, `qiskit` and `quantify`, with uv
-from `uv.lock` on Python 3.13: `black --check`, `isort --check-only` and `pyflakes`
-over `api libs services utils tests dev migrations main.py settings.py`, then the tests as §14
-runs them.
+On every push and merge request, `tests` runs with uv from `uv.lock` on Python 3.13:
+`black --check`, `isort --check-only` and `pyflakes` over
+`api libs services utils tests dev migrations main.py settings.py`, then the tests as §14 runs
+them.
 
 On a `v*` tag, GitHub's `release.yml` and GitLab's `package linux`, `package macos` and
-`release` jobs build both binaries with Nuitka, package them as debs and macOS installers, install each and smoke-test an
-instance with it, and attach them to the release. GitLab's macOS job runs only where
-`PUBLISH_MACOS_ARM64` is `true`.
+`release` jobs build `bcc` with Nuitka, package it as a deb and a macOS installer, install each
+and smoke-test an instance of a device on clusters and of a simulated one with it, and attach
+them to the release. GitLab's macOS job runs only where `PUBLISH_MACOS_ARM64` is `true`.
 
 ## 16. Working on this repo
 
@@ -941,15 +939,12 @@ rules, and code a change touches is brought in line with them.
 ### Verifying a change
 
 **Every commit** runs `black` and `isort` with no flags and `pyflakes` over the source folders,
-then the tests the change can affect, serially, logged as [below](#slow-commands). A change
-that reaches executor code (`libs/quantum_executor/`, `services/scheduler/tasks.py`,
-`_init_executor`) runs them in both environments, `.venv` and `.venv-qiskit` (§14), as each
-extra skips the other's tests. A commit that fixes a style violation deletes its line from
-the styleguide baseline; none adds one.
+then the tests the change can affect, serially, logged as [below](#slow-commands). A commit
+that fixes a style violation deletes its line from the styleguide baseline; none adds one.
 
 **Before a merge request**:
 
-- the full suite in both environments;
+- the full suite;
 - tergite-frontend's `dev/e2e_native_test.sh` against this checkout (`BACKEND_PATH`);
 - the performance check, recorded with `dev/perf/record.sh` and compared with
   `dev/perf/baselines`, which are never re-recorded for an older commit. Its numbers are this

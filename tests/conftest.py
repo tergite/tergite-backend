@@ -17,8 +17,6 @@ import settings
 from utils.config import create_device_folders
 from utils.logging import err_logger
 
-from .utils.params import HAS_QUANTIFY
-
 create_device_folders(settings.get_device_settings())
 
 pytest_plugins = [
@@ -46,10 +44,9 @@ def _run_in_the_test_root():
 def _close_cached_instruments():
     """Closes the dummy clusters MockQuantifyExecutor keeps from test to test"""
     yield
-    if HAS_QUANTIFY:
-        from libs.quantum_executor.quantify.executor import QuantifyExecutor
+    from libs.quantum_executor.quantify.executor import QuantifyExecutor
 
-        QuantifyExecutor._close_cached_instruments()
+    QuantifyExecutor._close_cached_instruments()
 
 
 @pytest.fixture(autouse=True, scope="session")

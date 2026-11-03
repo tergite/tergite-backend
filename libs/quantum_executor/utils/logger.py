@@ -21,13 +21,10 @@ from typing import Dict, Optional, Union
 
 import pandas as pd
 import tabulate
-
-from utils.compat import (
-    TUID,
-    CompiledSchedule,
-    Schedule,
-    locate_experiment_container,
-)
+from quantify_core.data.handling import locate_experiment_container
+from quantify_core.data.types import TUID
+from quantify_scheduler import Schedule
+from quantify_scheduler.schedules import CompiledSchedule
 
 from .general import load_config, search_nested
 

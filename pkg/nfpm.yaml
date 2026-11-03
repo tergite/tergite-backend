@@ -1,4 +1,4 @@
-# Rendered for one binary by pkg/render.sh, which replaces @PACKAGE@ and @BINARY@
+# Rendered by pkg/render.sh, which replaces @PACKAGE@ and @BINARY@
 name: @PACKAGE@
 arch: ${ARCH}
 platform: linux
@@ -48,7 +48,7 @@ contents:
 
   - src: .env.example
     dst: /usr/share/@PACKAGE@/env.example
-  # what provisioning copies into an instance, for its executor
+  # what provisioning copies into an instance, for its device
   - src: backend_config.example.toml
     dst: /usr/share/@PACKAGE@/examples/backend_config.example.toml
   - src: calibration.seed.example.toml
@@ -74,7 +74,7 @@ contents:
   - src: LICENSE.txt
     dst: /usr/share/doc/@PACKAGE@/LICENSE.txt
 
-  # shared by both packages; each instance's folder in it holds the only copy of its secrets
+  # each instance's folder in it holds the only copy of its secrets
   - dst: /etc/bcc
     type: dir
     file_info:

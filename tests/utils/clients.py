@@ -30,9 +30,9 @@ from tests.utils.env import (
     TEST_DEFAULT_PREFIX,
     TEST_DEFAULT_PREFIX_SIM_1Q,
     TEST_DEFAULT_PREFIX_SIM_2Q,
-    TEST_QISKIT_1Q_SEED_FILE,
-    TEST_QISKIT_2Q_SEED_FILE,
     TEST_QUANTIFY_SEED_FILE,
+    TEST_SIM_1Q_SEED_FILE,
+    TEST_SIM_2Q_SEED_FILE,
     TEST_SIMQ1_BACKEND_SETTINGS_FILE,
     TEST_SIMQ2_BACKEND_SETTINGS_FILE,
 )
@@ -88,14 +88,14 @@ def quantify_rest_client(
 
 
 @pytest.fixture
-def qiskit_1q_rest_client(
+def sim_1q_rest_client(
     request, mocker, mock_mss, monkeypatch
 ) -> Generator[TestClient, Any, None]:
     """A test client of the simulated 1-qubit device"""
     monkeypatch.setenv("BCC_EXECUTOR_TYPE", "quantify")
     monkeypatch.setenv("BCC_DEFAULT_PREFIX", TEST_DEFAULT_PREFIX_SIM_1Q)
     monkeypatch.setenv("BCC_BACKEND_SETTINGS", TEST_SIMQ1_BACKEND_SETTINGS_FILE)
-    monkeypatch.setenv("BCC_CALIBRATION_SEED", TEST_QISKIT_1Q_SEED_FILE)
+    monkeypatch.setenv("BCC_CALIBRATION_SEED", TEST_SIM_1Q_SEED_FILE)
     use_test_durations(mocker)
     import settings
 
@@ -107,14 +107,14 @@ def qiskit_1q_rest_client(
 
 
 @pytest.fixture
-def qiskit_2q_rest_client(
+def sim_2q_rest_client(
     request, mocker, mock_mss, monkeypatch
 ) -> Generator[TestClient, Any, None]:
     """A test client of the simulated 2-qubit device"""
     monkeypatch.setenv("BCC_EXECUTOR_TYPE", "quantify")
     monkeypatch.setenv("BCC_DEFAULT_PREFIX", TEST_DEFAULT_PREFIX_SIM_2Q)
     monkeypatch.setenv("BCC_BACKEND_SETTINGS", TEST_SIMQ2_BACKEND_SETTINGS_FILE)
-    monkeypatch.setenv("BCC_CALIBRATION_SEED", TEST_QISKIT_2Q_SEED_FILE)
+    monkeypatch.setenv("BCC_CALIBRATION_SEED", TEST_SIM_2Q_SEED_FILE)
     use_test_durations(mocker)
     import settings
 

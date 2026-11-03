@@ -55,10 +55,8 @@ and `BCC_QUANTIFY_METADATA_FILE=foobar.yml`_
 We configure all backends using the `backend_config.toml`.   
 We use the [`backend_config.example.toml`](../backend_config.example.toml) as a template.  
 
-This configuration file can contain the calibration values in case we are running it as a simulator.
-The calibration values are under the key `simulator_config`. 
-
-**Note: the `simulator_config` is ignored if the `general_config.simulator` variable is not set to `true`.**    
+A `[simulator]` section in it makes the device a simulated one, run on QuTiP instead of clusters; see
+[Simulated Devices](#simulated-devices).
 
 _NOTE: You don't need to pass the `.env` file, the `backend_config.toml` file or the quantify files to the 
 start script as these are automatically loaded for you._  
@@ -68,7 +66,7 @@ start script as these are automatically loaded for you._
 A device runs pulse-level jobs, OpenQASM 3 with OpenPulse `cal` blocks and `defcal`s, only
 from the projects MSS lets send them, and only within the limits its operators set in the
 `[pulse_limits]` section of its `backend_config.toml`. A device without the section refuses
-every pulse-level job; gate-level jobs run either way. The simulators refuse them too.
+every pulse-level job; gate-level jobs run either way.
 
 Each job is checked at upload, refused with the reason if it is beyond a limit, and checked
 again before it runs. The limits:
@@ -124,11 +122,15 @@ q1 = [[0.0, 1.0], [0.0, -1.0]]
 ```
 
 The test fixtures hold a simulated one-qubit device and a two-qubit one with a coupler, which
-run with the default `BCC_EXECUTOR_TYPE=quantify`:
+run with the default `BCC_EXECUTOR_TYPE=quantify`. The settings require tergite-tuner's configs
+of every device, which a simulated one never reads, so the examples do:
 
 ```shell
 # on the root of the project
 cp tests/fixtures/backend_config.simq2.toml backend_config.toml
 cp tests/fixtures/qiskit_pulse_2q.seed.toml calibration.seed.toml
+cp node_config.example.toml node_config.calib.toml
+cp calib_device_config.example.toml device_config.calib.toml
+cp spi_config.example.toml spi_config.calib.toml
 ./dev/start_bcc.sh
 ```

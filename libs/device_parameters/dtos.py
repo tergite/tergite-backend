@@ -50,7 +50,8 @@ from utils.datetime import utc_now_str
 from .utils import attach_units_many
 
 if TYPE_CHECKING:
-    from utils.compat import CalibrationResults, CouplerResults
+    from tergite_tuner import CalibrationResults
+    from tergite_tuner.export import CouplerResults
 
 _CalibValueType = TypeVar("_CalibValueType", int, float, str)
 _DOWNCONVERT_FREQUENCY = 4.4e9
