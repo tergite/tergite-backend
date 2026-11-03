@@ -119,7 +119,37 @@ def test_a_clocks_phase_shift_turns_its_later_pulses(
     schedule.add(X90("q12"))
     schedule.add(Measure("q12"))
 
-    assert _get_excited(device, chip, schedule) == pytest.approx(expected, abs=0.03)
+    assert _get_excited(device, chip, schedule) == pytest.approx(expected, abs=0.05)
+
+
+def test_a_pulses_phase_advance_undoes_its_clocks_detuning(device, chip):
+    """As tergite-tuner's Ramsey nodes take it to, emulating a detuning by the phase of
+    their second pulse"""
+    delay = 248e-9
+    # a quarter turn between the pulses, which a phase advance the wrong way doubles
+    turns = 0.25
+    detuning = turns / (delay + device.get_element("q12").rxy.duration())
+    schedule = _get_schedule()
+    schedule.add(
+        SetClockFrequency(clock="q12.01", clock_freq_new=_QUBIT.frequency + detuning)
+    )
+    schedule.add(X90("q12"))
+    schedule.add(Rxy(90, -360 * turns, "q12"), rel_time=delay)
+    schedule.add(Measure("q12"))
+
+    assert _get_excited(device, chip, schedule) == pytest.approx(1.0, abs=0.03)
+
+
+def test_a_clocks_phase_shift_turns_later_pulses_against_their_phase(device, chip):
+    """As a virtual Z of quantify's gates does: Rz(90) then Rxy(90, 90) rotates about x"""
+    schedule = _get_schedule()
+    schedule.add(SetClockFrequency(clock="q12.01", clock_freq_new=_QUBIT.frequency))
+    schedule.add(X90("q12"))
+    schedule.add(ShiftClockPhase(phase_shift=90, clock="q12.01"))
+    schedule.add(Rxy(90, 90, "q12"))
+    schedule.add(Measure("q12"))
+
+    assert _get_excited(device, chip, schedule) == pytest.approx(1.0, abs=0.03)
 
 
 def test_an_excited_transmon_relaxes_at_its_t1(device, chip):

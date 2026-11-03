@@ -297,7 +297,9 @@ def _add_pulse_info(
     elif info.get("reset_clock_phase"):
         timeline.clock_changes.append(ClockChange(start, clock, reset=True))
     elif "phase_shift" in info:
-        shift = info["phase_shift"] / 360
+        # a shift turns the carrier back, so that it turns later pulses' axes the other
+        # way from their own phase, as a virtual Z of quantify's gates does
+        shift = -info["phase_shift"] / 360
         timeline.clock_changes.append(ClockChange(start, clock, phase_shift=shift))
     elif "clock_freq_new" in info:
         timeline.clock_changes.append(

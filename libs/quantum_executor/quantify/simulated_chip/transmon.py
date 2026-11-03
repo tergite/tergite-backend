@@ -122,8 +122,10 @@ class Transmon:
         rate = math.pi * self.qubit.rabi_frequency
         propagator = np.eye(LEVELS * LEVELS, dtype=complex)
         for value, length in _get_runs(samples):
+            # the mixers send the envelope's upper sideband, so the transmon's raising
+            # takes its conjugate
             drive = rate * (
-                value * _ANNIHILATOR.conj().T + np.conj(value) * _ANNIHILATOR
+                np.conj(value) * _ANNIHILATOR.conj().T + value * _ANNIHILATOR
             )
             liouvillian = _get_liouvillian(static + drive) + self._dissipator
             propagator = expm(liouvillian * length * SAMPLE) @ propagator
