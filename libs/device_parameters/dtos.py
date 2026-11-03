@@ -794,6 +794,7 @@ class _BackendCalibrationConfig(BaseModel):
 
 
 _NonNegative = Annotated[float, Field(ge=0)]
+_Positive = Annotated[float, Field(gt=0)]
 
 
 class PulseLimits(BaseModel):
@@ -813,6 +814,116 @@ class PulseLimits(BaseModel):
     max_capture_duration: _NonNegative
 
 
+class ChipQubit(BaseModel):
+    """A simulated chip's transmon, as it is, not as its calibration finds it"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # of the transition from |0> to |1>, in hertz
+    frequency: _Positive
+    # the frequency of |1> to |2> less that of |0> to |1>, in hertz; negative for a transmon
+    anharmonicity: float
+    # the Rabi frequency, in hertz, of a resonant drive of amplitude 1
+    rabi_frequency: _Positive
+    t1: _Positive
+    t2: _Positive
+
+    @model_validator(mode="after")
+    def check_t2(self) -> Self:
+        """Requires a T2 no longer than twice the T1
+
+        Raises:
+            ValueError: t2 {t2} is longer than twice t1 {t1}
+        """
+        if self.t2 > 2 * self.t1:
+            raise ValueError(f"t2 {self.t2} is longer than twice t1 {self.t1}")
+        return self
+
+
+class ChipResonator(BaseModel):
+    """A simulated chip's readout resonator, a hanger on the feedline whose dip moves with
+    its transmon's level, and towards its bare frequency as the readout grows stronger
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # of its dip with its transmon in |0>, at a weak readout, in hertz
+    frequency: _Positive
+    # the shift of its dip, in hertz, with its transmon in |1>; twice that in |2>
+    dispersive_shift: float
+    # of its dip at a readout too strong for the transmon to shift it, in hertz
+    bare_frequency: _Positive
+    # the readout amplitude at which its dip is half way to its bare frequency
+    critical_amplitude: _Positive
+    internal_quality: _Positive
+    coupling_quality: _Positive
+    # the transmission off resonance of a readout of amplitude 1, and its phase in radians
+    amplitude: _Positive = 1.0
+    phase: float = 0.0
+
+
+class ChipCoupler(BaseModel):
+    """A simulated chip's coupler, a flux-tunable transmon between two qubits"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # of its transition from |0> to |1> at zero flux, in hertz
+    max_frequency: _Positive
+    anharmonicity: float
+    # its coupling to each of its qubits, by qubit id, in hertz
+    couplings: Dict[str, _Positive]
+    # its flux, in flux quanta, without a current or a pulse
+    flux_offset: float = 0.0
+    # the flux, in flux quanta, of an ampere of DC current, and of a flux pulse of amplitude 1
+    flux_per_current: float = 0.0
+    flux_per_amplitude: float
+
+    @field_validator("couplings")
+    @classmethod
+    def check_two_qubits(cls, couplings: Dict[str, float]) -> Dict[str, float]:
+        """Requires a coupling to each of two qubits
+
+        Raises:
+            ValueError: a coupler couples two qubits, not {qubits}
+        """
+        if len(couplings) != 2:
+            raise ValueError(f"a coupler couples two qubits, not {list(couplings)}")
+        return couplings
+
+
+class ChipConfig(BaseModel):
+    """The true parameters of a simulated chip, which its calibration does not see, by the
+    ids of its qubits and couplers: a resonator by its qubit's id, a coupler by its
+    qubits', e.g. q12_q13"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    qubits: Dict[str, ChipQubit]
+    resonators: Dict[str, ChipResonator]
+    couplers: Dict[str, ChipCoupler] = {}
+    # the standard deviation of a shot's I, and of its Q, integrated over a microsecond
+    readout_noise: _NonNegative
+
+    @model_validator(mode="after")
+    def check_elements(self) -> Self:
+        """Requires a resonator for each qubit, and the qubits of each coupler
+
+        Raises:
+            ValueError: the qubits {ids} have no resonator
+            ValueError: the coupler {id} couples qubits {ids} the chip lacks
+        """
+        unread = sorted(set(self.qubits) - set(self.resonators))
+        if unread:
+            raise ValueError(f"the qubits {unread} have no resonator")
+        for name, coupler in self.couplers.items():
+            missing = sorted(set(coupler.couplings) - set(self.qubits))
+            if missing:
+                raise ValueError(
+                    f"the coupler {name} couples qubits {missing} the chip lacks"
+                )
+        return self
+
+
 class SimulatorConfig(BaseModel):
     """How a simulated device reads its qubits out, which its backend config's simulator
     section sets; a device with one runs its jobs on QuTiP, not on clusters"""
@@ -823,6 +934,8 @@ class SimulatorConfig(BaseModel):
     readout_iq: Dict[str, Tuple[Tuple[float, float], Tuple[float, float]]]
     # the standard deviation of a shot's I, and of its Q, about its state's point
     readout_noise: _NonNegative
+    # the chip as it is, on which its schedules play as compiled for its clusters
+    chip: Optional[ChipConfig] = None
 
 
 class BackendConfig(BaseModel):

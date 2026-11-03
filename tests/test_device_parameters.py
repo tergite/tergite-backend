@@ -11,12 +11,14 @@
 # that they have been altered from the originals.
 """Tests for the device parameters"""
 from datetime import datetime, timezone
+from typing import Any, Dict
 
 import pytest
 import time_machine
+import toml
 
 from libs.device_parameters import BackendConfig, Device, DeviceCalibration
-from libs.device_parameters.dtos import _BackendGeneralConfig
+from libs.device_parameters.dtos import ChipConfig, _BackendGeneralConfig
 from tests.utils.fixtures import get_fixture_path
 
 
@@ -109,3 +111,54 @@ def test_device_lists_the_gates_gate_level_jobs_compile(settings, seed, expected
         "delay",
         *expected_cz,
     ]
+
+
+def test_a_simulator_section_takes_a_chip(tmp_path):
+    chip = toml.load(get_fixture_path("simulated_chip.toml"))
+    settings = tmp_path / "backend_config.toml"
+    settings.write_text(
+        open(get_fixture_path("backend_config.simq2.toml")).read()
+        + toml.dumps({"chip": chip}).replace("[chip", "[simulator.chip")
+    )
+
+    config = BackendConfig.from_toml(
+        settings, get_fixture_path("qiskit_pulse_2q.seed.toml")
+    )
+
+    assert config.simulator.chip == ChipConfig.model_validate(chip)
+    assert config.simulator.chip.couplers["q12_q13"].couplings == {
+        "q12": 0.1e9,
+        "q13": 0.1e9,
+    }
+
+
+@pytest.mark.parametrize(
+    "change, error",
+    [
+        ({"qubits": {"q12": {"t2": 2e-4}}}, "longer than twice t1"),
+        ({"resonators": {"q14": None}}, r"qubits \['q14'\] have no resonator"),
+        ({"couplers": {"q12_q13": {"couplings": {"q13": None}}}}, "two qubits"),
+        (
+            {"couplers": {"q12_q13": {"couplings": {"q13": None, "q15": 1e8}}}},
+            r"couples qubits \['q15'\] the chip lacks",
+        ),
+    ],
+)
+def test_an_impossible_chip_is_refused(change, error):
+    chip = _merge(toml.load(get_fixture_path("simulated_chip.toml")), change)
+
+    with pytest.raises(ValueError, match=error):
+        ChipConfig.model_validate(chip)
+
+
+def _merge(base: Dict[str, Any], change: Dict[str, Any]) -> Dict[str, Any]:
+    """Gets the base with the change's values over its own, a None removing a key"""
+    merged = dict(base)
+    for key, value in change.items():
+        if value is None:
+            merged.pop(key)
+        elif isinstance(value, dict) and isinstance(base.get(key), dict):
+            merged[key] = _merge(base[key], value)
+        else:
+            merged[key] = value
+    return merged
