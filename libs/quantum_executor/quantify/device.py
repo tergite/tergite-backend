@@ -210,6 +210,32 @@ def remove_elements(device: QuantumDevice) -> None:
         _close_instrument(name)
 
 
+def get_frame_frequencies(device: QuantumDevice) -> Dict[str, float]:
+    """Gets the calibrated frequency of each frame the device publishes: each transmon's
+    drive and readout, and each coupler edge's flux, at its CZ's frequency; a frame of no
+    calibrated frequency is left out
+
+    Args:
+        device: the quantum device that gate-level jobs compile against
+
+    Returns:
+        the frequencies in hertz, by the frames' names, e.g. q12_drive, q12_readout and
+        q12_q13_coupler
+    """
+    frequencies = {}
+    for name in device.elements():
+        element = device.get_element(name)
+        frequencies[f"{name}_drive"] = element.clock_freqs.f01()
+        frequencies[f"{name}_readout"] = element.clock_freqs.readout()
+    for name in device.edges():
+        frequencies[f"{name}_coupler"] = device.get_edge(name).cz_frequency()
+    return {
+        name: float(frequency)
+        for name, frequency in frequencies.items()
+        if frequency and not math.isnan(frequency)
+    }
+
+
 def get_edge_names(device: QuantumDevice) -> List[str]:
     """Gets the names of the device's edges, each {parent}_{child}
 

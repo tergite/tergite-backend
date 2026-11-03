@@ -17,6 +17,7 @@ from typing import (
     Any,
     Dict,
     List,
+    NotRequired,
     Optional,
     Tuple,
     TypedDict,
@@ -214,10 +215,11 @@ def get_token(client: "TestClient", data: "LoginDetails") -> Tuple[str, "Respons
 
 
 class LoginDetails(TypedDict):
-    """Details used to log in"""
+    """Details used to log in, and whether MSS lets the job be pulse-level"""
 
     user_id: str
     job_id: str
+    is_pulse_allowed: NotRequired[bool]
 
 
 def get_status_codes_as_mss_admin(

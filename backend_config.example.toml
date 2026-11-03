@@ -324,3 +324,29 @@ coef_1 = 887.7905115161115
 intercept = 27.886206575432258
 coef_0 = 2929.2382879657407
 coef_1 = -1233.2987098430888
+
+# What the device's pulse-level jobs may play: OpenPulse cal blocks and defcals, from the
+# projects MSS lets send them. Without this section the device refuses them all, so set
+# it only with limits chosen for this chip, its fridge and its amplifiers; the values
+# below are placeholders, from no chip. See docs/configuration.md.
+#
+# The limits by kind take a kind of frame each: drive, readout or coupler. A kind left out
+# of max_amplitude, max_energy_per_shot or max_energy_per_job may not be played at all;
+# here coupler frames are left out, as for a chip whose couplers are parked by hand.
+#
+# [pulse_limits]
+# # the largest |sample| of a waveform on a frame of the kind, as a fraction of full scale
+# max_amplitude = { drive = 0.5, readout = 0.3 }
+# # Hz a frame may move from its calibrated frequency, by set_frequency or shift_frequency
+# max_frequency_offset = 20e6
+# # the energy on one frame in one shot, the sum of its samples' |amplitude|^2 times dt, in
+# # full scale^2 s: e.g. a constant 0.3 for 100 ns is 0.3^2 * 100e-9 = 9e-9
+# max_energy_per_shot = { drive = 1e-8, readout = 1e-7 }
+# # the energy on one frame over the whole job: each circuit's per-shot energy times shots
+# max_energy_per_job = { drive = 1e-4, readout = 1e-3 }
+# # s of a circuit's pulse-level blocks in one shot, each block as long as its longest frame
+# max_pulse_duration = 50e-6
+# # the samples of one waveform, as played: a 1 us waveform at a dt of 1 ns is 1000
+# max_samples_per_waveform = 16384
+# # s of one capture
+# max_capture_duration = 16e-6

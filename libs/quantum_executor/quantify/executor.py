@@ -44,6 +44,7 @@ from libs.quantum_executor.base.quantum_job import get_experiment_name
 from libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
 from libs.quantum_executor.base.quantum_job.typing import QExperimentResult
 from libs.quantum_executor.quantify.circuits import (
+    DeviceFrames,
     get_circuit_schedule,
     get_measure_duration,
 )
@@ -51,6 +52,7 @@ from libs.quantum_executor.quantify.device import (
     apply_calibration,
     get_edge_names,
     get_element_name,
+    get_frame_frequencies,
     remove_elements,
 )
 from libs.quantum_executor.quantify.experiment import QuantifyExperiment
@@ -248,6 +250,10 @@ class QuantifyExecutor(QuantumExecutor):
         element_names = [get_element_name(qubit_id) for qubit_id in qubit_ids]
         edge_names = get_edge_names(self._gate_level_device)
         measure_durations = self._get_measure_durations(element_names)
+        frames = DeviceFrames(
+            dt=self.backend_config.general_config.dt,
+            frequencies=get_frame_frequencies(self._gate_level_device),
+        )
         compilation_config = self._gate_level_device.generate_compilation_config()
 
         experiments = []
@@ -261,6 +267,7 @@ class QuantifyExecutor(QuantumExecutor):
                 element_names=element_names,
                 edge_names=edge_names,
                 measure_durations=measure_durations,
+                frames=frames,
             )
             compiled = self._compiler.compile(schedule, config=compilation_config)
             experiments.append(

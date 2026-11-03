@@ -29,6 +29,11 @@ from libs.quantum_executor.base.circuits import (
     QasmCircuit,
 )
 from libs.quantum_executor.base.experiment import NativeExperiment
+from libs.quantum_executor.base.pulse_limits import (
+    check_pulse_limits,
+    get_calibrated_frame_frequencies,
+)
+from libs.quantum_executor.base.qasm import to_native_circuit
 from libs.quantum_executor.base.quantum_job import (
     save_job_in_hdf5,
 )
@@ -224,6 +229,8 @@ def preprocess_circuits(
 
     Raises:
         UnsupportedCircuitError: circuits {names} measure no qubit
+        UnsupportedCircuitError: a pulse-level block beyond the device's limits; see
+            pulse_limits.check_pulse_limits
     """
     native_config = NativeQobjConfig.from_circuit_job_params(
         params, n_qubits=executor.backend_config.general_config.num_qubits
@@ -239,6 +246,15 @@ def preprocess_circuits(
     )
 
     try:
+        # checked again here, where the job runs, whatever way its file came
+        dt = executor.backend_config.general_config.dt
+        check_pulse_limits(
+            [to_native_circuit(circuit, dt=dt) for circuit in params.circuits],
+            shots=params.shots,
+            limits=executor.backend_config.pulse_limits,
+            frame_frequencies=get_calibrated_frame_frequencies(executor.backend_config),
+            dt=dt,
+        )
         experiments = executor.to_circuit_experiments(params.circuits, native_config)
         # an experiment without acquisitions has no results to save, which would leave
         # every other circuit's results without their own on reading them back

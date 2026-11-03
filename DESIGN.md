@@ -718,8 +718,21 @@ A job file's `params` are one of two (`JobFile` in
   reads OpenQASM 3 and the OpenPulse it may hold, and translates its gates into native ones
   (`base/gates.py`: `Rxy`, `Rz`, `CZ`, `Measure`, `Reset`, `Delay`, `Barrier`), decomposing the
   rest by a table, by the program's own gate definitions, or by those of OpenQASM's
-  `stdgates.inc`; control flow, gate modifiers and, as yet, `cal` and `defcal` blocks are
-  refused. Circuit qubit `i` is the device's `i`-th qubit by the number in its id. The executor compiles them with the device's own calibration:
+  `stdgates.inc`; control flow and gate modifiers are refused. Its OpenPulse is pulse-level
+  (`base/pulses.py`): a `cal` block, or a `defcal` in place of the gate it matches by name,
+  physical qubits and parameters, plays on the frames the device publishes, named after its
+  ports (`q12_drive`, `q12_readout`, `q12_q13_coupler`): OpenPulse's waveform generators or
+  arrays of samples, phase and frequency shifts and sets, delays, barriers, and `capture_v1`
+  into a classical bit, read out as a measurement of the frame's qubit. Each block runs its
+  frames side by side, from where what precedes it ends (`quantify/circuits.py`); the
+  simulators refuse pulse-level blocks. A pulse-level job is let in only for a project MSS
+  says may send one, when it asks for the job's token (`MSSTokenClaims.is_pulse_allowed`,
+  signed as the token's `pulse` claim), and only within the limits the device's operators
+  set in its backend config's `pulse_limits` (`base/pulse_limits.py`): amplitude and energy
+  by kind of frame, how far a frame's frequency may move, samples per waveform, the
+  duration of a capture and of a shot's pulse-level blocks. A device that sets none takes
+  no pulse-level jobs. Both are checked at upload, refusing with the reason, and the limits
+  again before the job runs. Circuit qubit `i` is the device's `i`-th qubit by the number in its id. The executor compiles them with the device's own calibration:
   quantify against a `QuantumDevice` of a transmon per qubit and a `CouplerEdge` per coupler
   (`quantify/device.py`), each shot after the qobj path's idle and its operations one after the
   other but for consecutive measurements, or delays, of distinct qubits, which start together;

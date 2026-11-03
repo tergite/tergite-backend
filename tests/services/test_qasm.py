@@ -276,10 +276,6 @@ def test_readout_round_trips_through_its_dict():
         ("input float theta;\nrz(theta) $0;", "inputs and outputs are not supported"),
         ("measure $0;", "a measurement that keeps no result is not supported"),
         ('include "qelib1.inc";\nx $0;', "include qelib1.inc is not supported"),
-        (
-            'defcalgrammar "openpulse";\ncal { }\nx $0;',
-            "pulse-level blocks, cal and defcal, are not supported",
-        ),
     ],
     ids=[
         "if",
@@ -289,7 +285,6 @@ def test_readout_round_trips_through_its_dict():
         "input",
         "no-result",
         "include",
-        "cal",
     ],
 )
 def test_what_has_no_native_gates_is_refused(statements, message):
