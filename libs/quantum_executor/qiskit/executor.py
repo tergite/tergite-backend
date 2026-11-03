@@ -13,16 +13,21 @@
 # that they have been altered from the originals.
 import enum
 from pathlib import Path
-from typing import List
+from typing import List, Sequence, Union
 
 import numpy as np
+import qiskit.pulse as qiskit_pulse
 from numpy import typing as npt
+from qiskit.pulse import Schedule
 from qiskit.result import Result as qiskitResult
 from qiskit_dynamics import DynamicsBackend
 
 from libs.qiskit.qobj import PulseQobj
+from libs.quantum_executor.base.circuits import CircuitExperiment, QasmCircuit
 from libs.quantum_executor.base.executor import QuantumExecutor
 from libs.quantum_executor.base.experiment import NativeExperiment
+from libs.quantum_executor.base.qasm import to_native_circuit
+from libs.quantum_executor.qiskit.circuits import get_circuit_schedule
 from libs.quantum_executor.qiskit.experiment import QiskitDynamicsExperiment
 
 from ...device_parameters import BackendConfig
@@ -59,7 +64,7 @@ class QiskitDynamicsExecutor(QuantumExecutor):
 
     def run_native(
         self,
-        experiment: NativeExperiment,
+        experiment: Union[NativeExperiment, CircuitExperiment[Schedule]],
         /,
         *,
         native_config: NativeQobjConfig,
@@ -68,7 +73,7 @@ class QiskitDynamicsExecutor(QuantumExecutor):
         """Simulates the native experiment
 
         Args:
-            experiment: the native experiment to run
+            experiment: the native experiment to run, of a qobj or of a circuit
             native_config: native config for the qobj
             logger: the logger for the given experiment
 
@@ -82,7 +87,11 @@ class QiskitDynamicsExecutor(QuantumExecutor):
         )
         result: qiskitResult = job.result()
         memory: npt.NDArray[np.floating] = result.data()["memory"]
-        return _to_xarray(data=memory, meas_return=meas_return)
+        return _to_xarray(
+            data=memory,
+            meas_return=meas_return,
+            slots=_get_acquired_slots(experiment.schedule),
+        )
 
     def to_native_experiments(
         self, qobj: PulseQobj, native_config: NativeQobjConfig, /
@@ -106,6 +115,39 @@ class QiskitDynamicsExecutor(QuantumExecutor):
             for idx, expt in enumerate(qobj.experiments)
         ]
         return native_experiments
+
+    def to_circuit_experiments(
+        self, circuits: List[QasmCircuit], native_config: NativeQobjConfig, /
+    ) -> List[CircuitExperiment[Schedule]]:
+        """Compiles the circuits of a gate-level job to pulse schedules from the simulated
+        device's calibration, each circuit qubit i being the i-th qubit by its number
+
+        Args:
+            circuits: the circuits of the job
+            native_config: the native config for the job
+
+        Returns:
+            an experiment per circuit, each measurement acquired into the memory slot of
+            its channel
+
+        Raises:
+            UnsupportedCircuitError: a circuit has a gate or qubits the simulator lacks
+        """
+        dt = self.backend_config.general_config.dt
+        qubit_ids = self.backend_config.device_config.qubit_numbers
+        experiments = []
+        for idx, circuit in enumerate(circuits):
+            native_circuit = to_native_circuit(circuit, dt=dt)
+            schedule = get_circuit_schedule(native_circuit, self.backend_config)
+            experiments.append(
+                CircuitExperiment(
+                    name=get_experiment_name(circuit.name, idx + 1),
+                    schedule=schedule,
+                    duration=schedule.duration * dt,
+                    readout=native_circuit.to_readout(qubit_ids),
+                )
+            )
+        return experiments
 
     def close(self):
         """Does nothing, as the simulator holds no resources to free"""
@@ -211,7 +253,9 @@ def _to_complex(
 
 
 def _to_xarray(
-    data: npt.NDArray[np.floating], meas_return: _QiskitDynMeasReturn
+    data: npt.NDArray[np.floating],
+    meas_return: _QiskitDynMeasReturn,
+    slots: Sequence[int],
 ) -> QExperimentResult:
     """Constructs an xarray dataset from the given data and meas_return type
 
@@ -255,6 +299,8 @@ def _to_xarray(
     Args:
         data: the data to convert.
         meas_return: the _QiskitDynMeasReturn type
+        slots: the memory slots the experiment acquired into, each a qubit's; the data has
+            a column for every slot up to the last, so those of unmeasured qubits are left out
 
     Returns:
         the xarray.Dataset representation of the data of format
@@ -292,9 +338,6 @@ def _to_xarray(
         # array([[re1_1 + j im1_1, ..., re1_N + j im1_N], ..., [reM_1 + j imM_1, ..., reM_N + j imM_N]])
         acquisitions = _to_complex(real=data[:, :, 0], imaginary=data[:, :, 1])
 
-    # no_of_acq_per_channel = number of shots if meas_return = 'single'  or 1 if meas_return = 'avg'.
-    no_of_acq_channels = acquisitions.shape[1]
-
     # The index seems unnecessary
     # from https://quantify-os.org/docs/quantify-scheduler/v0.22.1/reference/acquisition_protocols.html#single-sideband-complex-integration
 
@@ -304,6 +347,24 @@ def _to_xarray(
                 data=np.expand_dims(acquisitions[:, i], 1),
                 dims=["repetition", f"acq_index_{i}"],
             )
-            for i in range(no_of_acq_channels)
+            for i in slots
         },
+    )
+
+
+def _get_acquired_slots(schedule: Schedule) -> List[int]:
+    """Gets the memory slots the schedule acquires into, in order
+
+    Args:
+        schedule: the schedule of an experiment
+
+    Returns:
+        the indexes of the memory slots its acquisitions write
+    """
+    return sorted(
+        {
+            instruction.mem_slot.index
+            for _, instruction in schedule.instructions
+            if isinstance(instruction, qiskit_pulse.Acquire)
+        }
     )

@@ -11,6 +11,7 @@
 # that they have been altered from the originals.
 """Telling systemd that the process is alive, for a unit with WatchdogSec, which restarts it
 when told nothing for that long; a datagram on NOTIFY_SOCKET, as sd_notify sends it"""
+import errno
 import os
 import socket
 import time
@@ -18,7 +19,8 @@ from typing import Callable, Optional
 
 
 def notify_systemd(message: str) -> None:
-    """Sends systemd the message, e.g. WATCHDOG=1, if it runs this process; else nothing
+    """Sends systemd the message, e.g. WATCHDOG=1, if it runs this process; else nothing.
+    A message systemd has no room for, as it has not read those before, is dropped
 
     Args:
         message: the notification to send
@@ -30,7 +32,17 @@ def notify_systemd(message: str) -> None:
     if address.startswith("@"):
         address = "\0" + address[1:]
     with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sender:
-        sender.sendto(message.encode(), address)
+        # Linux queues 10 unread datagrams and blocks the next sender, which would stall
+        # bcc start's watch of its children; the next notification follows anyway
+        sender.setblocking(False)
+        try:
+            sender.sendto(message.encode(), address)
+        except BlockingIOError:
+            pass
+        except OSError as exp:
+            # macOS refuses the datagram instead
+            if exp.errno != errno.ENOBUFS:
+                raise
 
 
 def get_watchdog_seconds() -> Optional[float]:

@@ -26,7 +26,7 @@ from sqlalchemy import Engine
 import settings
 from services.booking import (
     MSSTokenClaims,
-    get_user_job_id_pair_from_token,
+    get_mss_token_claims,
 )
 from services.devices import is_offline
 from services.external.mss import (
@@ -338,10 +338,9 @@ def get_mss_token_claims_dep(
             ItemNotFoundError: job {job_id} does not exist
             InvalidJobIdInUploadedFileError: The job does not have a valid UUID4 {job_id_field}
         """
-        user_id, token_job_id = get_user_job_id_pair_from_token(
-            token, secret_key=device.settings.jwt_secret
-        )
-        if job_id != token_job_id:
+        claims = get_mss_token_claims(token, secret_key=device.settings.jwt_secret)
+        user_id = claims.user_id
+        if job_id != claims.job_id:
             raise UnauthorizedError(f"unexpected job id {job_id}")
 
         try:
@@ -354,7 +353,7 @@ def get_mss_token_claims_dep(
             if should_job_exist:
                 raise ItemNotFoundError(f"job {job_id} does not exist")
 
-        return MSSTokenClaims(user_id=user_id, job_id=job_id)
+        return claims
 
     return dependency_injector
 
@@ -437,12 +436,10 @@ def get_verified_mss_details(request: Request) -> MSSAuthDetails:
     except NotAuthenticatedError:
         token = get_bearer_token(request)
         secret_key = get_device_resources(request).settings.jwt_secret
-        user_id, token_job_id = get_user_job_id_pair_from_token(
-            token, secret_key=secret_key
-        )
-        if token_job_id != job_id:
+        claims = get_mss_token_claims(token, secret_key=secret_key)
+        if claims.job_id != job_id:
             raise UnauthorizedError("forbidden")
-        return MSSAuthDetails(user_id=user_id, job_id=job_id)
+        return MSSAuthDetails(user_id=claims.user_id, job_id=job_id)
 
 
 def _start_device(device: DeviceResources) -> None:

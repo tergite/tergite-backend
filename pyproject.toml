@@ -63,6 +63,8 @@ dependencies = [
     "pydantic-settings~=2.16.2",
     "python-dotenv~=1.2.2",
     "alembic~=1.16",
+    # parses gate-level jobs' OpenQASM 3, and the OpenPulse it may hold, for either executor
+    "openpulse>=1.0.1",
 ]
 
 [project.optional-dependencies]

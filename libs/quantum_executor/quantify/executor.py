@@ -29,6 +29,7 @@ import qblox_instruments
 import toml
 from qcodes import Instrument
 from quantify_core.data.handling import set_datadir
+from quantify_scheduler import Schedule
 from quantify_scheduler.backends.graph_compilation import SerialCompiler
 from quantify_scheduler.device_under_test.quantum_device import QuantumDevice
 from quantify_scheduler.instrument_coordinator import InstrumentCoordinator
@@ -36,10 +37,24 @@ from quantify_scheduler.instrument_coordinator.components.qblox import ClusterCo
 
 from libs.device_parameters.dtos import BackendConfig
 from libs.qiskit.qobj import PulseQobj
+from libs.quantum_executor.base.circuits import CircuitExperiment, QasmCircuit
 from libs.quantum_executor.base.executor import QuantumExecutor
+from libs.quantum_executor.base.qasm import to_native_circuit
 from libs.quantum_executor.base.quantum_job import get_experiment_name
 from libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
 from libs.quantum_executor.base.quantum_job.typing import QExperimentResult
+from libs.quantum_executor.quantify.circuits import (
+    DeviceFrames,
+    get_circuit_schedule,
+    get_measure_duration,
+)
+from libs.quantum_executor.quantify.device import (
+    apply_calibration,
+    get_edge_names,
+    get_element_name,
+    get_frame_frequencies,
+    remove_elements,
+)
 from libs.quantum_executor.quantify.experiment import QuantifyExperiment
 from libs.quantum_executor.quantify.utils.config import (
     InstrumentConfig,
@@ -133,6 +148,13 @@ class QuantifyExecutor(QuantumExecutor):
         )
         self._compiler = SerialCompiler(name=f"{self.device_name}_compiler")
         self._compilation_config = self._quantum_device.generate_compilation_config()
+        # gate-level jobs compile against transmons, which pulse-level ones must not see
+        self._gate_level_device = _get_quantum_device(
+            f"{self.device_name}_gate_level", self.quantify_config
+        )
+        apply_calibration(self._gate_level_device, backend_config)
+        # whether a recalibration left the clusters and quantum devices to get anew
+        self._is_stale = False
 
     def recalibrate(self, **kwargs) -> DeviceCalibration | None:
         """Recalibrates the executor
@@ -144,16 +166,42 @@ class QuantifyExecutor(QuantumExecutor):
         if cluster is None:
             return None
 
+        # tergite_tuner creates its own transmons by these names, and closes every cluster
+        # as it connects its own, this executor's too; the next job gets them anew, not this
+        # recalibration, whose time limit could interrupt that halfway
+        self._is_stale = True
+        remove_elements(self._gate_level_device)
         results = self._recalibrate_cluster(*cluster)
         if isinstance(results, DeviceCalibration):
             logging.info(f"calibration complete. Saving to {self.calib_seed_file}...")
             _save_calibration_seed(results, self.calib_seed_file)
-            # so that the jobs after it run on it, not on the calibration it started with
+            # so that the jobs after it run on it, not on the calibration it began with
             self.backend_config = self.backend_config.model_copy(
                 update={"calibration_config": results.to_calibration_config()}
             )
             self.drive_frequencies = _extract_drive_frequencies(self.backend_config)
         return results
+
+    def _connect_if_stale(self) -> None:
+        """Connects the clusters and gets both quantum devices anew, if a recalibration
+        left them closed"""
+        if not self._is_stale:
+            return
+        self._coordinator = self._create_coordinator(should_reset_clusters=False)
+        self._load_quantum_devices()
+        self._is_stale = False
+
+    def _load_quantum_devices(self) -> None:
+        """Gets both quantum devices anew, with the calibration's transmons on the
+        gate-level one: tergite_tuner's Instrument.close_all may have closed them"""
+        self._quantum_device = _get_quantum_device(
+            self.device_name, self.quantify_config
+        )
+        self._compilation_config = self._quantum_device.generate_compilation_config()
+        self._gate_level_device = _get_quantum_device(
+            f"{self.device_name}_gate_level", self.quantify_config
+        )
+        apply_calibration(self._gate_level_device, self.backend_config)
 
     def to_native_experiments(
         self, qobj: PulseQobj, native_config: NativeQobjConfig, /
@@ -181,9 +229,60 @@ class QuantifyExecutor(QuantumExecutor):
         ]
         return native_experiments
 
+    def to_circuit_experiments(
+        self, circuits: List[QasmCircuit], native_config: NativeQobjConfig, /
+    ) -> List[CircuitExperiment[Schedule]]:
+        """Compiles the circuits of a gate-level job to gate-level schedules for the
+        device's transmons, each circuit qubit i being the i-th qubit by its number
+
+        Args:
+            circuits: the circuits of the job
+            native_config: the native config for the job
+
+        Returns:
+            an experiment per circuit, whose duration its compilation gives
+
+        Raises:
+            UnsupportedCircuitError: a circuit has a gate or qubits the device lacks
+        """
+        self._connect_if_stale()
+        qubit_ids = self.backend_config.device_config.qubit_numbers
+        element_names = [get_element_name(qubit_id) for qubit_id in qubit_ids]
+        edge_names = get_edge_names(self._gate_level_device)
+        measure_durations = self._get_measure_durations(element_names)
+        frames = DeviceFrames(
+            dt=self.backend_config.general_config.dt,
+            frequencies=get_frame_frequencies(self._gate_level_device),
+        )
+        compilation_config = self._gate_level_device.generate_compilation_config()
+
+        experiments = []
+        for idx, circuit in enumerate(circuits):
+            native_circuit = to_native_circuit(
+                circuit, dt=self.backend_config.general_config.dt
+            )
+            schedule = get_circuit_schedule(
+                native_circuit,
+                native_config,
+                element_names=element_names,
+                edge_names=edge_names,
+                measure_durations=measure_durations,
+                frames=frames,
+            )
+            compiled = self._compiler.compile(schedule, config=compilation_config)
+            experiments.append(
+                CircuitExperiment(
+                    name=get_experiment_name(circuit.name, idx + 1),
+                    schedule=schedule,
+                    duration=compiled.duration,
+                    readout=native_circuit.to_readout(qubit_ids),
+                )
+            )
+        return experiments
+
     def run_native(
         self,
-        experiment: QuantifyExperiment,
+        experiment: Union[QuantifyExperiment, CircuitExperiment[Schedule]],
         *,
         native_config: NativeQobjConfig,
         logger: ExperimentLogger,
@@ -191,7 +290,7 @@ class QuantifyExecutor(QuantumExecutor):
         """Compiles the experiment and runs it on the clusters
 
         Args:
-            experiment: the native experiment to run
+            experiment: the native experiment to run, of a qobj or of a circuit
             native_config: native config for the qobj
             logger: the logger for the given experiment, which also logs its schedule
                 and Q1ASM programs
@@ -202,12 +301,16 @@ class QuantifyExecutor(QuantumExecutor):
         if self._experiment_delay > 0:
             time.sleep(self._experiment_delay)
 
+        self._connect_if_stale()
         # Stop any running sequences.
         self._coordinator.stop()
 
+        compilation_config = self._compilation_config
+        if isinstance(experiment, CircuitExperiment):
+            compilation_config = self._gate_level_device.generate_compilation_config()
         compiled_schedule = self._compiler.compile(
             schedule=experiment.schedule,
-            config=self._compilation_config,
+            config=compilation_config,
         )
 
         logger.log_Q1ASM_programs(compiled_schedule)
@@ -219,6 +322,21 @@ class QuantifyExecutor(QuantumExecutor):
         results = self._coordinator.retrieve_acquisition()
 
         return results
+
+    def _get_measure_durations(self, element_names: List[str]) -> Dict[str, float]:
+        """Gets the seconds each of the transmons' measurement takes, by its name, leaving
+        out those the device lacks, as their qubits are not calibrated"""
+        durations = {}
+        for name in element_names:
+            if name not in self._gate_level_device.elements():
+                continue
+            measure = self._gate_level_device.get_element(name).measure
+            durations[name] = get_measure_duration(
+                pulse_duration=measure.pulse_duration(),
+                acq_delay=measure.acq_delay(),
+                integration_time=measure.integration_time(),
+            )
+        return durations
 
     def _get_coordinator(self, should_reset_clusters: bool) -> InstrumentCoordinator:
         """Gets the coordinator of the executor's clusters, cached across executors of the
@@ -296,7 +414,9 @@ class QuantifyExecutor(QuantumExecutor):
 
     def close(self) -> None:
         """Stops and closes the clusters, those of every other QuantifyExecutor too"""
-        self._coordinator.stop()
+        # a recalibration's tuner has closed them already
+        if not self._is_stale:
+            self._coordinator.stop()
         # FIXME: This global is unnatural but QCoDeS is forcing us to do this
         #   Unfortunately, this means closing one instance of this class closes
         #   all clusters of all other instances. But if we don't, __init__ will be a problem
@@ -309,7 +429,9 @@ class QuantifyExecutor(QuantumExecutor):
     def _close_cached_instruments(cls) -> None:
         for instruments in cls._non_gc_instruments.values():
             for instrument in instruments.values():
-                instrument.close()
+                # Instrument.close_all, which tergite_tuner calls, may have closed it
+                if Instrument.is_valid(instrument):
+                    instrument.close()
         cls._non_gc_instruments.clear()
 
 

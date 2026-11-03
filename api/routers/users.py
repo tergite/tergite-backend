@@ -114,6 +114,7 @@ async def get_mss_token(
         job_id=job_id,
         secret_key=device.settings.jwt_secret,
         ttl=device.settings.jwt_ttl,
+        is_pulse_allowed=body.is_pulse_allowed,
     )
     encrypted_token = encrypt_mss_jwt_token(token, device.mss_public_key)
     return {"access_token": encrypted_token, "token_type": "bearer"}

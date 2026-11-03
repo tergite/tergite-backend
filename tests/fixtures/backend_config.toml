@@ -98,3 +98,13 @@ qubits = [ 0 ]
 qasm_def = "gate id q { U(0, 0, 0) q; }"
 parameters = [ ]
 
+
+[pulse_limits]
+# generous, so that the tests' pulse-level jobs keep to them
+max_amplitude = { drive = 0.8, readout = 0.5, coupler = 0.5 }
+max_frequency_offset = 100e6
+max_energy_per_shot = { drive = 1e-6, readout = 1e-6, coupler = 1e-6 }
+max_energy_per_job = { drive = 1e-3, readout = 1e-3, coupler = 1e-3 }
+max_pulse_duration = 100e-6
+max_samples_per_waveform = 16384
+max_capture_duration = 16e-6

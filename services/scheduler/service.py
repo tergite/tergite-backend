@@ -24,15 +24,25 @@ from typing import List, Optional
 from fastapi import UploadFile
 from sqlmodel import or_
 
+from libs.quantum_executor.base.circuits import CircuitJobParams
+from libs.quantum_executor.base.gates import PulseBlock
+from libs.quantum_executor.base.pulse_limits import (
+    check_pulse_limits,
+    get_calibrated_frame_frequencies,
+)
+from libs.quantum_executor.base.qasm import to_native_circuit
 from libs.queues.dtos import Job, JobStatus, Stage
 from utils.datetime import get_utc_now, utc_now_str
 from utils.exc import (
     BookingAlreadyActiveError,
     BookingAlreadyCompleteError,
     ConflictError,
+    InvalidRequestError,
     ItemNotFoundError,
     JobAlreadyCompleteError,
     NotAuthenticatedError,
+    UnauthorizedError,
+    UnsupportedCircuitError,
 )
 from utils.messages import GeneralMessage
 
@@ -51,8 +61,9 @@ from ..booking import (
 )
 from ..devices import get_device_calibration_info
 from . import dispatcher
-from .dtos import RecalibrationInfo
+from .dtos import JobFile, RecalibrationInfo
 from .resources import DeviceResources
+from .utils import update_job_in_mss
 from .wakeups import wake_workers
 
 
@@ -149,11 +160,18 @@ def submit_job_file(
 
     Returns:
         the submitted job
+
+    Raises:
+        ConflictError: job_id {job_id} already exists
+        UnauthorizedError: the job's project may not send pulse-level jobs
+        InvalidRequestError: a pulse-level block beyond the device's limits; see
+            pulse_limits.check_pulse_limits
     """
     job_id = credentials.job_id
     if device.jobs_store.is_stored(job_id):
         raise ConflictError(f"job_id {job_id} already exists")
 
+    _check_pulse_level_job(device, upload_file, credentials)
     _save_uploaded_file(upload_file, target=device.settings.job_upload_pool / job_id)
     job = _get_new_job(device, credentials)
     dispatcher.enqueue_job(device, job, is_booking_excluded=should_force_normal_queue)
@@ -191,7 +209,7 @@ def cancel_job(
     if reason is None:
         reason = "Cancelled by a user"
 
-    return device.jobs_store.update(
+    cancelled_job = device.jobs_store.update(
         job_id,
         {
             "status": JobStatus.CANCELLED,
@@ -199,6 +217,9 @@ def cancel_job(
             "updated_at": utc_now_str(),
         },
     )
+    # a job cancelled with its job token, not through MSS, is news to MSS
+    update_job_in_mss(device.bookings_db, device.mss_client, payload=cancelled_job)
+    return cancelled_job
 
 
 def delete_job(
@@ -356,6 +377,44 @@ def get_recalibration_info(device: DeviceResources) -> RecalibrationInfo:
         the basic information about the recalibration
     """
     return dispatcher.get_recalibration_info(device)
+
+
+def _check_pulse_level_job(
+    device: DeviceResources, upload_file: UploadFile, credentials: MSSTokenClaims
+) -> None:
+    """Refuses a pulse-level job its project may not send, or one beyond the device's
+    limits; a job whose circuits do not translate is left to its preprocessing, which
+    fails it with the reason
+
+    Raises:
+        UnauthorizedError: the job's project may not send pulse-level jobs
+        InvalidRequestError: a pulse-level block beyond the device's limits
+    """
+    upload_file.file.seek(0)
+    job_file = JobFile.model_validate_json(upload_file.file.read())
+    upload_file.file.seek(0)
+    if not isinstance(job_file.params, CircuitJobParams):
+        return
+    backend_config = device.executor_options.backend_config
+    dt = backend_config.general_config.dt
+    try:
+        circuits = [to_native_circuit(c, dt=dt) for c in job_file.params.circuits]
+    except UnsupportedCircuitError:
+        return
+    if not any(isinstance(g, PulseBlock) for c in circuits for g in c.gates):
+        return
+    if not credentials.is_pulse_allowed:
+        raise UnauthorizedError("the job's project may not send pulse-level jobs")
+    try:
+        check_pulse_limits(
+            circuits,
+            shots=job_file.params.shots,
+            limits=backend_config.pulse_limits,
+            frame_frequencies=get_calibrated_frame_frequencies(backend_config),
+            dt=dt,
+        )
+    except UnsupportedCircuitError as exp:
+        raise InvalidRequestError(f"{exp}") from exp
 
 
 def _save_uploaded_file(file: UploadFile, target: Path) -> Path:

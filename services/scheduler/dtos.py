@@ -15,13 +15,21 @@
 import json
 from datetime import datetime
 from enum import Enum, unique
-from typing import Optional
+from typing import Annotated, Any, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, field_serializer, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Discriminator,
+    Tag,
+    field_serializer,
+    field_validator,
+)
 from pydantic_core.core_schema import SerializationInfo
 
 from libs.qiskit.qobj import PulseQobj
 from libs.qiskit_providers.utils.json_encoder import IQXJsonEncoder
+from libs.quantum_executor.base.circuits import CircuitJobParams
 
 
 @unique
@@ -105,10 +113,31 @@ class JobFileParams(BaseModel):
         raise TypeError(f"Invalid type for PulseQobj: {type(v)}")
 
 
+def get_job_params_kind(value: Any) -> str:
+    """Gets which params a job file has, which JobFile validates them as
+
+    Args:
+        value: the params, as uploaded or as a model
+
+    Returns:
+        "circuits" for a gate-level job's, else "qobj"
+    """
+    if isinstance(value, dict):
+        return "circuits" if "circuits" in value else "qobj"
+    return "circuits" if isinstance(value, CircuitJobParams) else "qobj"
+
+
 class JobFile(BaseModel):
-    """The expected structure of the job file"""
+    """The expected structure of the job file: its params are a qobj of pulses, or the
+    OpenQASM 3 circuits of a gate-level job"""
 
     model_config = ConfigDict(extra="forbid")
 
     job_id: str
-    params: JobFileParams
+    params: Annotated[
+        Union[
+            Annotated[JobFileParams, Tag("qobj")],
+            Annotated[CircuitJobParams, Tag("circuits")],
+        ],
+        Discriminator(get_job_params_kind),
+    ]

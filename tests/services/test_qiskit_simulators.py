@@ -106,3 +106,16 @@ def test_basis_state_excites_only_its_mode(dims, mode, level, expected_index):
 
     assert np.flatnonzero(state.data).tolist() == [expected_index]
     assert len(state.data) == int(np.prod(dims))
+
+
+def test_results_of_a_partial_measurement_are_its_qubits_alone():
+    """qiskit-dynamics returns a column for every memory slot up to the last acquired, so a
+    measurement of qubit 1 alone keeps no column for the unmeasured qubit 0"""
+    from libs.quantum_executor.qiskit.executor import _QiskitDynMeasReturn, _to_xarray
+
+    shots = np.array([[[0.0, 0.0], [1.0, 2.0]], [[0.0, 0.0], [3.0, 4.0]]])
+
+    dataset = _to_xarray(data=shots, meas_return=_QiskitDynMeasReturn.SINGLE, slots=[1])
+
+    assert list(dataset.data_vars) == ["1"]
+    np.testing.assert_array_equal(dataset["1"].data[:, 0], [1 + 2j, 3 + 4j])

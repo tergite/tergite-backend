@@ -13,6 +13,7 @@
 #
 # Refactored by Chalmers Next Labs 2025
 
+import json
 import re
 from collections import namedtuple
 from pathlib import Path
@@ -41,6 +42,7 @@ from libs.qiskit.qobj import PulseQobj, PulseQobjInstruction
 
 from ....device_parameters.dtos import DeviceCalibration
 from ...utils.general import search_nested
+from ..circuits import CircuitReadout
 from .dtos import (
     ByteOrder,
     MeasLvl,
@@ -69,6 +71,7 @@ _HDF5_QOBJ_METADATA_PATH = "header/qobj_metadata"
 _HDF5_QOBJ_DATA_PATH = "header/qobj_data"
 _HDF5_HEADER_METADATA_PATH = "header/qobj/backend"
 _HDF5_SWEEP_DATA_PATH = "header/qobj/sweep"
+_HDF5_READOUTS_PATH = "header/readouts"
 
 
 _dec_to_hex = np.frompyfunc(
@@ -101,9 +104,8 @@ def read_job_from_hdf5(file: Path) -> QuantumJob:
         n_qubits = hdf5_file.attrs["n_qubits"]
         job_id = hdf5_file.attrs.get("job_id")
         raw_results = _extract_results_from_hdf5(hdf5_file)
-        qobj_data = _read_hdf5_attributes(
-            hdf5_file, path=_HDF5_QOBJ_DATA_PATH, type_=QobjData
-        )
+        qobj = _read_qobj_from_hdf5(hdf5_file)
+        readouts = _read_readouts_from_hdf5(hdf5_file)
 
     return QuantumJob(
         tuid=tuid,
@@ -113,7 +115,8 @@ def read_job_from_hdf5(file: Path) -> QuantumJob:
         n_qubits=n_qubits,
         raw_results=raw_results,
         job_id=job_id,
-        qobj=qobj_data.to_qobj(),
+        qobj=qobj,
+        readouts=readouts,
     )
 
 
@@ -134,10 +137,13 @@ def save_job_in_hdf5(job: QuantumJob, file: Path):
         hdf5_file.attrs["job_id"] = job.job_id
         hdf5_file.attrs["local"] = job.is_local
 
-        header_dict = job.qobj.header.to_dict()
-        _save_qobj_header_to_hdf5(hdf5_file, header_dict=header_dict)
-        _save_sweep_data_to_hdf5(hdf5_file, header_dict=header_dict)
-        _save_qobj_to_hdf5(hdf5_file, job=job)
+        if job.qobj is not None:
+            header_dict = job.qobj.header.to_dict()
+            _save_qobj_header_to_hdf5(hdf5_file, header_dict=header_dict)
+            _save_sweep_data_to_hdf5(hdf5_file, header_dict=header_dict)
+            _save_qobj_to_hdf5(hdf5_file, job=job)
+        if job.readouts is not None:
+            _save_readouts_to_hdf5(hdf5_file, readouts=job.readouts)
         _save_results_to_hdf5(hdf5_file, job.raw_results)
 
 
@@ -269,6 +275,54 @@ def xarray_to_list(job: QuantumJob) -> IQMemory:
     return memory
 
 
+def discriminate_circuit_results(
+    job: QuantumJob,
+    discriminator: Callable[[int, npt.NDArray[np.complexfloating]], int],
+    *,
+    num_of_states: Union[Literal[2], Literal[3]] = 2,
+) -> HexMatrix:
+    """Discriminates a gate-level job's IQ points into each shot's classical register
+
+    Each measurement's states go to the classical bit its readout names, a later
+    measurement of a bit replacing an earlier one; bit 0 is the least significant.
+
+    Args:
+        job: the gate-level job whose results are to be discriminated
+        discriminator: a function which takes the number in a qubit's id and its IQ
+            points, and returns their states
+        num_of_states: the number of states the discriminator produces; default=2
+
+    Returns:
+        the hex of each shot's register, per experiment
+
+    Raises:
+        ValueError: the job has {n} readouts for {m} experiment results
+    """
+    return [
+        _discriminate_circuit(readout, dataset, discriminator, num_of_states)
+        for readout, dataset in _get_readouts_and_results(job)
+    ]
+
+
+def get_circuit_iq_memory(job: QuantumJob) -> IQMemory:
+    """Gets a gate-level job's IQ points, per experiment, per shot, per measured classical
+    bit in order, each from the bit's last measurement
+
+    Args:
+        job: the gate-level job whose results are to be converted
+
+    Returns:
+        the memory of the job; one shot per experiment if its shots are averaged
+
+    Raises:
+        ValueError: the job has {n} readouts for {m} experiment results
+    """
+    return [
+        _get_circuit_iq_points(readout, dataset)
+        for readout, dataset in _get_readouts_and_results(job)
+    ]
+
+
 def get_experiment_name(qobj_expt_name: str, expt_index: int):
     """
     Creates a cleaned version of a given experiment name
@@ -314,6 +368,33 @@ def _save_qobj_to_hdf5(file: h5py.File, job: QuantumJob):
         path=_HDF5_QOBJ_DATA_PATH,
         source=QobjData.from_qobj(job.qobj).to_dict(),
     )
+
+
+def _save_readouts_to_hdf5(file: h5py.File, readouts: List[CircuitReadout]) -> None:
+    """Saves a gate-level job's readouts, in the order of its experiments, as JSON
+
+    Args:
+        file: the HDF5 file to save to
+        readouts: the readouts of the job's experiments
+    """
+    group = file.require_group(_HDF5_READOUTS_PATH)
+    group.attrs["readouts"] = json.dumps([readout.to_dict() for readout in readouts])
+
+
+def _read_qobj_from_hdf5(file: h5py.File) -> Optional[PulseQobj]:
+    """Reads the job's qobj from the HDF5 file, or None if it is a gate-level job's"""
+    if _HDF5_QOBJ_DATA_PATH not in file:
+        return None
+    qobj_data = _read_hdf5_attributes(file, path=_HDF5_QOBJ_DATA_PATH, type_=QobjData)
+    return qobj_data.to_qobj()
+
+
+def _read_readouts_from_hdf5(file: h5py.File) -> Optional[List[CircuitReadout]]:
+    """Reads a gate-level job's readouts from the HDF5 file, or None if it has a qobj"""
+    if _HDF5_READOUTS_PATH not in file:
+        return None
+    readouts = json.loads(file[_HDF5_READOUTS_PATH].attrs["readouts"])
+    return [CircuitReadout.from_dict(readout) for readout in readouts]
 
 
 def _save_sweep_data_to_hdf5(file: h5py.File, header_dict: dict):
@@ -403,8 +484,12 @@ def _extract_results_from_hdf5(
         if xarray_dataset is None:
             results[expt_name] = xarray_dataset = QDataset()
 
-        hdf5_dataset: h5py.Dataset = file[path]
-        xarray_dataset[acq] = (["repetition", f"acq_index_{acq}"], hdf5_dataset[:])
+        data = file[path][:]
+        # quantify averages the repetitions away, leaving no dimension for them
+        dims = [f"acq_index_{acq}"]
+        if data.ndim == 2:
+            dims = ["repetition", f"acq_index_{acq}"]
+        xarray_dataset[acq] = (dims, data)
 
     # Sort by the numeric experiment index embedded in the name (e.g. "circuit~3" -> 3).
     # HDF5 visit() traverses groups alphabetically, so without this "~10" would
@@ -714,6 +799,56 @@ def _to_iq_point(value: np.generic) -> IQPoint:
     if not np.isfinite([point.real, point.imag]).all():
         point = 0j
     return (float(point.real), float(point.imag))
+
+
+def _get_readouts_and_results(
+    job: QuantumJob,
+) -> List[Tuple[CircuitReadout, QDataset]]:
+    """Pairs each experiment's readout with its results
+
+    Raises:
+        ValueError: the job has {n} readouts for {m} experiment results
+    """
+    results = list(job.raw_results.values())
+    if len(job.readouts) != len(results):
+        raise ValueError(
+            f"the job has {len(job.readouts)} readouts for {len(results)} experiment results"
+        )
+    return list(zip(job.readouts, results))
+
+
+def _discriminate_circuit(
+    readout: CircuitReadout,
+    dataset: QDataset,
+    discriminator: Callable[[int, npt.NDArray[np.complexfloating]], int],
+    num_of_states: int,
+) -> List[str]:
+    """Discriminates each channel's acquisitions into the classical bit its measurement
+    names, and gets each shot's register as hex"""
+    shots: int = dataset.sizes.get("repetition", 1)
+    states_by_cbit = {}
+    for channel, measurement in enumerate(readout.measurements):
+        acquisitions = dataset[str(channel)].data
+        states_by_cbit[measurement.clbit] = discriminator(
+            measurement.qubit_id, acquisitions[:, 0]
+        )
+    register = _get_register(states_by_cbit, c_reg_len=readout.num_clbits, shots=shots)
+    return _to_hex_shots(
+        register, num_of_states=num_of_states, byteorder=ByteOrder.LITTLE_ENDIAN
+    )
+
+
+def _get_circuit_iq_points(
+    readout: CircuitReadout, dataset: QDataset
+) -> List[List[IQPoint]]:
+    """Gets each shot's IQ points, one per measured classical bit, in the bits' order"""
+    channels_by_clbit = {
+        measurement.clbit: channel
+        for channel, measurement in enumerate(readout.measurements)
+    }
+    channel_ids = [channels_by_clbit[clbit] for clbit in sorted(channels_by_clbit)]
+    shots = dataset.sizes.get("repetition", 1)
+    return [_get_shot_iq_points(dataset, channel_ids, shot) for shot in range(shots)]
 
 
 def _get_experiment_order(expt_name: str) -> Tuple[int, int, str]:

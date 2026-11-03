@@ -16,7 +16,7 @@ import enum
 import json
 from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Any, Optional, Type, Union
+from typing import Any, List, Optional, Type, Union
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict
@@ -25,6 +25,7 @@ from libs.qiskit.qobj import PulseQobj, PulseQobjConfig
 from libs.qiskit_providers.utils import json_decoder
 from libs.qiskit_providers.utils.json_encoder import IQXJsonEncoder
 
+from ..circuits import CircuitJobParams, CircuitReadout
 from .typing import QJobResult
 
 
@@ -147,10 +148,62 @@ class NativeQobjConfig:
         Returns:
             NativeQobjConfig instance
         """
-        bin_mode = _get_bin_mode(config)
-        protocol = _get_meas_protocol(config)
-        n_qubits = config.n_qubits
-        meas_level = MeasLvl(config.meas_level)
+        return cls.from_measurement_settings(
+            meas_level=config.meas_level,
+            meas_return=config.meas_return,
+            shots=config.shots,
+            n_qubits=config.n_qubits,
+        )
+
+    @classmethod
+    def from_circuit_job_params(
+        cls, params: CircuitJobParams, n_qubits: int
+    ) -> "NativeQobjConfig":
+        """Gets the native config of a gate-level job, which returns every shot of its
+        discriminated measurements, whatever its meas_return
+
+        Args:
+            params: the params of the gate-level job
+            n_qubits: the number of the device's qubits
+
+        Returns:
+            NativeQobjConfig instance
+        """
+        meas_return = params.meas_return
+        if params.meas_level == MeasLvl.DISCRIMINATED:
+            meas_return = "single"
+        return cls.from_measurement_settings(
+            meas_level=params.meas_level,
+            meas_return=meas_return,
+            shots=params.shots,
+            n_qubits=n_qubits,
+        )
+
+    @classmethod
+    def from_measurement_settings(
+        cls,
+        meas_level: int,
+        meas_return: Union[int, str],
+        shots: int,
+        n_qubits: int,
+    ) -> "NativeQobjConfig":
+        """Gets the native config of the measurement settings of a job
+
+        Args:
+            meas_level: how far the measurements are processed, 0, 1 or 2
+            meas_return: whether the shots are averaged, as a MeasRet or its name
+            shots: the number of shots
+            n_qubits: the number of qubits
+
+        Returns:
+            NativeQobjConfig instance
+
+        Raises:
+            RuntimeError: Combination {(bin_mode, protocol)} is not supported.
+        """
+        bin_mode = _get_bin_mode(meas_return)
+        protocol = _get_meas_protocol(meas_level)
+        meas_level = MeasLvl(meas_level)
 
         if (
             bin_mode is BinMode.AVERAGE
@@ -164,7 +217,7 @@ class NativeQobjConfig:
                 meas_return=MeasRet.AVERAGED,
                 meas_return_cols=1,
                 n_qubits=n_qubits,
-                shots=config.shots,
+                shots=shots,
             )
 
         if bin_mode is BinMode.AVERAGE and protocol is MeasProtocol.TRACE:
@@ -176,7 +229,7 @@ class NativeQobjConfig:
                 meas_return=MeasRet.AVERAGED,
                 meas_return_cols=16384,  # length of a trace
                 n_qubits=n_qubits,
-                shots=config.shots,
+                shots=shots,
             )
 
         if (
@@ -189,14 +242,12 @@ class NativeQobjConfig:
                 bin_mode=BinMode.APPEND,
                 meas_level=meas_level,
                 meas_return=MeasRet.APPENDED,
-                meas_return_cols=config.shots,
+                meas_return_cols=shots,
                 n_qubits=n_qubits,
-                shots=config.shots,
+                shots=shots,
             )
 
-        raise RuntimeError(
-            f"Combination {(config.meas_return, config.meas_return)} is not supported."
-        )
+        raise RuntimeError(f"Combination {(bin_mode, protocol)} is not supported.")
 
     @classmethod
     def from_dict(cls, value: dict) -> "NativeQobjConfig":
@@ -304,6 +355,8 @@ class QuantumJob:
     memory_slot_size: int = 100
     qobj: Optional[PulseQobj] = None
     raw_results: Optional[QJobResult] = None
+    # a gate-level job's, in the order of its experiments, in place of a qobj
+    readouts: Optional[List[CircuitReadout]] = None
 
     @property
     def is_local(self) -> bool:
@@ -393,16 +446,15 @@ class SweepParamMetadata(BaseModel):
     unit: str
 
 
-def _get_bin_mode(qobj_conf: PulseQobjConfig) -> BinMode:
-    """Gets the BinMode based on the meas_return of the qobj.config
+def _get_bin_mode(meas_return: Union[int, str]) -> BinMode:
+    """Gets the BinMode of a job's meas_return
 
     Args:
-        qobj_conf: the qobject config whose bin mode is to be obtained
+        meas_return: the meas_return, as a MeasRet or its name
 
     Returns:
-        the BinMode for the given qobj
+        the BinMode for the given meas_return
     """
-    meas_return = qobj_conf.meas_return
     if isinstance(meas_return, int):
         return {
             int(MeasRet.APPENDED): BinMode.APPEND,
@@ -411,7 +463,7 @@ def _get_bin_mode(qobj_conf: PulseQobjConfig) -> BinMode:
 
     # FIXME: For some reason, PulseQobjConfig expects to be an int
     #   yet our fixtures all have strings.
-    meas_return = str.lower(qobj_conf.meas_return)
+    meas_return = str.lower(meas_return)
     return {
         "avg": BinMode.AVERAGE,
         "average": BinMode.AVERAGE,
@@ -422,17 +474,17 @@ def _get_bin_mode(qobj_conf: PulseQobjConfig) -> BinMode:
     }[meas_return]
 
 
-def _get_meas_protocol(qobj_conf: PulseQobjConfig) -> "MeasProtocol":
-    """Gets the measurement protocol for the given qobject
+def _get_meas_protocol(meas_level: int) -> "MeasProtocol":
+    """Gets the measurement protocol of a job's meas_level
 
     Args:
-        qobj_conf: the qobject config from which to extract the measurement protocol
+        meas_level: the meas_level, 0, 1 or 2
 
     Returns:
-        the measurement protocol for the given qobject
+        the measurement protocol for the given meas_level
     """
     return {
         0: MeasProtocol.TRACE,
         1: MeasProtocol.SSB_INTEGRATION_COMPLEX,
         2: MeasProtocol.SSB_INTEGRATION_COMPLEX,
-    }[qobj_conf.meas_level]
+    }[meas_level]

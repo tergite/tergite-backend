@@ -98,6 +98,32 @@ def test_token_is_the_job_jwt_encrypted_for_mss(client):
         assert (claims["sub"], claims["job"]) == (user_id, job_id)
 
 
+@pytest.mark.parametrize(
+    "body, expected",
+    [
+        ({}, False),
+        ({"is_pulse_allowed": False}, False),
+        ({"is_pulse_allowed": True}, True),
+    ],
+    ids=["unsaid", "refused", "allowed"],
+)
+@pytest.mark.parametrize("client", FASTAPI_CLIENTS)
+def test_token_says_whether_the_job_may_be_pulse_level(client, body, expected):
+    """MSS says, on asking for a job's token, whether its project may send pulse-level
+    jobs; an MSS that does not say lets none"""
+    with client as client:
+        user_id, job_id = f"{uuid4()}", f"{uuid4()}"
+        response = client.post(
+            "/token",
+            json={"user_id": user_id, "job_id": job_id, **body},
+            headers=create_mss_headers(user_id),
+        )
+
+        token = decrypt_access_token(response.json()["access_token"])
+        claims = jwt.decode(token, TEST_JWT_SECRET, algorithms=["HS256"])
+        assert claims["pulse"] is expected
+
+
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)
 def test_create_user(client):
     """POST to '/users' should create the user via MSS"""

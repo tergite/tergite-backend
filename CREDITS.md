@@ -52,3 +52,9 @@
 
 - Implemented the Qiskit pulse simulator
 - Hardware configuration cleanup with TOML
+
+## qpi-driver
+
+- The translation of gate-level circuits into native gates, their quantify schedules and the
+  coupler's CZ follow [qpi-driver](https://github.com/sopherapps/qpi)'s, by Martin Ahindura,
+  under the MIT License

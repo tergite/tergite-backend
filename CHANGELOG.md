@@ -7,6 +7,37 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Added
+
+- Added gate-level jobs: `POST /jobs` takes OpenQASM 3 circuits, with `shots`, `meas_level` and `meas_return`,
+  in place of a qobj, and the quantify executor and the simulators compile them with the device's own
+  calibration; their memory has a qobj's shapes, each measurement in its circuit's classical bit
+- Added pulse-level jobs on the quantify executor: a gate-level job's OpenQASM 3 may hold OpenPulse `cal`
+  blocks and `defcal`s, which play OpenPulse's waveforms and capture IQ points on the frames each device
+  publishes (`q12_drive`, `q12_readout`, `q12_q13_coupler`); the simulators refuse them
+- Added limits to pulse-level jobs: a device takes them only from projects MSS says may send them, as
+  `is_pulse_allowed` on asking for a job's token, and only within the `pulse_limits` of its backend config,
+  checked at upload and before they run; a device without `pulse_limits` refuses them all
+- Added `dev/check_gate_level.py`, which checks the configs of each device env file for gate-level jobs,
+  without the instruments: missing calibration or LDA values, couplers whose CZ plays no pulse, and ports the
+  compiler refuses or whose LO puts an NCO beyond ±500 MHz
+
+### Changed
+
+- Changed the `basis_gates` each device publishes to MSS to the gates gate-level jobs are transpiled to (rz, sx,
+  x, rx, measure, reset and delay, and cz where it has couplers), from the names of its config's gate settings
+
+### Fixed
+
+- Fixed a quantify job with `meas_return` avg failing in postprocessing, as its averaged results, which have no
+  repetitions, could not be read back
+- Fixed every quantify job after a recalibration failing with "'InstrumentCoordinator' object and its
+  delegates have no attribute 'components'" until the heavy worker restarted; the executor reconnects its clusters
+- Fixed a simulator job that measured some qubits but not those before them failing with "error during post
+  processing"; qiskit-dynamics returns a column for every memory slot up to the last, and the unmeasured ones are skipped
+- Fixed a job cancelled with its job token, as the SDK cancels, staying pending in MSS for good; the
+  cancellation is now sent to MSS, as every other change of a job's status is
+
 ## [2026.11.0-rc.3] - 2026-10-31
 
 ### Changed

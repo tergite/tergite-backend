@@ -39,6 +39,9 @@
 #   nuitka-project: --include-package=sklearn
 #   nuitka-project: --include-package=numpy
 #   nuitka-project: --include-package=h5py
+#   openqasm3 imports its parser by the version of ANTLR, which Nuitka cannot follow
+#   nuitka-project: --include-package=openqasm3
+#   nuitka-project: --include-package=openpulse
 
 # nuitka-project-else:
 #   nuitka-project: --output-filename=bcc
@@ -56,6 +59,9 @@
 #   nuitka-project: --include-package=networkx
 #   nuitka-project: --include-package=numpy
 #   nuitka-project: --include-package=h5py
+#   openqasm3 imports its parser by the version of ANTLR, which Nuitka cannot follow
+#   nuitka-project: --include-package=openqasm3
+#   nuitka-project: --include-package=openpulse
 
 import argparse
 import math
