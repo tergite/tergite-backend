@@ -35,6 +35,7 @@ from quantify_scheduler.device_under_test.quantum_device import QuantumDevice
 from quantify_scheduler.instrument_coordinator import InstrumentCoordinator
 from quantify_scheduler.instrument_coordinator.components.qblox import ClusterComponent
 from tergite_tuner.utils.types.enums import MeasurementMode, SPIMode
+from threadpoolctl import threadpool_limits
 
 from libs.device_parameters.dtos import BackendConfig
 from libs.quantum_executor.base.circuits import CircuitExperiment, QasmCircuit
@@ -44,6 +45,10 @@ from libs.quantum_executor.base.quantum_job.typing import QExperimentResult
 from libs.quantum_executor.quantify.defcals import add_pulse_calibration
 from libs.quantum_executor.quantify.device import apply_calibration, remove_elements
 from libs.quantum_executor.quantify.experiments import get_circuit_experiments
+from libs.quantum_executor.quantify.simulated_chip.component import (
+    SimulatingClusterComponent,
+)
+from libs.quantum_executor.quantify.simulated_chip.engine import SimulatedChip
 from libs.quantum_executor.quantify.utils.config import (
     InstrumentConfig,
     QuantifyMetadata,
@@ -112,11 +117,15 @@ class QuantifyExecutor(QuantumExecutor):
         set_datadir(data_dir)
         super().__init__(data_dir=data_dir, backend_config=backend_config)
         self._experiment_delay = self.quantify_metadata.experiment_delay
+        self._chip = _get_simulated_chip(backend_config, self.quantify_metadata)
 
         self.coordinator_name = f"{self.device_name}_executor"
-        # keyed by the metadata the clusters come from, so an executor of other hardware with
-        # the same device name never reuses them
+        # keyed by the metadata the clusters come from, and whether a simulated chip is
+        # behind them, so an executor of other hardware with the same device name never
+        # reuses them
         self._instruments_key = str(Path(os.fsdecode(quantify_metadata_file)).resolve())
+        if self._chip is not None:
+            self._instruments_key += ":simulated-chip"
         self._coordinator = self._get_coordinator(
             should_reset_clusters=should_reset and is_cluster_reset_allowed
         )
@@ -282,7 +291,11 @@ class QuantifyExecutor(QuantumExecutor):
             for cluster in _create_clusters(self.quantify_metadata):
                 if should_reset_clusters:
                     cluster.reset()
-                cluster_component = ClusterComponent(cluster)
+                cluster_component = (
+                    ClusterComponent(cluster)
+                    if self._chip is None
+                    else SimulatingClusterComponent(cluster, self._chip)
+                )
                 component_name = coordinator.add_component(cluster_component)
                 cached_instruments[component_name] = cluster_component
         except Exception:
@@ -394,6 +407,29 @@ def _create_cluster(name: str, conf: InstrumentConfig) -> qblox_instruments.Clus
         identifier=conf.ip_address,
         dummy_cfg=dummy_cfg,
     )
+
+
+def _get_simulated_chip(
+    backend_config: BackendConfig, metadata: QuantifyMetadata
+) -> Optional[SimulatedChip]:
+    """Gets the simulated chip of the backend config's simulator section, behind the
+    metadata's dummy clusters; none for a device on clusters
+
+    Raises:
+        ValueError: a simulated chip plays behind dummy clusters, but {name} is not one
+    """
+    simulator = backend_config.simulator
+    if simulator is None or simulator.chip is None:
+        return None
+    for name, conf in metadata.root.items():
+        if conf.instrument_type == "Cluster" and not conf.is_dummy:
+            raise ValueError(
+                f"a simulated chip plays behind dummy clusters, but {name} is not one"
+            )
+    # BLAS starts a thread for each core it sees, which, under a CPU quota or beside
+    # another simulated device, starve one another on the chip's small matrices
+    threadpool_limits(limits=1)
+    return SimulatedChip(simulator.chip)
 
 
 def _get_quantum_device(name: str, quantify_config: Any) -> QuantumDevice:

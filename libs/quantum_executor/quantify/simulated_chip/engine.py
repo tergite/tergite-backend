@@ -92,6 +92,8 @@ class SimulatedChip:
             ValueError: the simulated chip has no transmon {name}
             ValueError: the simulated chip acquires no {protocol}
             ValueError: overlapping pulses drive {name}
+            ValueError: acquisition channel {channel} mixes bin modes, or acquires on more
+                than one port and clock
             UnsupportedCircuitError: the simulated chip reads a transmon once between its
                 resets, after what else plays on it
         """
@@ -198,6 +200,11 @@ class SimulatedChip:
             bin_modes = {acquisition.bin_mode for acquisition in acquisitions}
             if len(bin_modes) > 1:
                 raise ValueError(f"acquisition channel {channel} mixes bin modes")
+            if len({(item.port, item.clock) for item in acquisitions}) > 1:
+                raise ValueError(
+                    f"acquisition channel {channel} acquires on more than one port "
+                    "and clock, which the clusters' sequencers cannot tell apart"
+                )
             if bin_modes == {BinMode.AVERAGE}:
                 acquired[channel] = self._average(
                     acquisitions, timeline.repetitions, populations, responses

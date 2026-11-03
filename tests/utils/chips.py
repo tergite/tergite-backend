@@ -30,6 +30,22 @@ def get_chip_config() -> ChipConfig:
     return ChipConfig.model_validate(toml.load(get_fixture_path("simulated_chip.toml")))
 
 
+def get_chip_backend_config(directory: Path) -> BackendConfig:
+    """Gets the test backend config with the gate-level seed and the test chip
+
+    Args:
+        directory: where to write the seed
+
+    Returns:
+        the backend config, its simulator section the test chip's
+    """
+    seed_file = directory / "seed.toml"
+    seed_file.write_text(toml.dumps(get_gate_level_seed()))
+    config = BackendConfig.from_toml(TEST_BACKEND_SETTINGS_FILE, seed_file=seed_file)
+    simulator = {"chip": get_chip_config()}
+    return BackendConfig.model_validate({**config.model_dump(), "simulator": simulator})
+
+
 def get_clusters_device(name: str, directory: Path):
     """Gets a quantum device of the gate-level seed's calibration on the dummy clusters
 
@@ -45,10 +61,7 @@ def get_clusters_device(name: str, directory: Path):
     from libs.quantum_executor.quantify.device import apply_calibration
     from libs.quantum_executor.quantify.utils.config import load_quantify_config
 
-    seed_file = directory / "seed.toml"
-    seed_file.write_text(toml.dumps(get_gate_level_seed()))
-    config = BackendConfig.from_toml(TEST_BACKEND_SETTINGS_FILE, seed_file=seed_file)
     device = QuantumDevice(name)
-    apply_calibration(device, config)
+    apply_calibration(device, get_chip_backend_config(directory))
     device.hardware_config(load_quantify_config(TEST_QUANTIFY_CONFIG_FILE))
     return device

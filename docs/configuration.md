@@ -95,8 +95,8 @@ device that sets none.
 
 #### Simulated Devices
 
-A device whose `backend_config.toml` has a `[simulator]` section runs its jobs on QuTiP, not on
-clusters: each circuit, gate-level or pulse-level, is compiled as on a chip, from the
+A device whose `backend_config.toml` has a `[simulator]` section without a chip runs its jobs on
+QuTiP, not on clusters: each circuit, gate-level or pulse-level, is compiled as on a chip, from the
 calibration seed, and the pulses it plays drive a model of the chip.
 
 - Each transmon the circuit touches has three levels, in the frame of its drive clock, and is
@@ -119,6 +119,46 @@ readout_noise = 0.1
 # each qubit's IQ point of state 0 and of state 1, by its id
 q0 = [[1.0, 0.0], [-1.0, 0.0]]
 q1 = [[0.0, 1.0], [0.0, -1.0]]
+```
+
+A `[simulator.chip]` section instead puts a simulated chip behind the device's dummy clusters:
+its jobs compile for the clusters, as on hardware, and each schedule plays on the chip's true
+parameters, which its calibration does not see, so the calibration may be off as a real
+chip's is. Its quantify metadata lists dummy clusters only, and the qubits' frequencies must
+lie within reach of their LOs in the quantify hardware config.
+
+- Each pulse plays at its clock's frequency, detuned from the chip's true frequency, on a
+  transmon of three levels with the chip's anharmonicity, Rabi frequency, T1 and T2; a reset
+  takes it to |0>.
+- A measurement integrates its hanger resonator's response to the readout pulse: a dip at
+  `frequency` with the transmon in |0>, moved by `dispersive_shift` in |1> and twice that in
+  |2>, and towards `bare_frequency` as the readout amplitude nears `critical_amplitude`. An
+  averaged acquisition reads the populations' mean response, a single-shot one a level drawn
+  for each shot; each with `readout_noise` about it, for an integration of a microsecond.
+- A measurement does not collapse the state, so a transmon is read once between its resets,
+  after anything else plays on it.
+
+```toml
+[simulator.chip]
+# the standard deviation of a shot's I, and of its Q, integrated over a microsecond
+readout_noise = 0.002
+
+[simulator.chip.qubits.q12]
+frequency = 4.5116e9        # Hz, of |0> to |1>
+anharmonicity = -0.21e9     # Hz, of |1> to |2> less that of |0> to |1>
+rabi_frequency = 1.62e8     # Hz, of a resonant drive of amplitude 1
+t1 = 6e-5                   # s
+t2 = 5e-5                   # s, at most twice t1
+
+[simulator.chip.resonators.q12]
+frequency = 7.2601e9        # Hz, its dip with the transmon in |0>, at a weak readout
+dispersive_shift = -0.5e6   # Hz, of its dip with the transmon in |1>
+bare_frequency = 7.2581e9   # Hz, its dip at a readout too strong for the transmon to move it
+critical_amplitude = 0.4    # the readout amplitude that moves the dip half way there
+internal_quality = 60000
+coupling_quality = 20000
+amplitude = 0.3             # its transmission off resonance, at a readout of amplitude 1
+phase = 0.4                 # rad
 ```
 
 The test fixtures hold a simulated one-qubit device and a two-qubit one with a coupler, which

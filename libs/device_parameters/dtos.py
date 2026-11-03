@@ -925,17 +925,34 @@ class ChipConfig(BaseModel):
 
 
 class SimulatorConfig(BaseModel):
-    """How a simulated device reads its qubits out, which its backend config's simulator
-    section sets; a device with one runs its jobs on QuTiP, not on clusters"""
+    """A simulated device, which its backend config's simulator section sets: its chip,
+    on which its schedules play as compiled for its dummy clusters; or, without one, how
+    QuTiP reads its qubits out, its jobs played on a model drawn from its calibration"""
 
     model_config = ConfigDict(extra="forbid")
 
     # each qubit's IQ point of state 0 and of state 1, by its id, e.g. {"q0": [[1, 0], [-1, 0]]}
-    readout_iq: Dict[str, Tuple[Tuple[float, float], Tuple[float, float]]]
+    readout_iq: Optional[Dict[str, Tuple[Tuple[float, float], Tuple[float, float]]]] = (
+        None
+    )
     # the standard deviation of a shot's I, and of its Q, about its state's point
-    readout_noise: _NonNegative
-    # the chip as it is, on which its schedules play as compiled for its clusters
+    readout_noise: Optional[_NonNegative] = None
     chip: Optional[ChipConfig] = None
+
+    @model_validator(mode="after")
+    def check_readout(self) -> Self:
+        """Requires a chip, or the readout's IQ points and noise
+
+        Raises:
+            ValueError: a simulator section takes a chip, or readout_iq and readout_noise
+        """
+        if self.chip is None and (
+            self.readout_iq is None or self.readout_noise is None
+        ):
+            raise ValueError(
+                "a simulator section takes a chip, or readout_iq and readout_noise"
+            )
+        return self
 
 
 class BackendConfig(BaseModel):

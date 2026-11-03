@@ -757,7 +757,20 @@ upgrade the tergite SDK to send them".
 | Backend config | Executor |
 | --- | --- |
 | no `[simulator]` section | `QuantifyExecutor`: quantify-scheduler schedules on Qblox clusters, real or dummy (`quantify-config.json`, `quantify-metadata.yml`); recalibrates with tergite-tuner |
-| a `[simulator]` section | `QutipExecutor`: the same schedules played on QuTiP, a model of the device's transmons and couplers drawn from its calibration; never recalibrates |
+| a `[simulator.chip]` section | `QuantifyExecutor` on dummy clusters, a simulated chip behind them (`quantify/simulated_chip/`) |
+| a `[simulator]` section without a chip | `QutipExecutor`: the same schedules played on QuTiP, a model of the device's transmons and couplers drawn from its calibration; never recalibrates |
+
+A simulated chip is a device's true parameters, which its calibration does not see, behind
+its dummy clusters' API. The executor gives each dummy cluster a `SimulatingClusterComponent`
+in place of quantify's `ClusterComponent`: as the coordinator prepares it for a schedule, it
+plays the schedule, as the hardware compilation left it, on the chip (`engine.py`), and loads
+the cluster's bins with what the chip acquires, so the coordinator's `start` and
+`retrieve_acquisition` return it through quantify's own path. Each pulse plays at its clock's
+frequency then, detuned from the chip's true frequencies, on transmons of three levels with
+T1 and T2 (`transmon.py`); an acquisition integrates its hanger resonator's response to the
+readout pulses, level by level (`readout.py`), averaged with the noise of its shots' mean or
+drawn shot by shot. A reset takes a transmon to |0>, and a loop's body plays once, each
+iteration read out from it.
 
 It imports each only when it is chosen, so a process that runs no executor, such as the API,
 never takes the seconds quantify and QuTiP take to import. Adding one:
