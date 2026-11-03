@@ -18,6 +18,8 @@ import xarray as xr
 
 from libs.quantum_executor.base.circuits import CircuitReadout, Measurement
 from libs.quantum_executor.base.quantum_job import (
+    _get_shot_iq_points,
+    _to_iq_point,
     discriminate_circuit_results,
     get_circuit_iq_memory,
     read_job_from_hdf5,
@@ -97,6 +99,35 @@ def test_averaged_iq_memory_has_one_point_per_clbit():
     assert got == [[[(3.0, 4.0), (1.0, 2.0)]]]
 
 
+def test_a_shot_lists_each_channels_iq_points_in_turn():
+    dataset = QDataset(
+        {
+            "0": xr.DataArray(
+                np.array([[1 + 2j, 3 + 4j], [5 + 6j, 7 + 8j]]),
+                dims=("repetition", "acq"),
+            ),
+            "1": xr.DataArray(
+                np.array([[9j, 11j], [10j, 12j]]), dims=("repetition", "acq")
+            ),
+        }
+    )
+
+    points = _get_shot_iq_points(dataset, channel_ids=[1, 0], shot=1)
+
+    assert points == [(0.0, 10.0), (0.0, 12.0), (5.0, 6.0), (7.0, 8.0)]
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (np.complex128(1 + 2j), (1.0, 2.0)),
+        (np.complex128(complex(np.nan, 1)), (0.0, 0.0)),
+    ],
+)
+def test_iq_point_is_zero_unless_finite(value, expected):
+    assert _to_iq_point(value) == expected
+
+
 def test_readouts_must_match_the_experiments():
     readout = CircuitReadout("test", 1, (Measurement(12, 0),))
     dataset = _get_dataset({0: [0] * _SHOTS})
@@ -129,7 +160,6 @@ def test_gate_level_job_round_trips_through_hdf5(tmp_path, meas_return):
     save_job_in_hdf5(job, file)
     got = read_job_from_hdf5(file)
 
-    assert got.qobj is None
     assert got.readouts == readouts
     assert get_circuit_iq_memory(got) == get_circuit_iq_memory(job)
 

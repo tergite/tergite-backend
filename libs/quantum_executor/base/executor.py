@@ -14,21 +14,16 @@
 import abc
 import pickle
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from traceback import format_exc
-from typing import Dict, List, Optional, Tuple, Union
-
-import numpy as np
+from typing import Dict, List, Optional, Tuple
 
 from libs.device_parameters import BackendConfig, DeviceCalibration
-from libs.qiskit.qobj import PulseQobj
 from libs.quantum_executor.base.circuits import (
     CircuitExperiment,
     CircuitJobParams,
     QasmCircuit,
 )
-from libs.quantum_executor.base.experiment import NativeExperiment
 from libs.quantum_executor.base.pulse_limits import (
     check_pulse_limits,
     get_calibrated_frame_frequencies,
@@ -45,35 +40,18 @@ from utils.exc import UnsupportedCircuitError
 
 
 class QuantumExecutor(abc.ABC):
-    """The state a device's jobs run with, and the hooks that preprocess_qobj and run_job
-    call to compile and run them natively"""
+    """The state a device's jobs run with, and the hooks that preprocess_circuits and
+    run_job call to compile and run them natively"""
 
     def __init__(
         self,
         data_dir: Path,
-        hardware_map: Optional[Dict[str, Tuple[str, str]]] = None,
         backend_config: Optional[BackendConfig] = None,
         **kwargs,
     ):
         # where each experiment's folder and log go
         self.data_dir = Path(data_dir)
-        self.hardware_map = hardware_map
         self.backend_config = backend_config
-
-    @abc.abstractmethod
-    def to_native_experiments(
-        self, qobj: PulseQobj, native_config: NativeQobjConfig, /
-    ) -> List[NativeExperiment]:
-        """Constructs native experiments from the PulseQobj instance
-
-        Args:
-            qobj: the Pulse qobject containing the experiments
-            native_config: the native config for the qobj
-
-        Returns:
-            list of NativeExperiment's
-        """
-        pass
 
     @abc.abstractmethod
     def to_circuit_experiments(
@@ -95,13 +73,13 @@ class QuantumExecutor(abc.ABC):
     @abc.abstractmethod
     def run_native(
         self,
-        experiment: Union[NativeExperiment, CircuitExperiment],
+        experiment: CircuitExperiment,
         /,
         *,
         native_config: NativeQobjConfig,
         logger: ExperimentLogger,
     ) -> QExperimentResult:
-        """Runs the native experiments after they have been compiled from OpenPulse Qobjects
+        """Runs an experiment that to_circuit_experiments compiled
 
         It returns an xarray.Dataset like ::
 
@@ -127,8 +105,8 @@ class QuantumExecutor(abc.ABC):
             ...
 
         Args:
-            experiment: the native experiment to run, of a qobj or of a circuit
-            native_config: native config for the qobj
+            experiment: the experiment of a circuit to run
+            native_config: native config for the job
             logger: the logger for the given experiment which logs data in a specific folder
 
         Returns:
@@ -155,58 +133,6 @@ class QuantumExecutor(abc.ABC):
 
     def __exit__(self, exc_type, exc_value, exc_tb):
         self.close()
-
-
-def preprocess_qobj(
-    executor: QuantumExecutor, qobj: PulseQobj, job_id: str, results_folder: Path
-) -> Tuple[float, str]:
-    """Prepares a given qobj for execution on the executor but does not execute it yet
-
-    Args:
-        executor: the executor the job is to run on
-        qobj: the Quantum object that is to be preprocessed
-        job_id: the ID of the job
-        results_folder: the folder to store the experiment resulting files
-
-    Returns:
-        tuple of the duration and the path to the pickle file containing the native experiments metadata
-    """
-    tuid = gen_tuid()
-    qobj_header = qobj.header.to_dict()
-    qobj_tag = qobj_header.get("tag", "")
-    # create the logger folder where to log messages etc.
-    create_exp_folder(tuid=tuid, name=qobj_tag, datadir=executor.data_dir)
-    logger = ExperimentLogger(tuid, datadir=executor.data_dir)
-    logger.info(f"Preprocessing job for tuid: {tuid} (not the same as job_id)")
-
-    try:
-        # unwrap pulse library
-        qobj.config.pulse_library = {
-            i.name: np.asarray(i.samples) for i in qobj.config.pulse_library
-        }
-
-        # translate qobj experiments to quantify schedules
-        logger.info(f"Started compilation for job id: {job_id} at {datetime.now()}")
-        native_config = NativeQobjConfig.from_pulse_qobj_config(qobj.config)
-        native_expts = executor.to_native_experiments(qobj, native_config)
-        total_duration = sum([expt.duration for expt in native_expts])
-
-        expt_metadata = NativeExptMetadata(
-            native_config=native_config,
-            tuid=tuid,
-            qobj=qobj,
-            qobj_tag=qobj_tag,
-        )
-
-        results_file_path = _get_expt_metadata_file(job_id, folder=results_folder)
-        with open(results_file_path, "wb") as file:
-            pickle.dump(expt_metadata.to_dict(), file)
-
-        logger.info(f"Translated to {len(native_expts)} native experiments.")
-        return total_duration, str(results_file_path)
-    except Exception as e:
-        logger.error(f"\nFailed job: {job_id}, tuid: {tuid}\n{format_exc()}")
-        raise e
 
 
 def preprocess_circuits(
@@ -324,82 +250,6 @@ def run_job(executor: QuantumExecutor, job_id: str, inputs_folder: Path) -> str:
 
 
 @dataclass(frozen=True)
-class NativeExptMetadata:
-    """Metadata on the experiments
-
-    This is passed between processes doing preprocessing and those doing execution
-    """
-
-    native_config: NativeQobjConfig
-    tuid: TUID
-    qobj: PulseQobj
-    qobj_tag: str
-
-    @property
-    def tag(self) -> str:
-        """The name of the experiments' folder"""
-        return self.qobj_tag
-
-    def to_quantum_job(
-        self,
-        job_id: str,
-        raw_results: Dict[str, QExperimentResult],
-        experiments: List[NativeExperiment],
-    ) -> QuantumJob:
-        """Gets the job these experiments ran for, with their results
-
-        Args:
-            job_id: the ID of the job
-            raw_results: each experiment's results, by its name
-            experiments: the experiments, which the qobj describes already
-
-        Returns:
-            the quantum job, with its qobj
-        """
-        return QuantumJob(
-            job_id=job_id,
-            tuid=self.tuid,
-            meas_return=self.native_config.meas_return,
-            meas_return_cols=self.native_config.meas_return_cols,
-            meas_level=self.native_config.meas_level,
-            n_qubits=self.native_config.n_qubits,
-            memory_slot_size=self.qobj.config.memory_slot_size,
-            qobj=self.qobj,
-            raw_results=raw_results,
-        )
-
-    def to_dict(self) -> dict:
-        """Converts this experiment metadata to JSON serializable dict
-
-        Returns:
-            the JSON serializable dict of this metadata
-        """
-        return {
-            "tuid": self.tuid,
-            "qobj": self.qobj.to_dict(),
-            "native_config": self.native_config.to_dict(),
-            "qobj_tag": self.qobj_tag,
-        }
-
-    @classmethod
-    def from_dict(cls, value: dict) -> "NativeExptMetadata":
-        """Gets an instance of this class from a dict
-
-        Args:
-            value: the dict to be converted
-
-        Returns:
-            the instance of this class
-        """
-        kwargs = {
-            **value,
-            "qobj": PulseQobj.from_dict(value["qobj"]),
-            "native_config": NativeQobjConfig.from_dict(value["native_config"]),
-        }
-        return cls(**kwargs)
-
-
-@dataclass(frozen=True)
 class CircuitExptMetadata:
     """Metadata on the experiments of a gate-level job
 
@@ -474,68 +324,38 @@ def _get_expt_metadata_file(job_id: str, folder: Path) -> Path:
     return folder / f"{job_id}-expt-metadata.pickle"
 
 
-def _load_expt_metadata(
-    file: Path,
-) -> Union["NativeExptMetadata", "CircuitExptMetadata"]:
-    """Loads the metadata of the experiments that preprocessing pickled to the file, a
-    qobj's or a gate-level job's"""
+def _load_expt_metadata(file: Path) -> CircuitExptMetadata:
+    """Loads the metadata of the experiments that preprocessing pickled to the file"""
     with open(file, "rb") as metadata_file:
-        value = pickle.load(metadata_file)
-    if "params" in value:
-        return CircuitExptMetadata.from_dict(value)
-    return NativeExptMetadata.from_dict(value)
+        return CircuitExptMetadata.from_dict(pickle.load(metadata_file))
 
 
 def _run_experiments(
     executor: QuantumExecutor,
-    expt_metadata: Union["NativeExptMetadata", "CircuitExptMetadata"],
+    expt_metadata: CircuitExptMetadata,
     logger: ExperimentLogger,
-) -> Tuple[
-    List[Union[NativeExperiment, CircuitExperiment]], Dict[str, QExperimentResult]
-]:
+) -> Tuple[List[CircuitExperiment], Dict[str, QExperimentResult]]:
     """Runs the job's experiments natively
 
     Returns:
         the experiments, and each one's result keyed by its name
     """
     native_config = expt_metadata.native_config
-    # translated again rather than kept from preprocessing: pickling them broke the schedules,
-    # and translating costs about 0.1 ms an experiment, against milliseconds for quantify's
-    # compilation in run_native and hundreds for a simulation
-    native_expts = _get_native_experiments(executor, expt_metadata)
+    # compiled again rather than kept from preprocessing, as pickling them broke the schedules
+    native_expts = executor.to_circuit_experiments(
+        expt_metadata.params.circuits, native_config
+    )
     raw_results = {
-        _get_name(expt): executor.run_native(
-            expt, native_config=native_config, logger=logger
-        )
+        expt.name: executor.run_native(expt, native_config=native_config, logger=logger)
         for expt in native_expts
     }
     return native_expts, raw_results
 
 
-def _get_native_experiments(
-    executor: QuantumExecutor,
-    expt_metadata: Union["NativeExptMetadata", "CircuitExptMetadata"],
-) -> List[Union[NativeExperiment, CircuitExperiment]]:
-    """Translates the job's qobj, or compiles its circuits, into native experiments"""
-    native_config = expt_metadata.native_config
-    if isinstance(expt_metadata, CircuitExptMetadata):
-        return executor.to_circuit_experiments(
-            expt_metadata.params.circuits, native_config
-        )
-    return executor.to_native_experiments(expt_metadata.qobj, native_config)
-
-
-def _get_name(experiment: Union[NativeExperiment, CircuitExperiment]) -> str:
-    """Gets the experiment's name, which keys its results"""
-    if isinstance(experiment, CircuitExperiment):
-        return experiment.name
-    return experiment.header.name
-
-
 def _save_results(
     job_id: str,
-    expt_metadata: Union["NativeExptMetadata", "CircuitExptMetadata"],
-    native_expts: List[Union[NativeExperiment, CircuitExperiment]],
+    expt_metadata: CircuitExptMetadata,
+    native_expts: List[CircuitExperiment],
     raw_results: Dict[str, QExperimentResult],
     folder: Path,
 ) -> Path:

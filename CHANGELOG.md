@@ -26,6 +26,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 - Changed the `basis_gates` each device publishes to MSS to the gates gate-level jobs are transpiled to (rz, sx,
   x, rx, measure, reset and delay, and cz where it has couplers), from the names of its config's gate settings
+- Changed `POST /jobs` to take OpenQASM 3 circuits only, deleting the qobj path: an older SDK's qobj job is now
+  refused with 400, "the backend takes OpenQASM 3 circuits only, not a qobj", so send circuits, pulses as OpenPulse
 
 ### Fixed
 
