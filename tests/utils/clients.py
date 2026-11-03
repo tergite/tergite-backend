@@ -23,7 +23,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlmodel import SQLModel
 
-from tests.utils.analysis import MOCK_LDA_1Q, MOCK_LDA_2Q
 from tests.utils.api import get_test_client
 from tests.utils.env import (
     TEST_BACKEND_SETTINGS_FILE,
@@ -92,25 +91,12 @@ def quantify_rest_client(
 def qiskit_1q_rest_client(
     request, mocker, mock_mss, monkeypatch
 ) -> Generator[TestClient, Any, None]:
-    """A test client for fast api when rq is running asynchronously"""
-    monkeypatch.setenv("BCC_EXECUTOR_TYPE", "qiskit_pulse_1q")
+    """A test client of the simulated 1-qubit device"""
+    monkeypatch.setenv("BCC_EXECUTOR_TYPE", "quantify")
     monkeypatch.setenv("BCC_DEFAULT_PREFIX", TEST_DEFAULT_PREFIX_SIM_1Q)
     monkeypatch.setenv("BCC_BACKEND_SETTINGS", TEST_SIMQ1_BACKEND_SETTINGS_FILE)
     monkeypatch.setenv("BCC_CALIBRATION_SEED", TEST_QISKIT_1Q_SEED_FILE)
-
-    from tests.utils.executors.qiskit import StubQiskitDynamicsExecutor
-
     use_test_durations(mocker)
-    # only a test that checks the measured counts pays for simulating
-    if not request.node.get_closest_marker("simulated"):
-        mocker.patch(
-            "libs.quantum_executor.qiskit.executor.QiskitDynamicsExecutor",
-            new=StubQiskitDynamicsExecutor,
-        )
-    mocker.patch(
-        "libs.quantum_executor.qiskit.functions.LinearDiscriminantAnalysis",
-        return_value=MOCK_LDA_1Q,
-    )
     import settings
 
     importlib.reload(settings)
@@ -124,25 +110,12 @@ def qiskit_1q_rest_client(
 def qiskit_2q_rest_client(
     request, mocker, mock_mss, monkeypatch
 ) -> Generator[TestClient, Any, None]:
-    """A test client for fast api when rq is running asynchronously"""
-    monkeypatch.setenv("BCC_EXECUTOR_TYPE", "qiskit_pulse_2q")
+    """A test client of the simulated 2-qubit device"""
+    monkeypatch.setenv("BCC_EXECUTOR_TYPE", "quantify")
     monkeypatch.setenv("BCC_DEFAULT_PREFIX", TEST_DEFAULT_PREFIX_SIM_2Q)
     monkeypatch.setenv("BCC_BACKEND_SETTINGS", TEST_SIMQ2_BACKEND_SETTINGS_FILE)
     monkeypatch.setenv("BCC_CALIBRATION_SEED", TEST_QISKIT_2Q_SEED_FILE)
-
-    from tests.utils.executors.qiskit import StubQiskitDynamicsExecutor
-
     use_test_durations(mocker)
-    # only a test that checks the measured counts pays for simulating
-    if not request.node.get_closest_marker("simulated"):
-        mocker.patch(
-            "libs.quantum_executor.qiskit.executor.QiskitDynamicsExecutor",
-            new=StubQiskitDynamicsExecutor,
-        )
-    mocker.patch(
-        "libs.quantum_executor.qiskit.functions.LinearDiscriminantAnalysis",
-        return_value=MOCK_LDA_2Q,
-    )
     import settings
 
     importlib.reload(settings)

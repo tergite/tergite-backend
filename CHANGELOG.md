@@ -9,6 +9,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
+- Added simulated devices on QuTiP: a backend config with a `[simulator]` section runs its gate-level and pulse-level
+  jobs, compiled as on a chip, on a model of its transmons and couplers drawn from its calibration
 - Added how a gate-level job ran to the result it sends MSS: its shots, `meas_level`, `meas_return` and each circuit's
   name and number of classical bits, so the SDK reads a job's result back without its payload
 - Added gate-level jobs: `POST /jobs` takes OpenQASM 3 circuits, with `shots`, `meas_level` and `meas_return`,

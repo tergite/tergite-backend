@@ -22,15 +22,18 @@ HAS_QUANTIFY = importlib.util.find_spec("quantify_scheduler") is not None
 
 FASTAPI_CLIENTS = []
 CLIENT_AND_WORKER_TUPLES = []
+# those of the device on clusters alone, which recalibrates, as the simulated ones do not
+QUANTIFY_CLIENT_AND_WORKER_TUPLES = []
 if HAS_QUANTIFY:
     FASTAPI_CLIENTS += [lazy_fixture("quantify_rest_client")]
-    CLIENT_AND_WORKER_TUPLES += [
+    QUANTIFY_CLIENT_AND_WORKER_TUPLES += [
         (
             lazy_fixture("quantify_rest_client"),
             lazy_fixture("quantify_worker"),
         ),
     ]
-if HAS_QISKIT_DYNAMICS:
+    CLIENT_AND_WORKER_TUPLES += QUANTIFY_CLIENT_AND_WORKER_TUPLES
+if HAS_QUANTIFY:
     FASTAPI_CLIENTS += [
         lazy_fixture("qiskit_1q_rest_client"),
         lazy_fixture("qiskit_2q_rest_client"),
@@ -89,7 +92,7 @@ if HAS_QUANTIFY:
         (lazy_fixture("quantify_rest_client"), load_fixture("dynamic_properties.json"))
     ]
 
-if HAS_QISKIT_DYNAMICS:
+if HAS_QUANTIFY:
     SIM_1Q_UPLOAD_JOB_PARAMS = [
         (
             lazy_fixture("qiskit_1q_rest_client"),

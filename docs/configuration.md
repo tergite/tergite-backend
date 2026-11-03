@@ -95,46 +95,40 @@ shows the shape; its values are placeholders, to be replaced with limits chosen 
 its fridge and its amplifiers. `uv run python -m dev.check_gate_level <device>.env` warns of a
 device that sets none.
 
-#### Single-qubit-gate Qiskit Pulse Simulator
+#### Simulated Devices
 
-You may wish to run a single-qubit simulator.  
+A device whose `backend_config.toml` has a `[simulator]` section runs its jobs on QuTiP, not on
+clusters: each circuit, gate-level or pulse-level, is compiled as on a chip, from the
+calibration seed, and the pulses it plays drive a model of the chip.
 
-First update the `.env` file to contain `BCC_EXECUTOR_TYPE=qiskit_pulse_1q`.  
+- Each transmon the circuit touches has three levels, in the frame of its drive clock, and is
+  driven at the Rabi rate that makes its calibrated pi pulse a pi rotation; DRAG, the
+  anharmonicity (-200 MHz where the seed gives none) and leakage act as they would.
+- A coupler's pulse switches on a ZZ interaction between its two transmons, scaled so that
+  the calibrated CZ adds a phase of pi to |11>; a CZ that plays no coupler pulse entangles
+  nothing, and its phase corrections should be 0.
+- T1 and T2 come from the seed.
+- A measurement reads the state, without collapsing it, into IQ points about each qubit's
+  points for states 0 and 1, from which the device's discriminators are drawn; so each
+  qubit is measured once, after anything else plays on it, and a level above 0 reads as 1.
 
-We already have a preconfigured [`backend_config.simq1.toml`](../tests/fixtures/backend_config.simq1.toml) for this in the 
-`tests/fixtures` folder.   
+```toml
+[simulator]
+# the standard deviation of a shot's I, and of its Q, about its state's point
+readout_noise = 0.1
 
-Copy it to your root folder.
-
-```shell
-# on the root of the project
-cp tests/fixtures/backend_config.simq1.toml backend_config.toml
+[simulator.readout_iq]
+# each qubit's IQ point of state 0 and of state 1, by its id
+q0 = [[1.0, 0.0], [-1.0, 0.0]]
+q1 = [[0.0, 1.0], [0.0, -1.0]]
 ```
 
-And run the application.
-
-```shell
-./dev/start_bcc.sh
-```
-
-#### Two-qubit-gate Qiskit Pulse Simulator
-
-You may wish to run a two-qubit-gate simulator.  
-
-First update the `.env` file to contain `BCC_EXECUTOR_TYPE=qiskit_pulse_2q`.  
-
-We already have a preconfigured [`backend_config.simq2.toml`](../tests/fixtures/backend_config.simq2.toml) for this in the 
-`tests/fixtures` folder.   
-
-Copy it to your root folder.
+The test fixtures hold a simulated one-qubit device and a two-qubit one with a coupler, which
+run with the default `BCC_EXECUTOR_TYPE=quantify`:
 
 ```shell
 # on the root of the project
 cp tests/fixtures/backend_config.simq2.toml backend_config.toml
-```
-
-And run the application.
-
-```shell
+cp tests/fixtures/qiskit_pulse_2q.seed.toml calibration.seed.toml
 ./dev/start_bcc.sh
 ```

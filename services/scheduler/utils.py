@@ -320,6 +320,11 @@ def _init_executor(
             should_reset=should_reset,
         )
 
+    if backend_config.simulator is not None:
+        from libs.quantum_executor.quantify.qutip_executor import QutipExecutor
+
+        return QutipExecutor(backend_config, data_dir=options.data_directory)
+
     # only import this if the executor is of the quantify so
     # that the rest of the code is independent of quantify
     from libs.quantum_executor.quantify.executor import QuantifyExecutor

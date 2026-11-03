@@ -7,9 +7,9 @@
     [0, 1],
     [1, 0]
   ],
-  "description": "A two-qubit transmon Hamiltonian with 3 levels",
-  "dt": 1e-11,
-  "dtm": 1e-11,
+  "description": "Two simulated transmons and their coupler",
+  "dt": 1e-9,
+  "dtm": 1e-9,
   "gates": {
     "x": {
       "coupling_map": [

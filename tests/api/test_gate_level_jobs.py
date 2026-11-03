@@ -34,7 +34,6 @@ from tests.utils.jobs import (
 )
 from tests.utils.params import (
     CLIENT_AND_WORKER_TUPLES,
-    HAS_QISKIT_DYNAMICS,
     HAS_QUANTIFY,
     USERS,
 )
@@ -45,13 +44,13 @@ _SIMULATED_SHOTS = 100
 _SIM_1Q_CLIENT_AND_WORKER = pytest.param(
     lazy_fixture("qiskit_1q_rest_client"),
     lazy_fixture("qiskit_1q_worker"),
-    marks=pytest.mark.skipif(not HAS_QISKIT_DYNAMICS, reason="requires qiskit"),
+    marks=pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify"),
     id="qiskit_pulse_1q",
 )
 _SIM_2Q_CLIENT_AND_WORKER = pytest.param(
     lazy_fixture("qiskit_2q_rest_client"),
     lazy_fixture("qiskit_2q_worker"),
-    marks=pytest.mark.skipif(not HAS_QISKIT_DYNAMICS, reason="requires qiskit"),
+    marks=pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify"),
     id="qiskit_pulse_2q",
 )
 _QUANTIFY_CLIENT_AND_WORKER = [
@@ -452,10 +451,10 @@ def test_simulator_iq_memory_has_a_point_per_measured_clbit(
 
 
 @pytest.mark.parametrize("client, worker", [_SIM_2Q_CLIENT_AND_WORKER])
-def test_simulator_refuses_a_gate_after_a_measurement(
+def test_simulator_refuses_a_gate_on_a_measured_qubit(
     client, worker, jobs_folder, mocker, fake_clock
 ):
-    circuit = get_circuit("mid", "c[0] = measure $0;\nx $1;", num_clbits=1)
+    circuit = get_circuit("mid", "c[0] = measure $0;\nx $0;", num_clbits=1)
     job = get_circuit_job([circuit], shots=_SHOTS)
 
     with client as client:
@@ -463,7 +462,7 @@ def test_simulator_refuses_a_gate_after_a_measurement(
 
     assert got.status == JobStatus.FAILED
     assert got.failure_reason == (
-        "the simulator measures each qubit once, at the end of the circuit"
+        "the simulator measures each qubit once, after what else it plays on it"
     )
 
 
