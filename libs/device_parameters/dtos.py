@@ -57,6 +57,8 @@ _DOWNCONVERT_FREQUENCY = 4.4e9
 # the gates a gate-level job's circuits are transpiled to, which every executor compiles;
 # cz too on a device with couplers
 GATE_LEVEL_BASIS_GATES = ("rz", "sx", "x", "rx", "measure", "reset", "delay")
+# what a frame plays on: a qubit's drive or readout line, or a coupler's flux line
+FrameKind = Literal["drive", "readout", "coupler"]
 
 
 class Device(BaseModel):
@@ -540,6 +542,29 @@ class CouplerCalibration(BaseModel):
         return results
 
 
+class PulseFrame(BaseModel):
+    """A frame a pulse-level job may play on, at its calibrated frequency"""
+
+    # as a job names it, e.g. q12_drive or q12_q13_coupler
+    name: str
+    kind: FrameKind
+    # the physical qubits it acts on, as a job numbers them, e.g. 0 for $0
+    qubits: List[int]
+    # in hertz
+    frequency: float
+
+
+class GateDefcal(BaseModel):
+    """A gate's calibrated pulses as an OpenPulse defcal, which a job may override"""
+
+    # e.g. x, sx, rz or cz
+    gate: str
+    # the physical qubits it is calibrated on, as a job numbers them
+    qubits: List[int]
+    # the defcal, e.g. 'defcal x $0 { ... }'
+    program: str
+
+
 class DeviceCalibration(BaseModel):
     """Schema for the calibration data of a given device"""
 
@@ -551,6 +576,9 @@ class DeviceCalibration(BaseModel):
     resonators: Optional[List[ResonatorCalibration]] = None
     couplers: Optional[List[CouplerCalibration]] = None
     discriminators: Optional[Dict[str, Any]] = None
+    # those of a device that takes pulse-level jobs; none of one that does not
+    frames: Optional[List[PulseFrame]] = None
+    defcals: Optional[List[GateDefcal]] = None
     last_calibrated: str
 
     def to_calibration_config(self) -> "_BackendCalibrationConfig":
@@ -764,7 +792,6 @@ class _BackendCalibrationConfig(BaseModel):
     coupler: List[Dict[str, Union[float, str]]] = []
 
 
-FrameKind = Literal["drive", "readout", "coupler"]
 _NonNegative = Annotated[float, Field(ge=0)]
 
 

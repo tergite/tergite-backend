@@ -77,25 +77,29 @@ def get_device_calibration_info(
 
 
 def save_all_device_params(
-    db_engine: Engine, backend_config: BackendConfig, mss_client: MssClient
+    db_engine: Engine,
+    backend_config: BackendConfig,
+    calibration: DeviceCalibration,
+    mss_client: MssClient,
 ) -> None:
     """Saves the backend's device info and calibration info, and sends them to MSS, or keeps
     them for it while it cannot be reached
 
     Args:
         db_engine: the engine of the device's database
-        backend_config: the backend config the device info and calibration are got from
+        backend_config: the backend config the device info is got from
+        calibration: the device's calibration, with its frames and defcals where it has
+            them
         mss_client: the client to MSS
     """
     device_info = Device.from_config(backend_config)
-    calib_info = DeviceCalibration.from_config(backend_config)
 
     with Session(db_engine) as session:
         session.merge(
             DeviceParametersRow(
                 backend_name=device_info.name,
                 device_info=device_info.model_dump_json(),
-                calibration_info=calib_info.model_dump_json(),
+                calibration_info=calibration.model_dump_json(),
             )
         )
         session.commit()
@@ -108,7 +112,7 @@ def save_all_device_params(
     send_mss_event(
         db_engine,
         mss_client,
-        DeviceEvent(name=DeviceEventName.RECALIBRATED, data=calib_info),
+        DeviceEvent(name=DeviceEventName.RECALIBRATED, data=calibration),
     )
 
 

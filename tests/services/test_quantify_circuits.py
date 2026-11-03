@@ -13,13 +13,16 @@
 import math
 from typing import Any, Dict, Generator, List
 
+import numpy as np
 import pytest
 import toml
 
 from libs.device_parameters import BackendConfig
 from libs.quantum_executor.base import gates
+from libs.quantum_executor.base.circuits import QasmCircuit
+from libs.quantum_executor.base.qasm import to_native_circuit
 from libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
-from tests.utils.circuits import get_gate_level_seed
+from tests.utils.circuits import get_gate_level_seed, get_qasm
 from tests.utils.env import TEST_BACKEND_SETTINGS_FILE, TEST_QUANTIFY_SEED_FILE
 from tests.utils.params import HAS_QUANTIFY
 from utils.exc import UnsupportedCircuitError
@@ -53,20 +56,23 @@ def quantum_device() -> Generator[Any, Any, None]:
 
 
 @pytest.fixture
-def calibrated_device(tmp_path) -> Generator[Any, Any, None]:
-    """A quantum device without hardware, from the seed the gate-level jobs run on, whose
-    coupler of q12 and q13 is calibrated"""
+def calibrated_backend_config(tmp_path) -> BackendConfig:
+    """The test backend config, with the seed the gate-level jobs run on, whose coupler of
+    q12 and q13 is calibrated"""
+    seed_file = tmp_path / "seed.toml"
+    seed_file.write_text(toml.dumps(get_gate_level_seed()))
+    return BackendConfig.from_toml(TEST_BACKEND_SETTINGS_FILE, seed_file=str(seed_file))
+
+
+@pytest.fixture
+def calibrated_device(calibrated_backend_config) -> Generator[Any, Any, None]:
+    """A quantum device without hardware, of the calibrated backend config"""
     from quantify_scheduler.device_under_test.quantum_device import QuantumDevice
 
     from libs.quantum_executor.quantify.device import apply_calibration
 
-    seed_file = tmp_path / "seed.toml"
-    seed_file.write_text(toml.dumps(get_gate_level_seed()))
     device = QuantumDevice("test_pulse_level_circuits")
-    backend_config = BackendConfig.from_toml(
-        TEST_BACKEND_SETTINGS_FILE, seed_file=str(seed_file)
-    )
-    apply_calibration(device, backend_config)
+    apply_calibration(device, calibrated_backend_config)
     yield device
     device.close()
 
@@ -298,6 +304,62 @@ def test_a_frame_the_device_has_not_is_refused(calibrated_device):
         _get_schedule(calibrated_device, _get_circuit([block]))
 
 
+def test_the_published_frames_are_those_a_job_plays_on(
+    calibrated_device, calibrated_backend_config
+):
+    from libs.quantum_executor.quantify.defcals import get_pulse_calibration
+    from libs.quantum_executor.quantify.device import get_frame_frequencies
+
+    frames, _ = get_pulse_calibration(calibrated_backend_config)
+
+    by_name = {frame.name: frame for frame in frames}
+    assert set(by_name) == set(get_frame_frequencies(calibrated_device))
+    q13_drive = by_name["q13_drive"]
+    assert (q13_drive.kind, q13_drive.qubits, q13_drive.frequency) == (
+        "drive",
+        [1],
+        5.2e9,
+    )
+    assert by_name["q12_q13_coupler"].qubits == [0, 1]
+    # its coupler is not calibrated, so its frame has no frequency to play at
+    assert "q12_q14_coupler" not in by_name
+
+
+@pytest.mark.parametrize(
+    "statement",
+    ["x $1;", "sx $1;", "rz(0.3) $1;", "cz $0, $1;", "cz $1, $0;", "cz $0, $2;"],
+)
+def test_a_published_defcal_plays_what_its_gate_plays(
+    calibrated_device, calibrated_backend_config, statement
+):
+    from libs.quantum_executor.quantify.defcals import get_pulse_calibration
+
+    _, defcals = get_pulse_calibration(calibrated_backend_config)
+    programs = "\n".join(defcal.program for defcal in defcals)
+
+    by_gate = _get_played(calibrated_device, _translate(statement))
+    by_defcal = _get_played(
+        calibrated_device,
+        _translate(f'defcalgrammar "openpulse";\n{programs}\n{statement}'),
+    )
+
+    assert by_gate
+    assert [event[:2] for event in by_defcal] == [event[:2] for event in by_gate]
+    for (*_, defcal_values), (*_, gate_values) in zip(by_defcal, by_gate):
+        np.testing.assert_allclose(defcal_values, gate_values, rtol=0, atol=1e-12)
+
+
+def test_a_published_defcal_replaces_its_gate(calibrated_backend_config):
+    from libs.quantum_executor.quantify.defcals import get_pulse_calibration
+
+    _, defcals = get_pulse_calibration(calibrated_backend_config)
+    programs = "\n".join(defcal.program for defcal in defcals)
+
+    circuit = _translate(f'defcalgrammar "openpulse";\n{programs}\nx $1;\ncz $0, $1;')
+
+    assert all(isinstance(gate, gates.PulseBlock) for gate in circuit.gates)
+
+
 def _get_circuit(native_gates: List[gates.Gate]) -> gates.NativeCircuit:
     """Gets a circuit of the gates on the three qubits of the test device"""
     return gates.NativeCircuit(
@@ -388,6 +450,49 @@ def _get_pulse_times(quantum_device, circuit: gates.NativeCircuit) -> Dict[Any, 
         (str(row.operation).split("(")[0], row.port or row.clock): row.abs_time
         for _, row in compiled.timing_table.data.iterrows()
     }
+
+
+def _translate(statements: str) -> gates.NativeCircuit:
+    """Translates the statements, on the physical qubits of the test device, into native
+    gates"""
+    qasm = get_qasm(statements, num_clbits=0)
+    return to_native_circuit(QasmCircuit(name="test", qasm=qasm, num_clbits=0), dt=_NS)
+
+
+def _get_played(quantum_device, circuit: gates.NativeCircuit) -> List[Any]:
+    """Gets what the circuit's compiled schedule plays, in time order: each waveform's
+    samples and each phase shift, with the nanosecond it starts at and its port, or its
+    clock where it has none"""
+    from quantify_scheduler.backends.graph_compilation import SerialCompiler
+    from quantify_scheduler.helpers.waveforms import get_waveform
+
+    compiled = SerialCompiler("test").compile(
+        _get_schedule(quantum_device, circuit),
+        config=quantum_device.generate_compilation_config(),
+    )
+    played = []
+    for start, pulse in _get_timed_pulses(compiled, 0.0):
+        if pulse.get("wf_func") is not None and pulse.get("port"):
+            samples = get_waveform(pulse, sampling_rate=1 / _NS)
+            played.append((round(start / _NS), pulse["port"], samples))
+        elif "phase_shift" in pulse:
+            played.append((round(start / _NS), pulse["clock"], [pulse["phase_shift"]]))
+    return sorted(played, key=lambda event: event[:2])
+
+
+def _get_timed_pulses(schedule, offset: float) -> List[Any]:
+    """Gets each pulse of the compiled schedule, those within it too, with its start in
+    seconds"""
+    timed_pulses = []
+    for schedulable in schedule.schedulables.values():
+        start = offset + schedulable["abs_time"]
+        operation = schedule.operations[schedulable["operation_id"]]
+        if hasattr(operation, "schedulables"):
+            timed_pulses.extend(_get_timed_pulses(operation, start))
+            continue
+        for pulse in operation.data.get("pulse_info", []):
+            timed_pulses.append((start + pulse.get("t0", 0.0), pulse))
+    return timed_pulses
 
 
 def _get_all_operations(schedule) -> List[Any]:

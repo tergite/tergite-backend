@@ -123,6 +123,21 @@ class QuantumExecutor(abc.ABC):
             cannot recalibrate
         """
 
+    def add_pulse_calibration(
+        self, calibration: DeviceCalibration
+    ) -> DeviceCalibration:
+        """Adds to the calibration the frames the device's pulse-level jobs may play on and
+        its gates' defcals, which MSS publishes; an executor of a device that takes no
+        pulse-level jobs adds none
+
+        Args:
+            calibration: the device's calibration, of this executor's backend config
+
+        Returns:
+            the calibration, with the frames and defcals where the device has them
+        """
+        return calibration
+
     @abc.abstractmethod
     def close(self):
         """Frees the resources the executor holds, e.g. its connections to instruments"""

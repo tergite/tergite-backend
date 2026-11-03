@@ -14,6 +14,7 @@
 import shutil
 import socket
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -211,3 +212,28 @@ def _get_calibration_kwargs(data_dir: Path) -> dict:
         calib_spi_conf=TEST_CALIBRATION_SPI_CONFIG_FILE,
         calib_seed_file=TEST_QUANTIFY_SEED_FILE,
     )
+
+
+@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
+@pytest.mark.parametrize("is_pulse_limited", [True, False], ids=["limits", "no-limits"])
+def test_executor_adds_frames_and_defcals_only_where_the_device_has_pulse_limits(
+    is_pulse_limited,
+):
+    from libs.device_parameters import DeviceCalibration
+    from libs.quantum_executor.quantify.executor import QuantifyExecutor
+
+    from ..utils.env import TEST_QUANTIFY_SEED_FILE
+
+    backend_config = BackendConfig.from_toml(
+        _BACKEND_CONFIG_PATH, seed_file=TEST_QUANTIFY_SEED_FILE
+    )
+    if not is_pulse_limited:
+        backend_config = backend_config.model_copy(update={"pulse_limits": None})
+    # it reads no more of the executor than its backend config
+    executor = SimpleNamespace(backend_config=backend_config)
+    calibration = DeviceCalibration.from_config(backend_config)
+
+    got = QuantifyExecutor.add_pulse_calibration(executor, calibration)
+
+    assert bool(got.frames) is is_pulse_limited
+    assert bool(got.defcals) is is_pulse_limited

@@ -568,7 +568,7 @@ the socket stays open.
 | Event | `data` | Sent by | When |
 | --- | --- | --- | --- |
 | `initialized` | `Device`: the device's properties | heavy worker | at start, after loading the executor |
-| `recalibrated` | `DeviceCalibration` | heavy worker | at start, right after `initialized`; after each recalibration that returns one (quantify only) |
+| `recalibrated` | `DeviceCalibration`, with the frames and defcals of a device that takes pulse-level jobs (`quantify/defcals.py`) | heavy worker | at start, right after `initialized`; after each recalibration that returns one (quantify only) |
 | `job_updated` | `Job`, whole | the worker running the job | when it fails; when postprocessing has its results; at `FINAL_W` (§6.1) |
 | `switched_off` | `{"date"}` | API | on `POST /switch/off`, after recording it |
 | `switched_on` | `{"date"}` | API | on `POST /switch/on`, after recording it |
@@ -728,7 +728,11 @@ set in its backend config's `pulse_limits` (`base/pulse_limits.py`): amplitude a
 by kind of frame, how far a frame's frequency may move, samples per waveform, the
 duration of a capture and of a shot's pulse-level blocks. A device that sets none takes
 no pulse-level jobs. Both are checked at upload, refusing with the reason, and the limits
-again before the job runs. Circuit qubit `i` is the device's `i`-th qubit by the number in its id. The executor compiles them with the device's own calibration:
+again before the job runs. A device that takes them publishes its frames and its x, sx, rz
+and cz as `defcal`s with its calibration (`quantify/defcals.py`): each gate compiled on the
+device and its pulses written as declared samples, delays and phase shifts, so a job that
+copies one plays exactly what the gate does; measure, which a job may not define, is left out.
+Circuit qubit `i` is the device's `i`-th qubit by the number in its id. The executor compiles them with the device's own calibration:
 quantify against a `QuantumDevice` of a transmon per qubit and a `CouplerEdge` per coupler
 (`quantify/device.py`), each shot after an idle in which the qubits relax and its operations
 one after the other but for consecutive measurements, or delays, of distinct qubits, which

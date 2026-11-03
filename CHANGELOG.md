@@ -18,6 +18,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Added limits to pulse-level jobs: a device takes them only from projects MSS says may send them, as
   `is_pulse_allowed` on asking for a job's token, and only within the `pulse_limits` of its backend config,
   checked at upload and before they run; a device without `pulse_limits` refuses them all
+- Added each device's frames and its gates' `defcal`s to the calibration it sends MSS, where it takes pulse-level
+  jobs: x, sx, rz and cz as the quantify executor plays them, sample for sample, which a job may copy or override
 - Added `dev/check_gate_level.py`, which checks the configs of each device env file for gate-level jobs,
   without the instruments: missing calibration or LDA values, couplers whose CZ plays no pulse, and ports the
   compiler refuses or whose LO puts an NCO beyond ±500 MHz

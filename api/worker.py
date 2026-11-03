@@ -16,6 +16,7 @@ from importlib import import_module
 
 from filelock import FileLock
 
+from libs.device_parameters import DeviceCalibration
 from services.devices import save_all_device_params
 from services.scheduler import (
     DeviceResources,
@@ -58,9 +59,13 @@ def preload_worker_globals(
         device = dataclasses.replace(
             device, executor=executor, executor_options=executor_options
         )
+        backend_config = executor_options.backend_config
         save_all_device_params(
             db_engine=device.bookings_db,
-            backend_config=executor_options.backend_config,
+            backend_config=backend_config,
+            calibration=executor.add_pulse_calibration(
+                DeviceCalibration.from_config(backend_config)
+            ),
             mss_client=device.mss_client,
         )
     return device

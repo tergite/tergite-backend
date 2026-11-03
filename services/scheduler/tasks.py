@@ -157,7 +157,7 @@ def recalibrate(device: DeviceResources) -> None:
             save_device_calibration(
                 device.bookings_db,
                 backend_name=device.executor_options.backend_name,
-                calibration=calibration,
+                calibration=device.executor.add_pulse_calibration(calibration),
                 mss_client=device.mss_client,
             )
 
