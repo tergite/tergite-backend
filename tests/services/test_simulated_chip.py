@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests of the simulated chip that plays schedules compiled for the clusters"""
+import itertools
 import math
 
 import numpy as np
@@ -23,9 +24,17 @@ from quantify_scheduler.operations.pulse_library import (
     IdlePulse,
     SetClockFrequency,
     ShiftClockPhase,
+    SoftSquarePulse,
     SquarePulse,
 )
+from quantify_scheduler.resources import ClockResource
+from quantify_scheduler.waveforms import soft_square
 
+from libs.quantum_executor.quantify.simulated_chip.coupler import (
+    DOWNCONVERSION_FREQUENCY,
+    PAIR_STATES,
+    Coupler,
+)
 from libs.quantum_executor.quantify.simulated_chip.engine import SimulatedChip
 from libs.quantum_executor.quantify.simulated_chip.readout import get_transmission
 from tests.utils.chips import get_chip_config, get_clusters_device
@@ -35,6 +44,13 @@ _CHIP = get_chip_config()
 _QUBIT = _CHIP.qubits["q12"]
 _RESONATOR = _CHIP.resonators["q12"]
 _REPETITIONS = 1000
+_PAIR_REPETITIONS = 400
+_COUPLER = _CHIP.couplers["q12_q13"]
+_CZ_AMPLITUDE = 0.5
+_STATE_11 = PAIR_STATES.index((1, 1))
+_STATE_02 = PAIR_STATES.index((0, 2))
+# a chip whose shots tell |1> from |2> apart
+_QUIET_CHIP = _CHIP.model_copy(update={"readout_noise": 2e-4})
 
 
 @pytest.fixture(scope="module")
@@ -242,6 +258,43 @@ def test_a_pulse_on_a_read_transmon_before_its_reset_is_refused(device, chip):
         _play(device, chip, schedule)
 
 
+def test_a_couplers_flux_pulse_at_their_difference_swaps_11_with_02_and_back(device):
+    chip = SimulatedChip(_QUIET_CHIP, np.random.default_rng(5))
+    durations = np.arange(24, 328, 16) * 1e-9
+    schedule = _get_pair_schedule()
+    for index, duration in enumerate(durations):
+        _add_pair_preparation(schedule, is_control_excited=True)
+        _add_flux_pulse(schedule, duration)
+        _add_pair_measurement(schedule, index)
+
+    levels = _get_pair_levels(device, _play(device, chip, schedule), len(durations))
+
+    swapped = np.mean(np.all(levels == (0, 2), axis=-1), axis=0)
+    returned = np.mean(np.all(levels == (1, 1), axis=-1), axis=0)
+    assert swapped.max() > 0.9
+    assert returned[np.argmax(swapped) :].max() > 0.9
+    assert returned[0] > 0.9
+
+
+def test_a_full_swap_through_02_adds_a_conditional_phase_of_pi(device):
+    chip = SimulatedChip(_QUIET_CHIP, np.random.default_rng(5))
+    duration = _get_full_swap_duration()
+    phases = np.arange(8) * 45
+    points = list(itertools.product((False, True), phases))
+    schedule = _get_pair_schedule()
+    for index, (is_control_excited, phase) in enumerate(points):
+        _add_pair_preparation(schedule, is_control_excited, is_target_rotated=True)
+        _add_flux_pulse(schedule, duration)
+        schedule.add(Rxy(90, phase, "q12"))
+        schedule.add(Measure("q12", acq_index=index))
+
+    excited = _get_excited(device, chip, schedule).reshape(2, len(phases))
+
+    fringes = (excited - 0.5) @ np.exp(-1j * np.radians(phases))
+    conditional = np.degrees(np.angle(fringes[1] / fringes[0])) % 360
+    assert conditional == pytest.approx(180, abs=15)
+
+
 def _get_schedule() -> Schedule:
     """Gets a schedule of the test's repetitions, from a reset of q12"""
     schedule = Schedule("test", repetitions=_REPETITIONS)
@@ -270,17 +323,97 @@ def _to_excited(device, values: np.ndarray) -> np.ndarray:
     return np.real((values - ground) * np.conj(span)) / abs(span) ** 2
 
 
-def _get_response(device, level: int) -> complex:
-    """Gets what q12's calibrated measurement integrates with the transmon in the level:
+def _get_response(device, level: int, element: str = "q12") -> complex:
+    """Gets what a transmon's calibrated measurement integrates with it in the level:
     its pulse's amplitude times the resonator's transmission, over the share of the
     integration the pulse fills"""
-    measure = device.get_element("q12").measure
-    frequency = device.get_element("q12").clock_freqs.readout()
+    measure = device.get_element(element).measure
+    frequency = device.get_element(element).clock_freqs.readout()
     amplitude = measure.pulse_amp()
     filled = (
         measure.pulse_duration() - measure.acq_delay()
     ) / measure.integration_time()
     transmission = get_transmission(
-        _RESONATOR, np.array(frequency), level, np.array(amplitude)
+        _CHIP.resonators[element], np.array(frequency), level, np.array(amplitude)
     )
     return complex(amplitude * transmission * filled)
+
+
+def _get_pair_schedule() -> Schedule:
+    """Gets a schedule of shots of q12 and q13, with the clock of their coupler's flux
+    pulse resonant with |11> to |02>"""
+    schedule = Schedule("pair", repetitions=_PAIR_REPETITIONS)
+    frequency = DOWNCONVERSION_FREQUENCY - _get_resonance()
+    schedule.add_resource(ClockResource("q12_q13.cz", frequency))
+    return schedule
+
+
+def _add_pair_preparation(
+    schedule: Schedule, is_control_excited: bool, is_target_rotated: bool = False
+) -> None:
+    """Resets q12 and q13 and prepares q12, the target, in |1> or, rotated, on the
+    equator, and q13, the control, in |1> if it is excited"""
+    schedule.add(Reset("q12", "q13"))
+    target = schedule.add(X90("q12") if is_target_rotated else X("q12"))
+    if is_control_excited:
+        schedule.add(X("q13"), ref_op=target, ref_pt="start")
+
+
+def _add_flux_pulse(schedule: Schedule, duration: float) -> None:
+    """Adds a flux pulse of the duration on q12 and q13's coupler"""
+    schedule.add(
+        SoftSquarePulse(
+            amp=_CZ_AMPLITUDE, duration=duration, port="q12_q13:fl", clock="q12_q13.cz"
+        )
+    )
+
+
+def _add_pair_measurement(schedule: Schedule, index: int) -> None:
+    """Adds single shots of q12 and q13, at once, on channels 0 and 1"""
+    first = schedule.add(Measure("q12", acq_index=index, bin_mode=BinMode.APPEND))
+    schedule.add(
+        Measure("q13", acq_index=index, acq_channel=1, bin_mode=BinMode.APPEND),
+        ref_op=first,
+        ref_pt="start",
+    )
+
+
+def _get_pair_levels(device, acquired, points: int) -> np.ndarray:
+    """Gets the levels of q12 and q13 in each shot of each point, the nearest of each
+    one's level's responses"""
+    levels = []
+    for channel, element in enumerate(("q12", "q13")):
+        values = acquired[channel].values.reshape(_PAIR_REPETITIONS, points)
+        responses = np.array(
+            [_get_response(device, level, element) for level in range(3)]
+        )
+        distances = np.abs(values[..., np.newaxis] - responses)
+        levels.append(np.argmin(distances, axis=-1))
+    return np.stack(levels, axis=-1)
+
+
+def _get_full_swap_duration() -> float:
+    """Gets the duration of the flux pulse that takes |11> to |02> and back, on a grid of
+    4 ns"""
+    coupler = Coupler("q12_q13", _COUPLER, (_QUBIT, _CHIP.qubits["q13"]))
+    durations = np.arange(24, 400, 4)
+    returned = [
+        abs(_get_flux_unitary(coupler, duration)[_STATE_11, _STATE_11]) ** 2
+        for duration in durations
+    ]
+    swapped = int(np.argmin(returned))
+    return float(durations[swapped + np.argmax(returned[swapped:])]) * 1e-9
+
+
+def _get_flux_unitary(coupler: Coupler, duration: int) -> np.ndarray:
+    """Gets the coupler's unitary of a resonant flux pulse of the nanoseconds"""
+    samples = soft_square(np.arange(duration) * 1e-9, _CZ_AMPLITUDE)
+    return coupler.get_unitary(samples, ("test", duration), _get_resonance(), 0.0)
+
+
+def _get_resonance() -> float:
+    """Gets the difference of the energies of q12 and q13's |02> and |11>, parked"""
+    coupler = Coupler("q12_q13", _COUPLER, (_QUBIT, _CHIP.qubits["q13"]))
+    residual = coupler.residual_energies
+    frequencies = _CHIP.qubits["q13"].frequency - _QUBIT.frequency
+    return frequencies + residual[_STATE_02] - residual[_STATE_11]

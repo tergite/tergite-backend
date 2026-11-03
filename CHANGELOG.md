@@ -9,8 +9,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
-- Added simulated chips: a `[simulator.chip]` section of a chip's true parameters puts it behind a device's dummy
-  clusters, which play each schedule compiled for them on it, so its jobs run through quantify's whole path
+- Added simulated chips: a `[simulator.chip]` section of a chip's true parameters, couplers with their parametric CZ
+  among them, puts it behind a device's dummy clusters, which play each schedule compiled for them on it, so its jobs
+  run through quantify's whole path and tergite-tuner calibrates it as it would real hardware
 - Added simulated devices on QuTiP: a backend config with a `[simulator]` section runs its gate-level and pulse-level
   jobs, compiled as on a chip, on a model of its transmons and couplers drawn from its calibration
 - Added how a gate-level job ran to the result it sends MSS: its shots, `meas_level`, `meas_return` and each circuit's

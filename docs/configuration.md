@@ -135,6 +135,13 @@ lie within reach of their LOs in the quantify hardware config.
   |2>, and towards `bare_frequency` as the readout amplitude nears `critical_amplitude`. An
   averaged acquisition reads the populations' mean response, a single-shot one a level drawn
   for each shot; each with `readout_noise` about it, for an integration of a microsecond.
+- A coupler is a flux-tunable transmon of `max_frequency` and `anharmonicity`, coupled to
+  each of its qubits, sitting at `flux_offset` flux quanta. Its flux pulse, on its `:fl`
+  port, reaches it modulated at 4.4 GHz less its clock's frequency, `flux_per_amplitude`
+  flux quanta at amplitude 1, which drives the parametric CZ: a modulation at the difference
+  of |11> and |02> (or |20>) swaps them, and a full swap adds a phase of pi to |11>. Park it
+  off its sweet spot, where the flux moves its frequency at the modulation's own frequency.
+  The pair's static ZZ while idle, and the DC currents of the SPI rack, are left out.
 - A measurement does not collapse the state, so a transmon is read once between its resets,
   after anything else plays on it.
 - It recalibrates with tergite-tuner as a chip on clusters does, from its tuner configs:
@@ -162,6 +169,16 @@ internal_quality = 60000
 coupling_quality = 20000
 amplitude = 0.3             # its transmission off resonance, at a readout of amplitude 1
 phase = 0.4                 # rad
+
+[simulator.chip.couplers.q12_q13]
+max_frequency = 7.5e9       # Hz, at zero flux
+anharmonicity = -0.15e9     # Hz
+flux_offset = 0.25          # flux quanta it sits at
+flux_per_amplitude = 0.1    # flux quanta of a flux pulse of amplitude 1
+
+[simulator.chip.couplers.q12_q13.couplings]
+q12 = 0.1e9                 # Hz
+q13 = 0.1e9
 ```
 
 The test fixtures hold a simulated one-qubit device and a two-qubit one with a coupler, which

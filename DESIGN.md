@@ -770,7 +770,13 @@ frequency then, detuned from the chip's true frequencies, on transmons of three 
 T1 and T2 (`transmon.py`); an acquisition integrates its hanger resonator's response to the
 readout pulses, level by level (`readout.py`), averaged with the noise of its shots' mean or
 drawn shot by shot. A reset takes a transmon to |0>, and a loop's body plays once, each
-iteration read out from it.
+iteration read out from it. A coupler is a flux-tunable transmon between two (`coupler.py`):
+the three, diagonalized over its flux, give the pair's energies with the coupler in its
+ground state and the flux's couplings among them, and a flux pulse, modulated at its clock
+taken down from the 4.4 GHz CZ mixer, evolves the pair in that adiabatic frame, so a
+modulation at the |11>-|02> (or |20>) difference swaps them, a full swap adding the CZ's
+conditional phase, and moves each transmon's phase. The transmons a schedule's couplers
+join evolve as one register (`register.py`); the pair's static ZZ while idle is left out.
 
 Such a device recalibrates as one on clusters does, with tergite-tuner finding the chip's
 parameters from its device config's rough guesses, but in the tuner's real cluster mode: its

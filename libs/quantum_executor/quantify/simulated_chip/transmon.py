@@ -9,12 +9,13 @@
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
-"""A simulated transmon of three levels, its density matrix in the frame that rotates at
-its frequency for each excitation, evolved by superoperators kept for reuse"""
+"""A simulated transmon of three levels, in the frame that rotates at its frequency for
+each excitation: the superoperators of its idling and its pulses, kept for reuse"""
 import math
-from typing import Dict, Hashable, Tuple
+from typing import Dict, Hashable, List, Tuple
 
 import numpy as np
+import qutip
 from scipy.linalg import expm
 
 from libs.device_parameters.dtos import ChipQubit
@@ -24,16 +25,16 @@ from .timeline import SAMPLE
 LEVELS = 3
 # the excitations by which each element of a vectorized density matrix turns in a frame
 _COHERENCES = (np.arange(LEVELS)[:, np.newaxis] - np.arange(LEVELS)).ravel()
-_ANNIHILATOR = np.diag(np.sqrt(np.arange(1, LEVELS)), 1).astype(complex)
-_NUMBER = np.diag(np.arange(LEVELS)).astype(complex)
-_IDENTITY = np.eye(LEVELS, dtype=complex)
+_ANNIHILATOR = qutip.destroy(LEVELS)
+_NUMBER = qutip.num(LEVELS)
+_IDENTITY = qutip.qeye(LEVELS)
 # how many superoperators a transmon keeps, of idling and of pulses
 _MAX_KEPT = 50_000
 
 
 class Transmon:
-    """A transmon of the chip: its drive's pulses, at their clock's frequency, and its
-    idling evolve its state, a density matrix vectorized by rows"""
+    """A transmon of the chip, whose drive's pulses, at their clock's frequency, and
+    idling evolve its density matrix"""
 
     def __init__(self, qubit: ChipQubit) -> None:
         """
@@ -42,60 +43,37 @@ class Transmon:
         """
         self.qubit = qubit
         anharmonicity = 2 * math.pi * qubit.anharmonicity
-        self._static = anharmonicity / 2 * _NUMBER @ (_NUMBER - _IDENTITY)
-        self._dissipator = _get_dissipator(qubit)
+        self._static = anharmonicity / 2 * _NUMBER * (_NUMBER - _IDENTITY)
+        self._collapses = _get_collapses(qubit)
         self._idles: Dict[int, np.ndarray] = {}
         self._pulses: Dict[Hashable, np.ndarray] = {}
 
-    @staticmethod
-    def get_ground_state() -> np.ndarray:
-        """Gets |0><0|, vectorized"""
-        state = np.zeros(LEVELS * LEVELS, complex)
-        state[0] = 1.0
-        return state
-
-    @staticmethod
-    def get_populations(state: np.ndarray) -> np.ndarray:
-        """Gets the population of each level of the state
+    def get_idle(self, samples: int) -> np.ndarray:
+        """Gets the superoperator of idling, undriven, for the samples
 
         Args:
-            state: the vectorized density matrix
-
-        Returns:
-            the populations, non-negative and summing to 1
-        """
-        populations = np.clip(state.reshape(LEVELS, LEVELS).diagonal().real, 0, None)
-        return populations / populations.sum()
-
-    def apply_idle(self, state: np.ndarray, samples: int) -> np.ndarray:
-        """Evolves the state, undriven, for the samples
-
-        Args:
-            state: the vectorized density matrix
             samples: how many samples it idles
 
         Returns:
-            the state after them
+            the superoperator on its density matrix, vectorized by rows
         """
         propagator = self._idles.get(samples)
         if propagator is None:
-            liouvillian = _get_liouvillian(self._static) + self._dissipator
+            liouvillian = _get_liouvillian(self._static, self._collapses)
             propagator = expm(liouvillian * samples * SAMPLE)
             _keep(self._idles, samples, propagator)
-        return propagator @ state
+        return propagator
 
-    def apply_drive(
+    def get_drive(
         self,
-        state: np.ndarray,
         samples: np.ndarray,
         key: Hashable,
         detuning: float,
         phase: float,
     ) -> np.ndarray:
-        """Evolves the state through a pulse on its drive
+        """Gets the superoperator of a pulse on its drive
 
         Args:
-            state: the vectorized density matrix
             samples: the pulse's envelope, a sample each SAMPLE
             key: the same for pulses of the same samples
             detuning: the pulse's clock's frequency less the transmon's, in hertz
@@ -103,7 +81,7 @@ class Transmon:
                 transmon's frame
 
         Returns:
-            the state after the pulse
+            the superoperator on its density matrix, vectorized by rows
         """
         cache_key = (key, round(detuning))
         propagator = self._pulses.get(cache_key)
@@ -113,7 +91,7 @@ class Transmon:
         turns = detuning * len(samples) * SAMPLE + phase
         before = np.exp(2j * math.pi * phase * _COHERENCES)
         after = np.exp(-2j * math.pi * turns * _COHERENCES)
-        return after * (propagator @ (before * state))
+        return after[:, np.newaxis] * propagator * before
 
     def _get_pulse_propagator(self, samples: np.ndarray, detuning: float) -> np.ndarray:
         """Gets the superoperator of the pulse, in the frame of its clock at phase 0, each
@@ -124,32 +102,30 @@ class Transmon:
         for value, length in _get_runs(samples):
             # the mixers send the envelope's upper sideband, so the transmon's raising
             # takes its conjugate
-            drive = rate * (
-                np.conj(value) * _ANNIHILATOR.conj().T + value * _ANNIHILATOR
-            )
-            liouvillian = _get_liouvillian(static + drive) + self._dissipator
+            drive = rate * (np.conj(value) * _ANNIHILATOR.dag() + value * _ANNIHILATOR)
+            liouvillian = _get_liouvillian(static + drive, self._collapses)
             propagator = expm(liouvillian * length * SAMPLE) @ propagator
         return propagator
 
 
-def _get_liouvillian(hamiltonian: np.ndarray) -> np.ndarray:
-    """Gets the superoperator of -i[H, rho], on density matrices vectorized by rows"""
-    return -1j * (np.kron(hamiltonian, _IDENTITY) - np.kron(_IDENTITY, hamiltonian.T))
-
-
-def _get_dissipator(qubit: ChipQubit) -> np.ndarray:
-    """Gets the superoperator of the transmon's relaxation at its T1 and of its pure
-    dephasing, which with it makes its T2"""
+def _get_collapses(qubit: ChipQubit) -> List[qutip.Qobj]:
+    """Gets the collapse operators of the transmon's relaxation at its T1 and of its
+    pure dephasing, which with it makes its T2"""
     dephasing = 1 / qubit.t2 - 1 / (2 * qubit.t1)
     collapses = [math.sqrt(1 / qubit.t1) * _ANNIHILATOR]
     if dephasing > 0:
         collapses.append(math.sqrt(2 * dephasing) * _NUMBER)
-    dissipator = np.zeros((LEVELS * LEVELS,) * 2, complex)
-    for collapse in collapses:
-        decay = collapse.conj().T @ collapse
-        dissipator += np.kron(collapse, collapse.conj())
-        dissipator -= 0.5 * (np.kron(decay, _IDENTITY) + np.kron(_IDENTITY, decay.T))
-    return dissipator
+    return collapses
+
+
+def _get_liouvillian(
+    hamiltonian: qutip.Qobj, collapses: List[qutip.Qobj]
+) -> np.ndarray:
+    """Gets the Liouvillian of the Hamiltonian and collapse operators, on density
+    matrices vectorized by rows, not QuTiP's columns"""
+    liouvillian = qutip.liouvillian(hamiltonian, collapses).full()
+    by_columns = liouvillian.reshape((LEVELS,) * 4)
+    return by_columns.transpose(1, 0, 3, 2).reshape((LEVELS * LEVELS,) * 2)
 
 
 def _get_runs(samples: np.ndarray) -> Tuple[Tuple[complex, int], ...]:

@@ -139,7 +139,20 @@ def test_a_simulator_section_takes_a_chip(tmp_path):
         ({"resonators": {"q14": None}}, r"qubits \['q14'\] have no resonator"),
         ({"couplers": {"q12_q13": {"couplings": {"q13": None}}}}, "two qubits"),
         (
-            {"couplers": {"q12_q13": {"couplings": {"q13": None, "q15": 1e8}}}},
+            {"couplers": {"q12_q13": {"couplings": {"q13": None, "q14": 1e8}}}},
+            "not named for the qubits it couples",
+        ),
+        (
+            {
+                "couplers": {
+                    "q12_q15": {
+                        "max_frequency": 7e9,
+                        "anharmonicity": -1e8,
+                        "flux_per_amplitude": 0.1,
+                        "couplings": {"q12": 1e8, "q15": 1e8},
+                    }
+                }
+            },
             r"couples qubits \['q15'\] the chip lacks",
         ),
     ],

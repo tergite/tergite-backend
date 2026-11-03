@@ -910,12 +910,18 @@ class ChipConfig(BaseModel):
 
         Raises:
             ValueError: the qubits {ids} have no resonator
+            ValueError: the coupler {id} is not named for the qubits it couples
             ValueError: the coupler {id} couples qubits {ids} the chip lacks
         """
         unread = sorted(set(self.qubits) - set(self.resonators))
         if unread:
             raise ValueError(f"the qubits {unread} have no resonator")
         for name, coupler in self.couplers.items():
+            if sorted(name.split("_")) != sorted(coupler.couplings):
+                raise ValueError(
+                    f"the coupler {name} is not named for the qubits it couples, "
+                    f"{list(coupler.couplings)}"
+                )
             missing = sorted(set(coupler.couplings) - set(self.qubits))
             if missing:
                 raise ValueError(

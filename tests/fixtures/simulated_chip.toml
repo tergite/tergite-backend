@@ -56,9 +56,10 @@ phase = 2.0
 [couplers.q12_q13]
 max_frequency = 7.5e9
 anharmonicity = -0.15e9
-flux_offset = 0.0
+# parked off its sweet spot, where its frequency moves with the flux's first harmonic
+flux_offset = 0.25
 flux_per_current = 0.0
-flux_per_amplitude = 0.5
+flux_per_amplitude = 0.1
 
 [couplers.q12_q13.couplings]
 q12 = 0.1e9
