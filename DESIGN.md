@@ -776,7 +776,10 @@ ground state and the flux's couplings among them, and a flux pulse, modulated at
 taken down from the 4.4 GHz CZ mixer, evolves the pair in that adiabatic frame, so a
 modulation at the |11>-|02> (or |20>) difference swaps them, a full swap adding the CZ's
 conditional phase, and moves each transmon's phase. The transmons a schedule's couplers
-join evolve as one register (`register.py`); the pair's static ZZ while idle is left out.
+join, and coupled ones while static ZZ is simulated, evolve as one register
+(`register.py`), the ZZ turning a pair while it idles. With an SPI rack in its quantify
+metadata, the DC currents tergite-tuner sets on it park each coupler and move its
+transmons' frequencies.
 
 Such a device recalibrates as one on clusters does, with tergite-tuner finding the chip's
 parameters from its device config's rough guesses, but in the tuner's real cluster mode: its

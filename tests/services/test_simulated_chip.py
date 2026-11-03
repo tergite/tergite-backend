@@ -294,6 +294,61 @@ def test_a_full_swap_through_02_adds_a_conditional_phase_of_pi(device):
     assert conditional == pytest.approx(180, abs=15)
 
 
+@pytest.mark.parametrize("is_coupled", [True, False])
+def test_coupled_transmons_pick_up_their_static_zz_while_idle(device, is_coupled):
+    chip_config = _QUIET_CHIP.model_copy(
+        update={"should_simulate_static_zz": is_coupled}
+    )
+    chip = SimulatedChip(chip_config, np.random.default_rng(5))
+    delay = 2e-6
+    phases = np.arange(8) * 45
+    points = list(itertools.product((False, True), phases))
+    schedule = _get_pair_schedule()
+    for index, (is_control_excited, phase) in enumerate(points):
+        _add_pair_preparation(schedule, is_control_excited, is_target_rotated=True)
+        schedule.add(Rxy(90, phase, "q12"), rel_time=delay)
+        schedule.add(Measure("q12", acq_index=index))
+
+    excited = _get_excited(device, chip, schedule).reshape(2, len(phases))
+
+    fringes = (excited - 0.5) @ np.exp(-1j * np.radians(phases))
+    conditional = np.angle(fringes[1] / fringes[0])
+    zz = _get_coupler().static_energies[_STATE_11]
+    turns = zz * (delay + device.get_element("q12").rxy.duration()) if is_coupled else 0
+    assert math.cos(conditional) == pytest.approx(
+        math.cos(2 * math.pi * turns), abs=0.05
+    )
+
+
+@pytest.mark.parametrize(
+    "should_follow_currents, expected", [(True, 0.0), (False, 1.0)]
+)
+def test_a_couplers_dc_current_moves_its_transmons_if_the_chip_follows_its_spi_rack(
+    device, should_follow_currents, expected
+):
+    """1 mA moves the coupler 0.1 flux quanta, and q12 megahertz"""
+    chip = SimulatedChip(_CHIP, np.random.default_rng(5), should_follow_currents)
+    chip.set_current("q12_q13", 1e-3)
+    duration = 4e-6
+    schedule = _get_schedule()
+    schedule.add(SetClockFrequency(clock="q12.01", clock_freq_new=_QUBIT.frequency))
+    schedule.add(
+        SquarePulse(
+            amp=0.5 / (_QUBIT.rabi_frequency * duration),
+            duration=duration,
+            port="q12:mw",
+            clock="q12.01",
+        )
+    )
+    schedule.add(Measure("q12"))
+
+    excited = _get_excited(device, chip, schedule)
+
+    moved = Coupler("q12_q13", _COUPLER, _get_coupled_qubits(), 1e-3).frequencies[0]
+    assert abs(moved - _QUBIT.frequency) > 1e6
+    assert excited == pytest.approx(expected, abs=0.1)
+
+
 def _get_schedule() -> Schedule:
     """Gets a schedule of the test's repetitions, from a reset of q12"""
     schedule = Schedule("test", repetitions=_REPETITIONS)
@@ -394,7 +449,7 @@ def _get_pair_levels(device, acquired, points: int) -> np.ndarray:
 def _get_full_swap_duration() -> float:
     """Gets the duration of the flux pulse that takes |11> to |02> and back, on a grid of
     4 ns"""
-    coupler = Coupler("q12_q13", _COUPLER, (_QUBIT, _CHIP.qubits["q13"]))
+    coupler = _get_coupler()
     durations = np.arange(24, 400, 4)
     returned = [
         abs(_get_flux_unitary(coupler, duration)[_STATE_11, _STATE_11]) ** 2
@@ -412,7 +467,18 @@ def _get_flux_unitary(coupler: Coupler, duration: int) -> np.ndarray:
 
 def _get_resonance() -> float:
     """Gets the difference of the energies of q12 and q13's |02> and |11>, parked"""
-    coupler = Coupler("q12_q13", _COUPLER, (_QUBIT, _CHIP.qubits["q13"]))
-    residual = coupler.residual_energies
-    frequencies = _CHIP.qubits["q13"].frequency - _QUBIT.frequency
-    return frequencies + residual[_STATE_02] - residual[_STATE_11]
+    coupler = _get_coupler()
+    static = coupler.static_energies
+    first, second = coupler.frequencies
+    anharmonicity = _CHIP.qubits["q13"].anharmonicity
+    return second - first + anharmonicity + static[_STATE_02] - static[_STATE_11]
+
+
+def _get_coupler() -> Coupler:
+    """Gets the model of q12 and q13's coupler, parked at its flux offset"""
+    return Coupler("q12_q13", _COUPLER, _get_coupled_qubits())
+
+
+def _get_coupled_qubits() -> tuple:
+    """Gets the chip's q12 and q13"""
+    return _QUBIT, _CHIP.qubits["q13"]

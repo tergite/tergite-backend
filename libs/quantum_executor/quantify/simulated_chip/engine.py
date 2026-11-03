@@ -39,6 +39,7 @@ from .coupler import DOWNCONVERSION_FREQUENCY, PAIR_STATES, Coupler
 from .readout import get_level_responses, get_noise
 from .register import Register
 from .timeline import (
+    SAMPLE,
     Acquisition,
     Clocks,
     Pulse,
@@ -74,20 +75,41 @@ class AcquiredChannel:
 class SimulatedChip:
     """A chip whose schedules, compiled for the clusters, play on its model"""
 
-    def __init__(self, chip: ChipConfig, rng: Optional[np.random.Generator] = None):
+    def __init__(
+        self,
+        chip: ChipConfig,
+        rng: Optional[np.random.Generator] = None,
+        should_follow_currents: bool = False,
+    ) -> None:
         """
         Args:
             chip: the chip's true parameters
             rng: the random generator of its shots' levels and noise; a fresh one if none
+            should_follow_currents: whether the DC currents set on its SPI rack move its
+                couplers' flux; without a rack, each sits at its flux offset, as at a
+                current set and watched by hand
         """
         self.chip = chip
+        self.should_follow_currents = should_follow_currents
         self._rng = rng or np.random.default_rng()
-        self._transmons = {name: Transmon(qubit) for name, qubit in chip.qubits.items()}
-        self._couplers = {
-            name: Coupler(name, coupler, _get_coupled(chip, name))
-            for name, coupler in chip.couplers.items()
-        }
+        self._currents: Dict[str, float] = {}
+        self._couplers = _get_couplers(chip, self._currents)
+        self._transmons = _get_transmons(chip, self._couplers)
         self._responses: Dict[Hashable, np.ndarray] = {}
+
+    def set_current(self, coupler: str, current: float) -> None:
+        """Sets the DC current of a coupler's SPI rack DAC, which moves its flux, and
+        with it its transmons' frequencies, if the chip follows its SPI rack
+
+        Args:
+            coupler: the coupler's name
+            current: the current, in amperes
+        """
+        if not self.should_follow_currents:
+            return
+        self._currents[coupler] = current
+        self._couplers = _get_couplers(self.chip, self._currents)
+        self._transmons = _get_transmons(self.chip, self._couplers)
 
     def run(self, compiled: ScheduleBase) -> Dict[int, AcquiredChannel]:
         """Plays the compiled schedule and reads out its acquisitions
@@ -111,8 +133,11 @@ class SimulatedChip:
         timeline = get_timeline(compiled)
         clocks = Clocks(timeline)
         readouts: Dict[Acquisition, _Readout] = {}
-        for elements in _get_groups(timeline):
-            group = _Group(elements, self._transmons, self._couplers, clocks)
+        is_coupled = self.chip.should_simulate_static_zz
+        for elements in _get_groups(timeline, self._couplers, is_coupled):
+            group = _Group(
+                elements, self._transmons, self._couplers, clocks, is_coupled
+            )
             readouts.update(group.run(_get_events(elements, timeline)))
         pulses = _get_port_pulses(timeline, _READOUT_PORT)
         responses = {
@@ -283,6 +308,7 @@ class _Group:
         transmons: Dict[str, Transmon],
         couplers: Dict[str, Coupler],
         clocks: Clocks,
+        is_coupled: bool,
     ) -> None:
         """
         Args:
@@ -290,6 +316,8 @@ class _Group:
             transmons: the chip's transmons, by name
             couplers: the chip's couplers, by name
             clocks: the clocks of the schedule they play
+            is_coupled: whether two coupled transmons pick up their static ZZ while
+                idle
 
         Raises:
             ValueError: the simulated chip has no transmon {name}
@@ -303,6 +331,12 @@ class _Group:
         self._register = Register(elements)
         self._samples = {name: 0 for name in elements}
         self._is_read = {name: False for name in elements}
+        # each coupled pair's sample up to which it has its static ZZ
+        self._coupled_samples = {
+            name: 0
+            for name in couplers
+            if is_coupled and set(name.split("_")) <= set(elements)
+        }
 
     def run(self, events: List[_Event]) -> Dict[Acquisition, _Readout]:
         """Evolves the transmons through the events and reads them out
@@ -344,6 +378,7 @@ class _Group:
             reset: the reset
         """
         for name in set(reset.elements) & set(self._samples):
+            self._apply_static_zz_until(name, reset.start)
             self._register.reset(name)
             self._samples[name] = max(self._samples[name], reset.start)
             self._is_read[name] = False
@@ -367,6 +402,7 @@ class _Group:
                 raise UnsupportedCircuitError(MEASURED_LAST)
             if acquisitions[0].start > self._samples[name]:
                 self._wait_until(name, acquisitions[0].start)
+            self._apply_static_zz_until(name, acquisitions[0].start)
             self._is_read[name] = True
         probabilities = self._register.get_probabilities(elements)
         return _Readout(tuple(acquisitions), probabilities)
@@ -385,6 +421,7 @@ class _Group:
         """
         name = pulse.port.split(":")[0]
         self._wait_until(name, pulse.start)
+        self._apply_static_zz_until(name, pulse.start)
         transmon = self._transmons[name]
         frame = transmon.qubit.frequency
         frequency = self._clocks.get_frequency(pulse.clock, pulse.start)
@@ -415,6 +452,7 @@ class _Group:
         elements = name.split("_")
         for element in elements:
             self._wait_until(element, pulse.start)
+            self._apply_static_zz_until(element, pulse.start)
         frequency = self._clocks.get_frequency(pulse.clock, pulse.start)
         phase = get_turns(DOWNCONVERSION_FREQUENCY, pulse.start)
         phase -= self._get_clock_phase(pulse)
@@ -429,12 +467,14 @@ class _Group:
         )
         self._register.apply_unitary(
             elements,
-            _to_transmon_frames(unitary, coupler.residual_energies, anharmonic, pulse),
+            _to_transmon_frames(unitary, coupler.static_energies, anharmonic, pulse),
         )
         for element in elements:
             idle = self._transmons[element].get_idle(len(pulse.samples))
             self._register.apply_local(element, idle)
             self._samples[element] = pulse.end
+        if name in self._coupled_samples:
+            self._coupled_samples[name] = pulse.end
 
     def _wait_until(self, name: str, start: int) -> None:
         """Idles the transmon until the start of a pulse on it
@@ -453,9 +493,29 @@ class _Group:
             self._register.apply_local(name, idle)
             self._samples[name] = start
 
+    def _apply_static_zz_until(self, name: str, sample: int) -> None:
+        """Turns each pair of the transmon and a coupled one by their static ZZ up to the
+        sample, from where it last did, as their coupling does while they idle"""
+        for coupler, start in self._coupled_samples.items():
+            if name in coupler.split("_") and sample > start:
+                energies = self._couplers[coupler].static_energies
+                turns = energies * (sample - start) * SAMPLE
+                self._register.apply_unitary(
+                    coupler.split("_"), np.diag(np.exp(-2j * math.pi * turns))
+                )
+                self._coupled_samples[coupler] = sample
+
     def _get_clock_phase(self, pulse: Pulse) -> float:
         """Gets the phase of the pulse's clock at its start, in turns"""
         return self._clocks.get_phases(pulse.clock, np.array([pulse.start]))[0]
+
+
+def _get_couplers(chip: ChipConfig, currents: Dict[str, float]) -> Dict[str, Coupler]:
+    """Gets the chip's couplers, by name, each parked by its SPI rack DAC's current"""
+    return {
+        name: Coupler(name, coupler, _get_coupled(chip, name), currents.get(name, 0.0))
+        for name, coupler in chip.couplers.items()
+    }
 
 
 def _get_coupled(chip: ChipConfig, coupler: str) -> Tuple:
@@ -464,9 +524,27 @@ def _get_coupled(chip: ChipConfig, coupler: str) -> Tuple:
     return chip.qubits[first], chip.qubits[second]
 
 
-def _get_groups(timeline: Timeline) -> List[List[str]]:
+def _get_transmons(
+    chip: ChipConfig, couplers: Dict[str, Coupler]
+) -> Dict[str, Transmon]:
+    """Gets the chip's transmons, by name, each at its frequency as its couplers' parking
+    moves it from the chip's"""
+    frequencies = {name: qubit.frequency for name, qubit in chip.qubits.items()}
+    for name, coupler in couplers.items():
+        for element, frequency in zip(name.split("_"), coupler.frequencies):
+            frequencies[element] += frequency - chip.qubits[element].frequency
+    return {
+        name: Transmon(qubit.model_copy(update={"frequency": frequencies[name]}))
+        for name, qubit in chip.qubits.items()
+    }
+
+
+def _get_groups(
+    timeline: Timeline, couplers: Dict[str, Coupler], is_coupled: bool
+) -> List[List[str]]:
     """Gets the transmons the timeline plays on or reads out, those that couplers'
-    pulses join in one group
+    pulses join in one group, and, if coupled transmons pick up their static ZZ, those
+    of each coupler
 
     Raises:
         ValueError: the simulated chip plays no pulse on {port}
@@ -474,9 +552,17 @@ def _get_groups(timeline: Timeline) -> List[List[str]]:
     groups: Dict[str, set] = {}
     for name in _get_elements(timeline):
         groups[name] = {name}
-    for pulse in timeline.pulses:
-        if pulse.port.endswith(_FLUX_PORT):
-            joined = set().union(*(groups[name] for name in _get_pair(pulse)))
+    pairs = [_get_pair(pulse) for pulse in timeline.pulses]
+    pairs = [
+        pair
+        for pulse, pair in zip(timeline.pulses, pairs)
+        if pulse.port.endswith(_FLUX_PORT)
+    ]
+    if is_coupled:
+        pairs += [name.split("_") for name in couplers]
+    for pair in pairs:
+        if set(pair) <= set(groups):
+            joined = set().union(*(groups[name] for name in pair))
             groups.update({name: joined for name in joined})
     unique = {id(group): group for group in groups.values()}
     return sorted(sorted(group) for group in unique.values())
@@ -543,15 +629,15 @@ def _get_anharmonic_energies(anharmonicities: Sequence[float]) -> np.ndarray:
 
 def _to_transmon_frames(
     unitary: np.ndarray,
-    residual: np.ndarray,
+    static: np.ndarray,
     anharmonic: np.ndarray,
     pulse: Pulse,
 ) -> np.ndarray:
     """Converts a pair's unitary of a flux pulse, in the frame of the parked pair's
     energies, to its transmons' frames, less what their idling over the pulse turns them
     by, which they idle through after it"""
-    before = _get_state_turns(residual, pulse.start)
-    after = _get_state_turns(residual - anharmonic, pulse.end)
+    before = _get_state_turns(static + anharmonic, pulse.start)
+    after = _get_state_turns(static, pulse.end)
     after = after + _get_state_turns(anharmonic, pulse.start)
     turned = np.exp(-2j * math.pi * after)[:, np.newaxis] * unitary
     return turned * np.exp(2j * math.pi * before)

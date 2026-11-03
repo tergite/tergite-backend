@@ -54,36 +54,58 @@ class Coupler:
     """A coupler of the chip and its two transmons, whose flux pulses evolve the
     transmons' pair"""
 
-    def __init__(self, name: str, coupler: ChipCoupler, qubits: Tuple[ChipQubit, ...]):
+    def __init__(
+        self,
+        name: str,
+        coupler: ChipCoupler,
+        qubits: Tuple[ChipQubit, ...],
+        current: float = 0.0,
+    ) -> None:
         """
         Args:
             name: the coupler's name, its transmons' joined by an underscore
             coupler: the chip's parameters of the coupler
-            qubits: its transmons, in the order its name gives them
+            qubits: its transmons, in the order its name gives them, whose frequencies
+                and anharmonicities are theirs with the coupler at its flux offset
+            current: the DC current of the coupler's SPI rack DAC, in amperes, which
+                moves its flux from its offset
         """
         self.coupler = coupler
         self.qubits = qubits
         strengths = tuple(coupler.couplings[qubit] for qubit in name.split("_"))
         bare = _fit_bare(coupler, strengths, qubits)
+        parked = coupler.flux_offset + coupler.flux_per_current * current
         reach = 1.05 * abs(coupler.flux_per_amplitude)
-        self._fluxes = coupler.flux_offset + np.linspace(-reach, reach, _FLUXES)
+        self._fluxes = parked + np.linspace(-reach, reach, _FLUXES)
         self._energies, self._couplings = _get_spectrum(
             coupler, strengths, bare, self._fluxes
         )
-        self._parked = _get_spectrum(
-            coupler, strengths, bare, np.array([coupler.flux_offset])
-        )[0][0]
+        self._flux = parked
+        self._parked = _get_spectrum(coupler, strengths, bare, np.array([parked]))[0][0]
         self._unitaries: Dict[Hashable, np.ndarray] = {}
 
     @property
-    def residual_energies(self) -> np.ndarray:
-        """The parked pair's energy of each state less that of its transmons' frames, in
-        hertz: their anharmonicities, and the shifts of the coupling between them"""
-        frames = [
-            first * self.qubits[0].frequency + second * self.qubits[1].frequency
-            for first, second in PAIR_STATES
+    def frequencies(self) -> Tuple[float, float]:
+        """Its transmons' frequencies, in hertz, at its parked flux: the chip's, but for
+        a DC current that moves the flux"""
+        first = self._parked[PAIR_STATES.index((1, 0))] - self._parked[0]
+        second = self._parked[PAIR_STATES.index((0, 1))] - self._parked[0]
+        return first, second
+
+    @property
+    def static_energies(self) -> np.ndarray:
+        """The parked pair's energy of each state beyond its transmons' own, at their
+        frequencies and the chip's anharmonicities, in hertz: the static ZZ of their
+        coupling"""
+        frequencies = self.frequencies
+        own = [
+            sum(
+                level * frequency + qubit.anharmonicity * level * (level - 1) / 2
+                for level, frequency, qubit in zip(state, frequencies, self.qubits)
+            )
+            for state in PAIR_STATES
         ]
-        return self._parked - self._parked[0] - np.array(frames)
+        return self._parked - self._parked[0] - np.array(own)
 
     def get_unitary(
         self, samples: np.ndarray, key: Hashable, modulation: float, phase: float
@@ -119,7 +141,7 @@ class Coupler:
         envelope = np.repeat(np.asarray(samples, complex), _STEPS)
         carrier = np.exp(-2j * math.pi * (phase + modulation * times))
         scale = self.coupler.flux_per_amplitude
-        fluxes = self.coupler.flux_offset + scale * np.real(envelope * carrier)
+        fluxes = self._flux + scale * np.real(envelope * carrier)
         rates = scale * np.real(-2j * math.pi * modulation * envelope * carrier)
         energies = np.stack(
             [np.interp(fluxes, self._fluxes, energy) for energy in self._energies.T],

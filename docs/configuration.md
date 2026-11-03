@@ -141,7 +141,12 @@ lie within reach of their LOs in the quantify hardware config.
   flux quanta at amplitude 1, which drives the parametric CZ: a modulation at the difference
   of |11> and |02> (or |20>) swaps them, and a full swap adds a phase of pi to |11>. Park it
   off its sweet spot, where the flux moves its frequency at the modulation's own frequency.
-  The pair's static ZZ while idle, and the DC currents of the SPI rack, are left out.
+- Two coupled transmons pick up their parked coupler's static ZZ while idle, unless
+  `should_simulate_static_zz = false`.
+- If the quantify metadata lists an SPI rack, a dummy, the DC currents tergite-tuner sets on
+  it move each coupler `flux_per_current` flux quanta an ampere, and its transmons'
+  frequencies with it; without one, each coupler sits at its `flux_offset`, as at a current
+  set and watched by hand.
 - A measurement does not collapse the state, so a transmon is read once between its resets,
   after anything else plays on it.
 - It recalibrates with tergite-tuner as a chip on clusters does, from its tuner configs:
@@ -152,6 +157,8 @@ lie within reach of their LOs in the quantify hardware config.
 [simulator.chip]
 # the standard deviation of a shot's I, and of its Q, integrated over a microsecond
 readout_noise = 0.002
+# whether coupled transmons pick up their static ZZ while idle
+should_simulate_static_zz = true
 
 [simulator.chip.qubits.q12]
 frequency = 4.5116e9        # Hz, of |0> to |1>
@@ -173,7 +180,8 @@ phase = 0.4                 # rad
 [simulator.chip.couplers.q12_q13]
 max_frequency = 7.5e9       # Hz, at zero flux
 anharmonicity = -0.15e9     # Hz
-flux_offset = 0.25          # flux quanta it sits at
+flux_offset = 0.25          # flux quanta it sits at, without a DC current
+flux_per_current = 100.0    # flux quanta of an ampere of DC current
 flux_per_amplitude = 0.1    # flux quanta of a flux pulse of amplitude 1
 
 [simulator.chip.couplers.q12_q13.couplings]

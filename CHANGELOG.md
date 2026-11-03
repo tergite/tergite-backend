@@ -33,6 +33,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- Changed recalibration to run tergite-tuner on the SPI rack the quantify metadata lists, a real one on its serial port,
+  where before it always ran a dummy rack and so never set a coupler's current
 - Changed which qubit of a coupler gets each of its CZ's phase corrections to the roles tergite-tuner's device config
   gives it, `control_qubit` and `target_qubit`, kept in the calibration; before, the even-numbered qubit was taken as the
   control, so a device configured otherwise had its corrections swapped

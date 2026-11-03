@@ -333,7 +333,7 @@ class QuantifyExecutor(QuantumExecutor):
             file_log_level=25,
             cluster_ip=conf.ip_address,
             data_dir=Path(self.data_dir),
-            spi_mode=SPIMode.dummy,
+            **_get_spi_options(self.quantify_metadata),
             qubits=backend_config.device_config.qubit_ids,
             couplers=[
                 f"{q1}_{q2}"
@@ -432,23 +432,43 @@ def _get_simulated_chip(
     backend_config: BackendConfig, metadata: QuantifyMetadata
 ) -> Optional[SimulatedChip]:
     """Gets the simulated chip of the backend config's simulator section, behind the
-    metadata's dummy clusters; none for a device on clusters
+    metadata's dummy instruments, following the DC currents set on its SPI rack if it
+    lists one; none for a device on clusters
 
     Raises:
-        ValueError: a simulated chip plays behind dummy clusters, but {name} is not one
+        ValueError: a simulated chip plays behind dummy instruments, but {name} is not one
     """
     simulator = backend_config.simulator
     if simulator is None or simulator.chip is None:
         return None
     for name, conf in metadata.root.items():
-        if conf.instrument_type == "Cluster" and not conf.is_dummy:
+        if not conf.is_dummy:
             raise ValueError(
-                f"a simulated chip plays behind dummy clusters, but {name} is not one"
+                f"a simulated chip plays behind dummy instruments, but {name} is not one"
             )
     # BLAS starts a thread for each core it sees, which, under a CPU quota or beside
     # another simulated device, starve one another on the chip's small matrices
     threadpool_limits(limits=1)
-    return SimulatedChip(simulator.chip)
+    return SimulatedChip(
+        simulator.chip, should_follow_currents=_get_spi_rack(metadata) is not None
+    )
+
+
+def _get_spi_rack(metadata: QuantifyMetadata) -> Optional[InstrumentConfig]:
+    """Gets the config of the SPI rack the metadata lists, or None if it lists none"""
+    racks = [
+        conf for conf in metadata.root.values() if conf.instrument_type == "SPI-Rack"
+    ]
+    return racks[0] if racks else None
+
+
+def _get_spi_options(metadata: QuantifyMetadata) -> Dict[str, Any]:
+    """Gets tergite-tuner's options of the metadata's SPI rack: its real one, on its
+    port, unless the rack is a dummy or there is none"""
+    rack = _get_spi_rack(metadata)
+    if rack is None or rack.is_dummy:
+        return {"spi_mode": SPIMode.dummy}
+    return {"spi_mode": SPIMode.real, "spi_serial_port": rack.port}
 
 
 def _get_quantum_device(name: str, quantify_config: Any) -> QuantumDevice:

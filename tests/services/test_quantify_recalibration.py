@@ -14,7 +14,12 @@ import pytest
 
 pytest.importorskip("quantify_scheduler")
 
-from libs.quantum_executor.quantify.executor import _get_recalibration_cluster
+from tergite_tuner.utils.types.enums import SPIMode
+
+from libs.quantum_executor.quantify.executor import (
+    _get_recalibration_cluster,
+    _get_spi_options,
+)
 from libs.quantum_executor.quantify.utils.calibration import (
     _get_coupler_roles,
     _recalibrate_all_qubits,
@@ -81,6 +86,28 @@ def test_a_coupler_the_tuners_device_config_gives_no_roles_is_left_out():
 
     assert "q12_q13" not in roles
     assert roles["q06_q07"] == ("q07", "q06")
+
+
+@pytest.mark.parametrize(
+    "spi_rack, expected",
+    [
+        (None, {"spi_mode": SPIMode.dummy}),
+        ({**_SPI_RACK, "is_dummy": True}, {"spi_mode": SPIMode.dummy}),
+        (
+            {**_SPI_RACK, "is_dummy": False},
+            {"spi_mode": SPIMode.real, "spi_serial_port": "/dev/ttyACM0"},
+        ),
+    ],
+    ids=["none", "dummy", "real"],
+)
+def test_the_tuner_sets_currents_on_the_spi_rack_of_the_metadata(spi_rack, expected):
+    """A real rack on its port; a dummy, or none, sets no real current"""
+    instruments = {"cluster0": _get_cluster("192.0.2.1")}
+    if spi_rack is not None:
+        instruments["spi_rack"] = spi_rack
+    metadata = QuantifyMetadata.model_validate(instruments)
+
+    assert _get_spi_options(metadata) == expected
 
 
 def _get_cluster(ip_address: str) -> dict:

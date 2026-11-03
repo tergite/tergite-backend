@@ -912,6 +912,8 @@ class ChipConfig(BaseModel):
     couplers: Dict[str, ChipCoupler] = {}
     # the standard deviation of a shot's I, and of its Q, integrated over a microsecond
     readout_noise: _NonNegative
+    # whether two coupled transmons pick up their parked coupler's static ZZ while idle
+    should_simulate_static_zz: bool = True
 
     @model_validator(mode="after")
     def check_elements(self) -> Self:

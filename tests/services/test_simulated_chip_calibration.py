@@ -71,7 +71,9 @@ def test_the_tuner_calibrates_the_chip_from_rough_guesses_for_gate_level_jobs(
     chip = get_chip_config()
     found = {f"q{int(qubit.id)}": qubit.frequency.value for qubit in calibration.qubits}
     for name in _ELEMENTS:
-        assert found[name] == pytest.approx(chip.qubits[name].frequency, abs=20e3)
+        # the tuner's Ramsey runs on both at once, each half excited, so each sees half
+        # the other's static ZZ of some -100 kHz
+        assert found[name] == pytest.approx(chip.qubits[name].frequency, abs=60e3)
     for body, expected in _EXPECTED_SHARES.items():
         shares = _get_shares(executor, body, mocker)
         for outcome, share in shares.items():

@@ -23,7 +23,11 @@ from quantify_scheduler.operations.gate_library import Measure, Reset, X
 
 from libs.quantum_executor.base.circuits import QasmCircuit
 from libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
-from tests.utils.chips import get_chip_backend_config, get_clusters_device
+from tests.utils.chips import (
+    get_chip_backend_config,
+    get_chip_config,
+    get_clusters_device,
+)
 from tests.utils.circuits import get_qasm
 from tests.utils.env import (
     TEST_CALIBRATION_DEVICE_CONFIG_FILE,
@@ -114,7 +118,7 @@ def test_the_clusters_return_the_chips_acquisitions_as_quantify_shapes_them(
 def test_a_chip_behind_a_real_cluster_is_refused(tmp_path):
     from libs.quantum_executor.quantify.executor import QuantifyExecutor
 
-    with pytest.raises(ValueError, match="dummy clusters"):
+    with pytest.raises(ValueError, match="dummy instruments"):
         QuantifyExecutor(
             quantify_config_file=get_fixture_path("generic-quantify-config.json"),
             quantify_metadata_file=get_fixture_path("real-quantify-config.yml"),
@@ -190,3 +194,21 @@ def test_a_chips_recalibration_runs_the_tuner_on_it_in_its_real_mode(executor, m
     executor.recalibrate()
 
     assert hardware.Cluster.__name__ == "Cluster"
+
+
+def test_the_currents_the_tuner_sets_on_its_spi_rack_reach_the_chip(mocker):
+    from tergite_tuner.backend import spi
+
+    from libs.quantum_executor.quantify.simulated_chip.engine import SimulatedChip
+    from libs.quantum_executor.quantify.simulated_chip.tuner import (
+        connect_tuner_to_chip,
+    )
+
+    chip = SimulatedChip(get_chip_config(), should_follow_currents=True)
+    set_current = mocker.spy(chip, "set_current")
+    dac = mocker.MagicMock(is_dummy=True)
+
+    with connect_tuner_to_chip({17: ClusterType.CLUSTER_QRM_RF}, chip):
+        spi.SpiDAC.set_dac_current(dac, {"q12_q13": 1e-3})
+
+    set_current.assert_called_once_with("q12_q13", 1e-3)

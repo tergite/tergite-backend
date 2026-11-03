@@ -153,7 +153,7 @@ max_frequency = 7.5e9
 anharmonicity = -0.15e9
 # parked off its sweet spot, where its frequency moves with the flux's first harmonic
 flux_offset = 0.25
-flux_per_current = 0.0
+flux_per_current = 100.0
 flux_per_amplitude = 0.1
 
 [simulator.chip.couplers.q12_q13.couplings]
