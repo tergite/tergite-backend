@@ -63,6 +63,38 @@ The calibration values are under the key `simulator_config`.
 _NOTE: You don't need to pass the `.env` file, the `backend_config.toml` file or the quantify files to the 
 start script as these are automatically loaded for you._  
 
+#### Pulse-level Limits
+
+A device runs pulse-level jobs, OpenQASM 3 with OpenPulse `cal` blocks and `defcal`s, only
+from the projects MSS lets send them, and only within the limits its operators set in the
+`[pulse_limits]` section of its `backend_config.toml`. A device without the section refuses
+every pulse-level job; gate-level jobs run either way. The simulators refuse them too.
+
+Each job is checked at upload, refused with the reason if it is beyond a limit, and checked
+again before it runs. The limits:
+
+| Key | Unit | What it bounds |
+| --- | --- | --- |
+| `max_amplitude` | fraction of full scale, by kind | the largest \|sample\| of a waveform |
+| `max_frequency_offset` | Hz | how far `set_frequency`/`shift_frequency` move a frame from its calibrated frequency |
+| `max_energy_per_shot` | full scale² · s, by kind | the sum of \|sample\|² · dt on one frame in one shot |
+| `max_energy_per_job` | full scale² · s, by kind | the same over the job: per-shot energy × shots, summed over circuits |
+| `max_pulse_duration` | s | a circuit's pulse-level blocks in one shot |
+| `max_samples_per_waveform` | samples | one waveform, as played |
+| `max_capture_duration` | s | one capture |
+
+The limits by kind take a kind of frame each: `drive`, `readout` or `coupler`. A kind left
+out of any of them may not be played at all, so leaving out `coupler` keeps jobs off the
+couplers, as on a chip whose couplers are parked by hand.
+
+For a sense of the energies: a constant pulse of 0.3 for 100 ns is 0.3² × 100e-9 = 9e-9; at
+1000 shots in each of two circuits, the job puts 1.8e-5 on that frame.
+
+The commented section in [`backend_config.example.toml`](../backend_config.example.toml)
+shows the shape; its values are placeholders, to be replaced with limits chosen for the chip,
+its fridge and its amplifiers. `uv run python -m dev.check_gate_level <device>.env` warns of a
+device that sets none.
+
 #### Single-qubit-gate Qiskit Pulse Simulator
 
 You may wish to run a single-qubit simulator.  
