@@ -49,6 +49,7 @@ from libs.quantum_executor.quantify.simulated_chip.component import (
     SimulatingClusterComponent,
 )
 from libs.quantum_executor.quantify.simulated_chip.engine import SimulatedChip
+from libs.quantum_executor.quantify.simulated_chip.tuner import connect_tuner_to_chip
 from libs.quantum_executor.quantify.utils.config import (
     InstrumentConfig,
     QuantifyMetadata,
@@ -309,9 +310,20 @@ class QuantifyExecutor(QuantumExecutor):
     def _recalibrate_cluster(
         self, name: str, conf: InstrumentConfig
     ) -> DeviceCalibration | None:
-        """Recalibrates the device through the cluster with tergite-tuner"""
+        """Recalibrates the device through the cluster with tergite-tuner: a simulated
+        chip as the tuner would real hardware, its cluster a dummy the chip is behind"""
+        if self._chip is None:
+            return self._run_tuner(name, conf, is_real=not conf.is_dummy)
+        with connect_tuner_to_chip(_get_dummy_modules(conf), self._chip):
+            return self._run_tuner(name, conf, is_real=True)
+
+    def _run_tuner(
+        self, name: str, conf: InstrumentConfig, is_real: bool
+    ) -> DeviceCalibration | None:
+        """Runs tergite-tuner's recalibration through the cluster, in its real cluster
+        mode or its dummy one"""
         backend_config = self.backend_config
-        cluster_mode = MeasurementMode.dummy if conf.is_dummy else MeasurementMode.real
+        cluster_mode = MeasurementMode.real if is_real else MeasurementMode.dummy
         logging.info(f"recalibrating {name} in {cluster_mode} mode...")
         return recalibrate(
             backend_config=backend_config,
@@ -397,16 +409,23 @@ def _create_cluster(name: str, conf: InstrumentConfig) -> qblox_instruments.Clus
     """
     dummy_cfg = None
     if getattr(conf, "is_dummy", False):
-        dummy_cfg = {
-            int(idx): _QBLOX_CLUSTER_TYPE_MAP[module.instrument_type]
-            for idx, module in conf.modules.items()
-        }
+        dummy_cfg = _get_dummy_modules(conf)
 
     return qblox_instruments.Cluster(
         name=name,
         identifier=conf.ip_address,
         dummy_cfg=dummy_cfg,
     )
+
+
+def _get_dummy_modules(
+    conf: InstrumentConfig,
+) -> Dict[int, qblox_instruments.ClusterType]:
+    """Gets the modules of a dummy cluster of the config, by slot"""
+    return {
+        int(idx): _QBLOX_CLUSTER_TYPE_MAP[module.instrument_type]
+        for idx, module in conf.modules.items()
+    }
 
 
 def _get_simulated_chip(

@@ -772,6 +772,13 @@ readout pulses, level by level (`readout.py`), averaged with the noise of its sh
 drawn shot by shot. A reset takes a transmon to |0>, and a loop's body plays once, each
 iteration read out from it.
 
+Such a device recalibrates as one on clusters does, with tergite-tuner finding the chip's
+parameters from its device config's rough guesses, but in the tuner's real cluster mode: its
+dummy mode replaces each node's acquisitions with the node's own fakes. While it runs,
+`simulated_chip/tuner.py` swaps the `Cluster` and `ClusterComponent` that the tuner's
+`backend/hardware.py` imports for a dummy of the device's modules and the simulating
+component, and a test fails if the tuner stops connecting through them.
+
 It imports each only when it is chosen, so a process that runs no executor, such as the API,
 never takes the seconds quantify and QuTiP take to import. Adding one:
 [docs/executors.md](docs/executors.md).

@@ -14,6 +14,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from qblox_instruments import ClusterType
 from quantify_scheduler import Schedule
 from quantify_scheduler.backends.graph_compilation import SerialCompiler
 from quantify_scheduler.enums import BinMode
@@ -131,3 +132,61 @@ def _get_calibration_kwargs(data_dir: Path) -> dict:
         calib_spi_conf=TEST_CALIBRATION_SPI_CONFIG_FILE,
         calib_seed_file=TEST_QUANTIFY_SEED_FILE,
     )
+
+
+def test_the_tuners_hardware_connects_to_the_chip_in_its_real_cluster_mode(tmp_path):
+    """Fails if tergite-tuner stops connecting through the Cluster and ClusterComponent
+    of its backend/hardware.py, which a simulated chip's recalibration swaps out"""
+    from tergite_tuner import SessionContext
+    from tergite_tuner.backend import Hardware
+    from tergite_tuner.utils.types.enums import MeasurementMode, SPIMode
+
+    from libs.quantum_executor.quantify.simulated_chip.component import (
+        SimulatingClusterComponent,
+    )
+    from libs.quantum_executor.quantify.simulated_chip.engine import SimulatedChip
+    from libs.quantum_executor.quantify.simulated_chip.tuner import (
+        connect_tuner_to_chip,
+    )
+    from libs.quantum_executor.quantify.utils.config import load_quantify_config
+
+    session = SessionContext.from_env(
+        None,
+        cluster_mode=MeasurementMode.real,
+        spi_mode=SPIMode.dummy,
+        is_recalibration=True,
+        cluster_ip="192.0.2.141",
+        qubits=["q12"],
+        data_dir=tmp_path,
+        cluster_config=load_quantify_config(TEST_QUANTIFY_CONFIG_FILE),
+        device_config=str(TEST_CALIBRATION_DEVICE_CONFIG_FILE),
+        node_config=str(TEST_CALIBRATION_NODE_CONFIG_FILE),
+        spi_config=str(TEST_CALIBRATION_SPI_CONFIG_FILE),
+    )
+    chip = SimulatedChip(get_chip_backend_config(tmp_path).simulator.chip)
+
+    with connect_tuner_to_chip({17: ClusterType.CLUSTER_QRM_RF}, chip):
+        hardware = Hardware(session)
+
+    component = hardware.coordinator.get_component(f"ic_{hardware.cluster.name}")
+    assert isinstance(component, SimulatingClusterComponent)
+    assert component.chip is chip
+    assert list(hardware.cluster.get_connected_modules()) == [17]
+
+
+def test_a_chips_recalibration_runs_the_tuner_on_it_in_its_real_mode(executor, mocker):
+    from tergite_tuner.backend import hardware
+    from tergite_tuner.utils.types.enums import MeasurementMode
+
+    def recalibrate(**options):
+        assert options["cluster_mode"] == MeasurementMode.real
+        assert hardware.ClusterComponent.keywords["chip"] is executor._chip
+        assert hardware.Cluster.__name__ == "ChipCluster"
+
+    mocker.patch(
+        "libs.quantum_executor.quantify.executor.recalibrate", side_effect=recalibrate
+    )
+
+    executor.recalibrate()
+
+    assert hardware.Cluster.__name__ == "Cluster"

@@ -137,6 +137,9 @@ lie within reach of their LOs in the quantify hardware config.
   for each shot; each with `readout_noise` about it, for an integration of a microsecond.
 - A measurement does not collapse the state, so a transmon is read once between its resets,
   after anything else plays on it.
+- It recalibrates with tergite-tuner as a chip on clusters does, from its tuner configs:
+  the device config's VNA frequencies are the rough guesses the tuner sweeps around, so the
+  chip's true frequencies must lie within its sweeps of them.
 
 ```toml
 [simulator.chip]
