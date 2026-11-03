@@ -25,8 +25,8 @@ from pytest_mock import MockerFixture
 from sqlalchemy import create_engine
 
 from libs.queues.dtos import Job, JobStatus
-from tests.utils.circuits import get_circuit, get_circuit_job
-from tests.utils.env import TEST_BOOKING_DB_URL, TEST_QUANTIFY_SEED_FILE
+from tests.utils.circuits import get_circuit, get_circuit_job, get_gate_level_seed
+from tests.utils.env import TEST_BOOKING_DB_URL
 from tests.utils.jobs import (
     get_job_submission_metadata,
     get_stored_jobs,
@@ -49,17 +49,6 @@ _SIM_2Q_CLIENT_AND_WORKER = pytest.param(
     marks=pytest.mark.skipif(not HAS_QISKIT_DYNAMICS, reason="requires qiskit"),
     id="qiskit_pulse_2q",
 )
-# frequencies within reach of the dummy hardware config's local oscillators, which the
-# test seed's q13 and q14 are not, and a coupler of q12 and q13 whose CZ plays a pulse
-_REACHABLE_QUBIT_FREQUENCIES = {"q13": 5.2e9, "q14": 4.7e9}
-_REACHABLE_READOUT_FREQUENCIES = {"q13": 7.2e9, "q14": 7.1e9}
-_PLAYED_COUPLER = {
-    "frequency": 4.0e9,
-    "cz_pulse_amplitude": 0.1,
-    "cz_pulse_duration_before": 8e-9,
-    "cz_pulse_duration_rise": 24e-9,
-    "cz_pulse_duration_constant": 200e-9,
-}
 _QUANTIFY_CLIENT_AND_WORKER = [
     pytest.param(
         lazy_fixture("quantify_rest_client"),
@@ -122,18 +111,7 @@ _DISCRIMINATED_JOBS = [
 def quantify_seed_file(tmp_path) -> Generator[str, Any, None]:
     """The test seed, its qubits' frequencies reachable on the dummy clusters and its
     first coupler calibrated"""
-    seed = toml.load(TEST_QUANTIFY_SEED_FILE)
-    calibration = seed["calibration_config"]
-    for qubit in calibration["qubit"]:
-        qubit["frequency"] = _REACHABLE_QUBIT_FREQUENCIES.get(
-            qubit["id"], qubit["frequency"]
-        )
-    for resonator in calibration["readout_resonator"]:
-        resonator["frequency"] = _REACHABLE_READOUT_FREQUENCIES.get(
-            resonator["id"], resonator["frequency"]
-        )
-    calibration["coupler"][0].update(_PLAYED_COUPLER)
-
+    seed = get_gate_level_seed()
     seed_file = tmp_path / "gate_level.seed.toml"
     with open(seed_file, "w") as file:
         toml.dump(seed, file)

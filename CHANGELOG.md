@@ -12,6 +12,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Added gate-level jobs: `POST /jobs` takes OpenQASM 3 circuits, with `shots`, `meas_level` and `meas_return`,
   in place of a qobj, and the quantify executor and the simulators compile them with the device's own
   calibration; their memory has a qobj's shapes, each measurement in its circuit's classical bit
+- Added `dev/check_gate_level.py`, which checks the configs of each device env file for gate-level jobs,
+  without the instruments: missing calibration or LDA values, couplers whose CZ plays no pulse, and ports the
+  compiler refuses or whose LO puts an NCO beyond ±500 MHz
 
 ### Changed
 
