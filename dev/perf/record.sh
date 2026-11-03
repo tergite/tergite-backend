@@ -114,10 +114,6 @@ write_env_file() {
     echo "BCC_CALIBRATION_SEED=$WORK_PATH/calibration.seed.toml"
     echo "BCC_PRIVATE_KEY_FILE=$FIXTURES_PATH/private-bcc-key.pem"
     echo "BCC_MSS_PUBLIC_KEY_PATH=$FIXTURES_PATH/mss_public_key.pem"
-    # required of every device, though a simulated one never runs the tuner
-    echo "BCC_CALIBRATION_NODE_CONFIG_FILE=$ROOT_PATH/node_config.example.toml"
-    echo "BCC_CALIBRATION_DEVICE_CONFIG_FILE=$ROOT_PATH/calib_device_config.example.toml"
-    echo "BCC_CALIBRATION_SPI_CONFIG_FILE=$ROOT_PATH/spi_config.example.toml"
     # the run is shorter than a day, so the start-up recalibration is its only one
     echo "BCC_DEFAULT_RECALIBRATION_INTERVAL=86400"
   } > "$WORK_PATH/perf.env"

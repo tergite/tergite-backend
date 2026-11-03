@@ -122,15 +122,12 @@ q1 = [[0.0, 1.0], [0.0, -1.0]]
 ```
 
 The test fixtures hold a simulated one-qubit device and a two-qubit one with a coupler, which
-run with the default `BCC_EXECUTOR_TYPE=quantify`. The settings require tergite-tuner's configs
-of every device, which a simulated one never reads, so the examples do:
+run with the default `BCC_EXECUTOR_TYPE=quantify`; a simulated device needs no quantify hardware
+config or metadata and none of tergite-tuner's configs:
 
 ```shell
 # on the root of the project
 cp tests/fixtures/backend_config.simq2.toml backend_config.toml
 cp tests/fixtures/qiskit_pulse_2q.seed.toml calibration.seed.toml
-cp node_config.example.toml node_config.calib.toml
-cp calib_device_config.example.toml device_config.calib.toml
-cp spi_config.example.toml spi_config.calib.toml
 ./dev/start_bcc.sh
 ```

@@ -95,7 +95,11 @@ class QuantifyExecutor(QuantumExecutor):
             calib_device_conf: the configuration file for the entire devices during calibration
             calib_spi_conf: the configuration file for the spi during calibration
             calib_seed_file: the calibration seed file
+
+        Raises:
+            FileNotFoundError: tergite-tuner's config {file} not found
         """
+        _check_tuner_configs_exist(calib_node_conf, calib_device_conf, calib_spi_conf)
         self.calib_seed_file = calib_seed_file
         self.calib_spi_conf = calib_spi_conf
         self.calib_device_conf = calib_device_conf
@@ -423,3 +427,14 @@ def _get_recalibration_cluster(
             f"but the quantify metadata lists {len(clusters)}"
         )
     return clusters[0] if clusters else None
+
+
+def _check_tuner_configs_exist(*files: Path | os.PathLike[str]) -> None:
+    """Checks that the configs of tergite-tuner, which recalibrates the device, exist
+
+    Raises:
+        FileNotFoundError: tergite-tuner's config {file} not found
+    """
+    for file in files:
+        if not Path(file).exists():
+            raise FileNotFoundError(f"tergite-tuner's config {file} not found")

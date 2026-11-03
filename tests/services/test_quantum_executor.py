@@ -190,6 +190,32 @@ def test_recalibration_may_take_the_transmons_names_and_close_every_instrument(
         assert Instrument.is_valid(element)
 
 
+def test_executor_refuses_a_missing_tuner_config(tmp_path):
+    from libs.quantum_executor.quantify.executor import QuantifyExecutor
+
+    from ..utils.env import (
+        TEST_QUANTIFY_CONFIG_FILE,
+        TEST_QUANTIFY_METADATA_FILE,
+        TEST_QUANTIFY_SEED_FILE,
+    )
+
+    backend_config = BackendConfig.from_toml(
+        _BACKEND_CONFIG_PATH, seed_file=TEST_QUANTIFY_SEED_FILE
+    )
+    kwargs = {
+        **_get_calibration_kwargs(tmp_path),
+        "calib_spi_conf": tmp_path / "x.toml",
+    }
+
+    with pytest.raises(FileNotFoundError, match="tergite-tuner's config .*x.toml"):
+        QuantifyExecutor(
+            TEST_QUANTIFY_CONFIG_FILE,
+            TEST_QUANTIFY_METADATA_FILE,
+            backend_config,
+            **kwargs,
+        )
+
+
 def _get_calibration_kwargs(data_dir: Path) -> dict:
     """Gets the data directory and calibration files a QuantifyExecutor needs"""
     from ..utils.env import (

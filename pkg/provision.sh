@@ -141,6 +141,9 @@ copy_examples() {
 			install_seed "$examples/calibration.seed.example.toml"
 			install -m 0640 "$examples/quantify-config.example.json" "$dir/quantify-config.json"
 			install -m 0640 "$examples/quantify-metadata.example.yml" "$dir/quantify-metadata.yml"
+			install -m 0640 "$examples/calib_device_config.example.toml" "$dir/device_config.calib.toml"
+			install -m 0640 "$examples/node_config.example.toml" "$dir/node_config.calib.toml"
+			install -m 0640 "$examples/spi_config.example.toml" "$dir/spi_config.calib.toml"
 			;;
 		sim_1q)
 			install -m 0640 "$examples/backend_config.simq1.toml" "$dir/backend_config.toml"
@@ -152,11 +155,6 @@ copy_examples() {
 			;;
 		*) fail "@BINARY@ knows no device '$1'; it takes cluster, sim_1q or sim_2q" ;;
 	esac
-	# the settings refuse any device without the tuner's configs, though a simulated one never
-	# recalibrates
-	install -m 0640 "$examples/calib_device_config.example.toml" "$dir/device_config.calib.toml"
-	install -m 0640 "$examples/node_config.example.toml" "$dir/node_config.calib.toml"
-	install -m 0640 "$examples/spi_config.example.toml" "$dir/spi_config.calib.toml"
 }
 
 # the seed in the data folder, the service's own, as each recalibration rewrites it and

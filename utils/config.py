@@ -24,7 +24,6 @@ from urllib.parse import urlsplit
 
 from dotenv import dotenv_values
 from pydantic import AliasChoices, Field, field_validator, model_validator
-from pydantic_core.core_schema import ValidationInfo
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from .datetime import get_utc_now
@@ -121,29 +120,6 @@ class DeviceSettings(BaseSettings):
     # a mock current date to make bookings act as if the date now is a given static value;
     # outside production only
     current_date: Optional[datetime] = None
-
-    @field_validator(
-        "calibration_node_config_file",
-        "calibration_device_config_file",
-        "calibration_spi_config_file",
-    )
-    @classmethod
-    def check_calibration_file_exists(cls, path: Path, info: ValidationInfo) -> Path:
-        """Refuses a calibration file that is missing
-
-        Args:
-            path: the path to the calibration file
-            info: the validation info, which names the setting
-
-        Returns:
-            the path
-
-        Raises:
-            FileNotFoundError: BCC_{SETTING NAME}: {path} not found.
-        """
-        if not path.exists():
-            raise FileNotFoundError(f"BCC_{info.field_name.upper()}: {path} not found.")
-        return path
 
     @field_validator("mss_public_key_path")
     @classmethod
