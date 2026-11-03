@@ -1,10 +1,10 @@
 #!/bin/sh
-# Builds bcc, or bcc.simulator with EXECUTOR=qiskit, for this machine's OS, as Nuitka cannot
-# cross-compile: from the repo root, `pkg/build.sh`
+# Builds bcc for this machine's OS, as Nuitka cannot cross-compile: from the repo root,
+# `pkg/build.sh`
 
 set -e
 
-uv sync --dev --extra "${EXECUTOR:-quantify}"
+uv sync --dev
 
 # spirack's S5k_module has Latin-1 in its comments, which CPython accepts but Nuitka refuses
 # to decode, compiling it to a SyntaxError raised whenever spirack is imported

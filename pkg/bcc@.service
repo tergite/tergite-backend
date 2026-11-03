@@ -1,5 +1,5 @@
-# Installed as bcc@.service and bcc.simulator@.service: %p, the part before the @, is the
-# binary, and %i is the instance's DEFAULT_PREFIX, e.g. `systemctl enable --now bcc@lab1`
+# Installed as bcc@.service: %p, the part before the @, is the binary, and %i is the
+# instance's DEFAULT_PREFIX, e.g. `systemctl enable --now bcc@lab1`
 [Unit]
 Description=Tergite Backend Control Computer (BCC) %i
 After=network-online.target
@@ -31,7 +31,7 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=%p@%i
 
-# no PrivateDevices, for the SPI rack, and no MemoryDenyWriteExecute, for jax's compiler
+# no PrivateDevices, for the SPI rack
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

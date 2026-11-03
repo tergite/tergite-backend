@@ -15,23 +15,19 @@
 # - Stefan Hill, 2024
 # - Chalmers Next Labs, 2026: read with pydantic-settings, moved from settings.py
 """The settings of one device, read from its env file and the env variables"""
-import importlib.util
 import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, Any, List, Optional, Self
+from typing import Annotated, Any, List, Literal, Optional, Self
 from urllib.parse import urlsplit
 
 from dotenv import dotenv_values
 from pydantic import AliasChoices, Field, field_validator, model_validator
-from pydantic_core.core_schema import ValidationInfo
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from .datetime import get_utc_now
 
-# found, not imported, as importing it takes seconds and hundreds of MB
-HAS_QUANTIFY = importlib.util.find_spec("quantify_scheduler") is not None
 # the project's root, beside settings.py, where the default files are
 _ROOT_PATH = Path(__file__).parents[1]
 
@@ -90,8 +86,8 @@ class DeviceSettings(BaseSettings):
     private_key_file: Path = _ROOT_PATH / "private-bcc-key.pem"
     private_key_password: Optional[bytes] = None
 
-    # which QuantumExecutor runs the jobs; see .env.example
-    executor_type: str = "quantify"
+    # the only executor; a backend config with a simulator section runs it on QuTiP
+    executor_type: Literal["quantify"] = "quantify"
     # the cluster or other instrument set-up; see quantify-config.example.yml and
     # quantify-metadata.example.yml
     quantify_config_file: Path = _ROOT_PATH / "quantify-config.json"
@@ -124,29 +120,6 @@ class DeviceSettings(BaseSettings):
     # a mock current date to make bookings act as if the date now is a given static value;
     # outside production only
     current_date: Optional[datetime] = None
-
-    @field_validator(
-        "calibration_node_config_file",
-        "calibration_device_config_file",
-        "calibration_spi_config_file",
-    )
-    @classmethod
-    def check_calibration_file_exists(cls, path: Path, info: ValidationInfo) -> Path:
-        """Refuses a calibration file that is missing where quantify, which reads it, is installed
-
-        Args:
-            path: the path to the calibration file
-            info: the validation info, which names the setting
-
-        Returns:
-            the path
-
-        Raises:
-            FileNotFoundError: BCC_{SETTING NAME}: {path} not found.
-        """
-        if HAS_QUANTIFY and not path.exists():
-            raise FileNotFoundError(f"BCC_{info.field_name.upper()}: {path} not found.")
-        return path
 
     @field_validator("mss_public_key_path")
     @classmethod

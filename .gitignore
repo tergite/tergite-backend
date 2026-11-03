@@ -188,4 +188,3 @@ main.dist/
 main.build/
 main.onefile-build/
 bcc
-bcc.simulator

@@ -10,7 +10,7 @@ online_date = "2024-09-11T18:07:31"
 num_qubits = 1
 num_couplers = 0
 num_resonators = 1
-description = "A single transmon Hamiltonian with 4 levels"
+description = "A simulated transmon"
 dt = 1e-9
 dtm = 1e-9
 
@@ -82,3 +82,10 @@ lda = [
 qasm_def = "gate x q { U(pi, 0, pi) q; }"
 parameters = [ ]
 coupling_map = [[0]]
+
+# runs its jobs on QuTiP, each qubit read out about these IQ points of states 0 and 1
+[simulator]
+readout_noise = 0.1
+
+[simulator.readout_iq]
+q0 = [[1.0, 0.0], [-1.0, 0.0]]

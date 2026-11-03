@@ -13,7 +13,7 @@ db_go || true
 db_get @PACKAGE@/name
 [ -n "$RET" ] || exit 0
 
-db_input high @PACKAGE@/executor || true
+db_input high @PACKAGE@/device || true
 db_input high @PACKAGE@/port || true
 db_input high @PACKAGE@/mss_url || true
 db_go || true

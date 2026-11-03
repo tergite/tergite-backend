@@ -18,15 +18,11 @@
 One process serves several devices when load_devices is given several env files, the
 first being the default one.
 """
-import importlib.util
 import os
 from pathlib import Path
 from typing import List, Optional
 
 from utils.config import DeviceSettings, read_device_settings
-
-# found, not imported, as importing it takes seconds and hundreds of MB
-HAS_QISKIT_DYNAMICS = importlib.util.find_spec("qiskit_dynamics") is not None
 
 _ROOT_PATH = Path(__file__).parent
 

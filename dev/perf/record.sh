@@ -12,7 +12,7 @@
 # that they have been altered from the originals.
 #
 # Records the performance measures into <out-dir>: Locust on a BCC from this working tree, one
-# qiskit_pulse_1q device whose heavy worker stubs out the simulation (dev/perf/stub_worker.py),
+# simulated 1-qubit device whose heavy worker stubs out the simulation (dev/perf/stub_worker.py),
 # talking to a stub MSS (dev/perf/mss_stub.py), with a stored backlog (dev/perf/seed.py). It
 # samples the CPU and memory of the API, the heavy and the light worker; once the jobs
 # submitted have finished, it records each one's time queued and running in each stage
@@ -69,7 +69,7 @@ start_stack() {
   trap stop_stack EXIT
   write_env_file
 
-  UV_PROJECT_ENVIRONMENT="$WORK_PATH/venv" uv sync -q --frozen --no-dev --extra qiskit --project "$ROOT_PATH"
+  UV_PROJECT_ENVIRONMENT="$WORK_PATH/venv" uv sync -q --frozen --no-dev --project "$ROOT_PATH"
   # read on import, so the stub worker's swap of the executor sees the device
   export BCC_ENV_FILE="$WORK_PATH/perf.env"
   (cd "$ROOT_PATH" && exec "$WORK_PATH/venv/bin/python" -m dev.perf.mss_stub --port "$MSS_PORT") \
@@ -103,7 +103,7 @@ write_env_file() {
   cp "$FIXTURES_PATH/qiskit_pulse_1q.seed.toml" "$WORK_PATH/calibration.seed.toml"
   {
     echo "BCC_DEFAULT_PREFIX=perf"
-    echo "BCC_EXECUTOR_TYPE=qiskit_pulse_1q"
+    echo "BCC_EXECUTOR_TYPE=quantify"
     echo "BCC_APP_SETTINGS=production"
     echo "BCC_JWT_SECRET=$(openssl rand -hex 32)"
     echo "BCC_MACHINE_ROOT_URL=http://127.0.0.1:$BCC_PORT"

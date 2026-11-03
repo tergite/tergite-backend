@@ -33,7 +33,7 @@ from tests.utils.env import TEST_DEFAULT_RECALIBRATION_INTERVAL
 from tests.utils.fixtures import load_fixture
 from tests.utils.params import (
     CLIENT_AND_WORKER_TUPLES,
-    HAS_QUANTIFY,
+    QUANTIFY_CLIENT_AND_WORKER_TUPLES,
     USERS,
 )
 from tests.utils.recalibrations import (
@@ -50,8 +50,7 @@ _EXPECTED_RECALIBRATION_SEED_CONTENT = load_fixture(
 )
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="the simulators send no calibration")
-@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
+@pytest.mark.parametrize("client, worker", QUANTIFY_CLIENT_AND_WORKER_TUPLES)
 def test_recalibration_sends_the_calibration_to_mss(client, worker, mock_mss):
     with client as client:
         start_up_event_count = len(mock_mss.sent_events)
@@ -63,8 +62,7 @@ def test_recalibration_sends_the_calibration_to_mss(client, worker, mock_mss):
         assert recalibrated["data"]["qubits"]
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="the simulators do not recalibrate")
-@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
+@pytest.mark.parametrize("client, worker", QUANTIFY_CLIENT_AND_WORKER_TUPLES)
 def test_recalibration_reaches_what_the_device_runs_and_serves(
     client, worker, mock_mss
 ):
@@ -91,8 +89,7 @@ def test_recalibration_reaches_what_the_device_runs_and_serves(
         assert executor.backend_config.calibration_config == calibration_config
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="the simulators do not recalibrate")
-@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
+@pytest.mark.parametrize("client, worker", QUANTIFY_CLIENT_AND_WORKER_TUPLES)
 def test_a_recalibration_starts_from_the_tuners_results_of_the_last(
     client, worker, quantify_seed_file, mocker
 ):
@@ -127,11 +124,7 @@ def test_a_recalibration_starts_from_the_tuners_results_of_the_last(
     assert json.loads(results_file.read_text())["transmons"]
 
 
-@pytest.mark.skipif(
-    not HAS_QUANTIFY,
-    reason="the seed this checks is written by quantify's recalibration",
-)
-@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
+@pytest.mark.parametrize("client, worker", QUANTIFY_CLIENT_AND_WORKER_TUPLES)
 def test_init_recalibration_with_interval(client, worker, quantify_seed_file):
     """Init recalibration restarts the calibration sequence, changing the interval from the default"""
     with client as client:
@@ -167,11 +160,7 @@ def test_init_recalibration_with_interval(client, worker, quantify_seed_file):
         assert seed_file_content == _EXPECTED_RECALIBRATION_SEED_CONTENT
 
 
-@pytest.mark.skipif(
-    not HAS_QUANTIFY,
-    reason="the seed this checks is written by quantify's recalibration",
-)
-@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
+@pytest.mark.parametrize("client, worker", QUANTIFY_CLIENT_AND_WORKER_TUPLES)
 def test_init_recalibration_without_interval(client, worker, quantify_seed_file):
     """Init recalibration restarts the calibration sequence without interval continues with the default interval"""
     with client as client:
@@ -197,11 +186,7 @@ def test_init_recalibration_without_interval(client, worker, quantify_seed_file)
         assert seed_file_content == _EXPECTED_RECALIBRATION_SEED_CONTENT
 
 
-@pytest.mark.skipif(
-    not HAS_QUANTIFY,
-    reason="the seed this checks is written by quantify's recalibration",
-)
-@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
+@pytest.mark.parametrize("client, worker", QUANTIFY_CLIENT_AND_WORKER_TUPLES)
 def test_init_recalibration_with_start_time(
     client, worker, quantify_seed_file, fake_clock
 ):

@@ -1,7 +1,7 @@
 name: Release
-# Builds the debs for amd64 and pkgs for macOS arm64 of bcc (quantify) and bcc.simulator
-# (qiskit), each on that platform since Nuitka cannot cross-compile, smoke-tests them, and
-# attaches them to the GitHub release of a v* tag. Run by hand, it leaves them as the run's
+# Builds the deb for amd64 and the pkg for macOS arm64 of bcc, each on that platform since
+# Nuitka cannot cross-compile, smoke-tests them, and attaches them to the GitHub release of a
+# v* tag. Run by hand, it leaves them as the run's
 # artifacts instead. The rpm packaging in pkg/ is kept but not built.
 
 on:
@@ -55,17 +55,11 @@ jobs:
     needs: version
     # its glibc 2.39 is the oldest the binaries then run on: Debian 13 and Ubuntu 24.04 onwards
     runs-on: ubuntu-24.04
-    # qiskit, jax and scipy make a build of an hour or more
+    # quantify, qutip and scipy can make a build of an hour or more
     timeout-minutes: 180
-    strategy:
-      matrix:
-        include:
-          - { binary: bcc, executor: quantify }
-          - { binary: bcc.simulator, executor: qiskit }
     env:
       VERSION: ${{ needs.version.outputs.version }}
       ARCH: amd64
-      EXECUTOR: ${{ matrix.executor }}
     steps:
       - uses: actions/checkout@v6
       - name: Install uv
@@ -77,37 +71,31 @@ jobs:
       - uses: actions/cache/restore@v4
         with:
           path: ~/.cache/Nuitka
-          key: nuitka-linux-${{ matrix.executor }}-${{ github.sha }}
-          restore-keys: nuitka-linux-${{ matrix.executor }}-
+          key: nuitka-linux-${{ github.sha }}
+          restore-keys: nuitka-linux-
       - run: pkg/build.sh
       # also after a failed or timed-out build, so that the next one picks up where it stopped
       - if: always()
         uses: actions/cache/save@v4
         with:
           path: ~/.cache/Nuitka
-          key: nuitka-linux-${{ matrix.executor }}-${{ github.sha }}
-      - run: pkg/package.sh ${{ matrix.binary }} deb
+          key: nuitka-linux-${{ github.sha }}
+      - run: pkg/package.sh deb
       - name: Install the package and load an instance with it
         run: |
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ./dist/*.deb
-          sudo pkg/smoke-test.sh ${{ matrix.binary }}
+          sudo pkg/smoke-test.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.binary }}-linux-amd64
+          name: bcc-linux-amd64
           path: dist/*
 
   macos:
     needs: version
     runs-on: macos-14
     timeout-minutes: 180
-    strategy:
-      matrix:
-        include:
-          - { binary: bcc, executor: quantify }
-          - { binary: bcc.simulator, executor: qiskit }
     env:
       VERSION: ${{ needs.version.outputs.version }}
-      EXECUTOR: ${{ matrix.executor }}
     steps:
       - uses: actions/checkout@v6
       - name: Install uv
@@ -117,24 +105,24 @@ jobs:
       - uses: actions/cache/restore@v4
         with:
           path: ~/Library/Caches/Nuitka
-          key: nuitka-macos-${{ matrix.executor }}-${{ github.sha }}
-          restore-keys: nuitka-macos-${{ matrix.executor }}-
+          key: nuitka-macos-${{ github.sha }}
+          restore-keys: nuitka-macos-
       - run: pkg/build.sh
       - if: always()
         uses: actions/cache/save@v4
         with:
           path: ~/Library/Caches/Nuitka
-          key: nuitka-macos-${{ matrix.executor }}-${{ github.sha }}
-      - run: pkg/macos/build.sh ${{ matrix.binary }}
+          key: nuitka-macos-${{ github.sha }}
+      - run: pkg/macos/build.sh
       - name: Install the package and load an instance with it
         run: |
           sudo installer -pkg dist/*.pkg -target /
           dscl . -read /Users/_bcc UniqueID
-          sudo pkg/smoke-test.sh ${{ matrix.binary }}
+          sudo pkg/smoke-test.sh
           sudo /usr/local/share/*/uninstall.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.binary }}-macos-arm64
+          name: bcc-macos-arm64
           path: dist/*.pkg
 
   release:

@@ -24,14 +24,14 @@ if [ "$1" = configure ] && [ -e /usr/share/debconf/confmodule ] &&
 	db_get @PACKAGE@/name
 	name=$RET
 	if [ -n "$name" ]; then
-		db_get @PACKAGE@/executor
-		executor=$RET
+		db_get @PACKAGE@/device
+		device=$RET
 		db_get @PACKAGE@/port
 		port=$RET
 		db_get @PACKAGE@/mss_url
 		mss_url=$RET
 		# stdout is debconf's until db_stop
-		/usr/sbin/@BINARY@-provision "$name" --executor "$executor" \
+		/usr/sbin/@BINARY@-provision "$name" --device "$device" \
 			--port "$port" --mss-url "$mss_url" >&2
 	fi
 	db_stop

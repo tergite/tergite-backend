@@ -27,7 +27,6 @@ from tests.utils.env import (
     TEST_SIMQ1_BACKEND_SETTINGS_FILE,
 )
 from tests.utils.fixtures import get_fixture_path
-from tests.utils.params import HAS_QUANTIFY
 from utils.datetime import get_utc_now
 from utils.exc import MssTimeoutError
 
@@ -35,7 +34,6 @@ _QUANTIFY_CONFIG_FILE = get_fixture_path("generic-quantify-config.json")
 _QUANTIFY_METADATA_FILE = get_fixture_path("generic-quantify-config.yml")
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 def test_load_quantify_config_files():
     """ExecutorConfig can load YAML Quantify Metadata File and Quantify Config File"""
     from libs.quantum_executor.quantify.utils.config import (
@@ -125,7 +123,7 @@ def test_mss_client_waits_no_longer_than_the_settings_say(mocker, monkeypatch):
 
 def test_calibration_seed_required_for_simulator(patched_mss_websockets, monkeypatch):
     """Raises validation errors if calibration seed is not set for simulator."""
-    monkeypatch.setenv("BCC_EXECUTOR_TYPE", "qiskit_pulse_1q")
+    monkeypatch.setenv("BCC_EXECUTOR_TYPE", "quantify")
     monkeypatch.setenv("BCC_DEFAULT_PREFIX", TEST_DEFAULT_PREFIX_SIM_1Q)
     monkeypatch.setenv("BCC_BACKEND_SETTINGS", TEST_SIMQ1_BACKEND_SETTINGS_FILE)
     monkeypatch.setenv("BCC_CALIBRATION_SEED", get_fixture_path("non-existent.toml"))
@@ -142,7 +140,7 @@ def test_calibration_seed_required_for_simulator(patched_mss_websockets, monkeyp
 
 def test_calibration_seed_broken_for_simulator(patched_mss_websockets, monkeypatch):
     """Raises validation errors if calibration seed provided is broken for simulator only."""
-    monkeypatch.setenv("BCC_EXECUTOR_TYPE", "qiskit_pulse_1q")
+    monkeypatch.setenv("BCC_EXECUTOR_TYPE", "quantify")
     monkeypatch.setenv("BCC_DEFAULT_PREFIX", TEST_DEFAULT_PREFIX_SIM_1Q)
     monkeypatch.setenv("BCC_BACKEND_SETTINGS", TEST_SIMQ1_BACKEND_SETTINGS_FILE)
     monkeypatch.setenv("BCC_CALIBRATION_SEED", get_fixture_path("broken.seed.toml"))
@@ -157,7 +155,6 @@ def test_calibration_seed_broken_for_simulator(patched_mss_websockets, monkeypat
         pass
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 def test_quantify_metadata_is_broken(monkeypatch):
     """The heavy worker's executor build raises if the quantify metadata file is broken"""
     monkeypatch.setenv("BCC_EXECUTOR_TYPE", "quantify")
@@ -171,7 +168,6 @@ def test_quantify_metadata_is_broken(monkeypatch):
         get_executor(get_executor_options(settings.get_device_settings()))
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 def test_quantify_config_is_broken(monkeypatch):
     """The heavy worker's executor build raises if the quantify config file is broken"""
     monkeypatch.setenv("BCC_EXECUTOR_TYPE", "quantify")
@@ -201,6 +197,15 @@ def test_max_worker_wait_time_must_be_above_zero(monkeypatch, max_worker_wait_ti
     monkeypatch.setenv("BCC_MAX_WORKER_WAIT_TIME", max_worker_wait_time)
 
     with pytest.raises(ValidationError, match="max_worker_wait_time"):
+        _reload_settings()
+
+
+@pytest.mark.parametrize("executor_type", ["qiskit_pulse_1q", "qiskit_pulse_2q"])
+def test_executor_type_other_than_quantify_is_refused(monkeypatch, executor_type):
+    """A simulated device is executor type quantify with a simulator section"""
+    monkeypatch.setenv("BCC_EXECUTOR_TYPE", executor_type)
+
+    with pytest.raises(ValidationError, match="executor_type"):
         _reload_settings()
 
 

@@ -14,7 +14,6 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import pytest
 import toml
 
 from libs.device_parameters import BackendConfig
@@ -23,10 +22,9 @@ from tests.utils.env import (
     TEST_BACKEND_SETTINGS_FILE,
     TEST_QUANTIFY_CONFIG_FILE,
     TEST_QUANTIFY_SEED_FILE,
+    TEST_SIM_2Q_SEED_FILE,
+    TEST_SIMQ2_BACKEND_SETTINGS_FILE,
 )
-from tests.utils.params import HAS_QUANTIFY
-
-pytestmark = pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 
 
 def test_configs_gate_level_jobs_run_on_have_no_errors(tmp_path):
@@ -169,6 +167,20 @@ def test_main_prints_what_it_found_and_exits_1_on_an_error(tmp_path, capsys):
     assert exit_code == 1
     assert lines[0].startswith(f"{env_file} (quantify): ")
     assert "  error   q13: the LO of q13:mw-q13.01 is 5306.0 MHz" in "\n".join(lines)
+
+
+def test_simulated_device_is_not_checked(tmp_path, monkeypatch, capsys):
+    from dev.check_gate_level import main
+
+    monkeypatch.setenv("BCC_BACKEND_SETTINGS", TEST_SIMQ2_BACKEND_SETTINGS_FILE)
+    monkeypatch.setenv("BCC_CALIBRATION_SEED", TEST_SIM_2Q_SEED_FILE)
+    env_file = tmp_path / "device.env"
+    env_file.write_text("BCC_EXECUTOR_TYPE=quantify\n")
+
+    exit_code = main([str(env_file)])
+
+    assert exit_code == 0
+    assert capsys.readouterr().out == f"{env_file} (quantify): 0 errors, 0 warnings\n"
 
 
 def _check(

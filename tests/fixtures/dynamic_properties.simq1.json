@@ -3,9 +3,9 @@
   "discriminators": {
     "lda": {
       "q0": {
-        "coef_0": -24.30078533,
-        "coef_1": 22.61843697,
-        "intercept": 0.70658014
+        "coef_0": -2.0,
+        "coef_1": 0.0,
+        "intercept": 0.0
       }
     }
   },
@@ -30,10 +30,14 @@
       "pi_pulse_duration": {
         "date": "NOW-PLACEHOLDER",
         "unit": "",
-        "value": 5.6e-8
+        "value": 5.6e-08
       },
       "pi_pulse_motzoi": null,
-      "pulse_sigma": { "date": "NOW-PLACEHOLDER", "unit": "", "value": 7e-9 },
+      "pulse_sigma": {
+        "date": "NOW-PLACEHOLDER",
+        "unit": "",
+        "value": 7e-09
+      },
       "pulse_type": {
         "date": "NOW-PLACEHOLDER",
         "unit": "",
@@ -43,12 +47,12 @@
       "t1_decoherence": {
         "date": "NOW-PLACEHOLDER",
         "unit": "s",
-        "value": 7.1e-5
+        "value": 7.1e-05
       },
       "t2_decoherence": {
         "date": "NOW-PLACEHOLDER",
         "unit": "s",
-        "value": 6.9e-5
+        "value": 6.9e-05
       },
       "x_position": null,
       "xy_drive_line": null,
@@ -58,11 +62,15 @@
   ],
   "resonators": [
     {
-      "acq_delay": { "date": "NOW-PLACEHOLDER", "unit": "s", "value": 5e-8 },
+      "acq_delay": {
+        "date": "NOW-PLACEHOLDER",
+        "unit": "s",
+        "value": 5e-08
+      },
       "acq_integration_time": {
         "date": "NOW-PLACEHOLDER",
         "unit": "s",
-        "value": 1e-6
+        "value": 1e-06
       },
       "frequency": {
         "date": "NOW-PLACEHOLDER",
@@ -77,11 +85,15 @@
         "unit": "",
         "value": 0.1266499392606423
       },
-      "pulse_delay": { "date": "NOW-PLACEHOLDER", "unit": "s", "value": 0.0 },
+      "pulse_delay": {
+        "date": "NOW-PLACEHOLDER",
+        "unit": "s",
+        "value": 0.0
+      },
       "pulse_duration": {
         "date": "NOW-PLACEHOLDER",
         "unit": "s",
-        "value": 9e-7
+        "value": 9e-07
       },
       "pulse_type": {
         "date": "NOW-PLACEHOLDER",

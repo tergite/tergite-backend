@@ -56,23 +56,23 @@ pulse_type = "Gaussian"
 
 [[calibration_config.readout_resonator]]
 id = "q0"
-acq_delay = 0
-acq_integration_time = 0
-frequency = 0
+acq_delay = 5e-8
+acq_integration_time = 1e-6
+frequency = 6.8e9
 pulse_delay = 0
-pulse_duration = 0
-pulse_amplitude = 0
-pulse_type = ""
+pulse_duration = 9e-7
+pulse_amplitude = 0.1
+pulse_type = "Square"
 
 [[calibration_config.readout_resonator]]
 id = "q1"
-acq_delay = 0
-acq_integration_time = 0
-frequency = 0
+acq_delay = 5e-8
+acq_integration_time = 1e-6
+frequency = 7.0e9
 pulse_delay = 0
-pulse_duration = 0
-pulse_amplitude = 0
-pulse_type = ""
+pulse_duration = 9e-7
+pulse_amplitude = 0.1
+pulse_type = "Square"
 
 [[calibration_config.coupler]]
 id = "u0"
@@ -87,8 +87,9 @@ cz_pulse_phase_offset = 0
 cz_pulse_duration_before = 88e-9
 cz_pulse_duration_rise = 25e-9
 cz_pulse_duration_constant = 370e-9
-control_rz_lambda = 0.6
-target_rz_lambda = 0.3
+# none, as the simulator's CZ adds a phase of pi to |11> and nothing else
+control_rz_lambda = 0
+target_rz_lambda = 0
 pulse_type = "wacqt_cz_gate_pulse"
 
 

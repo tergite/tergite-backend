@@ -1,5 +1,5 @@
 #!/bin/sh
-# Creates the hidden _bcc account both packages' instances run as
+# Creates the hidden _bcc account the instances run as
 
 set -e
 

@@ -38,7 +38,7 @@ version = "v2026.11.0-rc.3"
 description = "the Backend of the Tergite software stack of the WACQT Quantum Computer."
 readme = "README.md"
 requires-python = ">=3.13"
-keywords = ["quantum", "qiskit", "quantify"]
+keywords = ["quantum", "quantify", "qutip"]
 license = {file = "LICENSE.txt"}
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -54,8 +54,6 @@ dependencies = [
     "cryptography~=45.0.2",
     "filelock~=3.18.0",
     "pydantic~=2.11.3",
-    # the API's device parameters and discriminators use it, with neither executor's extra
-    "numpy>=1.26.0",
     "websockets~=16.0",
     "uvicorn~=0.46.0",
     "starlette~=0.48.0",
@@ -63,12 +61,8 @@ dependencies = [
     "pydantic-settings~=2.16.2",
     "python-dotenv~=1.2.2",
     "alembic~=1.16",
-    # parses gate-level jobs' OpenQASM 3, and the OpenPulse it may hold, for either executor
+    # parses gate-level jobs' OpenQASM 3, and the OpenPulse it may hold
     "openpulse>=1.0.1",
-]
-
-[project.optional-dependencies]
-quantify = [
     "quantify-core>=0.8.1",
     "quantify-scheduler~=0.22.2",
     "qblox-instruments~=0.14.2",
@@ -78,14 +72,10 @@ quantify = [
     "networkx~=3.4.2",
     "h5py>=3.14.0",
     "xarray",
-]
-qiskit = [
-    "qiskit-dynamics>=0.5.1,<0.6.0",
-    "jax>=0.5.1",
-    "qiskit~=0.45.0",
-    "h5py>=3.12.1",
-    "xarray",
-    "scikit-learn",
+    # the simulators' master equation
+    "qutip>=5.3,<6",
+    # the simulators keep BLAS to one thread
+    "threadpoolctl>=3.1",
 ]
 
 [dependency-groups]
@@ -138,14 +128,10 @@ log_level = "ERROR"
 timeout = 120
 timeout_method = "thread"
 markers = [
-  "simulated: runs the qiskit simulator's jobs for real, for tests that check measured counts",
   "real_time: its outcome depends on how fast the machine works through the jobs against bookings, so it runs alone, not beside other workers",
 ]
 filterwarnings = [
   "ignore:This package has reached its end of life\\.:DeprecationWarning:quantify_scheduler\\..*",
-  "ignore:qiskit\\.providers\\.models is deprecated since Qiskit 1\\.2 and will be removed in Qiskit 2\\.0\\.:DeprecationWarning:libs\\.quantum_executor\\.qiskit\\.backends\\..*",
-  # Qiskit Qobj / BackendV1 workflow deprecation
-  "ignore:.*The `Qobj` class and related functionality are part of the deprecated `BackendV1` workflow.*:DeprecationWarning",
   # NetworkX edges= kwarg change (message starts with \n so .*edges=.* won't match)
   "ignore::FutureWarning:networkx\\..*",
   # Starlette .env file not found (expected in tests)
@@ -156,12 +142,4 @@ filterwarnings = [
   "ignore:.*Support for class-based `config`.*:DeprecationWarning:pydantic\\..*",
   # SQLModel autoflush session warning
   "ignore:.*Object of type.*not in session.*:sqlalchemy.exc.SAWarning",
-]
-
-[tool.uv]
-conflicts = [
-    [
-        { extra = "quantify" },
-        { extra = "qiskit" }
-    ]
 ]

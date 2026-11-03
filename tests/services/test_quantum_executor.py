@@ -21,7 +21,6 @@ import pytest
 from libs.device_parameters.dtos import BackendConfig
 
 from ..utils.fixtures import get_fixture_path
-from ..utils.params import HAS_QUANTIFY
 
 _REAL_HARDWARE_QUANTIFY_CONFIG_FILE = get_fixture_path("generic-quantify-config.json")
 _REAL_HARDWARE_QUANTIFY_METADATA_FILE = get_fixture_path("real-quantify-config.yml")
@@ -29,7 +28,6 @@ _BACKEND_CONFIG_PATH = get_fixture_path("backend_config.toml")
 _CALIBRATION_SEED_FILE = get_fixture_path("quantify.seed.toml")
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 def test_attempts_to_connect_to_real_hardware(tmp_path):
     """Loads the config for the real hardware in the appropriate way"""
     with pytest.raises(socket.timeout):
@@ -47,7 +45,6 @@ def test_attempts_to_connect_to_real_hardware(tmp_path):
         )
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 def test_recalibrate_refuses_more_than_one_cluster(tmp_path, mocker):
     """tergite_tuner calibrates the whole device through one cluster"""
     from libs.quantum_executor.quantify.executor import QuantifyExecutor
@@ -76,7 +73,6 @@ def test_recalibrate_refuses_more_than_one_cluster(tmp_path, mocker):
     calibrate.assert_not_called()
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 def test_executors_of_two_quantify_configs_are_built_one_after_another(tmp_path):
     from libs.quantum_executor.quantify.executor import QuantifyExecutor
 
@@ -104,7 +100,6 @@ def test_executors_of_two_quantify_configs_are_built_one_after_another(tmp_path)
     assert other_executor.quantify_metadata.root
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.mark.parametrize(
     "tuner_error",
     [None, RuntimeError("tuner failed"), TimeoutError("took longer than 4 seconds")],
@@ -149,7 +144,6 @@ def test_executor_reaches_its_clusters_after_a_recalibration(
     assert executor._coordinator.components()
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 def test_recalibration_may_take_the_transmons_names_and_close_every_instrument(
     tmp_path, mocker
 ):
@@ -196,6 +190,32 @@ def test_recalibration_may_take_the_transmons_names_and_close_every_instrument(
         assert Instrument.is_valid(element)
 
 
+def test_executor_refuses_a_missing_tuner_config(tmp_path):
+    from libs.quantum_executor.quantify.executor import QuantifyExecutor
+
+    from ..utils.env import (
+        TEST_QUANTIFY_CONFIG_FILE,
+        TEST_QUANTIFY_METADATA_FILE,
+        TEST_QUANTIFY_SEED_FILE,
+    )
+
+    backend_config = BackendConfig.from_toml(
+        _BACKEND_CONFIG_PATH, seed_file=TEST_QUANTIFY_SEED_FILE
+    )
+    kwargs = {
+        **_get_calibration_kwargs(tmp_path),
+        "calib_spi_conf": tmp_path / "x.toml",
+    }
+
+    with pytest.raises(FileNotFoundError, match="tergite-tuner's config .*x.toml"):
+        QuantifyExecutor(
+            TEST_QUANTIFY_CONFIG_FILE,
+            TEST_QUANTIFY_METADATA_FILE,
+            backend_config,
+            **kwargs,
+        )
+
+
 def _get_calibration_kwargs(data_dir: Path) -> dict:
     """Gets the data directory and calibration files a QuantifyExecutor needs"""
     from ..utils.env import (
@@ -214,7 +234,6 @@ def _get_calibration_kwargs(data_dir: Path) -> dict:
     )
 
 
-@pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify")
 @pytest.mark.parametrize("is_pulse_limited", [True, False], ids=["limits", "no-limits"])
 def test_executor_adds_frames_and_defcals_only_where_the_device_has_pulse_limits(
     is_pulse_limited,

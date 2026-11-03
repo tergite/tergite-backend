@@ -1,9 +1,9 @@
 #!/bin/sh
-# Builds bcc, or bcc.simulator with EXECUTOR=qiskit, on a machine that is not Linux, in a
-# container, as Nuitka cannot cross-compile; on Linux, run pkg/build.sh: from the repo root,
-# `docker run --rm -e EXECUTOR -e UV_PYTHON=3.13 -v "$PWD":/src -w /src ubuntu:24.04 pkg/build-linux.sh`.
-# Its glibc 2.39, as the release's, is the oldest it runs on. There is no musl build: neither PyQt5,
-# which quantify needs, nor jaxlib, which the simulator needs, has musl wheels or sources.
+# Builds bcc on a machine that is not Linux, in a container, as Nuitka cannot cross-compile;
+# on Linux, run pkg/build.sh: from the repo root,
+# `docker run --rm -e UV_PYTHON=3.13 -v "$PWD":/src -w /src ubuntu:24.04 pkg/build-linux.sh`.
+# Its glibc 2.39, as the release's, is the oldest it runs on. There is no musl build: PyQt5,
+# which quantify needs, has no musl wheels or sources.
 
 set -e
 

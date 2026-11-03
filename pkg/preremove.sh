@@ -1,6 +1,6 @@
 #!/bin/sh
 # Stops and disables every instance of this binary before it goes. Their config and data in
-# /etc/bcc and /var/lib/bcc stay, as does the bcc account, which the other package may use.
+# /etc/bcc and /var/lib/bcc stay, as does the bcc account.
 
 set -e
 

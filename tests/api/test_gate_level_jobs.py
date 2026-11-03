@@ -34,8 +34,6 @@ from tests.utils.jobs import (
 )
 from tests.utils.params import (
     CLIENT_AND_WORKER_TUPLES,
-    HAS_QISKIT_DYNAMICS,
-    HAS_QUANTIFY,
     USERS,
 )
 from tests.utils.users import create_many_users
@@ -43,22 +41,19 @@ from tests.utils.users import create_many_users
 _SHOTS = 20
 _SIMULATED_SHOTS = 100
 _SIM_1Q_CLIENT_AND_WORKER = pytest.param(
-    lazy_fixture("qiskit_1q_rest_client"),
-    lazy_fixture("qiskit_1q_worker"),
-    marks=pytest.mark.skipif(not HAS_QISKIT_DYNAMICS, reason="requires qiskit"),
+    lazy_fixture("sim_1q_rest_client"),
+    lazy_fixture("sim_1q_worker"),
     id="qiskit_pulse_1q",
 )
 _SIM_2Q_CLIENT_AND_WORKER = pytest.param(
-    lazy_fixture("qiskit_2q_rest_client"),
-    lazy_fixture("qiskit_2q_worker"),
-    marks=pytest.mark.skipif(not HAS_QISKIT_DYNAMICS, reason="requires qiskit"),
+    lazy_fixture("sim_2q_rest_client"),
+    lazy_fixture("sim_2q_worker"),
     id="qiskit_pulse_2q",
 )
 _QUANTIFY_CLIENT_AND_WORKER = [
     pytest.param(
         lazy_fixture("quantify_rest_client"),
         lazy_fixture("quantify_worker"),
-        marks=pytest.mark.skipif(not HAS_QUANTIFY, reason="requires quantify"),
     )
 ]
 
@@ -362,7 +357,6 @@ _SIMULATED_JOBS = [
 ]
 
 
-@pytest.mark.simulated
 # a 2-qubit simulation takes seconds, beside other workers more
 @pytest.mark.timeout(600)
 @pytest.mark.parametrize("circuits, expected_shares", _SIMULATED_JOBS)
@@ -384,7 +378,6 @@ def test_simulated_memory_is_in_clbit_order(
             assert memory.count(state) >= share * _SIMULATED_SHOTS, memory
 
 
-@pytest.mark.simulated
 @pytest.mark.timeout(600)
 @pytest.mark.parametrize("client, worker", [_SIM_1Q_CLIENT_AND_WORKER])
 def test_one_qubit_simulator_runs_an_x(client, worker, jobs_folder, mocker, fake_clock):
@@ -398,7 +391,6 @@ def test_one_qubit_simulator_runs_an_x(client, worker, jobs_folder, mocker, fake
     assert got.result.memory[0].count("0x1") >= 0.8 * _SIMULATED_SHOTS
 
 
-@pytest.mark.simulated
 @pytest.mark.timeout(600)
 @pytest.mark.parametrize("client, worker", [_SIM_2Q_CLIENT_AND_WORKER])
 def test_simulated_iq_memory_is_in_clbit_order(
@@ -452,10 +444,10 @@ def test_simulator_iq_memory_has_a_point_per_measured_clbit(
 
 
 @pytest.mark.parametrize("client, worker", [_SIM_2Q_CLIENT_AND_WORKER])
-def test_simulator_refuses_a_gate_after_a_measurement(
+def test_simulator_refuses_a_gate_on_a_measured_qubit(
     client, worker, jobs_folder, mocker, fake_clock
 ):
-    circuit = get_circuit("mid", "c[0] = measure $0;\nx $1;", num_clbits=1)
+    circuit = get_circuit("mid", "c[0] = measure $0;\nx $0;", num_clbits=1)
     job = get_circuit_job([circuit], shots=_SHOTS)
 
     with client as client:
@@ -463,7 +455,7 @@ def test_simulator_refuses_a_gate_after_a_measurement(
 
     assert got.status == JobStatus.FAILED
     assert got.failure_reason == (
-        "the simulator measures each qubit once, at the end of the circuit"
+        "the simulator measures each qubit once, after what else it plays on it"
     )
 
 

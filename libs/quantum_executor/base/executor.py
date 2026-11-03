@@ -18,6 +18,9 @@ from pathlib import Path
 from traceback import format_exc
 from typing import Dict, List, Optional, Tuple
 
+from quantify_core.data.handling import create_exp_folder, gen_tuid
+from quantify_core.data.types import TUID
+
 from libs.device_parameters import BackendConfig, DeviceCalibration
 from libs.quantum_executor.base.circuits import (
     CircuitExperiment,
@@ -35,7 +38,6 @@ from libs.quantum_executor.base.quantum_job import (
 from libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig, QuantumJob
 from libs.quantum_executor.base.quantum_job.typing import QExperimentResult
 from libs.quantum_executor.utils.logger import ExperimentLogger
-from utils.compat import TUID, create_exp_folder, gen_tuid
 from utils.exc import UnsupportedCircuitError
 
 

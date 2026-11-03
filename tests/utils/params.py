@@ -10,41 +10,25 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Parameters that many tests are parametrized with"""
-import importlib.util
 from typing import Any, Dict, List, NotRequired, Optional, TypedDict
 
 from pytest_lazy_fixtures import lf as lazy_fixture
 
 from tests.utils.fixtures import load_fixture
 
-HAS_QISKIT_DYNAMICS = importlib.util.find_spec("qiskit_dynamics") is not None
-HAS_QUANTIFY = importlib.util.find_spec("quantify_scheduler") is not None
-
-FASTAPI_CLIENTS = []
-CLIENT_AND_WORKER_TUPLES = []
-if HAS_QUANTIFY:
-    FASTAPI_CLIENTS += [lazy_fixture("quantify_rest_client")]
-    CLIENT_AND_WORKER_TUPLES += [
-        (
-            lazy_fixture("quantify_rest_client"),
-            lazy_fixture("quantify_worker"),
-        ),
-    ]
-if HAS_QISKIT_DYNAMICS:
-    FASTAPI_CLIENTS += [
-        lazy_fixture("qiskit_1q_rest_client"),
-        lazy_fixture("qiskit_2q_rest_client"),
-    ]
-    CLIENT_AND_WORKER_TUPLES += [
-        (
-            lazy_fixture("qiskit_1q_rest_client"),
-            lazy_fixture("qiskit_1q_worker"),
-        ),
-        (
-            lazy_fixture("qiskit_2q_rest_client"),
-            lazy_fixture("qiskit_2q_worker"),
-        ),
-    ]
+FASTAPI_CLIENTS = [
+    lazy_fixture("quantify_rest_client"),
+    lazy_fixture("sim_1q_rest_client"),
+    lazy_fixture("sim_2q_rest_client"),
+]
+# those of the device on clusters alone, which recalibrates, as the simulated ones do not
+QUANTIFY_CLIENT_AND_WORKER_TUPLES = [
+    (lazy_fixture("quantify_rest_client"), lazy_fixture("quantify_worker")),
+]
+CLIENT_AND_WORKER_TUPLES = QUANTIFY_CLIENT_AND_WORKER_TUPLES + [
+    (lazy_fixture("sim_1q_rest_client"), lazy_fixture("sim_1q_worker")),
+    (lazy_fixture("sim_2q_rest_client"), lazy_fixture("sim_2q_worker")),
+]
 
 USERS: List[Dict[str, Any]] = load_fixture("users.json")
 VALID_BOOKINGS: List["BasicBookingInfo"] = load_fixture("valid_bookings.json")
@@ -66,67 +50,34 @@ SIM_2Q_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload_simulator_2q.json")
 QUANTIFY_JOBS_FOR_UPLOAD = load_fixture("jobs_to_upload.json")
 INVALID_JOBS_FOR_UPLOAD = load_fixture("invalid_jobs_to_upload.json")
 
-# executor-specific params
-QUANTIFY_UPLOAD_JOB_PARAMS = []
-SIM_1Q_UPLOAD_JOB_PARAMS = []
-SIM_2Q_UPLOAD_JOB_PARAMS = []
-STATIC_PROPERTIES_PARAMS = []
-DYNAMIC_PROPERTIES_PARAMS = []
-
-if HAS_QUANTIFY:
-    QUANTIFY_UPLOAD_JOB_PARAMS = [
-        (
-            lazy_fixture("quantify_rest_client"),
-            lazy_fixture("quantify_worker"),
-            job,
-        )
-        for job in QUANTIFY_JOBS_FOR_UPLOAD
-    ]
-    STATIC_PROPERTIES_PARAMS += [
-        (lazy_fixture("quantify_rest_client"), load_fixture("static_properties.json"))
-    ]
-    DYNAMIC_PROPERTIES_PARAMS += [
-        (lazy_fixture("quantify_rest_client"), load_fixture("dynamic_properties.json"))
-    ]
-
-if HAS_QISKIT_DYNAMICS:
-    SIM_1Q_UPLOAD_JOB_PARAMS = [
-        (
-            lazy_fixture("qiskit_1q_rest_client"),
-            lazy_fixture("qiskit_1q_worker"),
-            job,
-        )
-        for job in SIM_1Q_JOBS_FOR_UPLOAD
-    ]
-
-    SIM_2Q_UPLOAD_JOB_PARAMS = [
-        (
-            lazy_fixture("qiskit_2q_rest_client"),
-            lazy_fixture("qiskit_2q_worker"),
-            job,
-        )
-        for job in SIM_2Q_JOBS_FOR_UPLOAD
-    ]
-    STATIC_PROPERTIES_PARAMS += [
-        (
-            lazy_fixture("qiskit_1q_rest_client"),
-            load_fixture("static_properties.simq1.json"),
-        ),
-        (
-            lazy_fixture("qiskit_2q_rest_client"),
-            load_fixture("static_properties.simq2.json"),
-        ),
-    ]
-    DYNAMIC_PROPERTIES_PARAMS += [
-        (
-            lazy_fixture("qiskit_1q_rest_client"),
-            load_fixture("dynamic_properties.simq1.json"),
-        ),
-        (
-            lazy_fixture("qiskit_2q_rest_client"),
-            load_fixture("dynamic_properties.simq2.json"),
-        ),
-    ]
+QUANTIFY_UPLOAD_JOB_PARAMS = [
+    (lazy_fixture("quantify_rest_client"), lazy_fixture("quantify_worker"), job)
+    for job in QUANTIFY_JOBS_FOR_UPLOAD
+]
+SIM_1Q_UPLOAD_JOB_PARAMS = [
+    (lazy_fixture("sim_1q_rest_client"), lazy_fixture("sim_1q_worker"), job)
+    for job in SIM_1Q_JOBS_FOR_UPLOAD
+]
+SIM_2Q_UPLOAD_JOB_PARAMS = [
+    (lazy_fixture("sim_2q_rest_client"), lazy_fixture("sim_2q_worker"), job)
+    for job in SIM_2Q_JOBS_FOR_UPLOAD
+]
+STATIC_PROPERTIES_PARAMS = [
+    (lazy_fixture("quantify_rest_client"), load_fixture("static_properties.json")),
+    (lazy_fixture("sim_1q_rest_client"), load_fixture("static_properties.simq1.json")),
+    (lazy_fixture("sim_2q_rest_client"), load_fixture("static_properties.simq2.json")),
+]
+DYNAMIC_PROPERTIES_PARAMS = [
+    (lazy_fixture("quantify_rest_client"), load_fixture("dynamic_properties.json")),
+    (
+        lazy_fixture("sim_1q_rest_client"),
+        load_fixture("dynamic_properties.simq1.json"),
+    ),
+    (
+        lazy_fixture("sim_2q_rest_client"),
+        load_fixture("dynamic_properties.simq2.json"),
+    ),
+]
 
 SIMPLE_UPLOAD_JOB_PARAMS = (
     QUANTIFY_UPLOAD_JOB_PARAMS + SIM_1Q_UPLOAD_JOB_PARAMS + SIM_2Q_UPLOAD_JOB_PARAMS

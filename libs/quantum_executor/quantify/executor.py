@@ -34,34 +34,22 @@ from quantify_scheduler.backends.graph_compilation import SerialCompiler
 from quantify_scheduler.device_under_test.quantum_device import QuantumDevice
 from quantify_scheduler.instrument_coordinator import InstrumentCoordinator
 from quantify_scheduler.instrument_coordinator.components.qblox import ClusterComponent
+from tergite_tuner.utils.types.enums import MeasurementMode, SPIMode
 
 from libs.device_parameters.dtos import BackendConfig
 from libs.quantum_executor.base.circuits import CircuitExperiment, QasmCircuit
 from libs.quantum_executor.base.executor import QuantumExecutor
-from libs.quantum_executor.base.qasm import to_native_circuit
-from libs.quantum_executor.base.quantum_job import get_experiment_name
 from libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
 from libs.quantum_executor.base.quantum_job.typing import QExperimentResult
-from libs.quantum_executor.quantify.circuits import (
-    DeviceFrames,
-    get_circuit_schedule,
-    get_measure_duration,
-)
-from libs.quantum_executor.quantify.defcals import get_pulse_calibration
-from libs.quantum_executor.quantify.device import (
-    apply_calibration,
-    get_edge_names,
-    get_element_name,
-    get_frame_frequencies,
-    remove_elements,
-)
+from libs.quantum_executor.quantify.defcals import add_pulse_calibration
+from libs.quantum_executor.quantify.device import apply_calibration, remove_elements
+from libs.quantum_executor.quantify.experiments import get_circuit_experiments
 from libs.quantum_executor.quantify.utils.config import (
     InstrumentConfig,
     QuantifyMetadata,
     load_quantify_config,
 )
 from libs.quantum_executor.utils.logger import ExperimentLogger
-from utils.compat import MeasurementMode, SPIMode
 
 from ...device_parameters import DeviceCalibration
 from .utils.calibration import recalibrate
@@ -107,7 +95,11 @@ class QuantifyExecutor(QuantumExecutor):
             calib_device_conf: the configuration file for the entire devices during calibration
             calib_spi_conf: the configuration file for the spi during calibration
             calib_seed_file: the calibration seed file
+
+        Raises:
+            FileNotFoundError: tergite-tuner's config {file} not found
         """
+        _check_tuner_configs_exist(calib_node_conf, calib_device_conf, calib_spi_conf)
         self.calib_seed_file = calib_seed_file
         self.calib_spi_conf = calib_spi_conf
         self.calib_device_conf = calib_device_conf
@@ -175,10 +167,7 @@ class QuantifyExecutor(QuantumExecutor):
             the calibration, with the frames and defcals where the device takes
             pulse-level jobs
         """
-        if self.backend_config.pulse_limits is None:
-            return calibration
-        frames, defcals = get_pulse_calibration(self.backend_config)
-        return calibration.model_copy(update={"frames": frames, "defcals": defcals})
+        return add_pulse_calibration(calibration, self.backend_config)
 
     def _connect_if_stale(self) -> None:
         """Connects the clusters and gets the quantum device anew, if a recalibration
@@ -214,39 +203,13 @@ class QuantifyExecutor(QuantumExecutor):
             UnsupportedCircuitError: a circuit has a gate or qubits the device lacks
         """
         self._connect_if_stale()
-        qubit_ids = self.backend_config.device_config.qubit_numbers
-        element_names = [get_element_name(qubit_id) for qubit_id in qubit_ids]
-        edge_names = get_edge_names(self._quantum_device)
-        measure_durations = self._get_measure_durations(element_names)
-        frames = DeviceFrames(
-            dt=self.backend_config.general_config.dt,
-            frequencies=get_frame_frequencies(self._quantum_device),
+        return get_circuit_experiments(
+            self._quantum_device,
+            self.backend_config,
+            self._compiler,
+            circuits,
+            native_config,
         )
-        compilation_config = self._quantum_device.generate_compilation_config()
-
-        experiments = []
-        for idx, circuit in enumerate(circuits):
-            native_circuit = to_native_circuit(
-                circuit, dt=self.backend_config.general_config.dt
-            )
-            schedule = get_circuit_schedule(
-                native_circuit,
-                native_config,
-                element_names=element_names,
-                edge_names=edge_names,
-                measure_durations=measure_durations,
-                frames=frames,
-            )
-            compiled = self._compiler.compile(schedule, config=compilation_config)
-            experiments.append(
-                CircuitExperiment(
-                    name=get_experiment_name(circuit.name, idx + 1),
-                    schedule=schedule,
-                    duration=compiled.duration,
-                    readout=native_circuit.to_readout(qubit_ids),
-                )
-            )
-        return experiments
 
     def run_native(
         self,
@@ -287,21 +250,6 @@ class QuantifyExecutor(QuantumExecutor):
         results = self._coordinator.retrieve_acquisition()
 
         return results
-
-    def _get_measure_durations(self, element_names: List[str]) -> Dict[str, float]:
-        """Gets the seconds each of the transmons' measurement takes, by its name, leaving
-        out those the device lacks, as their qubits are not calibrated"""
-        durations = {}
-        for name in element_names:
-            if name not in self._quantum_device.elements():
-                continue
-            measure = self._quantum_device.get_element(name).measure
-            durations[name] = get_measure_duration(
-                pulse_duration=measure.pulse_duration(),
-                acq_delay=measure.acq_delay(),
-                integration_time=measure.integration_time(),
-            )
-        return durations
 
     def _get_coordinator(self, should_reset_clusters: bool) -> InstrumentCoordinator:
         """Gets the coordinator of the executor's clusters, cached across executors of the
@@ -479,3 +427,14 @@ def _get_recalibration_cluster(
             f"but the quantify metadata lists {len(clusters)}"
         )
     return clusters[0] if clusters else None
+
+
+def _check_tuner_configs_exist(*files: Path | os.PathLike[str]) -> None:
+    """Checks that the configs of tergite-tuner, which recalibrates the device, exist
+
+    Raises:
+        FileNotFoundError: tergite-tuner's config {file} not found
+    """
+    for file in files:
+        if not Path(file).exists():
+            raise FileNotFoundError(f"tergite-tuner's config {file} not found")

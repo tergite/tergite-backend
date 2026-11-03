@@ -96,14 +96,10 @@ git clone git@github.com:tergite/tergite-backend.git
 cd tergite-backend
 ```
 
-- Install dependencies. Note that we can either use the simulators (`qiskit`) or connect to Qblox clusters (`quantify`).
-  To install for simulators, use `--extra qiskit` and to install for Qblox, use `--extra quantify`.  
-  **Take note that you cannot use both at the same time because they conflict with each other**.
+- Install dependencies, the same for devices on Qblox clusters and simulated ones
 
 ```shell
-uv sync --dev --extra quantify
-# or for simulators only
-# uv sync --dev --extra qiskit
+uv sync --dev
 ```
 
 - Activate your environment
@@ -138,23 +134,23 @@ pytest tests -m real_time
 ## How to Install as a Service
 
 - Download the package for your machine from the release, a deb for amd64 or a pkg for macOS
-  arm64: `tergite-backend` runs real devices through quantify, `tergite-backend-simulator` runs
-  the qiskit simulators. They install side by side.
+  arm64: `tergite-backend` runs devices on Qblox clusters and simulated ones.
 
 - Install it. A deb asks for a first backend instance: its name, which is its `DEFAULT_PREFIX`,
-  executor, port and MSS URL.
+  device, port and MSS URL.
 
 ```shell
 sudo apt install ./tergite-backend_<version>_amd64.deb
 ```
 
 - Create any other instance, or the first on macOS, which asks nothing.
-  `--executor`, `--port` and `--mss-url` override the defaults.
+  `--device` (`cluster`, the default, or `sim_1q` or `sim_2q`, a simulated device with one
+  transmon, or two and their coupler), `--port` and `--mss-url` override the defaults.
 
 ```shell
 sudo bcc-provision lab1
 # or for a simulator
-# sudo bcc.simulator-provision sim1 --executor qiskit_pulse_2q --port 8002
+# sudo bcc-provision sim1 --device sim_2q --port 8001
 ```
 
 - Edit the instance's configs in `/etc/bcc/<name>/` for the device, and its starting
@@ -166,7 +162,6 @@ sudo bcc-provision lab1
 
 ```shell
 sudo systemctl enable --now bcc@lab1
-# or for a simulator: bcc.simulator@sim1
 journalctl -u bcc@lab1 -f
 ```
 
@@ -188,16 +183,13 @@ git clone git@github.com:tergite/tergite-backend.git
 cd tergite-backend
 ```
 
-- Build the main.py file, which installs the dependencies of the executor first
+- Build the main.py file, which installs the dependencies first
 
 ```shell
 pkg/build.sh
-# or if you want the simulators, executor is qiskit
-# EXECUTOR=qiskit pkg/build.sh
 ```
 
-- After the build, the app will be at `main.dist/bcc` (or `main.dist/bcc.simulator` if EXECUTOR=qiskit), in
-  the folder it needs beside it. You can run it.
+- After the build, the app will be at `main.dist/bcc`, in the folder it needs beside it. You can run it.
 
 ```shell
 # serve the API, and run one heavy worker for preprocessing, executions and recalibrations

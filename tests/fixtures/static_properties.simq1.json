@@ -4,7 +4,7 @@
   "coordinates": [[0, 0]],
   "coupling_dict": {},
   "coupling_map": [[0, 0]],
-  "description": "A single transmon Hamiltonian with 4 levels",
+  "description": "A simulated transmon",
   "dt": 1e-9,
   "dtm": 1e-9,
   "gates": {

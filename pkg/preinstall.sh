@@ -1,5 +1,5 @@
 #!/bin/sh
-# Creates the bcc account both packages' instances run as, before the files land, so
+# Creates the bcc account the instances run as, before the files land, so
 # /etc/bcc can be its group's. It joins dialout, the SPI rack's serial device's group.
 
 set -e

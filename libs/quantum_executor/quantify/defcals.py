@@ -25,7 +25,7 @@ from quantify_scheduler.operations.gate_library import CZ, Rxy
 from quantify_scheduler.operations.operation import Operation
 from quantify_scheduler.schedules.schedule import ScheduleBase
 
-from libs.device_parameters import BackendConfig
+from libs.device_parameters import BackendConfig, DeviceCalibration
 from libs.device_parameters.dtos import GateDefcal, PulseFrame
 
 from ..base import gates
@@ -42,6 +42,27 @@ PORT_KINDS = {"mw": "drive", "res": "readout", "fl": "coupler"}
 CLOCK_KINDS = {"01": "drive", "ro": "readout", "cz": "coupler"}
 # what a published rz plays: the phase shift of quantify's Rz, as a cal block shifts it
 RZ_BODY = "shift_phase({frame}, theta);"
+
+
+def add_pulse_calibration(
+    calibration: DeviceCalibration, backend_config: BackendConfig
+) -> DeviceCalibration:
+    """Adds to the calibration the frames the device's pulse-level jobs may play on and its
+    gates' defcals, as its gate-level jobs play them; none if its backend config sets no
+    pulse limits, as it then takes no pulse-level jobs
+
+    Args:
+        calibration: the device's calibration, of the backend config
+        backend_config: the device's backend config
+
+    Returns:
+        the calibration, with the frames and defcals where the device takes pulse-level
+        jobs
+    """
+    if backend_config.pulse_limits is None:
+        return calibration
+    frames, defcals = get_pulse_calibration(backend_config)
+    return calibration.model_copy(update={"frames": frames, "defcals": defcals})
 
 
 def get_pulse_calibration(

@@ -44,13 +44,13 @@ def quantify_worker() -> Generator[TestWorker, Any, None]:
 
 
 @pytest.fixture
-def qiskit_1q_worker() -> Generator[TestWorker, Any, None]:
+def sim_1q_worker() -> Generator[TestWorker, Any, None]:
     """The worker of the 1-qubit simulator"""
     yield from _get_device_worker(TEST_DEFAULT_PREFIX_SIM_1Q)
 
 
 @pytest.fixture
-def qiskit_2q_worker() -> Generator[TestWorker, Any, None]:
+def sim_2q_worker() -> Generator[TestWorker, Any, None]:
     """The worker of the 2-qubit simulator"""
     yield from _get_device_worker(TEST_DEFAULT_PREFIX_SIM_2Q)
 

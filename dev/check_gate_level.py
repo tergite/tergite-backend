@@ -14,16 +14,16 @@
 Usage
 =====
 
-From the backend's folder, with the quantify extra installed, and the env file of each device
-as ``bcc start`` takes them:
+From the backend's folder, with the env file of each device as ``bcc start`` takes them:
 
     uv run python -m dev.check_gate_level loke.env thor.env
 
-For each device the quantify executor runs, it reports as errors what would fail its
-gate-level jobs or their counts, and as warnings what leaves them a gate fewer, or the device
-without pulse-level jobs; it exits 1 if it found an error. It compiles one circuit for each port and clock that gate-level jobs play,
-as a job does, so what the compiler refuses of the hardware config shows; and it checks the
-frequency each sequencer's NCO would get, which only the instrument refuses.
+For each device on clusters, it reports as errors what would fail its gate-level jobs or
+their counts, and as warnings what leaves them a gate fewer, or the device without
+pulse-level jobs; it exits 1 if it found an error. It compiles one circuit for each port and
+clock that gate-level jobs play, as a job does, so what the compiler refuses of the hardware
+config shows; and it checks the frequency each sequencer's NCO would get, which only the
+instrument refuses.
 """
 import math
 import sys
@@ -83,14 +83,14 @@ def check_device(settings: DeviceSettings) -> List[Finding]:
         settings: the device's settings, as read from its env file
 
     Returns:
-        what the check found; nothing for a device the simulators run, which compile
-        against their own models
+        what the check found; nothing for a simulated device, which has no hardware
+        config
     """
-    if settings.executor_type != "quantify":
-        return []
     backend_config = BackendConfig.from_toml(
         settings.backend_settings, seed_file=settings.calibration_seed
     )
+    if backend_config.simulator is not None:
+        return []
     hardware_config = load_quantify_config(settings.quantify_config_file)
     return check_configs(backend_config, hardware_config)
 

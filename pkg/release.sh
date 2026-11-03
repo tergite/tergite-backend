@@ -13,8 +13,6 @@ auth=(--header "JOB-TOKEN: $CI_JOB_TOKEN")
 links='[]'
 for file in $(cat published/*); do
 	case $file in
-	tergite-backend-simulator_*.deb) name="Simulator for Debian 13 and Ubuntu 24.04 onwards (amd64)" ;;
-	tergite-backend-simulator-*.pkg) name="Simulator for macOS (Apple silicon)" ;;
 	tergite-backend_*.deb) name="Backend for Debian 13 and Ubuntu 24.04 onwards (amd64)" ;;
 	tergite-backend-*.pkg) name="Backend for macOS (Apple silicon)" ;;
 	*) name=$file ;;
