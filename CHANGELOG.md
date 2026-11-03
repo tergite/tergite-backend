@@ -33,6 +33,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- Changed which qubit of a coupler gets each of its CZ's phase corrections to the roles tergite-tuner's device config
+  gives it, `control_qubit` and `target_qubit`, kept in the calibration; before, the even-numbered qubit was taken as the
+  control, so a device configured otherwise had its corrections swapped
 - Changed the `basis_gates` each device publishes to MSS to the gates gate-level jobs are transpiled to (rz, sx,
   x, rx, measure, reset and delay, and cz where it has couplers), from the names of its config's gate settings
 - Changed `POST /jobs` to take OpenQASM 3 circuits only, deleting the qobj path: an older SDK's qobj job is now

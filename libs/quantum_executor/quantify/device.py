@@ -191,7 +191,7 @@ def apply_calibration(device: QuantumDevice, backend_config: BackendConfig) -> N
             device, get_element_name(parent_id), get_element_name(child_id)
         )
         _set_edge(
-            edge, coupler, is_parent_control=_is_parent_control(parent_id, child_id)
+            edge, coupler, is_parent_control=_is_parent_control(coupler, parent_id)
         )
 
 
@@ -340,11 +340,10 @@ def _set_edge(
         edge.child_phase_correction(control_phase)
 
 
-def _is_parent_control(parent_id: int, child_id: int) -> bool:
-    """Whether the coupler's parent qubit is the control of its CZ, whose phase
-    corrections are calibrated by control and target: the even qubit controls, as the SDK
-    and the recalibration assume, and the parent where both or neither are even"""
-    return parent_id % 2 == 0 or child_id % 2 != 0
+def _is_parent_control(coupler: CouplerCalibration, parent_id: int) -> bool:
+    """Whether the coupler's parent qubit, the first of its name, is the control of its CZ,
+    as its calibration says, whose phase corrections are by control and target"""
+    return int(str(coupler.control_qubit).lstrip("q")) == parent_id
 
 
 def _set_if_given(

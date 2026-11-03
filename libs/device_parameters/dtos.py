@@ -386,9 +386,11 @@ class CouplerCalibration(BaseModel):
     target_rz_lambda: Optional[CalibrationValue] = None
     pulse_type: Optional[CalibrationValue[str]] = None
     id: Optional[int] = None
+    # its qubits' names joined by an underscore
     full_name: Optional[str] = None
-    """The name of the coupler in format {control_qubit}_{target_qubit}"""
-    # FIXME: This format is not being followed currently
+    # its qubits by role in its CZ, whose phase each of its corrections is
+    control_qubit: Optional[str] = None
+    target_qubit: Optional[str] = None
 
     @field_validator("id", mode="before")
     @classmethod
@@ -405,16 +407,17 @@ class CouplerCalibration(BaseModel):
             return int(v.lstrip("u"))
         return v
 
-    @field_validator("full_name", mode="before")
+    @field_validator("full_name", "control_qubit", "target_qubit", mode="before")
     @classmethod
     def validate_full_name(cls, v):
-        """Accepts the full name as is or as a calibration value
+        """Accepts the full name, or a qubit's name by role, as is or as a calibration
+        value
 
         Args:
-            v: the raw full name
+            v: the raw name
 
         Returns:
-            the full name
+            the name
         """
         if isinstance(v, dict):
             return v.get("value")
@@ -428,23 +431,13 @@ class CouplerCalibration(BaseModel):
             return None
         return f"u{self.id}"
 
-    @computed_field
-    @cached_property
-    def control_qubit(self) -> Optional[str]:
-        """The name of the control qubit, or None if there is no full name"""
-        # FIXME: the format '{control}_{target}' is not being used at the moment
-        if self.full_name is None:
-            return None
-        return self.full_name.split("_")[0]
-
-    @computed_field
-    @cached_property
-    def target_qubit(self) -> Optional[str]:
-        """The name of the target qubit, or None if there is no full name"""
-        # FIXME: the format '{control}_{target}' is not being used at the moment
-        if self.full_name is None:
-            return None
-        return self.full_name.split("_")[1]
+    @model_validator(mode="after")
+    def set_roles(self) -> Self:
+        """Takes the qubits' roles in the order of the full name where the calibration
+        does not give them, as a seed older than the roles does not"""
+        if self.full_name is not None and self.control_qubit is None:
+            self.control_qubit, self.target_qubit = self.full_name.split("_")
+        return self
 
     @classmethod
     def from_calib_config(
@@ -485,6 +478,7 @@ class CouplerCalibration(BaseModel):
         calib_results: "CalibrationResults",
         name_id_map: Dict[str, int],
         reverse_phase_qubits: Tuple[str, ...] = (),
+        coupler_roles: Optional[Dict[str, Tuple[str, str]]] = None,
         **kwargs,
     ) -> List["CouplerCalibration"]:
         """Generates new instances of CouplerCalibration from the calibration results
@@ -495,6 +489,9 @@ class CouplerCalibration(BaseModel):
                     in calibration to their index in BCC
             reverse_phase_qubits: the qubits that have the reverse phase of what
                 they should have phase on the couplers
+            coupler_roles: each coupler's control and target qubits, by its name, as
+                tergite-tuner's device config gives them; a coupler without them takes
+                the order of its name
             kwargs: extra args like:
                 coupler_index_map (dict[str, int]): the required map for the names of couplers
                     in calibration to their index in BCC
@@ -510,14 +507,19 @@ class CouplerCalibration(BaseModel):
                 # ignore couplers missing in the map
                 continue
 
+            control_qubit, target_qubit = (coupler_roles or {}).get(
+                coupler, coupler.split("_")
+            )
             control_phase, target_phase = _get_local_phases(
-                coupler, item, reverse_phase_qubits
+                (control_qubit, target_qubit), item, reverse_phase_qubits
             )
 
             results.append(
                 CouplerCalibration(
                     id=bcc_coupler_idx,
                     full_name=coupler,
+                    control_qubit=control_qubit,
+                    target_qubit=target_qubit,
                     # correcting the frequency by the downconvert frequency
                     frequency=CalibrationValue.from_scalar(
                         value=_DOWNCONVERT_FREQUENCY - item.cz_pulse_frequency,
@@ -601,6 +603,9 @@ class DeviceCalibration(BaseModel):
         with suppress(KeyError, IndexError, TypeError):
             coupler_units = units["couplers"][0]
             coupler_units.pop("id")
+            # names, not values with units
+            coupler_units.pop("control_qubit", None)
+            coupler_units.pop("target_qubit", None)
         with suppress(KeyError, IndexError, TypeError):
             resonator_units = units["resonators"][0]
             resonator_units.pop("id")
@@ -652,6 +657,7 @@ class DeviceCalibration(BaseModel):
         calib_results: "CalibrationResults",
         name_id_map: Dict[str, int],
         reverse_phase_qubits: Tuple[str, ...] = (),
+        coupler_roles: Optional[Dict[str, Tuple[str, str]]] = None,
         **kwargs: Any,
     ) -> "DeviceCalibration":
         """Generates a new instance of DeviceCalibration from the calibration results
@@ -661,6 +667,8 @@ class DeviceCalibration(BaseModel):
             name_id_map: the map for the names of couplers/qubits
                     in calibration calib_results to their identifier in BCC
             reverse_phase_qubits: the qubits that have their phases reversed on couplers
+            coupler_roles: each coupler's control and target qubits, by its name, as
+                tergite-tuner's device config gives them
             kwargs: extra args like:
 
             kwargs: extra args to add to the DeviceCalibration
@@ -679,6 +687,7 @@ class DeviceCalibration(BaseModel):
                 calib_results,
                 name_id_map=name_id_map,
                 reverse_phase_qubits=reverse_phase_qubits,
+                coupler_roles=coupler_roles,
             ),
             discriminators={
                 "lda": {
@@ -1026,38 +1035,29 @@ class BackendConfig(BaseModel):
 
 
 def _get_local_phases(
-    coupler: str,
+    roles: Tuple[str, str],
     coupler_results: "CouplerResults",
     reverse_phase_qubits: Tuple[str, ...],
 ) -> Tuple[float, float]:
-    """Gets the local phases in radians for given the coupler_results from tergite-tuner
+    """Gets the phase corrections of a coupler's CZ in radians, from tergite-tuner's
+    results, negated for the qubits whose phase is the reverse of what it should be
 
     Args:
-        coupler: the coupler name
+        roles: the coupler's control qubit and target qubit
         coupler_results: the coupler's results from tergite-tuner
-        reverse_phase_qubits: the qubits that have the reverse phase of what they sh
-            should have phase on their couplers
+        reverse_phase_qubits: the qubits that have the reverse of the phase they should
+            have on their couplers
 
     Returns:
-        tuple of (control_qubit_local_phase, target_qubit_local_phase)
+        the control qubit's correction and the target qubit's
     """
+    control_qubit, target_qubit = roles
     control_phase = coupler_results.cz_dynamic_control
     target_phase = coupler_results.cz_dynamic_target
-
-    q1, q2 = coupler.split("_")
-    affected_qubits = set(reverse_phase_qubits) & {q1, q2}
-
-    # flip phases of the affected qubits
-    for q in affected_qubits:
-        # FIXME: Major assumption: the even qubit is the control one,
-        #  and the odd is target
-        idx = int(q.lstrip("q"))
-        is_even = idx % 2 == 0
-        if is_even:
-            control_phase = -control_phase
-        else:
-            target_phase = -target_phase
-
+    if control_qubit in reverse_phase_qubits:
+        control_phase = -control_phase
+    if target_qubit in reverse_phase_qubits:
+        target_phase = -target_phase
     return np.deg2rad(control_phase), np.deg2rad(target_phase)
 
 

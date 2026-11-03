@@ -48,11 +48,10 @@ cz_pulse_width = 4e-9
 
 [device.coupler.q12_q13]
 parking_current = 0
-# the even qubit controls, as the backend takes the tuner's phase corrections; the chip's
-# CZ swaps |11> with |02>, the target's |2>
-control_qubit = "q12"
-target_qubit = "q13"
-cz_phase_path = "via_02"
+# the chip's CZ swaps |11> with |02>, q13 going to |2>: the control's |2> via 20
+control_qubit = "q13"
+target_qubit = "q12"
+cz_phase_path = "via_20"
 cz_pulse_frequency = 489.6e6
 cz_pulse_duration = 300e-9
 cz_half_duration = 150e-9
