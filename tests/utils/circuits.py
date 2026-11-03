@@ -9,14 +9,27 @@
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
-"""Gate-level circuits and jobs, and the unitaries of native gates"""
+"""Gate-level circuits and jobs, the seed they run on, and the unitaries of native gates"""
 import uuid
 from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
+import toml
 
 from libs.quantum_executor.base import gates
+from tests.utils.env import TEST_QUANTIFY_SEED_FILE
 
+# frequencies within reach of the dummy hardware config's local oscillators, which the
+# test seed's q13 and q14 are not, and a coupler of q12 and q13 whose CZ plays a pulse
+REACHABLE_QUBIT_FREQUENCIES = {"q13": 5.2e9, "q14": 4.7e9}
+REACHABLE_READOUT_FREQUENCIES = {"q13": 7.2e9, "q14": 7.1e9}
+PLAYED_COUPLER = {
+    "frequency": 4.0e9,
+    "cz_pulse_amplitude": 0.1,
+    "cz_pulse_duration_before": 8e-9,
+    "cz_pulse_duration_rise": 24e-9,
+    "cz_pulse_duration_constant": 200e-9,
+}
 _IDENTITY = np.eye(2, dtype=complex)
 _PAULI_X = np.array([[0, 1], [1, 0]], dtype=complex)
 _PAULI_Y = np.array([[0, -1j], [1j, 0]], dtype=complex)
@@ -84,6 +97,27 @@ def get_circuit_job(
             "meas_return": meas_return,
         },
     }
+
+
+def get_gate_level_seed() -> Dict[str, Any]:
+    """Gets the test seed, its qubits' frequencies reachable on the dummy clusters and its
+    first coupler, of q12 and q13, calibrated
+
+    Returns:
+        the seed, as toml loads it
+    """
+    seed = toml.load(TEST_QUANTIFY_SEED_FILE)
+    calibration = seed["calibration_config"]
+    for qubit in calibration["qubit"]:
+        qubit["frequency"] = REACHABLE_QUBIT_FREQUENCIES.get(
+            qubit["id"], qubit["frequency"]
+        )
+    for resonator in calibration["readout_resonator"]:
+        resonator["frequency"] = REACHABLE_READOUT_FREQUENCIES.get(
+            resonator["id"], resonator["frequency"]
+        )
+    calibration["coupler"][0].update(PLAYED_COUPLER)
+    return seed
 
 
 def get_unitary(native_gates: Sequence[gates.Gate], num_qubits: int) -> np.ndarray:
