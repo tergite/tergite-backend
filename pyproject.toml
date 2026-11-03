@@ -74,6 +74,8 @@ dependencies = [
     "xarray",
     # the simulators' master equation
     "qutip>=5.3,<6",
+    # the simulators keep BLAS to one thread
+    "threadpoolctl>=3.1",
 ]
 
 [dependency-groups]

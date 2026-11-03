@@ -20,6 +20,7 @@ from quantify_core.data.handling import set_datadir
 from quantify_scheduler import Schedule
 from quantify_scheduler.backends.graph_compilation import SerialCompiler
 from quantify_scheduler.device_under_test.quantum_device import QuantumDevice
+from threadpoolctl import threadpool_limits
 
 from libs.device_parameters import BackendConfig, DeviceCalibration
 
@@ -55,6 +56,10 @@ class QutipExecutor(QuantumExecutor):
         """
         set_datadir(data_dir)
         super().__init__(data_dir=data_dir, backend_config=backend_config)
+        # BLAS starts a thread for each core it sees, which, under a CPU quota or beside
+        # another simulated device, starve one another on the simulator's small matrices,
+        # which one thread multiplies fastest anyway
+        threadpool_limits(limits=1)
         name = backend_config.general_config.name
         # its own name, as QCoDeS names instruments for the whole process
         self._quantum_device = QuantumDevice(f"{name}_simulated_{uuid.uuid4().hex}")
