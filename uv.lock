@@ -2758,6 +2758,31 @@ wheels = [
 ]
 
 [[package]]
+name = "qutip"
+version = "5.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", version = "2.4.4", source = { registry = "https://pypi.org/simple" } },
+    { name = "packaging" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d5/9e/7a864718df6aec8d37ce43279f4f9edc6edc1235b1114ae25c128c6c9f82/qutip-5.3.1.tar.gz", hash = "sha256:056206b40cbe97c3c7e4f85eff11873406669cd72b2db039fa1a3812767395e9", size = 6931453, upload-time = "2026-08-04T04:35:22.044Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d5/68/2fe03b6525a135e53b4a637aea8ab555fc3e78fc3854371f652f45c870c9/qutip-5.3.1-cp313-cp313-macosx_10_13_x86_64.whl", hash = "sha256:de0a97c26817c1937606d30dcae2246acb3eae45bce826e29d3fc7cccb50acb1", size = 10253227, upload-time = "2026-08-04T04:34:48.339Z" },
+    { url = "https://files.pythonhosted.org/packages/65/47/fed03ed6fb5242dde9bdc6081633598c39c2be9c3b9e0bc7c37e35914cc5/qutip-5.3.1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:8e6070cc3ca6f1d006fbecb4a357eecc7e1420016579719925d0cdf93abb37b8", size = 10168933, upload-time = "2026-08-04T04:34:51.274Z" },
+    { url = "https://files.pythonhosted.org/packages/a3/61/9cb2a2125e034e7bd10e1e15d805ac051767a10933bfb0274285fdc57b98/qutip-5.3.1-cp313-cp313-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:45ed41d771fb2aa250fca920af8604affde55563cbe1921280f585bd86ba3a17", size = 28214089, upload-time = "2026-08-04T04:34:55.028Z" },
+    { url = "https://files.pythonhosted.org/packages/81/85/94a0f48707f1101a971aa410a34ae68f6ef233d2254d96eb9a482f95fb4c/qutip-5.3.1-cp313-cp313-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:a95248e9d06f2d6d7ca9ccdcb77c184066a4e4284eb97408f0354a705043c8cd", size = 28530702, upload-time = "2026-08-04T04:34:58.492Z" },
+    { url = "https://files.pythonhosted.org/packages/d5/5b/60d6dce22e7565d9b9c2f3350a1d5c04d0ab927a404b0da153098ef0d822/qutip-5.3.1-cp313-cp313-win_amd64.whl", hash = "sha256:5b3f95ceb0b7c4c0003c82f3022b674e1881bd40e8b0728305efc59605c05ac5", size = 9844378, upload-time = "2026-08-04T04:35:01.191Z" },
+    { url = "https://files.pythonhosted.org/packages/aa/0f/af06dd5f6301ab02c62557a3890a599427f25ff0f1871c3a70bd86c7349f/qutip-5.3.1-cp313-cp313-win_arm64.whl", hash = "sha256:34abc3daf2dd7c73514e39cbece84076e9a27fe8abfc3f051004b263c4289cdd", size = 9419078, upload-time = "2026-08-04T04:35:03.626Z" },
+    { url = "https://files.pythonhosted.org/packages/96/95/3791a66a05294d0a5afb3f9b0a640fd9a7772688e844156317c19dca4a3b/qutip-5.3.1-cp314-cp314-macosx_10_15_x86_64.whl", hash = "sha256:2ad0a6e5098a2e6390cf939cecef09082d49e558d6d2750e3cceb9672aa3ed67", size = 10380334, upload-time = "2026-08-04T04:35:06.005Z" },
+    { url = "https://files.pythonhosted.org/packages/ce/c2/4c0c5749464729372f7b5570e9d8676f67d8b4af9b202dbe122677c4f4a2/qutip-5.3.1-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:624f738f284579b24757b741dbca898d371450f13dcb4100a3a3031da44335f2", size = 10317471, upload-time = "2026-08-04T04:35:08.254Z" },
+    { url = "https://files.pythonhosted.org/packages/66/19/493e14c9865c6af439c4b8d24f330bf4be5a751b3e30f28978c769674dbe/qutip-5.3.1-cp314-cp314-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:b6c1f2119ad530764dea638b65bec0843f63164bb4bdc3d6404e2084d486fd6a", size = 28209297, upload-time = "2026-08-04T04:35:11.388Z" },
+    { url = "https://files.pythonhosted.org/packages/2c/74/8ec1e89ea6acdd98e207ed65a455f6cbad9722d4d6d779e8b60cdaaff168/qutip-5.3.1-cp314-cp314-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:252db589f736318540bd8e04b5162273aaab4e96a78beda6bb941c4865c2f58a", size = 28474728, upload-time = "2026-08-04T04:35:14.774Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/d4/bc9f58aebc04963b838f1b7be62392515487e395f4c152cfe944adc83019/qutip-5.3.1-cp314-cp314-win_amd64.whl", hash = "sha256:7b891aa2cc71377a8870d3b33d1616874f7308fb93e75c72fce51377ddc084cd", size = 9989879, upload-time = "2026-08-04T04:35:17.443Z" },
+    { url = "https://files.pythonhosted.org/packages/af/f1/48e5571ce69dda9c89f10c4a6efe527deb15042a36b8b123c631df82ff8f/qutip-5.3.1-cp314-cp314-win_arm64.whl", hash = "sha256:c09c138c81fd2187e5d34d37e9ecc62eae9004ba3b801caf732cca093da59462", size = 9572801, upload-time = "2026-08-04T04:35:20.024Z" },
+]
+
+[[package]]
 name = "referencing"
 version = "0.37.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3330,6 +3355,7 @@ quantify = [
     { name = "qblox-instruments" },
     { name = "quantify-core" },
     { name = "quantify-scheduler" },
+    { name = "qutip" },
     { name = "tergite-tuner" },
     { name = "xarray" },
 ]
@@ -3376,6 +3402,7 @@ requires-dist = [
     { name = "qiskit-dynamics", marker = "extra == 'qiskit'", specifier = ">=0.5.1,<0.6.0" },
     { name = "quantify-core", marker = "extra == 'quantify'", specifier = ">=0.8.1" },
     { name = "quantify-scheduler", marker = "extra == 'quantify'", specifier = "~=0.22.2" },
+    { name = "qutip", marker = "extra == 'quantify'", specifier = ">=5.3,<6" },
     { name = "scikit-learn", marker = "extra == 'qiskit'" },
     { name = "sqlmodel", specifier = "~=0.0.24" },
     { name = "starlette", specifier = "~=0.48.0" },

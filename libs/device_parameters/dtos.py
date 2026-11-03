@@ -812,6 +812,18 @@ class PulseLimits(BaseModel):
     max_capture_duration: _NonNegative
 
 
+class SimulatorConfig(BaseModel):
+    """How a simulated device reads its qubits out, which its backend config's simulator
+    section sets; a device with one runs its jobs on QuTiP, not on clusters"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # each qubit's IQ point of state 0 and of state 1, by its id, e.g. {"q0": [[1, 0], [-1, 0]]}
+    readout_iq: Dict[str, Tuple[Tuple[float, float], Tuple[float, float]]]
+    # the standard deviation of a shot's I, and of its Q, about its state's point
+    readout_noise: _NonNegative
+
+
 class BackendConfig(BaseModel):
     """The configration as read from the file"""
 
@@ -822,6 +834,8 @@ class BackendConfig(BaseModel):
     calibration_config: Optional[_BackendCalibrationConfig] = None
     # none takes no pulse-level jobs
     pulse_limits: Optional[PulseLimits] = None
+    # a simulated device's; none of one on clusters
+    simulator: Optional[SimulatorConfig] = None
 
     @classmethod
     def from_toml(cls, file: PathLike, seed_file: PathLike):
@@ -852,6 +866,7 @@ class BackendConfig(BaseModel):
             gates={k: dict(v) for k, v in config.get("gates", {}).items()},
             calibration_config=calibration_config,
             pulse_limits=config.get("pulse_limits"),
+            simulator=config.get("simulator"),
         )
 
     @model_validator(mode="after")

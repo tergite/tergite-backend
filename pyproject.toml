@@ -78,6 +78,8 @@ quantify = [
     "networkx~=3.4.2",
     "h5py>=3.14.0",
     "xarray",
+    # the simulators' master equation
+    "qutip>=5.3,<6",
 ]
 qiskit = [
     "qiskit-dynamics>=0.5.1,<0.6.0",
