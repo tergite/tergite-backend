@@ -67,7 +67,7 @@ class Transmon:
         populations = np.clip(state.reshape(LEVELS, LEVELS).diagonal().real, 0, None)
         return populations / populations.sum()
 
-    def idle(self, state: np.ndarray, samples: int) -> np.ndarray:
+    def apply_idle(self, state: np.ndarray, samples: int) -> np.ndarray:
         """Evolves the state, undriven, for the samples
 
         Args:
@@ -84,7 +84,7 @@ class Transmon:
             _keep(self._idles, samples, propagator)
         return propagator @ state
 
-    def drive(
+    def apply_drive(
         self,
         state: np.ndarray,
         samples: np.ndarray,

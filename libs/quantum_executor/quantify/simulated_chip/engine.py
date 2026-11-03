@@ -78,7 +78,7 @@ class SimulatedChip:
         self._transmons = {name: Transmon(qubit) for name, qubit in chip.qubits.items()}
         self._responses: Dict[Hashable, np.ndarray] = {}
 
-    def play(self, compiled: ScheduleBase) -> Dict[int, AcquiredChannel]:
+    def run(self, compiled: ScheduleBase) -> Dict[int, AcquiredChannel]:
         """Plays the compiled schedule and reads out its acquisitions
 
         Args:
@@ -101,7 +101,7 @@ class SimulatedChip:
         clocks = Clocks(timeline)
         populations: Dict[Acquisition, np.ndarray] = {}
         for name in _get_elements(timeline):
-            populations.update(self._evolve(name, timeline, clocks))
+            populations.update(self._compute_populations(name, timeline, clocks))
         readouts = _get_port_pulses(timeline, _READOUT_PORT)
         responses = {
             acquisition: self._get_responses(acquisition, readouts, clocks)
@@ -109,7 +109,7 @@ class SimulatedChip:
         }
         return self._read_out(timeline, populations, responses)
 
-    def _evolve(
+    def _compute_populations(
         self, name: str, timeline: Timeline, clocks: Clocks
     ) -> Dict[Acquisition, np.ndarray]:
         """Evolves the transmon from |0> through what plays on it, and gets the
@@ -129,7 +129,7 @@ class SimulatedChip:
         populations = {}
         for start, _, event in _get_events(name, timeline):
             if start > now:
-                state, now = transmon.idle(state, start - now), start
+                state, now = transmon.apply_idle(state, start - now), start
             if isinstance(event, Reset):
                 state, is_read = transmon.get_ground_state(), False
             elif isinstance(event, Acquisition):
@@ -144,7 +144,7 @@ class SimulatedChip:
                 frequency = clocks.get_frequency(event.clock, start)
                 phase = clocks.get_phases(event.clock, np.array([start]))[0]
                 phase = (phase - get_turns(frame, start)) % 1.0
-                state = transmon.drive(
+                state = transmon.apply_drive(
                     state, event.samples, event.key, frequency - frame, phase
                 )
                 now = event.end
@@ -206,16 +206,16 @@ class SimulatedChip:
                     "and clock, which the clusters' sequencers cannot tell apart"
                 )
             if bin_modes == {BinMode.AVERAGE}:
-                acquired[channel] = self._average(
+                acquired[channel] = self._get_averages(
                     acquisitions, timeline.repetitions, populations, responses
                 )
             else:
-                acquired[channel] = self._append(
+                acquired[channel] = self._get_shots(
                     acquisitions, timeline.repetitions, populations, responses
                 )
         return acquired
 
-    def _average(
+    def _get_averages(
         self,
         acquisitions: List[Acquisition],
         repetitions: int,
@@ -242,7 +242,7 @@ class SimulatedChip:
         values += deviations * (self._rng.normal(size=(len(indices), 2)) @ [1, 1j])
         return AcquiredChannel(BinMode.AVERAGE, indices, values)
 
-    def _append(
+    def _get_shots(
         self,
         acquisitions: List[Acquisition],
         repetitions: int,

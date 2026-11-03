@@ -254,7 +254,7 @@ def _play(device, chip: SimulatedChip, schedule: Schedule):
     compiled = SerialCompiler("test").compile(
         schedule, config=device.generate_compilation_config()
     )
-    return chip.play(compiled)
+    return chip.run(compiled)
 
 
 def _get_excited(device, chip: SimulatedChip, schedule: Schedule) -> np.ndarray:

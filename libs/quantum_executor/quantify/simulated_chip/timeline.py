@@ -54,7 +54,7 @@ class ClockChange:
 
     start: int
     clock: str
-    reset: bool = False
+    is_reset: bool = False
     phase_shift: float = 0.0
     frequency: Optional[float] = None
     is_frequency_set: bool = False
@@ -135,7 +135,7 @@ class Clocks:
                 continue
             start, phase, frequency = self._get_state(change.clock, change.start)
             phase = _get_phase(phase, frequency, change.start - start)
-            if change.reset:
+            if change.is_reset:
                 phase = 0.0
             phase = (phase + change.phase_shift) % 1.0
             if change.is_frequency_set:
@@ -295,7 +295,7 @@ def _add_pulse_info(
         amplitude = complex(info["offset_path_I"], info["offset_path_Q"])
         offsets.setdefault((info["port"], clock), []).append((start, amplitude))
     elif info.get("reset_clock_phase"):
-        timeline.clock_changes.append(ClockChange(start, clock, reset=True))
+        timeline.clock_changes.append(ClockChange(start, clock, is_reset=True))
     elif "phase_shift" in info:
         # a shift turns the carrier back, so that it turns later pulses' axes the other
         # way from their own phase, as a virtual Z of quantify's gates does
@@ -358,18 +358,22 @@ def _get_samples(key: Hashable, info: Dict[str, Any]) -> np.ndarray:
 def _get_key(info: Dict[str, Any]) -> Hashable:
     """Gets a key of what the pulse info plays, wherever it starts"""
     return tuple(
-        (name, _freeze(value)) for name, value in sorted(info.items()) if name != "t0"
+        (name, _get_hashable(value))
+        for name, value in sorted(info.items())
+        if name != "t0"
     )
 
 
-def _freeze(value: Any) -> Hashable:
+def _get_hashable(value: Any) -> Hashable:
     """Gets a hashable of the value, an array by its bytes"""
     if isinstance(value, np.ndarray):
         return value.dtype.str, value.shape, value.tobytes()
     if isinstance(value, (list, tuple)):
-        return tuple(_freeze(item) for item in value)
+        return tuple(_get_hashable(item) for item in value)
     if isinstance(value, dict):
-        return tuple((name, _freeze(item)) for name, item in sorted(value.items()))
+        return tuple(
+            (name, _get_hashable(item)) for name, item in sorted(value.items())
+        )
     return value
 
 

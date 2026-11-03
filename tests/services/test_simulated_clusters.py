@@ -105,7 +105,7 @@ def test_the_clusters_return_the_chips_acquisitions_as_quantify_shapes_them(
 
     assert values.dims == expected_dims
     shots = np.asarray(values).reshape(-1, 2)
-    expected = executor._chip.play(compiled)[0].values.reshape(-1, 2)
+    expected = executor._chip.run(compiled)[0].values.reshape(-1, 2)
     # the chip's |1> and |0> responses, whatever the noise of its shots
     assert np.allclose(shots.mean(axis=0), expected.mean(axis=0), atol=2e-3)
     assert abs(shots[:, 0].mean() - shots[:, 1].mean()) > 5e-3

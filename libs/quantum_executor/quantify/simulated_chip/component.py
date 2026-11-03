@@ -59,7 +59,7 @@ class SimulatingClusterComponent(ClusterComponent):
                 cannot play
         """
         super().prepare(options)
-        acquired = self.chip.play(_get_prepared_schedule(self.instrument.name, options))
+        acquired = self.chip.run(_get_prepared_schedule(self.instrument.name, options))
         for name, module in options.items():
             if isinstance(module, dict) and "acq_metadata" in module:
                 _load_module(self.instrument, name, module, acquired)
