@@ -116,11 +116,21 @@ def get_raw_jobs(job_template: dict, durations: List[float]) -> List[dict]:
         new_job = copy.deepcopy(job_template)
         new_job["job_id"] = f"{uuid4()}"
 
-        with suppress(TypeError, KeyError):
-            new_job["params"]["qobj"]["header"]["test_duration"] = duration
+        with suppress(TypeError, KeyError, IndexError):
+            set_test_duration(new_job, duration)
 
         raw_jobs.append(new_job)
     return raw_jobs
+
+
+def get_test_duration(job: Dict[str, Any]) -> float:
+    """Gets the seconds the job takes in the tests, from its first circuit's metadata"""
+    return job["params"]["circuits"][0]["metadata"]["test_duration"]
+
+
+def set_test_duration(job: Dict[str, Any], duration: float) -> None:
+    """Makes the job take the seconds in the tests, in its first circuit's metadata"""
+    job["params"]["circuits"][0]["metadata"]["test_duration"] = duration
 
 
 def get_stored_jobs() -> List[Job]:
