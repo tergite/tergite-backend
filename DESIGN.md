@@ -714,10 +714,12 @@ A job file's `params` are one of two (`JobFile` in
 [services/scheduler/dtos.py](services/scheduler/dtos.py), told apart by their key):
 
 - **`circuits`, a gate-level job** (`CircuitJobParams`): OpenQASM 3 circuits, with `shots`,
-  `meas_level` 1 or 2 and `meas_return`. `base/qasm.py` parses each with `qiskit.qasm3` and
-  translates its gates into native ones (`base/gates.py`: `Rxy`, `Rz`, `CZ`, `Measure`,
-  `Reset`, `Delay`, `Barrier`), decomposing the rest; circuit qubit `i` is the device's `i`-th
-  qubit by the number in its id. The executor compiles them with the device's own calibration:
+  `meas_level` 1 or 2 and `meas_return`. `base/qasm.py` parses each with `openpulse`, which
+  reads OpenQASM 3 and the OpenPulse it may hold, and translates its gates into native ones
+  (`base/gates.py`: `Rxy`, `Rz`, `CZ`, `Measure`, `Reset`, `Delay`, `Barrier`), decomposing the
+  rest by a table, by the program's own gate definitions, or by those of OpenQASM's
+  `stdgates.inc`; control flow, gate modifiers and, as yet, `cal` and `defcal` blocks are
+  refused. Circuit qubit `i` is the device's `i`-th qubit by the number in its id. The executor compiles them with the device's own calibration:
   quantify against a `QuantumDevice` of a transmon per qubit and a `CouplerEdge` per coupler
   (`quantify/device.py`), each shot after the qobj path's idle and its operations one after the
   other but for consecutive measurements, or delays, of distinct qubits, which start together;

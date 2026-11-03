@@ -136,6 +136,37 @@ def get_unitary(native_gates: Sequence[gates.Gate], num_qubits: int) -> np.ndarr
     return unitary
 
 
+def get_operator(
+    matrix: np.ndarray, qubits: Sequence[int], num_qubits: int
+) -> np.ndarray:
+    """Gets the unitary of a gate's matrix on the qubits, the others left alone, qubit 0 the
+    least significant as in get_unitary
+
+    Args:
+        matrix: the gate's matrix, its first qubit the most significant, as a controlled
+            gate is written with its control first
+        qubits: the qubits it acts on, in the order of its matrix
+        num_qubits: the number of qubits of the circuit
+
+    Returns:
+        the unitary
+    """
+    width = len(qubits)
+    unitary = np.zeros((2**num_qubits, 2**num_qubits), dtype=complex)
+    for column in range(2**num_qubits):
+        sub_column = sum(
+            ((column >> qubit) & 1) << (width - 1 - position)
+            for position, qubit in enumerate(qubits)
+        )
+        for sub_row in range(2**width):
+            row = column
+            for position, qubit in enumerate(qubits):
+                bit = (sub_row >> (width - 1 - position)) & 1
+                row = (row & ~(1 << qubit)) | (bit << qubit)
+            unitary[row, column] += matrix[sub_row, sub_column]
+    return unitary
+
+
 def is_equal_up_to_phase(first: np.ndarray, second: np.ndarray) -> bool:
     """Whether two unitaries differ by a global phase at most
 
