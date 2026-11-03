@@ -78,12 +78,14 @@ def calibrated_device(calibrated_backend_config) -> Generator[Any, Any, None]:
 
 
 def test_each_shot_starts_after_the_qubits_relax(quantum_device):
-    """The first operation of a shot waits as long as the qobj path's first ones do, so
-    that a shot does not start in the state the last one left"""
+    """The first operation of a shot waits INITIAL_RESET_VALUE, so that a shot does not
+    start in the state the last one left"""
     from quantify_scheduler.backends.graph_compilation import SerialCompiler
 
-    from libs.quantum_executor.quantify.circuits import get_circuit_schedule
-    from libs.quantum_executor.quantify.instruction import INITIAL_RESET_VALUE
+    from libs.quantum_executor.quantify.circuits import (
+        INITIAL_RESET_VALUE,
+        get_circuit_schedule,
+    )
 
     circuit = _get_circuit([gates.Measure(qubit=0, clbit=0, channel=0)])
     schedule = get_circuit_schedule(
@@ -401,7 +403,7 @@ def _get_start_times(quantum_device, circuit: gates.NativeCircuit) -> List[float
     compiled = SerialCompiler("test").compile(
         schedule, config=quantum_device.generate_compilation_config()
     )
-    from libs.quantum_executor.quantify.instruction import INITIAL_RESET_VALUE
+    from libs.quantum_executor.quantify.circuits import INITIAL_RESET_VALUE
 
     _, *times = [
         compiled.schedulables[label]["abs_time"] for label in schedule.schedulables

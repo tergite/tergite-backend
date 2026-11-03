@@ -26,21 +26,12 @@ from typing import Iterator, Optional
 from pydantic import ValidationError
 
 from libs.device_parameters import DeviceCalibration
-from libs.qiskit.qobj import PulseQobj
-from libs.qiskit_providers.utils import json_decoder
-from libs.quantum_executor.base.circuits import CircuitJobParams
-from libs.quantum_executor.base.executor import (
-    preprocess_circuits,
-    preprocess_qobj,
-    run_job,
-)
+from libs.quantum_executor.base.executor import preprocess_circuits, run_job
 from libs.quantum_executor.base.quantum_job import (
     MeasLvl,
     discriminate_circuit_results,
-    discriminate_results,
     get_circuit_iq_memory,
     read_job_from_hdf5,
-    xarray_to_list,
 )
 from libs.quantum_executor.base.quantum_job.dtos import QuantumJob
 from libs.queues.dtos import Job, JobStatus, Memory, Stage
@@ -55,7 +46,6 @@ from .dtos import JobFile
 from .resources import DeviceResources
 from .utils import (
     apply_linear_discriminator,
-    decompress_qobj,
     mark_job_failed,
     move_file,
     update_job_in_mss,
@@ -197,25 +187,11 @@ def _read_job_file(job_file: Path) -> JobFile:
 
 
 def _estimate_duration(device: DeviceResources, job_file: JobFile) -> float:
-    """Compiles the job's qobj, or its circuits, on the executor, and gets the seconds it
-    would take"""
-    if isinstance(job_file.params, CircuitJobParams):
-        with device.executor_lock:
-            duration, _ = preprocess_circuits(
-                device.executor,
-                job_file.params,
-                job_id=job_file.job_id,
-                results_folder=device.settings.preprocessed_job_pool,
-            )
-        return duration
-
-    qobj = decompress_qobj(job_file.model_dump()["params"]["qobj"])
-    # In-place decode complex values: [[a,b],[c,d],...] -> [a + ib,c + id,...]
-    json_decoder.decode_pulse_qobj(qobj)
+    """Compiles the job's circuits on the executor, and gets the seconds they would take"""
     with device.executor_lock:
-        duration, _ = preprocess_qobj(
+        duration, _ = preprocess_circuits(
             device.executor,
-            PulseQobj.from_dict(qobj),
+            job_file.params,
             job_id=job_file.job_id,
             results_folder=device.settings.preprocessed_job_pool,
         )
@@ -231,20 +207,11 @@ def _get_memory(
     Raises:
         NotImplementedError: meas_level {meas_level} is not supported
     """
-    is_gate_level = quantum_job.readouts is not None
     if quantum_job.meas_level == MeasLvl.DISCRIMINATED:
         discriminator = functools.partial(apply_linear_discriminator, calibration)
-        if is_gate_level:
-            return discriminate_circuit_results(
-                quantum_job, discriminator=discriminator
-            )
-        return discriminate_results(
-            quantum_job, discriminator=discriminator, calibration=calibration
-        )
+        return discriminate_circuit_results(quantum_job, discriminator=discriminator)
     if quantum_job.meas_level == MeasLvl.INTEGRATED:
-        if is_gate_level:
-            return get_circuit_iq_memory(quantum_job)
-        return xarray_to_list(quantum_job)
+        return get_circuit_iq_memory(quantum_job)
     raise NotImplementedError(f"meas_level {quantum_job.meas_level} is not supported")
 
 

@@ -16,14 +16,13 @@
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Tuple
+from typing import TYPE_CHECKING, Dict, List, Tuple
 
 import numpy as np
 from numpy import typing as npt
 from sqlalchemy import Engine
 
 from libs.device_parameters import BackendConfig, DeviceCalibration
-from libs.quantum_executor.utils.serialization import iqx_rld
 from libs.queues.dtos import (
     ExecutorOptions,
     Job,
@@ -282,27 +281,6 @@ def apply_linear_discriminator(
     scores = iq_pairs @ coefficients.T + intercept
 
     return (scores.ravel() > 0).astype(np.int_)
-
-
-def decompress_qobj(qobj_dict: Dict[str, Any]) -> Dict[str, Any]:
-    """Reverses the compression done on the qobj at the SDK level
-
-    Before submission, the qobj dict was compressed to ease
-    transportation. This compression is reversed here.
-
-    Note that this decompression is done in-place
-
-    Args:
-        qobj_dict: the dict of the PulseQobj to decompress
-
-    Returns:
-        A QObject dict that is decompressed
-    """
-    # the pulse library, run-length decoded: [([a,b], 2),...] -> [[a,b],[a,b],...]
-    for pulse in qobj_dict["config"]["pulse_library"]:
-        pulse["samples"] = iqx_rld(pulse["samples"])
-
-    return qobj_dict
 
 
 def _init_executor(

@@ -52,9 +52,11 @@ from tests.utils.jobs import (
     get_jobs_sent_to_mss,
     get_raw_jobs,
     get_stored_jobs,
+    get_test_duration,
     is_booking_excluded,
     is_job_result_matching,
     save_job_file,
+    set_test_duration,
     spy_on_mss_updates,
     submit_jobs,
     view_job,
@@ -79,8 +81,8 @@ from tests.utils.workers import TestWorker, set_worker_executor, wait_on_worker
 # (patch target, patch kwargs) making one stage of a job fail; "executor" is the worker's
 _FAILING_STAGE_PATCHES = [
     (
-        "services.scheduler.tasks.decompress_qobj",
-        {"side_effect": ValueError("unreadable qobj")},
+        "services.scheduler.tasks.preprocess_circuits",
+        {"side_effect": ValueError("uncompilable circuits")},
     ),
     (
         "executor",
@@ -97,7 +99,7 @@ _FAILING_STAGE_PATCHES = [
     ),
     # the dispatcher stops a stage past its time limit by raising this inside it
     (
-        "services.scheduler.tasks.decompress_qobj",
+        "services.scheduler.tasks.preprocess_circuits",
         {"side_effect": TimeoutError("preprocessing timed out")},
     ),
     (
@@ -464,13 +466,12 @@ def test_submit_jobs_in_idle_booking_before_another(
         expected_non_booker_job_ids_pre_2nd_slot = [
             v["job_id"]
             for v in raw_jobs
-            if v["params"]["qobj"]["header"]["test_duration"]
-            in non_booker_pre_2dn_slot_durations
+            if get_test_duration(v) in non_booker_pre_2dn_slot_durations
         ]
         expected_non_booker_job_ids_post_2nd_slot = [
             v["job_id"]
             for v in raw_jobs
-            if v["params"]["qobj"]["header"]["test_duration"]
+            if get_test_duration(v)
             not in (*non_booker_pre_2dn_slot_durations, *booker_job_durations)
         ]
 
@@ -1026,7 +1027,7 @@ def test_view_jobs(
         raw_jobs = []
         for duration in durations:
             new_job = {**job, "job_id": f"{uuid4()}"}
-            new_job["params"]["qobj"]["header"]["test_duration"] = duration
+            set_test_duration(new_job, duration)
             raw_jobs.append(new_job)
 
         # Creating this job metadata list first because it takes up a lot of time
@@ -1113,7 +1114,7 @@ def test_view_jobs_by_status(
         raw_jobs = []
         for duration in durations:
             new_job = {**job, "job_id": f"{uuid4()}"}
-            new_job["params"]["qobj"]["header"]["test_duration"] = duration
+            set_test_duration(new_job, duration)
             raw_jobs.append(new_job)
 
         # Creating this job metadata list first because it takes up a lot of time
@@ -1242,7 +1243,7 @@ def test_unauthenticated_view_jobs(
         raw_jobs = []
         for duration in durations:
             new_job = {**job, "job_id": f"{uuid4()}"}
-            new_job["params"]["qobj"]["header"]["test_duration"] = duration
+            set_test_duration(new_job, duration)
             raw_jobs.append(new_job)
 
         # Creating this job metadata list first because it takes up a lot of time

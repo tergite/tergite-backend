@@ -12,24 +12,18 @@
 #
 
 """Definitions for some data transfer objects for the scheduler service"""
-import json
 from datetime import datetime
 from enum import Enum, unique
-from typing import Annotated, Any, Optional, Union
+from typing import Any, Optional
 
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    Discriminator,
-    Tag,
-    field_serializer,
-    field_validator,
-)
-from pydantic_core.core_schema import SerializationInfo
+from pydantic import BaseModel, ConfigDict, field_validator
 
-from libs.qiskit.qobj import PulseQobj
-from libs.qiskit_providers.utils.json_encoder import IQXJsonEncoder
 from libs.quantum_executor.base.circuits import CircuitJobParams
+
+_QOBJ_REFUSAL = (
+    "the backend takes OpenQASM 3 circuits only, not a qobj; "
+    "upgrade the tergite SDK to send them"
+)
 
 
 @unique
@@ -62,82 +56,28 @@ class RecalibrationInfo(BaseModel):
     interval: Optional[float] = None
 
 
-class JobFileParams(BaseModel):
-    """The params of a job file: the qobject to run"""
-
-    model_config = ConfigDict(
-        extra="forbid",
-        arbitrary_types_allowed=True,
-    )
-
-    qobj: PulseQobj
-
-    @field_serializer("qobj")
-    def serialize_qobj(self, qobj: PulseQobj, _info: SerializationInfo):
-        """Converts qobj into a dict
-
-        Args:
-            qobj: the qobject to serialize
-            _info: the serialization info, which tells whether it serializes to JSON
-
-        Returns:
-            the qobject's dict, or its JSON string when serializing to JSON
-        """
-        qobj_dict = qobj.to_dict()
-
-        if _info.mode_is_json():
-            return json.dumps(qobj_dict, cls=IQXJsonEncoder)
-        return qobj_dict
-
-    @field_validator("qobj", mode="before")
-    @classmethod
-    def parse_qobj(cls, v):
-        """Parses the qobject from dict/str to Qobj
-
-        Args:
-            v: the qobject, its dict or its JSON string
-
-        Returns:
-            the qobject
-
-        Raises:
-            TypeError: Invalid type for PulseQobj: {type}
-        """
-        if isinstance(v, PulseQobj):
-            return v
-        elif isinstance(v, dict):
-            return PulseQobj.from_dict(v)
-        elif isinstance(v, str):
-            return PulseQobj.from_dict(json.loads(v))
-
-        raise TypeError(f"Invalid type for PulseQobj: {type(v)}")
-
-
-def get_job_params_kind(value: Any) -> str:
-    """Gets which params a job file has, which JobFile validates them as
-
-    Args:
-        value: the params, as uploaded or as a model
-
-    Returns:
-        "circuits" for a gate-level job's, else "qobj"
-    """
-    if isinstance(value, dict):
-        return "circuits" if "circuits" in value else "qobj"
-    return "circuits" if isinstance(value, CircuitJobParams) else "qobj"
-
-
 class JobFile(BaseModel):
-    """The expected structure of the job file: its params are a qobj of pulses, or the
-    OpenQASM 3 circuits of a gate-level job"""
+    """The expected structure of the job file: the OpenQASM 3 circuits of a gate-level job"""
 
     model_config = ConfigDict(extra="forbid")
 
     job_id: str
-    params: Annotated[
-        Union[
-            Annotated[JobFileParams, Tag("qobj")],
-            Annotated[CircuitJobParams, Tag("circuits")],
-        ],
-        Discriminator(get_job_params_kind),
-    ]
+    params: CircuitJobParams
+
+    @field_validator("params", mode="before")
+    @classmethod
+    def reject_qobj(cls, value: Any) -> Any:
+        """Rejects the qobj that an SDK older than gate-level jobs sends
+
+        Args:
+            value: the params, as uploaded
+
+        Returns:
+            the params, unchanged
+
+        Raises:
+            ValueError: the backend takes OpenQASM 3 circuits only, not a qobj; ...
+        """
+        if isinstance(value, dict) and "qobj" in value:
+            raise ValueError(_QOBJ_REFUSAL)
+        return value
