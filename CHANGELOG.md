@@ -7,6 +7,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.11.0-rc.8] - 2026-11-04
+
 ### Added
 
 - Added the `bcc` command to the package, so `uv tool install` installs bcc from its repository with its migrations,
