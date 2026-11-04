@@ -167,8 +167,9 @@ q13 = 0.1e9
 The test fixtures hold two simulated devices, `sim_1q`, a transmon, and
 `sim_2q`, two and their coupler, with the dummy cluster they play behind and
 tergite-tuner's configs to recalibrate them. Their seeds are what the tuner found from the
-rough guesses of `chip_calib_device_config.toml`; each recalibrates as it starts, in a minute
-or three, as a device on clusters does (`tests/services/test_simulated_chip_calibration.py`
+rough guesses of `chip_calib_device_config.toml`; each recalibrates, in a minute or three, as a
+device on clusters does: an interval after it starts, or as it starts where
+`BCC_SHOULD_RECALIBRATE_AT_START=true` (`tests/services/test_simulated_chip_calibration.py`
 calibrates the two-qubit one from `sim_2q.rough.seed.toml`):
 
 ```shell

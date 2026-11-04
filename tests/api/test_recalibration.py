@@ -50,6 +50,12 @@ _EXPECTED_RECALIBRATION_SEED_CONTENT = load_fixture(
 )
 
 
+@pytest.fixture(autouse=True)
+def recalibrate_at_start(monkeypatch):
+    """These tests follow the recalibration a device starts with, which is off by default"""
+    monkeypatch.setenv("BCC_SHOULD_RECALIBRATE_AT_START", "true")
+
+
 @pytest.mark.parametrize("client, worker", QUANTIFY_CLIENT_AND_WORKER_TUPLES)
 def test_recalibration_sends_the_calibration_to_mss(client, worker, mock_mss):
     with client as client:

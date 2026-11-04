@@ -13,7 +13,7 @@
 import json
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated, Optional
 
 from cryptography.exceptions import InvalidSignature
@@ -443,5 +443,13 @@ def get_verified_mss_details(request: Request) -> MSSAuthDetails:
 
 
 def _start_device(device: DeviceResources) -> None:
-    """Starts the device's recalibration; its parameters are the heavy worker's to publish"""
-    init_recalibration(device)
+    """Starts the device's recalibrations, the first now or, where its settings say not to
+    recalibrate at start, an interval from now; its parameters are the heavy worker's to
+    publish"""
+    settings = device.settings
+    first_at = None
+    if not settings.should_recalibrate_at_start:
+        first_at = get_utc_now() + timedelta(
+            seconds=settings.default_recalibration_interval
+        )
+    init_recalibration(device, start_timestamp=first_at)
