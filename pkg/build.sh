@@ -24,7 +24,12 @@ UV_PYTHON_INSTALL_DIR="$PWD/build/python" uv python install --no-bin "$version"
 python=$(UV_PYTHON_INSTALL_DIR="$PWD/build/python" uv python find --managed-python "$version")
 cp -R "$(dirname "$(dirname "$(realpath "$python")")")" "$out/python"
 
-uv export --frozen --no-dev --no-emit-project --no-hashes -o build/requirements.txt >/dev/null
+# what qcodes and quantify install but the backend never imports, a GUI, a notebook kernel and
+# data formats, some 400 MB, pruned with what only they need; the tests pass without them
+pruned="pyqt5 pyqtgraph ipython ipykernel ipywidgets dask plotly pyarrow"
+uv export --frozen --no-dev --no-emit-project --no-hashes \
+	$(for name in $pruned; do printf -- '--prune %s ' "$name"; done) \
+	-o build/requirements.txt >/dev/null
 # through the sdist, so that the wheel holds nothing a past build left in build/
 uv build --out-dir build/wheel >/dev/null
 uv pip install --python "$out/python/bin/python3" --break-system-packages --no-deps \

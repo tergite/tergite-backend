@@ -20,7 +20,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   they were read from beside `settings.py`
 - Changed the debs and macOS packages to install uv's own build of Python with the dependencies `uv.lock` pins and the
   backend installed into it, where before they installed Nuitka's standalone build; a release builds them in minutes
-  rather than in nearly two hours
+  rather than in nearly two hours, and the deb is 305 MB, where Nuitka's was 426 MB
 
 ### Fixed
 
