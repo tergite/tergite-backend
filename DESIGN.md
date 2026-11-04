@@ -820,6 +820,12 @@ there, logging to the journal; on macOS the paths are under `/usr/local/` and a 
 runs it. The deb asks debconf for a first instance. See
 [CONTRIBUTING.md](CONTRIBUTING.md#how-to-install-as-a-service).
 
+The package's wheel, which `uv tool install` installs from the repository, runs the same `bcc`
+with no service around it: `main.py` and `settings.py` as top-level modules, the migrations as
+a namespace package that `utils/sql_db.py` points Alembic at without `alembic.ini`, and the env
+file read from the folder it starts in. `tests/test_packaging.py` builds the wheel and runs it
+outside the checkout. See the [README](README.md#run-or-install-with-uv).
+
 ## 14. Testing
 
 | Level | Where | Command |
