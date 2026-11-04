@@ -19,6 +19,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Changed the default `.env`, and a relative `BCC_ENV_FILE`, to be read from the folder bcc starts in, where before
   they were read from beside `settings.py`
 
+### Fixed
+
+- Fixed the packages' smoke test passing a heavy worker that stopped on any error but an import one, as rc.7's did on
+  openqasm3's parser; it now fails on a worker that stops within its minute or logs a traceback
+
 ## [2026.11.0-rc.7] - 2026-11-04
 
 ### Added
