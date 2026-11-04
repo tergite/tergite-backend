@@ -7,6 +7,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.11.0-rc.4] - 2026-11-04
+
 ### Added
 
 - Added simulated devices as simulated chips: a `[simulator.chip]` section of a chip's true parameters, couplers with
