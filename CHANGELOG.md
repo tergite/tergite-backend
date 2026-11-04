@@ -7,6 +7,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.11.0-rc.6] - 2026-11-04
+
 ### Added
 
 - Added `BCC_SHOULD_RECALIBRATE_AT_START`, off by default: a device now starts with its calibration seed and first
