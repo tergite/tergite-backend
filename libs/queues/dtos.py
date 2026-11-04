@@ -140,7 +140,6 @@ class JobResultCircuit(BaseModel):
 class JobResult(BaseModel):
     """The results of the job"""
 
-    model_config = ConfigDict(extra="allow")
     memory: Memory = Field(default_factory=list)
     # how the job ran, sent with its memory, so that a client can read the memory back
     # without the job's payload
@@ -164,9 +163,7 @@ class Job(BaseModel):
         etc.
     """
 
-    model_config = ConfigDict(
-        extra="allow", arbitrary_types_allowed=True, validate_assignment=True
-    )
+    model_config = ConfigDict(arbitrary_types_allowed=True, validate_assignment=True)
 
     job_id: str = Field(default_factory=uuid_str)
     device: str

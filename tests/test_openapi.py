@@ -11,6 +11,9 @@
 # that they have been altered from the originals.
 """Tests that the committed OpenAPI schema is the app's"""
 
+import json
+import re
+
 from api import app
 from dev.openapi.export import SCHEMA_FILE, render_schema
 
@@ -31,3 +34,20 @@ def test_schema_holds_the_events_the_backend_sends_mss():
 
     assert event_data == {"Device", "DeviceCalibration", "Job", "DeviceSwitchData"}
     assert {"DeviceEvent", "EventResponse"} <= set(schemas)
+
+
+def test_no_event_schema_allows_undeclared_fields():
+    """MSS on SQL refuses a field it does not declare, as it did the device's duplicates"""
+    schemas = app.openapi()["components"]["schemas"]
+    pending, seen = ["DeviceEvent"], set()
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        text = json.dumps(schemas[name])
+        pending.extend(re.findall(r"#/components/schemas/([\w-]+)", text))
+
+    allowing = [name for name in seen if schemas[name].get("additionalProperties")]
+
+    assert allowing == []

@@ -1051,7 +1051,6 @@
         "type": "object"
       },
       "Job": {
-        "additionalProperties": true,
         "description": "Representation of the job to be executed by this application\n\nAttributes:\n    job_id: the unique identifier of this job\n    user_id: the unique identifier of the user who owns this job\n    estimated_duration: the estimated time this job could take to execute in seconds;\n        default = None\n    timestamps: the timestamps for each stage of running this job; default = None\n    status: the status of this job; default = JobStatus.PENDING\n    failure_reason: the reason why the job has failed; default = None\n    etc.",
         "properties": {
           "actual_duration": {
@@ -1213,7 +1212,6 @@
         "type": "object"
       },
       "JobResult": {
-        "additionalProperties": true,
         "description": "The results of the job",
         "properties": {
           "circuits": {
