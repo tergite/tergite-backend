@@ -51,8 +51,8 @@ def preload_worker_globals(
         # a heavy worker alone recalibrates, so one starting finds any left by the last
         fail_abandoned_recalibrations(device)
         executor = get_executor(device.executor_options)
-        # published here alone, as the executor may refine the backend config, e.g. the
-        # simulators train their discriminators, which the API, building none, has not
+        # published here alone, as the calibration carries the frames and defcals the
+        # executor builds, which the API, building none, has not
         executor_options = dataclasses.replace(
             device.executor_options, backend_config=executor.backend_config
         )
