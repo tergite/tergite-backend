@@ -100,6 +100,9 @@ dev = [
     "setuptools~=80.9.0"
 ]
 
+[project.scripts]
+bcc = "main:main"
+
 [project.urls]
 Homepage = "https://github.com/tergite/tergite-backend"
 Repository = "https://github.com/tergite/tergite-backend"
@@ -107,9 +110,14 @@ Documentation = "https://github.com/tergite/tergite-backend/tree/main/docs"
 Issues = "https://github.com/tergite/tergite-backend/issues"
 Changelog = "https://github.com/tergite/tergite-backend/blob/main/CHANGELOG.md"
 
+[tool.setuptools]
+# the bcc command's, beside the packages, as in the Nuitka build
+py-modules = ["main", "settings"]
+
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["api*", "libs*", "services*", "utils*"]
+# migrations has no __init__.py, which Alembic loads by path
+include = ["api*", "libs*", "services*", "utils*", "migrations*"]
 exclude = ["tests*", "build*", "dist*", "*.egg-info", ".venv*", "venv*"]
 
 [tool.setuptools_scm]

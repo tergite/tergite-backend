@@ -7,10 +7,17 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Added
+
+- Added the `bcc` command to the package, so `uv tool install` installs bcc from its repository with its migrations,
+  where before only the deb and macOS installers ran it outside a checkout
+
 ### Changed
 
 - Changed the linting from black, isort and pyflakes to ruff, which formats, sorts the imports and finds what
   pyflakes did; contributors run `ruff format` and `ruff check` where they ran the three
+- Changed the default `.env`, and a relative `BCC_ENV_FILE`, to be read from the folder bcc starts in, where before
+  they were read from beside `settings.py`
 
 ## [2026.11.0-rc.7] - 2026-11-04
 

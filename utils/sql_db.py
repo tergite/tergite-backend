@@ -23,8 +23,8 @@ from sqlmodel import Session, SQLModel, col, create_engine, desc
 
 from .exc import InvalidRequestError
 
-# beside main.py, as in the Nuitka build
-_ALEMBIC_CONFIG_FILE = Path(__file__).parents[1] / "alembic.ini"
+# beside main.py, in a checkout, a wheel and the Nuitka build
+_MIGRATIONS_DIR = Path(__file__).parents[1] / "migrations"
 
 
 def get_sql_engine(url: str) -> Engine:
@@ -49,12 +49,24 @@ def migrate_sql_db(url: str) -> None:
     Args:
         url: the URL of the database
     """
-    config = Config(
-        str(_ALEMBIC_CONFIG_FILE), attributes={"should_configure_logging": False}
-    )
+    command.upgrade(get_alembic_config(url), "head")
+
+
+def get_alembic_config(url: str) -> Config:
+    """Gets Alembic's config for migrating the database at the URL in-process, without
+    alembic.ini, which a wheel cannot ship beside its packages
+
+    Args:
+        url: the URL of the database
+
+    Returns:
+        the config, which leaves the process's logging as it is
+    """
+    config = Config(attributes={"should_configure_logging": False})
+    config.set_main_option("script_location", str(_MIGRATIONS_DIR))
     # the config interpolates %, as a URL's escapes have it
     config.set_main_option("sqlalchemy.url", str(url).replace("%", "%%"))
-    command.upgrade(config, "head")
+    return config
 
 
 @contextmanager

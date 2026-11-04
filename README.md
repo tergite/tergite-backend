@@ -123,6 +123,24 @@ cp calibration.seed.example.toml calibration.seed.toml
 
 - Open your browser at [http://localhost:8000/docs](http://localhost:8000/docs) to see the interactive API docs
 
+## Install as a uv tool
+
+To run bcc without a checkout, install it from its repository as a [uv tool](https://docs.astral.sh/uv/guides/tools/):
+
+```shell
+uv tool install git+https://github.com/tergite/tergite-backend@v<version>
+```
+
+It reads the `.env` in the folder it starts in, or the env files `--env-file` or `BCC_ENV_FILE` name. The other
+files' defaults are in the checkout, which an installed bcc has none of, so give each of them in the env file with an
+absolute path, as the packages' `bcc-provision` writes it: `BCC_STORAGE_ROOT`, `BCC_BOOKING_DB_URL`,
+`BCC_PRIVATE_KEY_FILE`, `BCC_MSS_PUBLIC_KEY_PATH`, `BCC_BACKEND_SETTINGS`, `BCC_CALIBRATION_SEED`,
+`BCC_QUANTIFY_CONFIG_FILE`, `BCC_QUANTIFY_METADATA_FILE` and the three `BCC_CALIBRATION_*_CONFIG_FILE`s.
+
+```shell
+bcc start --env-file /etc/bcc/loke/backend.env
+```
+
 ## Documentation
 
 Find how the backend is built, and the conventions to follow when changing it, in [DESIGN.md](./DESIGN.md),

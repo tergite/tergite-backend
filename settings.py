@@ -25,8 +25,6 @@ from typing import List, Optional
 
 from utils.config import DeviceSettings, read_device_settings
 
-_ROOT_PATH = Path(__file__).parent
-
 
 def load_devices(env_files: List[Path]) -> List[str]:
     """Serves the devices of the given env files, the first being the default one
@@ -69,7 +67,8 @@ def _read_devices(env_files: List[Path]) -> dict[str, DeviceSettings]:
     return {device.default_prefix: device for device in devices}
 
 
-# BCC_ENV_FILE may name several, separated as in PATH, one per device
+# BCC_ENV_FILE may name several, separated as in PATH, one per device, each relative to the
+# folder the process starts in, as an installed bcc has no checkout to find them in
 _DEVICES = _read_devices(
-    [_ROOT_PATH / v for v in os.environ.get("BCC_ENV_FILE", ".env").split(os.pathsep)]
+    [Path(v) for v in os.environ.get("BCC_ENV_FILE", ".env").split(os.pathsep)]
 )

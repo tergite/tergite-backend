@@ -11,7 +11,6 @@
 # that they have been altered from the originals.
 import pytest
 from alembic import command
-from alembic.config import Config
 from sqlalchemy import inspect
 
 import settings
@@ -19,13 +18,12 @@ from api.worker import preload_worker_globals
 from services.booking import get_user_profile
 from services.scheduler import close_device_resources
 from tests.utils.params import FASTAPI_CLIENTS
-from utils import sql_db
-from utils.sql_db import get_sql_engine, migrate_sql_db
+from utils.sql_db import get_alembic_config, get_sql_engine, migrate_sql_db
 
 
 def test_the_migrations_match_the_models(tmp_path):
     """Fails when a model changed without a migration: `alembic revision --autogenerate`"""
-    config = _get_alembic_config(f"sqlite:///{tmp_path}/bcc.db")
+    config = get_alembic_config(f"sqlite:///{tmp_path}/bcc.db")
 
     command.upgrade(config, "head")
     command.check(config)
@@ -33,7 +31,7 @@ def test_the_migrations_match_the_models(tmp_path):
 
 def test_a_database_from_before_alembic_is_upgraded_with_its_rows(tmp_path):
     url = f"sqlite:///{tmp_path}/bcc.db"
-    command.upgrade(_get_alembic_config(url), "0001")
+    command.upgrade(get_alembic_config(url), "0001")
     db_engine = get_sql_engine(url)
     with db_engine.begin() as connection:
         connection.exec_driver_sql(
@@ -61,12 +59,3 @@ def test_a_worker_migrates_the_database_it_starts_on(client, tmp_path):
     close_device_resources(device)
 
     assert "job" in inspect(get_sql_engine(url)).get_table_names()
-
-
-def _get_alembic_config(url: str) -> Config:
-    config = Config(
-        str(sql_db._ALEMBIC_CONFIG_FILE),
-        attributes={"should_configure_logging": False},
-    )
-    config.set_main_option("sqlalchemy.url", url)
-    return config
