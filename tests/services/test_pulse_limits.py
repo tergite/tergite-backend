@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests of the limits a device's pulse-level jobs are kept to"""
+
 import pytest
 
 from libs.device_parameters import BackendConfig

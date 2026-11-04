@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests of the translation of OpenPulse cal blocks and defcals into pulse operations"""
+
 import math
 
 import numpy as np

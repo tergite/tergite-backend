@@ -15,6 +15,7 @@
 # The standard gate definitions are those of OpenQASM's stdgates.inc
 # (https://github.com/openqasm/openqasm, Apache License 2.0).
 """Translates the OpenQASM 3 circuits of gate-level jobs into native gates"""
+
 import functools
 import math
 from dataclasses import dataclass, field, fields, is_dataclass

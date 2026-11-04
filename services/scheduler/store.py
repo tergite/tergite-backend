@@ -12,6 +12,7 @@
 # that they have been altered from the originals.
 #
 """The jobs of a device, in its SQL database"""
+
 from datetime import datetime, timedelta
 from typing import List, Optional, Self
 

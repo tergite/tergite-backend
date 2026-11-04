@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Gives each request an id"""
+
 from typing import Awaitable, Callable
 
 from fastapi import Request, Response

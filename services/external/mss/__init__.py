@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """The Main Service Server (MSS): the client to it, its events and the signatures it trusts"""
+
 from .auth import (
     encrypt_mss_jwt_token,
     get_mss_public_key,

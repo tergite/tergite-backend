@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests for telling systemd that the backend is alive"""
+
 import os
 import threading
 import time

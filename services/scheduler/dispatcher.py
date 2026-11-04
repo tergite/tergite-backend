@@ -19,6 +19,7 @@ its timeout is failed by whichever worker next looks. A worker with nothing to c
 a wake-up, the next change in the bookings, or the fallback wait, whichever comes first. Each
 pass first sends MSS the events kept while it could not be reached.
 """
+
 import logging
 import math
 import signal

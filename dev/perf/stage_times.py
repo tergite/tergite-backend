@@ -11,6 +11,7 @@
 # that they have been altered from the originals.
 """Writes each job of PERF_SDK_USER_ID's time in each stage, queued and running, to the CSV file
 given, once they have all finished; dev/perf/record.sh runs it after the load"""
+
 import csv
 import os
 import sys

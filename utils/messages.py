@@ -12,6 +12,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """The message the API and the services answer with when there is no item to return"""
+
 from typing import Literal, NotRequired, TypedDict
 
 

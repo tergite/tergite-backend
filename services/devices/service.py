@@ -23,6 +23,7 @@
 # - Chalmers Next Labs, 2026: gathered from app/libs/device_parameters and
 #   app/services/scheduler/service.py
 """The device's properties and calibration, stored and published to MSS, and its switch"""
+
 from sqlalchemy import Engine
 from sqlmodel import Session, col, delete
 

@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Dependencies useful for the FastAPI API"""
+
 import json
 import logging
 from contextlib import asynccontextmanager

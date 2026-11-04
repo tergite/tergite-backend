@@ -12,6 +12,7 @@
 # that they have been altered from the originals.
 #
 """Utility functions for records"""
+
 from datetime import datetime, timezone
 from typing import (
     Any,

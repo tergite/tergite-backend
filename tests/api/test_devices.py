@@ -12,6 +12,7 @@
 # that they have been altered from the originals.
 #
 """Tests for the API's device property routes and what start-up sends MSS"""
+
 import pytest
 
 import settings

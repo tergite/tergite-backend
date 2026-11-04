@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Parameters that many tests are parametrized with"""
+
 from typing import Any, Dict, List, NotRequired, Optional, TypedDict
 
 from pytest_lazy_fixtures import lf as lazy_fixture

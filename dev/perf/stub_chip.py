@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """The simulated chip with its physics stubbed out, for dev/perf/stub_worker.py"""
+
 from typing import Dict
 
 import numpy as np

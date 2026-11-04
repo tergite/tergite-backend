@@ -11,6 +11,7 @@
 # that they have been altered from the originals.
 """An MSS that accepts every device event the BCC sends it, at once, so that the performance
 baselines measure the BCC alone; dev/perf/record.sh runs it"""
+
 import argparse
 import json
 

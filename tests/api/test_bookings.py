@@ -12,6 +12,7 @@
 # that they have been altered from the originals.
 #
 """Tests for the API's booking routes"""
+
 import os
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
@@ -97,7 +98,7 @@ def test_create_invalid_booking(client, user, booking: "BasicBookingInfo"):
         # create booking
         headers = create_mss_headers(user_id)
         response = client.post("/bookings", headers=headers, json=data)
-        detail = f"{response.json()["detail"]}"
+        detail = f"{response.json()['detail']}"
 
         assert response.status_code == 422
         assert booking["error_message"] in detail

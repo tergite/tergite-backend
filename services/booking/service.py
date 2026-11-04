@@ -11,6 +11,7 @@
 # that they have been altered from the originals.
 #
 """Module containing the service methods"""
+
 import logging
 from datetime import datetime, timedelta
 from typing import Any, List, Optional

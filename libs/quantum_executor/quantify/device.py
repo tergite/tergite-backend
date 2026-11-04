@@ -14,6 +14,7 @@
 # (https://github.com/sopherapps/qpi, MIT License, (C) Copyright Martin Ahindura 2026).
 """The quantify device that gate-level jobs compile against: a transmon for each qubit and
 an edge for each coupler, set from the backend's calibration"""
+
 import math
 from typing import Any, Dict, List, Optional, Tuple
 

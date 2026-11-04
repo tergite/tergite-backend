@@ -15,6 +15,7 @@ Run from the repository root: `python -m dev.openapi.export`. It builds the sche
 test settings, as tergite-frontend's does, and the SDK generates its models of the backend
 from the file it writes.
 """
+
 import json
 from pathlib import Path
 

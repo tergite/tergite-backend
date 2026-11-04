@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Compares a run of dev/perf/record.sh with the baseline; exits 1 if any measure is worse than allowed"""
+
 import csv
 import math
 import re

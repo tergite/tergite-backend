@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests of the memory of gate-level jobs, from their acquisitions and readouts"""
+
 from typing import Dict, List
 
 import numpy as np

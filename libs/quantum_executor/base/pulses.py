@@ -14,6 +14,7 @@
 # (https://openqasm.com/language/openpulse.html), with Amazon Braket's definitions.
 """Translates the OpenPulse of a cal block or a defcal into pulse operations on the frames
 the device publishes"""
+
 import math
 from typing import Callable, Dict, List, Mapping, Sequence, Tuple
 
@@ -29,16 +30,22 @@ from .expressions import get_complex, get_number, get_seconds
 # get_waveform passes them: amplitudes complex, durations in seconds, the rest numbers
 WAVEFORM_GENERATORS: Dict[str, Callable[..., np.ndarray]] = {
     "constant": lambda t, amp, d: np.full(t.shape, amp),
-    "gaussian": lambda t, amp, d, sigma: amp
-    * np.exp(-((t - d / 2) ** 2) / (2 * sigma**2)),
+    "gaussian": lambda t, amp, d, sigma: (
+        amp * np.exp(-((t - d / 2) ** 2) / (2 * sigma**2))
+    ),
     "sech": lambda t, amp, d, sigma: amp / np.cosh((t - d / 2) / sigma),
-    "gaussian_square": lambda t, amp, d, width, sigma: amp
-    * np.exp(-(np.maximum(np.abs(t - d / 2) - width / 2, 0) ** 2) / (2 * sigma**2)),
-    "drag": lambda t, amp, d, sigma, beta: amp
-    * np.exp(-((t - d / 2) ** 2) / (2 * sigma**2))
-    * (1 - 1j * beta * (t - d / 2) / sigma**2),
-    "sine": lambda t, amp, d, frequency, phase: amp
-    * np.sin(2 * math.pi * frequency * t + phase),
+    "gaussian_square": lambda t, amp, d, width, sigma: (
+        amp
+        * np.exp(-(np.maximum(np.abs(t - d / 2) - width / 2, 0) ** 2) / (2 * sigma**2))
+    ),
+    "drag": lambda t, amp, d, sigma, beta: (
+        amp
+        * np.exp(-((t - d / 2) ** 2) / (2 * sigma**2))
+        * (1 - 1j * beta * (t - d / 2) / sigma**2)
+    ),
+    "sine": lambda t, amp, d, frequency, phase: (
+        amp * np.sin(2 * math.pi * frequency * t + phase)
+    ),
 }
 # what each argument of a generator is: an amplitude, a duration or a number
 WAVEFORM_ARGUMENTS: Dict[str, Tuple[str, ...]] = {

@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Utilities for serving several devices in a test"""
+
 from pathlib import Path
 from typing import Dict, List, Optional
 

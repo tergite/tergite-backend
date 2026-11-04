@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Fixtures that spy on the connections the app opens"""
+
 import pytest
 
 

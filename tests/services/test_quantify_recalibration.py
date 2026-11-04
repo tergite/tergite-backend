@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests for the cluster and SPI rack recalibration runs through, and the couplers' roles"""
+
 import pytest
 
 pytest.importorskip("quantify_scheduler")

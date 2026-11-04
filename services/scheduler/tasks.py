@@ -17,6 +17,7 @@
 # that they have been altered from the originals.
 #
 """Module containing the tasks to run on the job"""
+
 import functools
 import logging
 from contextlib import contextmanager

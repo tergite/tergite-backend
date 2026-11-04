@@ -13,6 +13,7 @@
 # that they have been altered from the originals.
 #
 """Utility functions for the scheduler service"""
+
 import logging
 import time
 from pathlib import Path

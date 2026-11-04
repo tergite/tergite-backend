@@ -12,6 +12,7 @@
 # that they have been altered from the originals.
 #
 """Tests for the API's job routes, and the jobs' way through the queues"""
+
 import dataclasses
 import os
 import threading
@@ -693,7 +694,7 @@ def test_duplicate_job_upload(client, jobs_folder, worker, job, mocker, fake_clo
                 "/jobs", files={"upload_file": file}, headers=fresh_headers
             )
 
-    expected_err_resp = {"detail": f"job {job_info["job_id"]} already exists"}
+    expected_err_resp = {"detail": f"job {job_info['job_id']} already exists"}
     assert first_response.status_code == 200
     assert second_response.status_code == 409
     assert second_response.json() == expected_err_resp
@@ -722,7 +723,7 @@ def test_remove_job(client, jobs_folder, worker, job, mocker, fake_clock):
         job_info = job_metadata_list[0]
         headers = create_mss_headers(user_id=job_info["user_id"])
         deletion_response = client.delete(
-            f"/jobs/{job_info["job_id"]}", headers=headers
+            f"/jobs/{job_info['job_id']}", headers=headers
         )
         # run the rest of the tasks
         worker.run(is_burst=True)
@@ -790,7 +791,7 @@ def test_admin_remove_job(client, jobs_folder, worker, job, mocker, fake_clock):
         job_info = job_metadata_list[0]
         headers = create_mss_headers(user_id=another_user["id"], is_admin=True)
         deletion_response = client.delete(
-            f"/jobs/{job_info["job_id"]}", headers=headers
+            f"/jobs/{job_info['job_id']}", headers=headers
         )
         # run the rest of the tasks
         worker.run(is_burst=True)
@@ -860,7 +861,7 @@ def test_view_job(
     with client as client:
         user_id, _ = create_user(client, user=user)
         other_user_id, _ = create_user(
-            client, user={**user, "email": f"extra-{user["email"]}"}
+            client, user={**user, "email": f"extra-{user['email']}"}
         )
         job_id = job["job_id"]
         token, _ = get_token(client, data={"user_id": user_id, "job_id": job_id})
@@ -938,7 +939,7 @@ def test_unauthorized_view_job(
     with client as client:
         user_id, _ = create_user(client, user=user)
         other_user_id, _ = create_user(
-            client, user={**user, "email": f"extra-{user["email"]}"}
+            client, user={**user, "email": f"extra-{user['email']}"}
         )
         job_id = job["job_id"]
         token, _ = get_token(client, data={"user_id": user_id, "job_id": job_id})
@@ -966,7 +967,7 @@ def test_admin_view_job(
     with client as client:
         user_id, _ = create_user(client, user=user)
         other_user_id, _ = create_user(
-            client, user={**user, "email": f"extra-{user["email"]}"}
+            client, user={**user, "email": f"extra-{user['email']}"}
         )
         job_id = job["job_id"]
         token, _ = get_token(client, data={"user_id": user_id, "job_id": job_id})

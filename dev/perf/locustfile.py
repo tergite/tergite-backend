@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """The BCC load scenario of the performance baselines; dev/perf/record.sh runs it"""
+
 import base64
 import json
 import os

@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Gate-level circuits and jobs, the seed they run on, and the unitaries of native gates"""
+
 import uuid
 from typing import Any, Dict, List, Optional, Sequence
 

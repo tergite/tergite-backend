@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests for the pure steps of the scheduler's tasks"""
+
 import numpy as np
 import pytest
 import xarray as xr

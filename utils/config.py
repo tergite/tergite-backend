@@ -15,6 +15,7 @@
 # - Stefan Hill, 2024
 # - Chalmers Next Labs, 2026: read with pydantic-settings, moved from settings.py
 """The settings of one device, read from its env file and the env variables"""
+
 import os
 import re
 from datetime import datetime

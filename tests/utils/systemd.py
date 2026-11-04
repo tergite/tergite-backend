@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """The socket systemd would listen on for a process's notifications, in the tests"""
+
 import os
 import socket
 import tempfile

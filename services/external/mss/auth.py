@@ -13,6 +13,7 @@
 # that they have been altered from the originals.
 
 """Utilities for handling authentication of the connection to MSS"""
+
 import base64
 import functools
 import time

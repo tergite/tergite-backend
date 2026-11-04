@@ -12,6 +12,7 @@
 """What a schedule compiled for the clusters plays, on the clusters' grid of samples: its
 pulses, the changes of its clocks, its resets and its acquisitions, a loop's body once
 """
+
 import math
 from bisect import bisect_right
 from dataclasses import dataclass, field

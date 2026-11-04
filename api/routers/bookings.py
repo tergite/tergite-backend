@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Routes for the bookings of the device"""
+
 from datetime import datetime
 from typing import Optional, Tuple
 

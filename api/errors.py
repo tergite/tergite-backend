@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """The HTTP status code the API answers each error with"""
+
 import logging
 from typing import Awaitable, Callable, Dict, Type
 

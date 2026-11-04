@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests for the claims on MSS's nonces"""
+
 from datetime import datetime, timezone
 
 import time_machine

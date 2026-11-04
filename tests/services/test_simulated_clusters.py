@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests of the dummy clusters whose acquisitions are a simulated chip's"""
+
 from pathlib import Path
 
 import numpy as np

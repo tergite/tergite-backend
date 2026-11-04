@@ -10,11 +10,12 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests that the committed OpenAPI schema is the app's"""
+
 from api import app
 from dev.openapi.export import SCHEMA_FILE, render_schema
 
 
 def test_committed_schema_matches_the_app():
-    assert SCHEMA_FILE.read_text() == render_schema(
-        app.openapi()
-    ), f"{SCHEMA_FILE.name} is stale: run python -m dev.openapi.export"
+    assert SCHEMA_FILE.read_text() == render_schema(app.openapi()), (
+        f"{SCHEMA_FILE.name} is stale: run python -m dev.openapi.export"
+    )

@@ -13,6 +13,7 @@
 # The schedule follows qpi-driver's `QuantifyExecutor._run_circuit`
 # (https://github.com/sopherapps/qpi, MIT License, (C) Copyright Martin Ahindura 2026).
 """The quantify schedules of gate-level circuits, and of their pulse-level blocks"""
+
 import math
 from dataclasses import dataclass
 from typing import Collection, Dict, List, Mapping, Optional, Sequence, Set, Tuple

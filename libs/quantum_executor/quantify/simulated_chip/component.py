@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """The component of a dummy cluster whose acquisitions are a simulated chip's"""
+
 from typing import Any, Dict, List
 
 from qblox_instruments import Cluster, DummyBinnedAcquisitionData

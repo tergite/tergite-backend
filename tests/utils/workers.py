@@ -11,6 +11,7 @@
 # that they have been altered from the originals.
 
 """Workers that run a device's heavy and light work in the tests' own process"""
+
 import dataclasses
 from datetime import datetime, timedelta
 from typing import Any, Generator, Optional
