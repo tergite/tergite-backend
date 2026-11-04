@@ -46,16 +46,11 @@
   "meas_lo_freq": null,
   "meas_map": [[0, 1, 2]],
   "name": "system_test",
-  "num_couplers": 2,
   "number_of_couplers": 2,
-  "num_qubits": 3,
-  "num_resonators": 3,
   "number_of_resonators": 3,
   "number_of_qubits": 3,
-  "online_date": "2022-04-13T19:50:31",
   "open_pulse": true,
   "qubit_ids": ["q12", "q13", "q14"],
   "qubit_lo_freq": null,
-  "simulator": true,
   "version": "2023.06.10"
 }

@@ -63,9 +63,8 @@ FrameKind = Literal["drive", "readout", "coupler"]
 
 
 class Device(BaseModel):
-    """The schema for device information"""
-
-    model_config = ConfigDict(extra="allow")
+    """The device's information, as the backend sends it MSS: these fields alone, as MSS keeps
+    only the fields it declares"""
 
     name: str
     version: str
@@ -102,24 +101,32 @@ class Device(BaseModel):
         Returns:
             an instance of Device extracted from the backend config
         """
+        general = conf.general_config
         qubit_ids = conf.device_config.qubit_ids
         return cls(
-            **conf.general_config.model_dump(),
+            name=general.name,
+            version=general.version,
+            description=general.description,
+            is_active=general.is_active,
+            characterized=general.characterized,
+            open_pulse=general.open_pulse,
+            dt=general.dt,
+            dtm=general.dtm,
             meas_map=conf.device_config.meas_map,
             qubit_ids=qubit_ids,
             gates=conf.gates,
-            number_of_qubits=conf.general_config.num_qubits,
-            number_of_couplers=conf.general_config.num_couplers,
-            number_of_resonators=conf.general_config.num_resonators,
-            last_online=conf.general_config.online_date,
-            is_online=conf.general_config.is_active,
+            number_of_qubits=general.num_qubits,
+            number_of_couplers=general.num_couplers,
+            number_of_resonators=general.num_resonators,
+            last_online=general.online_date,
+            is_online=general.is_active,
             basis_gates=[
                 *GATE_LEVEL_BASIS_GATES,
                 *(["cz"] if conf.device_config.coupling_dict else []),
             ],
             coupling_map=conf.device_config.coupling_map,
             coordinates=conf.device_config.coordinates,
-            is_simulator=conf.general_config.simulator,
+            is_simulator=general.simulator,
             coupling_dict=conf.device_config.coupling_dict,
             qubit_ids_coupler_map=conf.device_config.qubit_ids_coupler_map,
         )
@@ -127,8 +134,6 @@ class Device(BaseModel):
 
 class CalibrationValue(BaseModel, Generic[_CalibValueType]):
     """A calibration value"""
-
-    model_config = ConfigDict(extra="allow")
 
     value: _CalibValueType
     unit: str = ""
@@ -155,8 +160,6 @@ class CalibrationValue(BaseModel, Generic[_CalibValueType]):
 
 class QubitCalibration(BaseModel):
     """Schema for the calibration data of the qubit"""
-
-    model_config = ConfigDict(extra="allow")
 
     t1_decoherence: Optional[CalibrationValue[float]] = None
     t2_decoherence: Optional[CalibrationValue[float]] = None
@@ -265,8 +268,6 @@ class QubitCalibration(BaseModel):
 class ResonatorCalibration(BaseModel):
     """Schema for the calibration data of the resonator"""
 
-    model_config = ConfigDict(extra="allow")
-
     acq_delay: Optional[CalibrationValue[float]] = None
     acq_integration_time: Optional[CalibrationValue[float]] = None
     frequency: Optional[CalibrationValue[float]] = None
@@ -368,8 +369,6 @@ class ResonatorCalibration(BaseModel):
 
 class CouplerCalibration(BaseModel):
     """Schema for the calibration data of the coupler"""
-
-    model_config = ConfigDict(extra="allow")
 
     frequency: Optional[CalibrationValue[float]] = None
     frequency_detuning: Optional[CalibrationValue[float]] = None
@@ -570,8 +569,6 @@ class GateDefcal(BaseModel):
 
 class DeviceCalibration(BaseModel):
     """Schema for the calibration data of a given device"""
-
-    model_config = ConfigDict(extra="allow")
 
     name: str
     version: str

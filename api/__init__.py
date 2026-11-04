@@ -18,8 +18,10 @@
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import TypeAdapter
 
 import settings
+from services.external.mss import DeviceEvent, EventResponse
 from services.scheduler import JobFile
 
 from .dependencies import get_verified_mss_user_id, lifespan
@@ -27,6 +29,9 @@ from .device_routing import DeviceRoutingMiddleware
 from .errors import add_error_handlers
 from .middleware import add_request_id
 from .routers import bookings, devices, jobs, logfiles, recalibration, switch, users
+
+# where the spec's components are, for the schemas added to them
+_REF = "#/components/schemas/{model}"
 
 # application
 app = FastAPI(
@@ -94,19 +99,35 @@ _get_routes_openapi = app.openapi
 
 
 def get_openapi() -> dict:
-    """Gets the API's OpenAPI schema, whose components also hold the job file that a job's
-    upload carries, as no route's parameters name it
+    """Gets the API's OpenAPI schema, whose components also hold what no route's parameters
+    name: the job file that a job's upload carries, and the events the backend sends MSS over
+    its websocket, with MSS's reply to each, from which MSS generates its models of them
 
     Returns:
         the schema
     """
     if app.openapi_schema is None:
-        job_file = JobFile.model_json_schema(
-            ref_template="#/components/schemas/{model}"
-        )
         schemas = _get_routes_openapi()["components"]["schemas"]
-        schemas.update({**job_file.pop("$defs"), "JobFile": job_file})
+        _add_schema(schemas, "JobFile", JobFile.model_json_schema(ref_template=_REF))
+        _add_schema(
+            schemas,
+            "DeviceEvent",
+            DeviceEvent.model_json_schema(mode="serialization", ref_template=_REF),
+        )
+        _add_schema(
+            schemas,
+            "EventResponse",
+            TypeAdapter(EventResponse).json_schema(ref_template=_REF),
+        )
     return app.openapi_schema
 
 
 app.openapi = get_openapi
+
+
+def _add_schema(schemas: dict, name: str, schema: dict) -> None:
+    """Adds the schema, and the schemas it refers to that the routes' do not already define,
+    to the spec's components; those they do differ only in leaving out null defaults"""
+    for ref_name, ref_schema in schema.pop("$defs", {}).items():
+        schemas.setdefault(ref_name, ref_schema)
+    schemas[name] = schema
