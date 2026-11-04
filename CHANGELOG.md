@@ -7,6 +7,13 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.11.0-rc.7] - 2026-11-04
+
+### Added
+
+- Added the job file, `JobFile` with its `CircuitJobParams` and `QasmCircuit`, to the OpenAPI spec, as the JSON the
+  upload to `POST /jobs` carries, so a client generates it rather than writing it by hand
+
 ## [2026.11.0-rc.6] - 2026-11-04
 
 ### Added
