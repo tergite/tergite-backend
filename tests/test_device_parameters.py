@@ -11,12 +11,19 @@
 # that they have been altered from the originals.
 """Tests for the device parameters"""
 from datetime import datetime, timezone
+from typing import Any, Dict
 
 import pytest
 import time_machine
+import toml
 
 from libs.device_parameters import BackendConfig, Device, DeviceCalibration
-from libs.device_parameters.dtos import _BackendGeneralConfig
+from libs.device_parameters.dtos import (
+    ChipConfig,
+    SimulatorConfig,
+    _BackendGeneralConfig,
+)
+from tests.utils.chips import get_chip_config
 from tests.utils.fixtures import get_fixture_path
 
 
@@ -32,7 +39,7 @@ def test_online_date_defaults_to_when_the_config_is_made():
 @pytest.mark.parametrize(
     "backend_config_file, seed_file",
     [
-        ("backend_config.simq2.toml", "qiskit_pulse_2q.seed.toml"),
+        ("backend_config.simq2.toml", "sim_2q.seed.toml"),
         ("backend_config.toml", "dummy_quantify.seed.toml"),
     ],
 )
@@ -47,16 +54,23 @@ def test_couplers_of_a_config_take_their_qubits_from_its_coupling_dict(
     calibration = DeviceCalibration.from_config(config)
 
     for coupler in calibration.couplers:
-        assert [coupler.control_qubit, coupler.target_qubit] == list(
+        assert sorted([coupler.control_qubit, coupler.target_qubit]) == sorted(
             config.device_config.coupling_dict[coupler.short_name]
         )
     assert calibration.to_calibration_config().coupler
 
 
-def test_a_coupler_missing_from_the_coupling_dict_is_refused():
+def test_a_coupler_missing_from_the_coupling_dict_is_refused(tmp_path):
+    """A seed's coupler without a name takes its qubits from the coupling dict"""
+    seed = toml.load(get_fixture_path("sim_2q.seed.toml"))
+    for coupler in seed["calibration_config"]["coupler"]:
+        for field in ("full_name", "control_qubit", "target_qubit"):
+            coupler.pop(field, None)
+        coupler["id"] = "u0"
+    seed_file = tmp_path / "seed.toml"
+    seed_file.write_text(toml.dumps(seed))
     config = BackendConfig.from_toml(
-        get_fixture_path("backend_config.simq2.toml"),
-        get_fixture_path("qiskit_pulse_2q.seed.toml"),
+        get_fixture_path("backend_config.simq2.toml"), seed_file
     )
     config = config.model_copy(
         update={
@@ -79,18 +93,18 @@ def test_qubits_out_of_the_order_of_their_numbers_are_refused(tmp_path):
     swapped.write_text(
         open(settings)
         .read()
-        .replace('qubit_ids = [ "q0", "q1" ]', 'qubit_ids = [ "q1", "q0" ]')
+        .replace('qubit_ids = [ "q12", "q13" ]', 'qubit_ids = [ "q13", "q12" ]')
     )
 
     with pytest.raises(ValueError, match="not in the order of their numbers"):
-        BackendConfig.from_toml(swapped, get_fixture_path("qiskit_pulse_2q.seed.toml"))
+        BackendConfig.from_toml(swapped, get_fixture_path("sim_2q.seed.toml"))
 
 
 @pytest.mark.parametrize(
     "settings, seed, expected_cz",
     [
-        ("backend_config.simq1.toml", "qiskit_pulse_1q.seed.toml", []),
-        ("backend_config.simq2.toml", "qiskit_pulse_2q.seed.toml", ["cz"]),
+        ("backend_config.simq1.toml", "sim_1q.seed.toml", []),
+        ("backend_config.simq2.toml", "sim_2q.seed.toml", ["cz"]),
     ],
 )
 def test_device_lists_the_gates_gate_level_jobs_compile(settings, seed, expected_cz):
@@ -109,3 +123,68 @@ def test_device_lists_the_gates_gate_level_jobs_compile(settings, seed, expected
         "delay",
         *expected_cz,
     ]
+
+
+def test_a_simulator_section_takes_a_chip():
+    config = BackendConfig.from_toml(
+        get_fixture_path("backend_config.simq2.toml"),
+        get_fixture_path("dummy_quantify.seed.toml"),
+    )
+
+    assert sorted(config.simulator.chip.qubits) == ["q12", "q13"]
+    assert config.simulator.chip.couplers["q12_q13"].couplings == {
+        "q12": 0.1e9,
+        "q13": 0.1e9,
+    }
+
+
+@pytest.mark.parametrize(
+    "change, error",
+    [
+        ({"qubits": {"q12": {"t2": 2e-4}}}, "longer than twice t1"),
+        ({"resonators": {"q13": None}}, r"qubits \['q13'\] have no resonator"),
+        ({"couplers": {"q12_q13": {"couplings": {"q13": None}}}}, "two qubits"),
+        (
+            {"couplers": {"q12_q13": {"couplings": {"q13": None, "q14": 1e8}}}},
+            "not named for the qubits it couples",
+        ),
+        (
+            {
+                "couplers": {
+                    "q12_q15": {
+                        "max_frequency": 7e9,
+                        "anharmonicity": -1e8,
+                        "flux_per_amplitude": 0.1,
+                        "couplings": {"q12": 1e8, "q15": 1e8},
+                    }
+                }
+            },
+            r"couples qubits \['q15'\] the chip lacks",
+        ),
+    ],
+)
+def test_an_impossible_chip_is_refused(change, error):
+    chip = _merge(get_chip_config().model_dump(), change)
+
+    with pytest.raises(ValueError, match=error):
+        ChipConfig.model_validate(chip)
+
+
+def _merge(base: Dict[str, Any], change: Dict[str, Any]) -> Dict[str, Any]:
+    """Gets the base with the change's values over its own, a None removing a key"""
+    merged = dict(base)
+    for key, value in change.items():
+        if value is None:
+            merged.pop(key)
+        elif isinstance(value, dict) and isinstance(base.get(key), dict):
+            merged[key] = _merge(base[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def test_the_qutip_simulators_readout_points_are_refused():
+    with pytest.raises(ValueError, match="takes a chip, its readout_iq"):
+        SimulatorConfig.model_validate(
+            {"readout_iq": {"q12": [[1, 0], [-1, 0]]}, "readout_noise": 0.1}
+        )

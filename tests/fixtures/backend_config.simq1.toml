@@ -1,11 +1,10 @@
-# backend_config.toml
 [general_config]
-name = "qiskit_pulse_1q"
-version = "1.0.0"
+name = "sim_1q"
 is_active = true
 characterized = true
 open_pulse = true
 simulator = true
+version = "1.0.0"
 online_date = "2024-09-11T18:07:31"
 num_qubits = 1
 num_couplers = 0
@@ -17,12 +16,10 @@ dtm = 1e-9
 [device_config]
 # config names for specification of calibration values
 # probably not entirely true for everything herein but mostly so
-discriminators = [ "lda" ]
+discriminators = [ "lda"]
 
-qubit_ids = [ "q0" ]
+qubit_ids = [ "q12" ]
 
-
-# the spacial [x,y] coordinates of the qubits
 coordinates = [ [ 0, 0 ] ]
 
 meas_map = [ [ 0 ] ]
@@ -57,17 +54,20 @@ resonator_parameters = [
 
 coupler_parameters = [
   "id",
-  "x_position",
-  "y_position",
-  "xy_drive_line",
-  "z_drive_line",
   "frequency",
-  "pi_pulse_amplitude",
-  "pi_pulse_duration",
-  "pulse_type",
-  "pulse_sigma",
-  "t1_decoherence",
-  "t2_decoherence"
+  "frequency_detuning",
+  "anharmonicity",
+  "coupling_strength_02",
+  "coupling_strength_12",
+  "cz_pulse_amplitude",
+  "cz_pulse_dc_bias",
+  "cz_pulse_phase_offset",
+  "cz_pulse_duration_before",
+  "cz_pulse_duration_rise",
+  "cz_pulse_duration_constant",
+  "control_rz_lambda",
+  "target_rz_lambda",
+  "pulse_type"
 ]
 
 [device_config.discriminator_parameters]
@@ -77,15 +77,40 @@ lda = [
   "intercept"
 ]
 
-# Configuration for Basis gates
-[gates.x]
-qasm_def = "gate x q { U(pi, 0, pi) q; }"
+[gates.u]
+qubits = [ 0 ]
+qasm_def = "gate id q { U(0, 0, 0) q; }"
 parameters = [ ]
-coupling_map = [[0]]
 
-# runs its jobs on QuTiP, each qubit read out about these IQ points of states 0 and 1
-[simulator]
-readout_noise = 0.1
+[gates.h]
+qubits = [ 0 ]
+qasm_def = "gate id q { U(0, 0, 0) q; }"
+parameters = [ ]
 
-[simulator.readout_iq]
-q0 = [[1.0, 0.0], [-1.0, 0.0]]
+[gates.x]
+qubits = [ 0 ]
+qasm_def = "gate id q { U(0, 0, 0) q; }"
+parameters = [ ]
+
+
+# the chip as it is, a transmon of the test chip, behind the dummy clusters of dummy-quantify-config.json, within reach of
+# their LOs; the calibration does not see it. See docs/configuration.md
+[simulator.chip]
+readout_noise = 0.002
+
+[simulator.chip.qubits.q12]
+frequency = 4.5116e9
+anharmonicity = -0.21e9
+rabi_frequency = 1.62e8
+t1 = 6e-5
+t2 = 5e-5
+
+[simulator.chip.resonators.q12]
+frequency = 7.2601e9
+dispersive_shift = -0.5e6
+bare_frequency = 7.2581e9
+critical_amplitude = 0.4
+internal_quality = 60000
+coupling_quality = 20000
+amplitude = 0.3
+phase = 0.4

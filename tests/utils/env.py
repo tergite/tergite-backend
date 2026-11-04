@@ -36,8 +36,8 @@ _PATH_TO_TEST_SQL_DB = TEST_ROOT / "booking.db"
 TEST_DEFAULT_PREFIX = "system_test"
 TEST_STORAGE_ROOT = f"{TEST_ROOT / 'storage'}"
 
-TEST_DEFAULT_PREFIX_SIM_1Q = "qiskit_pulse_1q"
-TEST_DEFAULT_PREFIX_SIM_2Q = "qiskit_pulse_2q"
+TEST_DEFAULT_PREFIX_SIM_1Q = "sim_1q"
+TEST_DEFAULT_PREFIX_SIM_2Q = "sim_2q"
 
 TEST_LOGFILE_DOWNLOAD_POOL_DIRNAME = "logfile_download_pool"
 TEST_JOB_UPLOAD_POOL_DIRNAME = "job_upload_pool"
@@ -67,8 +67,8 @@ TEST_SIMQ1_BACKEND_SETTINGS_FILE = get_fixture_path("backend_config.simq1.toml")
 TEST_SIMQ2_BACKEND_SETTINGS_FILE = get_fixture_path("backend_config.simq2.toml")
 
 TEST_QUANTIFY_SEED_FILE = get_fixture_path("dummy_quantify.seed.toml")
-TEST_SIM_1Q_SEED_FILE = get_fixture_path("qiskit_pulse_1q.seed.toml")
-TEST_SIM_2Q_SEED_FILE = get_fixture_path("qiskit_pulse_2q.seed.toml")
+TEST_SIM_1Q_SEED_FILE = get_fixture_path("sim_1q.seed.toml")
+TEST_SIM_2Q_SEED_FILE = get_fixture_path("sim_2q.seed.toml")
 TEST_MSS_PUBLIC_KEY_PATH = get_fixture_path("mss_public_key.pem")
 TEST_MSS_PRIVATE_KEY_PATH = get_fixture_path("mss_private_key.pem")
 

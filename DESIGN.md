@@ -13,8 +13,8 @@ this document is the map that ties them together.
 
 `tergite-backend` is the device-facing half of the [Tergite stack](https://tergite.github.io/)
 for the WACQT quantum computers. A BCC runs the jobs of one or more quantum devices: real
-devices through Qblox clusters with [quantify](https://quantify-os.org/), or simulated ones
-compiled as on clusters and played on [QuTiP](https://qutip.org/). Users never reach
+devices through Qblox clusters with [quantify](https://quantify-os.org/), or simulated ones,
+a simulated chip behind dummy clusters. Users never reach
 it directly except to upload a job: everything else comes through MSS, the Main Service Server
 in [tergite-frontend](https://github.com/tergite/tergite-frontend).
 
@@ -22,7 +22,7 @@ in [tergite-frontend](https://github.com/tergite/tergite-frontend).
 | --- | --- | --- | --- |
 | **API** | `api/` | Python 3.13+, FastAPI, uvicorn | The REST API MSS and the SDK call: jobs, bookings, users, the device's properties, recalibration and switch. |
 | **Workers** | `services/scheduler/` | the same process image, `main.py worker` | Run each job's stages and the recalibrations, claiming them from the SQL database. |
-| **Executors** | `libs/quantum_executor/` | quantify-scheduler, and Qblox or QuTiP | Compile jobs' OpenQASM 3 circuits, and the OpenPulse they may hold, to the device's native programs and run them. |
+| **Executors** | `libs/quantum_executor/` | quantify-scheduler and Qblox, QuTiP for simulated chips | Compile jobs' OpenQASM 3 circuits, and the OpenPulse they may hold, to the device's native programs and run them. |
 
 The backend installs as one package, `tergite-backend`, with no extras: every installation runs
 both devices on clusters and simulated ones.
@@ -145,7 +145,7 @@ roots (§5.2). `tests/test_styleguide.py` checks the direction.
 │   ├── devices/             # the device's properties, calibration and switch
 │   └── external/mss/        # the client to MSS, its events, signatures and nonces
 ├── libs/                    # imports no app code but utils
-│   ├── quantum_executor/    # base/, quantify/: compiling and running the jobs, on clusters or QuTiP
+│   ├── quantum_executor/    # base/, quantify/: compiling and running the jobs, on clusters or a simulated chip
 │   ├── device_parameters/   # BackendConfig, Device, DeviceCalibration
 │   └── queues/              # Job, Stage, JobStatus, ExecutorOptions
 ├── utils/                   # config, SQL, logging, datetimes, exceptions, strings
@@ -735,9 +735,9 @@ Circuit qubit `i` is the device's `i`-th qubit by the number in its id. The exec
 quantify against a `QuantumDevice` of a transmon per qubit and a `CouplerEdge` per coupler
 (`quantify/device.py`), each shot after an idle in which the qubits relax and its operations
 one after the other but for consecutive measurements, or delays, of distinct qubits, which
-start together. A simulated device compiles the same way, for a `QuantumDevice` without
-hardware, and plays the schedule on QuTiP (`quantify/simulator.py`), which reads a qubit
-without collapsing it, so it refuses a gate on a qubit after its measurement. A circuit that
+start together. A simulated device compiles the same way, for its dummy clusters, and plays
+the schedule on its chip, which reads a qubit without collapsing it, so it refuses a gate on
+a qubit after its measurement before a reset. A circuit that
 measures no qubit is refused, as it has no results. Each measurement is acquired on its own
 channel, numbered in the order
 the circuit measures; the `CircuitReadout` saved with the results names each channel's qubit
@@ -751,16 +751,42 @@ A job file whose `params` hold a `qobj`, the Pulse Qobj an SDK older than gate-l
 sends, is refused at upload with 400: "the backend takes OpenQASM 3 circuits only, not a qobj;
 upgrade the tergite SDK to send them".
 
-`BCC_EXECUTOR_TYPE` is `quantify`, the only type; `_init_executor` in
-`services/scheduler/utils.py` picks the executor by the backend config:
+`BCC_EXECUTOR_TYPE` is `quantify`, the only type, and `QuantifyExecutor` the only executor:
+quantify-scheduler schedules on Qblox clusters, real or dummy (`quantify-config.json`,
+`quantify-metadata.yml`), recalibrated with tergite-tuner; a backend config's
+`[simulator.chip]` section puts a simulated chip behind its dummy clusters
+(`quantify/simulated_chip/`).
 
-| Backend config | Executor |
-| --- | --- |
-| no `[simulator]` section | `QuantifyExecutor`: quantify-scheduler schedules on Qblox clusters, real or dummy (`quantify-config.json`, `quantify-metadata.yml`); recalibrates with tergite-tuner |
-| a `[simulator]` section | `QutipExecutor`: the same schedules played on QuTiP, a model of the device's transmons and couplers drawn from its calibration; never recalibrates |
+A simulated chip is a device's true parameters, which its calibration does not see, behind
+its dummy clusters' API. The executor gives each dummy cluster a `SimulatingClusterComponent`
+in place of quantify's `ClusterComponent`: as the coordinator prepares it for a schedule, it
+plays the schedule, as the hardware compilation left it, on the chip (`engine.py`), and loads
+the cluster's bins with what the chip acquires, so the coordinator's `start` and
+`retrieve_acquisition` return it through quantify's own path. Each pulse plays at its clock's
+frequency then, detuned from the chip's true frequencies, on transmons of three levels with
+T1 and T2 (`transmon.py`); an acquisition integrates its hanger resonator's response to the
+readout pulses, level by level (`readout.py`), averaged with the noise of its shots' mean or
+drawn shot by shot. A reset takes a transmon to |0>, and a loop's body plays once, each
+iteration read out from it. A coupler is a flux-tunable transmon between two (`coupler.py`):
+the three, diagonalized over its flux, give the pair's energies with the coupler in its
+ground state and the flux's couplings among them, and a flux pulse, modulated at its clock
+taken down from the 4.4 GHz CZ mixer, evolves the pair in that adiabatic frame, so a
+modulation at the |11>-|02> (or |20>) difference swaps them, a full swap adding the CZ's
+conditional phase, and moves each transmon's phase. The transmons a schedule's couplers
+join, and coupled ones while static ZZ is simulated, evolve as one register
+(`register.py`), the ZZ turning a pair while it idles. With an SPI rack in its quantify
+metadata, the DC currents tergite-tuner sets on it park each coupler and move its
+transmons' frequencies.
 
-It imports each only when it is chosen, so a process that runs no executor, such as the API,
-never takes the seconds quantify and QuTiP take to import. Adding one:
+Such a device recalibrates as one on clusters does, with tergite-tuner finding the chip's
+parameters from its device config's rough guesses, but in the tuner's real cluster mode: its
+dummy mode replaces each node's acquisitions with the node's own fakes. While it runs,
+`simulated_chip/tuner.py` swaps the `Cluster` and `ClusterComponent` that the tuner's
+`backend/hardware.py` imports for a dummy of the device's modules and the simulating
+component, and a test fails if the tuner stops connecting through them.
+
+It imports the executor only when a heavy worker builds one, so a process that runs no
+executor, such as the API, never takes the seconds quantify and QuTiP take to import. Adding one:
 [docs/executors.md](docs/executors.md).
 
 ## 12. Configuration
@@ -815,8 +841,12 @@ The suite runs in one environment, `.venv` (`uv sync --dev`), which has every de
   that matches their job.
 - `tests/api/` drives each router through the test client; `tests/services/` tests the
   executors and tasks; the files at the top test the rest.
-- The simulated devices' tests run their jobs on QuTiP, as a circuit takes milliseconds; the
-  device on clusters runs `MockQuantifyExecutor` on dummy clusters.
+- The simulated devices' tests run their jobs on their chips, as a circuit takes
+  milliseconds, their start-up recalibration kept to their seeds; the device on clusters runs
+  `MockQuantifyExecutor` on dummy clusters.
+- The two-qubit simulator recalibrates in one test, the whole of tergite-tuner's nodes
+  from its rough seed, then runs gate-level jobs on what the tuner found: some three
+  minutes, on one worker, with a timeout of its own.
 - The suite runs on 4 pytest-xdist workers, `--dist=worksteal`, as each has its own temporary
   root and database: about 3 times as fast as one. The tests marked
   `real_time`, whose outcome depends on how fast the machine works through the jobs against

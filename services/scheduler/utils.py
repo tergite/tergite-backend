@@ -296,12 +296,6 @@ def _init_executor(
         An initialized quantum executor
     """
     backend_config = options.backend_config
-
-    if backend_config.simulator is not None:
-        from libs.quantum_executor.quantify.qutip_executor import QutipExecutor
-
-        return QutipExecutor(backend_config, data_dir=options.data_directory)
-
     from libs.quantum_executor.quantify.executor import QuantifyExecutor
 
     return QuantifyExecutor(

@@ -89,16 +89,27 @@ coupling_map = [ [ 0, 1], [1, 0] ]
 qasm_def = "gate x q { U(pi, 0, pi) q; }"
 parameters = [ ]
 
-# Makes this a simulated device, which runs its jobs on QuTiP, from its calibration seed,
-# rather than on Qblox clusters: each qubit's IQ points of states 0 and 1, by its id, and the
-# readout noise about them. See docs/configuration.md.
+# Makes this a simulated device, a chip of these true parameters behind its dummy clusters,
+# which the calibration does not see; tests/fixtures/backend_config.simq2.toml has a whole one.
+# See docs/configuration.md.
 #
-# [simulator]
-# readout_noise = 0.1
+# [simulator.chip]
+# readout_noise = 0.002
 #
-# [simulator.readout_iq]
-# q12 = [[1.0, 0.0], [-1.0, 0.0]]
-# q13 = [[0.0, 1.0], [0.0, -1.0]]
+# [simulator.chip.qubits.q12]
+# frequency = 4.5116e9
+# anharmonicity = -0.21e9
+# rabi_frequency = 1.62e8
+# t1 = 6e-5
+# t2 = 5e-5
+#
+# [simulator.chip.resonators.q12]
+# frequency = 7.2601e9
+# dispersive_shift = -0.5e6
+# bare_frequency = 7.2581e9
+# critical_amplitude = 0.4
+# internal_quality = 60000
+# coupling_quality = 20000
 
 # New calibration section for the loke backend (values only)
 

@@ -83,14 +83,11 @@ def check_device(settings: DeviceSettings) -> List[Finding]:
         settings: the device's settings, as read from its env file
 
     Returns:
-        what the check found; nothing for a simulated device, which has no hardware
-        config
+        what the check found
     """
     backend_config = BackendConfig.from_toml(
         settings.backend_settings, seed_file=settings.calibration_seed
     )
-    if backend_config.simulator is not None:
-        return []
     hardware_config = load_quantify_config(settings.quantify_config_file)
     return check_configs(backend_config, hardware_config)
 

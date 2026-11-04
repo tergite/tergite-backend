@@ -147,14 +147,26 @@ copy_examples() {
 			;;
 		sim_1q)
 			install -m 0640 "$examples/backend_config.simq1.toml" "$dir/backend_config.toml"
-			install_seed "$examples/qiskit_pulse_1q.seed.toml"
+			install_seed "$examples/sim_1q.seed.toml"
+			copy_simulator_examples
 			;;
 		sim_2q)
 			install -m 0640 "$examples/backend_config.simq2.toml" "$dir/backend_config.toml"
-			install_seed "$examples/qiskit_pulse_2q.seed.toml"
+			install_seed "$examples/sim_2q.seed.toml"
+			copy_simulator_examples
 			;;
 		*) fail "@BINARY@ knows no device '$1'; it takes cluster, sim_1q or sim_2q" ;;
 	esac
+}
+
+# a simulated device's dummy clusters, whose chip its backend config holds, and the configs
+# tergite-tuner recalibrates it with
+copy_simulator_examples() {
+	install -m 0640 "$examples/dummy-quantify-config.json" "$dir/quantify-config.json"
+	install -m 0640 "$examples/dummy-quantify-metadata.yml" "$dir/quantify-metadata.yml"
+	install -m 0640 "$examples/chip_calib_device_config.toml" "$dir/device_config.calib.toml"
+	install -m 0640 "$examples/chip_node_config.toml" "$dir/node_config.calib.toml"
+	install -m 0640 "$examples/dummy_spi_config.calib.toml" "$dir/spi_config.calib.toml"
 }
 
 # the seed in the data folder, the service's own, as each recalibration rewrites it and

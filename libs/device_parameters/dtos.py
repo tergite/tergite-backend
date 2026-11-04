@@ -386,9 +386,11 @@ class CouplerCalibration(BaseModel):
     target_rz_lambda: Optional[CalibrationValue] = None
     pulse_type: Optional[CalibrationValue[str]] = None
     id: Optional[int] = None
+    # its qubits' names joined by an underscore
     full_name: Optional[str] = None
-    """The name of the coupler in format {control_qubit}_{target_qubit}"""
-    # FIXME: This format is not being followed currently
+    # its qubits by role in its CZ, whose phase each of its corrections is
+    control_qubit: Optional[str] = None
+    target_qubit: Optional[str] = None
 
     @field_validator("id", mode="before")
     @classmethod
@@ -405,16 +407,17 @@ class CouplerCalibration(BaseModel):
             return int(v.lstrip("u"))
         return v
 
-    @field_validator("full_name", mode="before")
+    @field_validator("full_name", "control_qubit", "target_qubit", mode="before")
     @classmethod
     def validate_full_name(cls, v):
-        """Accepts the full name as is or as a calibration value
+        """Accepts the full name, or a qubit's name by role, as is or as a calibration
+        value
 
         Args:
-            v: the raw full name
+            v: the raw name
 
         Returns:
-            the full name
+            the name
         """
         if isinstance(v, dict):
             return v.get("value")
@@ -428,23 +431,13 @@ class CouplerCalibration(BaseModel):
             return None
         return f"u{self.id}"
 
-    @computed_field
-    @cached_property
-    def control_qubit(self) -> Optional[str]:
-        """The name of the control qubit, or None if there is no full name"""
-        # FIXME: the format '{control}_{target}' is not being used at the moment
-        if self.full_name is None:
-            return None
-        return self.full_name.split("_")[0]
-
-    @computed_field
-    @cached_property
-    def target_qubit(self) -> Optional[str]:
-        """The name of the target qubit, or None if there is no full name"""
-        # FIXME: the format '{control}_{target}' is not being used at the moment
-        if self.full_name is None:
-            return None
-        return self.full_name.split("_")[1]
+    @model_validator(mode="after")
+    def set_roles(self) -> Self:
+        """Takes the qubits' roles in the order of the full name where the calibration
+        does not give them, as a seed older than the roles does not"""
+        if self.full_name is not None and self.control_qubit is None:
+            self.control_qubit, self.target_qubit = self.full_name.split("_")
+        return self
 
     @classmethod
     def from_calib_config(
@@ -485,6 +478,7 @@ class CouplerCalibration(BaseModel):
         calib_results: "CalibrationResults",
         name_id_map: Dict[str, int],
         reverse_phase_qubits: Tuple[str, ...] = (),
+        coupler_roles: Optional[Dict[str, Tuple[str, str]]] = None,
         **kwargs,
     ) -> List["CouplerCalibration"]:
         """Generates new instances of CouplerCalibration from the calibration results
@@ -495,6 +489,9 @@ class CouplerCalibration(BaseModel):
                     in calibration to their index in BCC
             reverse_phase_qubits: the qubits that have the reverse phase of what
                 they should have phase on the couplers
+            coupler_roles: each coupler's control and target qubits, by its name, as
+                tergite-tuner's device config gives them; a coupler without them takes
+                the order of its name
             kwargs: extra args like:
                 coupler_index_map (dict[str, int]): the required map for the names of couplers
                     in calibration to their index in BCC
@@ -510,14 +507,19 @@ class CouplerCalibration(BaseModel):
                 # ignore couplers missing in the map
                 continue
 
+            control_qubit, target_qubit = (coupler_roles or {}).get(
+                coupler, coupler.split("_")
+            )
             control_phase, target_phase = _get_local_phases(
-                coupler, item, reverse_phase_qubits
+                (control_qubit, target_qubit), item, reverse_phase_qubits
             )
 
             results.append(
                 CouplerCalibration(
                     id=bcc_coupler_idx,
                     full_name=coupler,
+                    control_qubit=control_qubit,
+                    target_qubit=target_qubit,
                     # correcting the frequency by the downconvert frequency
                     frequency=CalibrationValue.from_scalar(
                         value=_DOWNCONVERT_FREQUENCY - item.cz_pulse_frequency,
@@ -601,6 +603,9 @@ class DeviceCalibration(BaseModel):
         with suppress(KeyError, IndexError, TypeError):
             coupler_units = units["couplers"][0]
             coupler_units.pop("id")
+            # names, not values with units
+            coupler_units.pop("control_qubit", None)
+            coupler_units.pop("target_qubit", None)
         with suppress(KeyError, IndexError, TypeError):
             resonator_units = units["resonators"][0]
             resonator_units.pop("id")
@@ -652,6 +657,7 @@ class DeviceCalibration(BaseModel):
         calib_results: "CalibrationResults",
         name_id_map: Dict[str, int],
         reverse_phase_qubits: Tuple[str, ...] = (),
+        coupler_roles: Optional[Dict[str, Tuple[str, str]]] = None,
         **kwargs: Any,
     ) -> "DeviceCalibration":
         """Generates a new instance of DeviceCalibration from the calibration results
@@ -661,6 +667,8 @@ class DeviceCalibration(BaseModel):
             name_id_map: the map for the names of couplers/qubits
                     in calibration calib_results to their identifier in BCC
             reverse_phase_qubits: the qubits that have their phases reversed on couplers
+            coupler_roles: each coupler's control and target qubits, by its name, as
+                tergite-tuner's device config gives them
             kwargs: extra args like:
 
             kwargs: extra args to add to the DeviceCalibration
@@ -679,6 +687,7 @@ class DeviceCalibration(BaseModel):
                 calib_results,
                 name_id_map=name_id_map,
                 reverse_phase_qubits=reverse_phase_qubits,
+                coupler_roles=coupler_roles,
             ),
             discriminators={
                 "lda": {
@@ -794,6 +803,7 @@ class _BackendCalibrationConfig(BaseModel):
 
 
 _NonNegative = Annotated[float, Field(ge=0)]
+_Positive = Annotated[float, Field(gt=0)]
 
 
 class PulseLimits(BaseModel):
@@ -813,16 +823,153 @@ class PulseLimits(BaseModel):
     max_capture_duration: _NonNegative
 
 
-class SimulatorConfig(BaseModel):
-    """How a simulated device reads its qubits out, which its backend config's simulator
-    section sets; a device with one runs its jobs on QuTiP, not on clusters"""
+class ChipQubit(BaseModel):
+    """A simulated chip's transmon, as it is, not as its calibration finds it"""
 
     model_config = ConfigDict(extra="forbid")
 
-    # each qubit's IQ point of state 0 and of state 1, by its id, e.g. {"q0": [[1, 0], [-1, 0]]}
-    readout_iq: Dict[str, Tuple[Tuple[float, float], Tuple[float, float]]]
-    # the standard deviation of a shot's I, and of its Q, about its state's point
+    # of the transition from |0> to |1>, in hertz
+    frequency: _Positive
+    # the frequency of |1> to |2> less that of |0> to |1>, in hertz; negative for a transmon
+    anharmonicity: float
+    # the Rabi frequency, in hertz, of a resonant drive of amplitude 1
+    rabi_frequency: _Positive
+    t1: _Positive
+    t2: _Positive
+
+    @model_validator(mode="after")
+    def check_t2(self) -> Self:
+        """Requires a T2 no longer than twice the T1
+
+        Raises:
+            ValueError: t2 {t2} is longer than twice t1 {t1}
+        """
+        if self.t2 > 2 * self.t1:
+            raise ValueError(f"t2 {self.t2} is longer than twice t1 {self.t1}")
+        return self
+
+
+class ChipResonator(BaseModel):
+    """A simulated chip's readout resonator, a hanger on the feedline whose dip moves with
+    its transmon's level, and towards its bare frequency as the readout grows stronger
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    # of its dip with its transmon in |0>, at a weak readout, in hertz
+    frequency: _Positive
+    # the shift of its dip, in hertz, with its transmon in |1>; twice that in |2>
+    dispersive_shift: float
+    # of its dip at a readout too strong for the transmon to shift it, in hertz
+    bare_frequency: _Positive
+    # the readout amplitude at which its dip is half way to its bare frequency
+    critical_amplitude: _Positive
+    internal_quality: _Positive
+    coupling_quality: _Positive
+    # the transmission off resonance of a readout of amplitude 1, and its phase in radians
+    amplitude: _Positive = 1.0
+    phase: float = 0.0
+
+
+class ChipCoupler(BaseModel):
+    """A simulated chip's coupler, a flux-tunable transmon between two qubits"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # of its transition from |0> to |1> at zero flux, in hertz
+    max_frequency: _Positive
+    anharmonicity: float
+    # its coupling to each of its qubits, by qubit id, in hertz
+    couplings: Dict[str, _Positive]
+    # its flux, in flux quanta, without a current or a pulse
+    flux_offset: float = 0.0
+    # the flux, in flux quanta, of an ampere of DC current, and of a flux pulse of amplitude 1
+    flux_per_current: float = 0.0
+    flux_per_amplitude: float
+
+    @field_validator("couplings")
+    @classmethod
+    def check_two_qubits(cls, couplings: Dict[str, float]) -> Dict[str, float]:
+        """Requires a coupling to each of two qubits
+
+        Raises:
+            ValueError: a coupler couples two qubits, not {qubits}
+        """
+        if len(couplings) != 2:
+            raise ValueError(f"a coupler couples two qubits, not {list(couplings)}")
+        return couplings
+
+
+class ChipConfig(BaseModel):
+    """The true parameters of a simulated chip, which its calibration does not see, by the
+    ids of its qubits and couplers: a resonator by its qubit's id, a coupler by its
+    qubits', e.g. q12_q13"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    qubits: Dict[str, ChipQubit]
+    resonators: Dict[str, ChipResonator]
+    couplers: Dict[str, ChipCoupler] = {}
+    # the standard deviation of a shot's I, and of its Q, integrated over a microsecond
     readout_noise: _NonNegative
+    # whether two coupled transmons pick up their parked coupler's static ZZ while idle
+    should_simulate_static_zz: bool = True
+
+    @model_validator(mode="after")
+    def check_elements(self) -> Self:
+        """Requires a resonator for each qubit, and the qubits of each coupler
+
+        Raises:
+            ValueError: the qubits {ids} have no resonator
+            ValueError: the coupler {id} is not named for the qubits it couples
+            ValueError: the coupler {id} couples qubits {ids} the chip lacks
+        """
+        unread = sorted(set(self.qubits) - set(self.resonators))
+        if unread:
+            raise ValueError(f"the qubits {unread} have no resonator")
+        for name, coupler in self.couplers.items():
+            if sorted(name.split("_")) != sorted(coupler.couplings):
+                raise ValueError(
+                    f"the coupler {name} is not named for the qubits it couples, "
+                    f"{list(coupler.couplings)}"
+                )
+            missing = sorted(set(coupler.couplings) - set(self.qubits))
+            if missing:
+                raise ValueError(
+                    f"the coupler {name} couples qubits {missing} the chip lacks"
+                )
+        return self
+
+
+class SimulatorConfig(BaseModel):
+    """A simulated device, which its backend config's simulator section sets: its chip, on
+    which its schedules play as compiled for its dummy clusters"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    chip: ChipConfig
+
+    @model_validator(mode="before")
+    @classmethod
+    def check_retired_readout(cls, data: Any) -> Any:
+        """Refuses the readout points of the QuTiP simulators, which a chip replaced
+
+        Args:
+            data: the raw simulator section
+
+        Returns:
+            the section
+
+        Raises:
+            ValueError: a simulator section takes a chip, its readout_iq and readout_noise
+                going with the QuTiP simulators; see docs/configuration.md
+        """
+        if isinstance(data, dict) and {"readout_iq", "readout_noise"} & set(data):
+            raise ValueError(
+                "a simulator section takes a chip, its readout_iq and readout_noise "
+                "going with the QuTiP simulators; see docs/configuration.md"
+            )
+        return data
 
 
 class BackendConfig(BaseModel):
@@ -835,7 +982,7 @@ class BackendConfig(BaseModel):
     calibration_config: Optional[_BackendCalibrationConfig] = None
     # none takes no pulse-level jobs
     pulse_limits: Optional[PulseLimits] = None
-    # a simulated device's; none of one on clusters
+    # a simulated device's chip; none of a chip on clusters
     simulator: Optional[SimulatorConfig] = None
 
     @classmethod
@@ -890,38 +1037,29 @@ class BackendConfig(BaseModel):
 
 
 def _get_local_phases(
-    coupler: str,
+    roles: Tuple[str, str],
     coupler_results: "CouplerResults",
     reverse_phase_qubits: Tuple[str, ...],
 ) -> Tuple[float, float]:
-    """Gets the local phases in radians for given the coupler_results from tergite-tuner
+    """Gets the phase corrections of a coupler's CZ in radians, from tergite-tuner's
+    results, negated for the qubits whose phase is the reverse of what it should be
 
     Args:
-        coupler: the coupler name
+        roles: the coupler's control qubit and target qubit
         coupler_results: the coupler's results from tergite-tuner
-        reverse_phase_qubits: the qubits that have the reverse phase of what they sh
-            should have phase on their couplers
+        reverse_phase_qubits: the qubits that have the reverse of the phase they should
+            have on their couplers
 
     Returns:
-        tuple of (control_qubit_local_phase, target_qubit_local_phase)
+        the control qubit's correction and the target qubit's
     """
+    control_qubit, target_qubit = roles
     control_phase = coupler_results.cz_dynamic_control
     target_phase = coupler_results.cz_dynamic_target
-
-    q1, q2 = coupler.split("_")
-    affected_qubits = set(reverse_phase_qubits) & {q1, q2}
-
-    # flip phases of the affected qubits
-    for q in affected_qubits:
-        # FIXME: Major assumption: the even qubit is the control one,
-        #  and the odd is target
-        idx = int(q.lstrip("q"))
-        is_even = idx % 2 == 0
-        if is_even:
-            control_phase = -control_phase
-        else:
-            target_phase = -target_phase
-
+    if control_qubit in reverse_phase_qubits:
+        control_phase = -control_phase
+    if target_qubit in reverse_phase_qubits:
+        target_phase = -target_phase
     return np.deg2rad(control_phase), np.deg2rad(target_phase)
 
 

@@ -1,7 +1,8 @@
 #!/bin/sh
 # Provisions an instance of a device on clusters and one of a simulated device with the
-# installed package and loads each, which imports every executor dependency and reads the
-# instance's settings, needing no MSS: as root, from the repo root, `pkg/smoke-test.sh`
+# installed package and loads each, reading the instance's settings, then starts its heavy
+# worker for a minute, which imports every executor dependency, failing on an import the
+# binary lacks; it needs no MSS: as root, from the repo root, `pkg/smoke-test.sh`
 
 set -e
 
@@ -17,4 +18,13 @@ for device in cluster sim_2q; do
 	bcc-provision "$name" --device "$device" >/dev/null
 	cp tests/fixtures/mss_public_key.pem "$etc_dir/$name/public-mss-key.pem"
 	BCC_ENV_FILE="$etc_dir/$name/backend.env" bcc --help
+	log=$(mktemp)
+	BCC_ENV_FILE="$etc_dir/$name/backend.env" bcc worker --kind heavy >"$log" 2>&1 &
+	worker=$!
+	sleep 60
+	kill "$worker" 2>/dev/null || true
+	if grep -E "ImportError|ModuleNotFoundError" "$log"; then
+		echo "the heavy worker of $name failed to import a module" >&2
+		exit 1
+	fi
 done

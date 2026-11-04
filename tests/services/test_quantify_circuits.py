@@ -211,6 +211,38 @@ def test_circuit_wider_than_the_device_is_refused(quantum_device):
         get_circuit_schedule(circuit, _NATIVE_CONFIG, **_get_kwargs(quantum_device))
 
 
+@pytest.mark.parametrize(
+    "roles, expected",
+    [(None, ("control", "target")), (("q13", "q12"), ("target", "control"))],
+    ids=["by-name", "given"],
+)
+def test_a_czs_phase_corrections_go_to_its_qubits_by_role(tmp_path, roles, expected):
+    """Each correction is its control's or its target's, as the calibration names them,
+    or else as the coupler's name orders its qubits"""
+    from quantify_scheduler.device_under_test.quantum_device import QuantumDevice
+
+    from libs.quantum_executor.quantify.device import apply_calibration
+
+    seed = get_gate_level_seed()
+    coupler = seed["calibration_config"]["coupler"][0]
+    if roles is not None:
+        coupler["control_qubit"], coupler["target_qubit"] = roles
+    seed_file = tmp_path / "seed.toml"
+    seed_file.write_text(toml.dumps(seed))
+    config = BackendConfig.from_toml(TEST_BACKEND_SETTINGS_FILE, seed_file=seed_file)
+    device = QuantumDevice("test_cz_roles")
+    apply_calibration(device, config)
+    edge = device.get_edge("q12_q13")
+
+    corrections = {
+        "control": math.degrees(coupler["control_rz_lambda"]),
+        "target": math.degrees(coupler["target_rz_lambda"]),
+    }
+    got = (edge.parent_phase_correction(), edge.child_phase_correction())
+    device.close()
+    assert got == pytest.approx(tuple(corrections[role] for role in expected))
+
+
 @pytest.mark.parametrize("qubit_id, expected", [(6, "q06"), (12, "q12")])
 def test_transmons_are_named_as_the_hardware_config_names_ports(qubit_id, expected):
     from libs.quantum_executor.quantify.device import get_element_name

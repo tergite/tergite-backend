@@ -67,10 +67,20 @@ contents:
     dst: /usr/share/@PACKAGE@/examples/backend_config.simq1.toml
   - src: tests/fixtures/backend_config.simq2.toml
     dst: /usr/share/@PACKAGE@/examples/backend_config.simq2.toml
-  - src: tests/fixtures/qiskit_pulse_1q.seed.toml
-    dst: /usr/share/@PACKAGE@/examples/qiskit_pulse_1q.seed.toml
-  - src: tests/fixtures/qiskit_pulse_2q.seed.toml
-    dst: /usr/share/@PACKAGE@/examples/qiskit_pulse_2q.seed.toml
+  - src: tests/fixtures/sim_1q.seed.toml
+    dst: /usr/share/@PACKAGE@/examples/sim_1q.seed.toml
+  - src: tests/fixtures/sim_2q.seed.toml
+    dst: /usr/share/@PACKAGE@/examples/sim_2q.seed.toml
+  - src: tests/fixtures/dummy-quantify-config.json
+    dst: /usr/share/@PACKAGE@/examples/dummy-quantify-config.json
+  - src: tests/fixtures/dummy-quantify-metadata.yml
+    dst: /usr/share/@PACKAGE@/examples/dummy-quantify-metadata.yml
+  - src: tests/fixtures/chip_calib_device_config.toml
+    dst: /usr/share/@PACKAGE@/examples/chip_calib_device_config.toml
+  - src: tests/fixtures/chip_node_config.toml
+    dst: /usr/share/@PACKAGE@/examples/chip_node_config.toml
+  - src: tests/fixtures/dummy_spi_config.calib.toml
+    dst: /usr/share/@PACKAGE@/examples/dummy_spi_config.calib.toml
   - src: LICENSE.txt
     dst: /usr/share/doc/@PACKAGE@/LICENSE.txt
 

@@ -43,12 +43,12 @@ _SIMULATED_SHOTS = 100
 _SIM_1Q_CLIENT_AND_WORKER = pytest.param(
     lazy_fixture("sim_1q_rest_client"),
     lazy_fixture("sim_1q_worker"),
-    id="qiskit_pulse_1q",
+    id="sim_1q",
 )
 _SIM_2Q_CLIENT_AND_WORKER = pytest.param(
     lazy_fixture("sim_2q_rest_client"),
     lazy_fixture("sim_2q_worker"),
-    id="qiskit_pulse_2q",
+    id="sim_2q",
 )
 _QUANTIFY_CLIENT_AND_WORKER = [
     pytest.param(
@@ -407,15 +407,16 @@ def test_simulated_iq_memory_is_in_clbit_order(
     with client as client:
         got = _run_job(client, worker, job, mocker=mocker, jobs_folder=jobs_folder)
         calibration = get_device_calibration_info(
-            create_engine(TEST_BOOKING_DB_URL), backend_name="qiskit_pulse_2q"
+            create_engine(TEST_BOOKING_DB_URL), backend_name="sim_2q"
         )
 
     [memory] = got.result.memory
     points = np.array([[complex(*point) for point in shot] for shot in memory])
+    first, second = sorted(int(qubit.id) for qubit in calibration.qubits)
     # clbit 0 holds qubit 1, left in 0; clbit 1 holds qubit 0, flipped to 1
     states = [
-        apply_linear_discriminator(calibration, qubit, points[:, clbit])
-        for clbit, qubit in enumerate([1, 0])
+        apply_linear_discriminator(calibration, number, points[:, clbit])
+        for clbit, number in enumerate([second, first])
     ]
     assert got.status == JobStatus.SUCCESSFUL
     assert points.shape == (_SIMULATED_SHOTS, 2)
@@ -455,7 +456,8 @@ def test_simulator_refuses_a_gate_on_a_measured_qubit(
 
     assert got.status == JobStatus.FAILED
     assert got.failure_reason == (
-        "the simulator measures each qubit once, after what else it plays on it"
+        "the simulated chip reads a transmon once between its resets, after what else "
+        "plays on it"
     )
 
 

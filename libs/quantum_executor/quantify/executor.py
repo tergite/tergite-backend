@@ -35,6 +35,7 @@ from quantify_scheduler.device_under_test.quantum_device import QuantumDevice
 from quantify_scheduler.instrument_coordinator import InstrumentCoordinator
 from quantify_scheduler.instrument_coordinator.components.qblox import ClusterComponent
 from tergite_tuner.utils.types.enums import MeasurementMode, SPIMode
+from threadpoolctl import threadpool_limits
 
 from libs.device_parameters.dtos import BackendConfig
 from libs.quantum_executor.base.circuits import CircuitExperiment, QasmCircuit
@@ -44,6 +45,11 @@ from libs.quantum_executor.base.quantum_job.typing import QExperimentResult
 from libs.quantum_executor.quantify.defcals import add_pulse_calibration
 from libs.quantum_executor.quantify.device import apply_calibration, remove_elements
 from libs.quantum_executor.quantify.experiments import get_circuit_experiments
+from libs.quantum_executor.quantify.simulated_chip.component import (
+    SimulatingClusterComponent,
+)
+from libs.quantum_executor.quantify.simulated_chip.engine import SimulatedChip
+from libs.quantum_executor.quantify.simulated_chip.tuner import connect_tuner_to_chip
 from libs.quantum_executor.quantify.utils.config import (
     InstrumentConfig,
     QuantifyMetadata,
@@ -112,11 +118,15 @@ class QuantifyExecutor(QuantumExecutor):
         set_datadir(data_dir)
         super().__init__(data_dir=data_dir, backend_config=backend_config)
         self._experiment_delay = self.quantify_metadata.experiment_delay
+        self._chip = _get_simulated_chip(backend_config, self.quantify_metadata)
 
         self.coordinator_name = f"{self.device_name}_executor"
-        # keyed by the metadata the clusters come from, so an executor of other hardware with
-        # the same device name never reuses them
+        # keyed by the metadata the clusters come from, and whether a simulated chip is
+        # behind them, so an executor of other hardware with the same device name never
+        # reuses them
         self._instruments_key = str(Path(os.fsdecode(quantify_metadata_file)).resolve())
+        if self._chip is not None:
+            self._instruments_key += ":simulated-chip"
         self._coordinator = self._get_coordinator(
             should_reset_clusters=should_reset and is_cluster_reset_allowed
         )
@@ -282,7 +292,11 @@ class QuantifyExecutor(QuantumExecutor):
             for cluster in _create_clusters(self.quantify_metadata):
                 if should_reset_clusters:
                     cluster.reset()
-                cluster_component = ClusterComponent(cluster)
+                cluster_component = (
+                    ClusterComponent(cluster)
+                    if self._chip is None
+                    else SimulatingClusterComponent(cluster, self._chip)
+                )
                 component_name = coordinator.add_component(cluster_component)
                 cached_instruments[component_name] = cluster_component
         except Exception:
@@ -296,9 +310,20 @@ class QuantifyExecutor(QuantumExecutor):
     def _recalibrate_cluster(
         self, name: str, conf: InstrumentConfig
     ) -> DeviceCalibration | None:
-        """Recalibrates the device through the cluster with tergite-tuner"""
+        """Recalibrates the device through the cluster with tergite-tuner: a simulated
+        chip as the tuner would real hardware, its cluster a dummy the chip is behind"""
+        if self._chip is None:
+            return self._run_tuner(name, conf, is_real=not conf.is_dummy)
+        with connect_tuner_to_chip(_get_dummy_modules(conf), self._chip):
+            return self._run_tuner(name, conf, is_real=True)
+
+    def _run_tuner(
+        self, name: str, conf: InstrumentConfig, is_real: bool
+    ) -> DeviceCalibration | None:
+        """Runs tergite-tuner's recalibration through the cluster, in its real cluster
+        mode or its dummy one"""
         backend_config = self.backend_config
-        cluster_mode = MeasurementMode.dummy if conf.is_dummy else MeasurementMode.real
+        cluster_mode = MeasurementMode.real if is_real else MeasurementMode.dummy
         logging.info(f"recalibrating {name} in {cluster_mode} mode...")
         return recalibrate(
             backend_config=backend_config,
@@ -308,7 +333,7 @@ class QuantifyExecutor(QuantumExecutor):
             file_log_level=25,
             cluster_ip=conf.ip_address,
             data_dir=Path(self.data_dir),
-            spi_mode=SPIMode.dummy,
+            **_get_spi_options(self.quantify_metadata),
             qubits=backend_config.device_config.qubit_ids,
             couplers=[
                 f"{q1}_{q2}"
@@ -384,16 +409,66 @@ def _create_cluster(name: str, conf: InstrumentConfig) -> qblox_instruments.Clus
     """
     dummy_cfg = None
     if getattr(conf, "is_dummy", False):
-        dummy_cfg = {
-            int(idx): _QBLOX_CLUSTER_TYPE_MAP[module.instrument_type]
-            for idx, module in conf.modules.items()
-        }
+        dummy_cfg = _get_dummy_modules(conf)
 
     return qblox_instruments.Cluster(
         name=name,
         identifier=conf.ip_address,
         dummy_cfg=dummy_cfg,
     )
+
+
+def _get_dummy_modules(
+    conf: InstrumentConfig,
+) -> Dict[int, qblox_instruments.ClusterType]:
+    """Gets the modules of a dummy cluster of the config, by slot"""
+    return {
+        int(idx): _QBLOX_CLUSTER_TYPE_MAP[module.instrument_type]
+        for idx, module in conf.modules.items()
+    }
+
+
+def _get_simulated_chip(
+    backend_config: BackendConfig, metadata: QuantifyMetadata
+) -> Optional[SimulatedChip]:
+    """Gets the simulated chip of the backend config's simulator section, behind the
+    metadata's dummy instruments, following the DC currents set on its SPI rack if it
+    lists one; none for a device on clusters
+
+    Raises:
+        ValueError: a simulated chip plays behind dummy instruments, but {name} is not one
+    """
+    simulator = backend_config.simulator
+    if simulator is None:
+        return None
+    for name, conf in metadata.root.items():
+        if not conf.is_dummy:
+            raise ValueError(
+                f"a simulated chip plays behind dummy instruments, but {name} is not one"
+            )
+    # BLAS starts a thread for each core it sees, which, under a CPU quota or beside
+    # another simulated device, starve one another on the chip's small matrices
+    threadpool_limits(limits=1)
+    return SimulatedChip(
+        simulator.chip, should_follow_currents=_get_spi_rack(metadata) is not None
+    )
+
+
+def _get_spi_rack(metadata: QuantifyMetadata) -> Optional[InstrumentConfig]:
+    """Gets the config of the SPI rack the metadata lists, or None if it lists none"""
+    racks = [
+        conf for conf in metadata.root.values() if conf.instrument_type == "SPI-Rack"
+    ]
+    return racks[0] if racks else None
+
+
+def _get_spi_options(metadata: QuantifyMetadata) -> Dict[str, Any]:
+    """Gets tergite-tuner's options of the metadata's SPI rack: its real one, on its
+    port, unless the rack is a dummy or there is none"""
+    rack = _get_spi_rack(metadata)
+    if rack is None or rack.is_dummy:
+        return {"spi_mode": SPIMode.dummy}
+    return {"spi_mode": SPIMode.real, "spi_serial_port": rack.port}
 
 
 def _get_quantum_device(name: str, quantify_config: Any) -> QuantumDevice:

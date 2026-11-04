@@ -9,8 +9,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Added
 
-- Added simulated devices on QuTiP: a backend config with a `[simulator]` section runs its gate-level and pulse-level
-  jobs, compiled as on a chip, on a model of its transmons and couplers drawn from its calibration
+- Added simulated devices as simulated chips: a `[simulator.chip]` section of a chip's true parameters, couplers with
+  their parametric CZ among them, puts it behind a device's dummy clusters, which play each schedule compiled for them on
+  it, so its jobs run through quantify's whole path and tergite-tuner calibrates it as it would real hardware
 - Added how a gate-level job ran to the result it sends MSS: its shots, `meas_level`, `meas_return` and each circuit's
   name and number of classical bits, so the SDK reads a job's result back without its payload
 - Added gate-level jobs: `POST /jobs` takes OpenQASM 3 circuits, with `shots`, `meas_level` and `meas_return`,
@@ -30,6 +31,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Changed
 
+- Changed recalibration to run tergite-tuner on the SPI rack the quantify metadata lists, a real one on its serial port,
+  where before it always ran a dummy rack and so never set a coupler's current
+- Changed which qubit of a coupler gets each of its CZ's phase corrections to the roles tergite-tuner's device config
+  gives it, `control_qubit` and `target_qubit`, kept in the calibration; before, the even-numbered qubit was taken as the
+  control, so a device configured otherwise had its corrections swapped
 - Changed the `basis_gates` each device publishes to MSS to the gates gate-level jobs are transpiled to (rz, sx,
   x, rx, measure, reset and delay, and cz where it has couplers), from the names of its config's gate settings
 - Changed `POST /jobs` to take OpenQASM 3 circuits only, deleting the qobj path: an older SDK's qobj job is now
@@ -37,9 +43,13 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Changed the backend to install as one package with no extras, one `bcc` binary replacing `bcc` and `bcc.simulator`,
   and deleted the qiskit-dynamics simulators: `BCC_EXECUTOR_TYPE=qiskit_pulse_1q`/`qiskit_pulse_2q` is now refused, a
   simulated device being executor type `quantify` with a `[simulator]` section in its backend config
+- Changed the simulated devices' names, and their example seeds', to `sim_1q` and `sim_2q`, as `bcc-provision` calls
+  them; a device provisioned before keeps the name its backend config gives it
 
 ### Fixed
 
+- Fixed recalibrating a device with couplers, which failed at Ramsey 12: the node, run one qubit at a time, compiled a
+  device holding the edge of a qubit it lacked, so it now runs without the couplers
 - Fixed the first wait before reconnecting to MSS being a second whatever `mss_max_reconnection_delay` said, which
   held every first retry to a second however low it was set
 - Fixed a quantify job with `meas_return` avg failing in postprocessing, as its averaged results, which have no

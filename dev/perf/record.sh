@@ -100,7 +100,7 @@ start_stack() {
 write_env_file() {
   mkdir "$WORK_PATH/storage"
   # the executor may write its calibration back, so a copy
-  cp "$FIXTURES_PATH/qiskit_pulse_1q.seed.toml" "$WORK_PATH/calibration.seed.toml"
+  cp "$FIXTURES_PATH/sim_1q.seed.toml" "$WORK_PATH/calibration.seed.toml"
   {
     echo "BCC_DEFAULT_PREFIX=perf"
     echo "BCC_EXECUTOR_TYPE=quantify"
@@ -112,6 +112,11 @@ write_env_file() {
     echo "BCC_BOOKING_DB_URL=sqlite:///$WORK_PATH/bookings.db"
     echo "BCC_BACKEND_SETTINGS=$FIXTURES_PATH/backend_config.simq1.toml"
     echo "BCC_CALIBRATION_SEED=$WORK_PATH/calibration.seed.toml"
+    echo "BCC_QUANTIFY_CONFIG_FILE=$FIXTURES_PATH/dummy-quantify-config.json"
+    echo "BCC_QUANTIFY_METADATA_FILE=$FIXTURES_PATH/dummy-quantify-metadata.yml"
+    echo "BCC_CALIBRATION_NODE_CONFIG_FILE=$FIXTURES_PATH/chip_node_config.toml"
+    echo "BCC_CALIBRATION_DEVICE_CONFIG_FILE=$FIXTURES_PATH/chip_calib_device_config.toml"
+    echo "BCC_CALIBRATION_SPI_CONFIG_FILE=$FIXTURES_PATH/dummy_spi_config.calib.toml"
     echo "BCC_PRIVATE_KEY_FILE=$FIXTURES_PATH/private-bcc-key.pem"
     echo "BCC_MSS_PUBLIC_KEY_PATH=$FIXTURES_PATH/mss_public_key.pem"
     # the run is shorter than a day, so the start-up recalibration is its only one

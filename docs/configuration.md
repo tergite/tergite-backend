@@ -55,7 +55,7 @@ and `BCC_QUANTIFY_METADATA_FILE=foobar.yml`_
 We configure all backends using the `backend_config.toml`.   
 We use the [`backend_config.example.toml`](../backend_config.example.toml) as a template.  
 
-A `[simulator]` section in it makes the device a simulated one, run on QuTiP instead of clusters; see
+A `[simulator]` section in it makes the device a simulated one, a chip behind dummy clusters; see
 [Simulated Devices](#simulated-devices).
 
 _NOTE: You don't need to pass the `.env` file, the `backend_config.toml` file or the quantify files to the 
@@ -95,39 +95,90 @@ device that sets none.
 
 #### Simulated Devices
 
-A device whose `backend_config.toml` has a `[simulator]` section runs its jobs on QuTiP, not on
-clusters: each circuit, gate-level or pulse-level, is compiled as on a chip, from the
-calibration seed, and the pulses it plays drive a model of the chip.
+A `[simulator.chip]` section in its `backend_config.toml` puts a simulated chip behind the
+device's dummy clusters: its jobs compile for the clusters, as on hardware, and each schedule
+plays on the chip's true parameters, which its calibration does not see, so the calibration
+may be off as a real chip's is. Its quantify metadata lists dummy instruments only, and the
+qubits' frequencies must lie within reach of their LOs in the quantify hardware config. The
+`readout_iq` and `readout_noise` of the QuTiP simulators it replaced are refused.
 
-- Each transmon the circuit touches has three levels, in the frame of its drive clock, and is
-  driven at the Rabi rate that makes its calibrated pi pulse a pi rotation; DRAG, the
-  anharmonicity (-200 MHz where the seed gives none) and leakage act as they would.
-- A coupler's pulse switches on a ZZ interaction between its two transmons, scaled so that
-  the calibrated CZ adds a phase of pi to |11>; a CZ that plays no coupler pulse entangles
-  nothing, and its phase corrections should be 0.
-- T1 and T2 come from the seed.
-- A measurement reads the state, without collapsing it, into IQ points about each qubit's
-  points for states 0 and 1, from which the device's discriminators are drawn; so each
-  qubit is measured once, after anything else plays on it, and a level above 0 reads as 1.
+- Each pulse plays at its clock's frequency, detuned from the chip's true frequency, on a
+  transmon of three levels with the chip's anharmonicity, Rabi frequency, T1 and T2; a reset
+  takes it to |0>.
+- A measurement integrates its hanger resonator's response to the readout pulse: a dip at
+  `frequency` with the transmon in |0>, moved by `dispersive_shift` in |1> and twice that in
+  |2>, and towards `bare_frequency` as the readout amplitude nears `critical_amplitude`. An
+  averaged acquisition reads the populations' mean response, a single-shot one a level drawn
+  for each shot; each with `readout_noise` about it, for an integration of a microsecond.
+- A coupler is a flux-tunable transmon of `max_frequency` and `anharmonicity`, coupled to
+  each of its qubits, sitting at `flux_offset` flux quanta. Its flux pulse, on its `:fl`
+  port, reaches it modulated at 4.4 GHz less its clock's frequency, `flux_per_amplitude`
+  flux quanta at amplitude 1, which drives the parametric CZ: a modulation at the difference
+  of |11> and |02> (or |20>) swaps them, and a full swap adds a phase of pi to |11>. Park it
+  off its sweet spot, where the flux moves its frequency at the modulation's own frequency.
+- Two coupled transmons pick up their parked coupler's static ZZ while idle, unless
+  `should_simulate_static_zz = false`.
+- If the quantify metadata lists an SPI rack, a dummy, the DC currents tergite-tuner sets on
+  it move each coupler `flux_per_current` flux quanta an ampere, and its transmons'
+  frequencies with it; without one, each coupler sits at its `flux_offset`, as at a current
+  set and watched by hand.
+- A measurement does not collapse the state, so a transmon is read once between its resets,
+  after anything else plays on it.
+- It recalibrates with tergite-tuner as a chip on clusters does, from its tuner configs:
+  the device config's VNA frequencies are the rough guesses the tuner sweeps around, so the
+  chip's true frequencies must lie within its sweeps of them.
 
 ```toml
-[simulator]
-# the standard deviation of a shot's I, and of its Q, about its state's point
-readout_noise = 0.1
+[simulator.chip]
+# the standard deviation of a shot's I, and of its Q, integrated over a microsecond
+readout_noise = 0.002
+# whether coupled transmons pick up their static ZZ while idle
+should_simulate_static_zz = true
 
-[simulator.readout_iq]
-# each qubit's IQ point of state 0 and of state 1, by its id
-q0 = [[1.0, 0.0], [-1.0, 0.0]]
-q1 = [[0.0, 1.0], [0.0, -1.0]]
+[simulator.chip.qubits.q12]
+frequency = 4.5116e9        # Hz, of |0> to |1>
+anharmonicity = -0.21e9     # Hz, of |1> to |2> less that of |0> to |1>
+rabi_frequency = 1.62e8     # Hz, of a resonant drive of amplitude 1
+t1 = 6e-5                   # s
+t2 = 5e-5                   # s, at most twice t1
+
+[simulator.chip.resonators.q12]
+frequency = 7.2601e9        # Hz, its dip with the transmon in |0>, at a weak readout
+dispersive_shift = -0.5e6   # Hz, of its dip with the transmon in |1>
+bare_frequency = 7.2581e9   # Hz, its dip at a readout too strong for the transmon to move it
+critical_amplitude = 0.4    # the readout amplitude that moves the dip half way there
+internal_quality = 60000
+coupling_quality = 20000
+amplitude = 0.3             # its transmission off resonance, at a readout of amplitude 1
+phase = 0.4                 # rad
+
+[simulator.chip.couplers.q12_q13]
+max_frequency = 7.5e9       # Hz, at zero flux
+anharmonicity = -0.15e9     # Hz
+flux_offset = 0.25          # flux quanta it sits at, without a DC current
+flux_per_current = 100.0    # flux quanta of an ampere of DC current
+flux_per_amplitude = 0.1    # flux quanta of a flux pulse of amplitude 1
+
+[simulator.chip.couplers.q12_q13.couplings]
+q12 = 0.1e9                 # Hz
+q13 = 0.1e9
 ```
 
-The test fixtures hold a simulated one-qubit device and a two-qubit one with a coupler, which
-run with the default `BCC_EXECUTOR_TYPE=quantify`; a simulated device needs no quantify hardware
-config or metadata and none of tergite-tuner's configs:
+The test fixtures hold two simulated devices, `sim_1q`, a transmon, and
+`sim_2q`, two and their coupler, with the dummy cluster they play behind and
+tergite-tuner's configs to recalibrate them. Their seeds are what the tuner found from the
+rough guesses of `chip_calib_device_config.toml`; each recalibrates as it starts, in a minute
+or three, as a device on clusters does (`tests/services/test_simulated_chip_calibration.py`
+calibrates the two-qubit one from `sim_2q.rough.seed.toml`):
 
 ```shell
 # on the root of the project
 cp tests/fixtures/backend_config.simq2.toml backend_config.toml
-cp tests/fixtures/qiskit_pulse_2q.seed.toml calibration.seed.toml
+cp tests/fixtures/sim_2q.seed.toml calibration.seed.toml
+cp tests/fixtures/dummy-quantify-config.json quantify-config.json
+cp tests/fixtures/dummy-quantify-metadata.yml quantify-metadata.yml
+cp tests/fixtures/chip_calib_device_config.toml device_config.calib.toml
+cp tests/fixtures/chip_node_config.toml node_config.calib.toml
+cp tests/fixtures/dummy_spi_config.calib.toml spi_config.calib.toml
 ./dev/start_bcc.sh
 ```

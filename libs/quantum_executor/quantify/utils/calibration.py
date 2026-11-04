@@ -11,9 +11,11 @@
 # that they have been altered from the originals.
 """Utils for running recalibration"""
 import enum
+from os import PathLike
 from pathlib import Path
-from typing import Optional, Unpack
+from typing import Dict, Optional, Tuple, Unpack
 
+import toml
 from tergite_tuner import NodeEnum, SessionContext, read_result, run_node
 from tergite_tuner.config.session import SessionOptions
 
@@ -88,11 +90,23 @@ def recalibrate(
         results,
         name_id_map=coupler_index_map,
         reverse_phase_qubits=session.reverse_phase_qubits,
+        coupler_roles=_get_coupler_roles(session_options["device_config"]),
         name=backend_config.general_config.name,
         version=backend_config.general_config.version,
         last_calibrated=utc_now_str(),
     )
     return parsed_result
+
+
+def _get_coupler_roles(device_config: PathLike) -> Dict[str, Tuple[str, str]]:
+    """Gets each coupler's control and target qubits, by its name, as tergite-tuner's
+    device config gives them, those of couplers it gives none left out"""
+    couplers = toml.load(device_config).get("device", {}).get("coupler", {})
+    return {
+        name: (coupler["control_qubit"], coupler["target_qubit"])
+        for name, coupler in couplers.items()
+        if "control_qubit" in coupler and "target_qubit" in coupler
+    }
 
 
 def _recalibrate_all_qubits(
@@ -120,13 +134,16 @@ def _recalibrate_all_qubits(
             )
         elif run_mode == _RunMode.ONE_QUBIT_AT_A_TIME:
             for qubit in qubits:
+                # without the couplers, of which the tuner builds every one into a node's
+                # device, and so fails to compile one of its qubits alone; the next node
+                # of all qubits brings them back
                 session, _ = run_node(
                     session=session,
                     qubits=[qubit],
                     node=node,
                     refresh_session=False,
                     keep_data_files=False,
-                    **session_options,
+                    **{**session_options, "couplers": []},
                 )
         else:
             raise RuntimeError(f"Unknown run mode: {run_mode}")
