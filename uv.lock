@@ -3071,7 +3071,7 @@ wheels = [
 
 [[package]]
 name = "tergite-backend"
-version = "2026.11.0rc3"
+version = "2026.11.0rc4"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -3144,7 +3144,7 @@ requires-dist = [
     { name = "sqlmodel", specifier = "~=0.0.24" },
     { name = "starlette", specifier = "~=0.48.0" },
     { name = "tabulate", specifier = ">=0.9.0" },
-    { name = "tergite-tuner", specifier = ">=2026.10.0rc3,<2026.11.0" },
+    { name = "tergite-tuner", specifier = ">=2026.10.0rc6,<2026.11.0" },
     { name = "threadpoolctl", specifier = ">=3.1" },
     { name = "toml", specifier = ">=0.10.2" },
     { name = "uvicorn", specifier = "~=0.46.0" },
@@ -3172,7 +3172,7 @@ dev = [
 
 [[package]]
 name = "tergite-tuner"
-version = "2026.10.0rc3"
+version = "2026.10.0rc6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cf-xarray" },
@@ -3192,9 +3192,9 @@ dependencies = [
     { name = "tomlkit" },
     { name = "xarray" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e2/fa/208e2569af9ea3bb4e576ffb7ae08dd81eb13d611a571a87a70278c61556/tergite_tuner-2026.10.0rc3.tar.gz", hash = "sha256:e206654e607f65c82b466cc01f3d02097e07751c0926a4ed755ddd7d2abe7640", size = 358376, upload-time = "2026-10-31T02:49:51.94Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/31/9f/b3139c891ee09fc86a0d0528894accee529496dcda77fb96d313bfc91316/tergite_tuner-2026.10.0rc6.tar.gz", hash = "sha256:670a615f3825bd2e3d87bdca6cc20cbdb15870a56130749448b107d1748fc40c", size = 368577, upload-time = "2026-11-04T01:55:54.543Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1b/49/f396746ae3dbf0a90b883350fe88948bc02726d45e6ec326d566586d403c/tergite_tuner-2026.10.0rc3-py3-none-any.whl", hash = "sha256:38edd8a9f78d619d966e220143dec2a4c7084486e61f169d5cf36fd95244dfc5", size = 210183, upload-time = "2026-10-31T02:49:50.59Z" },
+    { url = "https://files.pythonhosted.org/packages/cf/b7/5f5145e23b5a89725aec51e3206547b5a03c90db6a3b2b340a378df515dc/tergite_tuner-2026.10.0rc6-py3-none-any.whl", hash = "sha256:5f3df116d2a580ffc3b878b92a81d861a3720395444c386602efdb6c0344bb1a", size = 223164, upload-time = "2026-11-04T01:55:53.222Z" },
 ]
 
 [[package]]

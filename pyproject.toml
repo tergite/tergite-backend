@@ -34,7 +34,7 @@ authors = [
 maintainers = [
     {name = "Chalmers Next Labs AB", email = "contact@quantum.chalmersnextlabs.se"}
 ]
-version = "v2026.11.0-rc.3"
+version = "v2026.11.0-rc.4"
 description = "the Backend of the Tergite software stack of the WACQT Quantum Computer."
 readme = "README.md"
 requires-python = ">=3.13"
@@ -66,7 +66,7 @@ dependencies = [
     "quantify-core>=0.8.1",
     "quantify-scheduler~=0.22.2",
     "qblox-instruments~=0.14.2",
-    "tergite-tuner>=2026.10.0rc3,<2026.11.0",
+    "tergite-tuner>=2026.10.0rc6,<2026.11.0",
     "numpy>=2.0",
     # Fixing networkx to the last usable one; can be changed when code is updated
     "networkx~=3.4.2",
