@@ -16,14 +16,13 @@ from datetime import datetime, timezone
 from typing import (
     Any,
     Dict,
+    Generic,
     List,
     Optional,
     Sequence,
     TypedDict,
     TypeVar,
 )
-
-from black.nodes import Generic
 
 from tests.utils.datetime import get_timestamp_str
 

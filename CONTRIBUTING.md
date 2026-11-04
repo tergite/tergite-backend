@@ -108,15 +108,14 @@ uv sync --dev
 source .venv/bin/activate
 ```
 
-- Lint with black, isort and pyflakes, as CI does
+- Lint with ruff, as CI does: `ruff format` and `ruff check --fix` fix what they find
 
 ```shell
-black --check api libs services utils tests dev migrations main.py settings.py
-isort --check-only api libs services utils tests dev migrations main.py settings.py
-pyflakes api libs services utils tests dev migrations main.py settings.py
+ruff format --check
+ruff check
 ```
 
-- Optionally enable the pre-commit hook to run black and isort
+- Optionally enable the pre-commit hook to run ruff
 
 ```shell
 pre-commit install

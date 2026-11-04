@@ -9,7 +9,7 @@
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
-"""The house style that black and isort cannot enforce, checked on every test run.
+"""The house style that ruff cannot enforce, checked on every test run.
 
 Code that broke a rule when the rule was added is listed in
 fixtures/styleguide_baseline.txt. That list may only shrink: a new violation fails, and so
