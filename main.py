@@ -46,17 +46,22 @@
 # nuitka-project: --include-package=numpy
 # nuitka-project: --include-package=h5py
 # nuitka-project: --include-package=qutip
+# each loads parts of itself by name, xarray its I/O backends by entry point: the results'
+# datasets, the tuner's discriminators, the simulated chip's exponentials
+# nuitka-project: --include-package=xarray
+# nuitka-project: --include-package=sklearn
+# nuitka-project: --include-package=scipy
 # openqasm3 imports its parser by the version of ANTLR, which Nuitka cannot follow, from
 # the directory of that version, which its ANTLR data files make in the binary
 # nuitka-project: --include-package=openqasm3
 # nuitka-project: --include-package-data=openqasm3
+# nuitka-project: --include-package=openpulse
 # qcodes and quantify-core install a GUI, a notebook kernel and data formats the backend
-# never uses, a third of the binary; its tests pass without them installed
+# never imports, some 400 MB; its tests pass without them installed
 # nuitka-project: --nofollow-import-to=PyQt5,pyqtgraph,IPython,ipykernel,ipywidgets
 # nuitka-project: --nofollow-import-to=jedi,parso,debugpy,zmq,jupyter_client,jupyter_core
 # nuitka-project: --nofollow-import-to=comm,matplotlib_inline,prompt_toolkit,tornado
 # nuitka-project: --nofollow-import-to=dask,plotly,netCDF4,pydap,pyarrow
-# nuitka-project: --include-package=openpulse
 
 import argparse
 import math
