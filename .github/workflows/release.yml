@@ -1,6 +1,6 @@
 name: Release
-# Builds the deb for amd64 and the pkg for macOS arm64 of bcc, each on that platform since
-# Nuitka cannot cross-compile, smoke-tests them, and attaches them to the GitHub release of a
+# Builds the deb for amd64 and the pkg for macOS arm64 of bcc, each on that platform, as the
+# Python they ship and some wheels are the platform's, smoke-tests them, and attaches them to the GitHub release of a
 # v* tag. Run by hand, it leaves them as the run's
 # artifacts instead. The rpm packaging in pkg/ is kept but not built.
 
@@ -15,11 +15,9 @@ on:
         required: true
 
 env:
-  # the Python the binaries are built and tested with; uv would otherwise take the newest it
-  # can download, whose wheels may not exist yet
+  # the Python the packages ship; uv would otherwise take the newest it can download, whose
+  # wheels may not exist yet
   UV_PYTHON: "3.13"
-  # uv's own build of it, as Nuitka refuses e.g. Homebrew's on the macOS runners
-  UV_MANAGED_PYTHON: "1"
 
 jobs:
   version:
@@ -53,10 +51,9 @@ jobs:
 
   linux:
     needs: version
-    # its glibc 2.39 is the oldest the binaries then run on: Debian 13 and Ubuntu 24.04 onwards
+    # Ubuntu 24.04, the oldest Ubuntu the package supports
     runs-on: ubuntu-24.04
-    # quantify, qutip and scipy can make a build of an hour or more
-    timeout-minutes: 180
+    timeout-minutes: 60
     env:
       VERSION: ${{ needs.version.outputs.version }}
       ARCH: amd64
@@ -64,25 +61,12 @@ jobs:
       - uses: actions/checkout@v6
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-      # the runner's apt lists can be out of date, for these and the deb's dependencies alike
-      - run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ccache patchelf
-      - uses: actions/cache/restore@v4
-        with:
-          path: ~/.cache/Nuitka
-          key: nuitka-linux-${{ github.sha }}
-          restore-keys: nuitka-linux-
       - run: pkg/build.sh
-      # also after a failed or timed-out build, so that the next one picks up where it stopped
-      - if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.cache/Nuitka
-          key: nuitka-linux-${{ github.sha }}
       - run: pkg/package.sh deb
       - name: Install the package and load an instance with it
+        # the runner's apt lists can be out of date for the deb's dependencies
         run: |
+          sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ./dist/*.deb
           sudo pkg/smoke-test.sh
       - uses: actions/upload-artifact@v4
@@ -93,26 +77,14 @@ jobs:
   macos:
     needs: version
     runs-on: macos-14
-    timeout-minutes: 180
+    timeout-minutes: 60
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@v6
       - name: Install uv
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-      # Nuitka's own download of ccache is Intel-only, and its clang then fails under Rosetta
-      - run: brew install ccache
-      - uses: actions/cache/restore@v4
-        with:
-          path: ~/Library/Caches/Nuitka
-          key: nuitka-macos-${{ github.sha }}
-          restore-keys: nuitka-macos-
       - run: pkg/build.sh
-      - if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: ~/Library/Caches/Nuitka
-          key: nuitka-macos-${{ github.sha }}
       - run: pkg/macos/build.sh
       - name: Install the package and load an instance with it
         run: |

@@ -1,4 +1,9 @@
 # backend_config.toml
+# A device of three transmons in a row, q12, q13 and q14, coupled by u0, between q12 and q13,
+# and u1, between q13 and q14, on the Qblox cluster cluster0; the other example configs,
+# calibration.seed.example.toml, quantify-config.example.json, quantify-metadata.example.yml
+# and tergite-tuner's calib_device_config.example.toml, node_config.example.toml and
+# spi_config.example.toml, describe the same device. bcc-provision names it after the instance.
 [general_config]
 name = "loke"
 is_active = true
@@ -7,22 +12,22 @@ open_pulse = true
 simulator = false
 version = "1.0.0"
 online_date = "2024-10-09T00:00:00"
-num_qubits = 5
-num_couplers = 0
-num_resonators = 5
+num_qubits = 3
+num_couplers = 2
+num_resonators = 3
 dt = 1e-9
 dtm = 1e-9
 
 [device_config]
 discriminators = [ "lda" ]
-qubit_ids = [ "q6", "q7", "q8", "q9", "q10"]
-meas_map = [ [ 0 ], [ 1 ] ]
-coordinates = [
-  [0, 0],
-  [1, 0]
-]
-fixed_duration_couplers = [ "q6_q7" ]
-reverse_phase_qubits = [ "q9" ]
+qubit_ids = [ "q12", "q13", "q14" ]
+# the qubits measured together, by their indices in qubit_ids
+meas_map = [ [ 0, 1, 2 ] ]
+coordinates = [ [ 0, 0 ], [ 1, 0 ], [ 2, 0 ] ]
+# the couplers whose CZ duration a recalibration keeps, by the qubits they couple
+fixed_duration_couplers = [ "q12_q13" ]
+# the qubits that have their phases reversed on couplers
+reverse_phase_qubits = [ "q14" ]
 
 qubit_parameters = [
   "id",
@@ -80,9 +85,7 @@ lda = [
 [device_config.coupling_dict]
 # map of coupler channel to qubit pair
 u0 = ["q12", "q13"]
-u1 = ["q12", "q14"]
-u2 = ["q14", "q15"]
-u3 = ["q12", "q15"]
+u1 = ["q13", "q14"]
 
 [gates.x]
 coupling_map = [ [ 0, 1], [1, 0] ]
@@ -110,139 +113,6 @@ parameters = [ ]
 # critical_amplitude = 0.4
 # internal_quality = 60000
 # coupling_quality = 20000
-
-# New calibration section for the loke backend (values only)
-
-[calibration_config]
-
-# -- Qubits --
-[[calibration_config.qubit]]
-id="q6"
-t1_decoherence      = 0
-t2_decoherence      = 0
-frequency           = 4635207799.143997
-pi_pulse_amplitude  = 0.6019493671090823
-pi_pulse_duration   = 2.8e-08
-pulse_type          = "Gaussian"
-pulse_sigma         = 6.5e-09
-
-[[calibration_config.qubit]]
-id="q7"
-t1_decoherence      = 0
-t2_decoherence      = 0
-frequency           = 5066008291.283446
-pi_pulse_amplitude  = 0.7716803174827552
-pi_pulse_duration   = 2.8e-08
-pulse_type          = "Gaussian"
-pulse_sigma         = 6.5e-09
-
-[[calibration_config.qubit]]
-id="q8"
-t1_decoherence      = 0
-t2_decoherence      = 0
-frequency           = 4386999031.176073
-pi_pulse_amplitude  = 0.6564443472085613
-pi_pulse_duration   = 2.8e-08
-pulse_type          = "Gaussian"
-pulse_sigma         = 6.5e-09
-
-[[calibration_config.qubit]]
-id="q9"
-t1_decoherence      = 0
-t2_decoherence      = 0
-frequency           = 5308678610.763235
-pi_pulse_amplitude  = 0.8747707800368411
-pi_pulse_duration   = 2.8e-08
-pulse_type          = "Gaussian"
-pulse_sigma         = 6.5e-09
-
-[[calibration_config.qubit]]
-id="q10"
-t1_decoherence      = 0
-t2_decoherence      = 0
-frequency           = 4501323932.679626
-pi_pulse_amplitude  = 0.5362702245388696
-pi_pulse_duration   = 2.8e-08
-pulse_type          = "Gaussian"
-pulse_sigma         = 6.5e-09
-
-# -- Resonators --
-[[calibration_config.readout_resonator]]
-id="q6"
-acq_delay           = 2.2e-07
-acq_integration_time= 2.5e-06
-frequency           = 6831797979.002097
-pulse_amplitude     = 0.03
-pulse_delay         = 4e-09
-pulse_duration      = 2.5e-06
-pulse_type          = "Square"
-
-[[calibration_config.readout_resonator]]
-id="q7"
-acq_delay           = 2.2e-07
-acq_integration_time= 2.5e-06
-frequency           = 7080743148.774928
-pulse_amplitude     = 0.045
-pulse_delay         = 4e-09
-pulse_duration      = 2.5e-06
-pulse_type          = "Square"
-
-[[calibration_config.readout_resonator]]
-id="q8"
-acq_delay           = 2.2e-07
-acq_integration_time= 2.5e-06
-frequency           = 6397711530.045371
-pulse_amplitude     = 0.1
-pulse_delay         = 4e-09
-pulse_duration      = 2.5e-06
-pulse_type          = "Square"
-
-[[calibration_config.readout_resonator]]
-id="q9"
-acq_delay           = 2.2e-07
-acq_integration_time= 2.5e-06
-frequency           = 7275854556.475119
-pulse_amplitude     = 0.09
-pulse_delay         = 4e-09
-pulse_duration      = 2.5e-06
-pulse_type          = "Square"
-
-[[calibration_config.readout_resonator]]
-id="q10"
-acq_delay           = 2.2e-07
-acq_integration_time= 2.5e-06
-frequency           = 7251597601.702282
-pulse_amplitude     = 0.1
-pulse_delay         = 4e-09
-pulse_duration      = 2.5e-06
-pulse_type          = "Square"
-
-[[calibration_config.coupler]]
-
-[calibration_config.discriminators.lda.q6]
-intercept = -11.95949685211907
-coef_0 = 1559.5558103389014
-coef_1 = 713.9557459827279
-
-[calibration_config.discriminators.lda.q7]
-intercept = -4.110889629269144
-coef_0 = 3681.9450041241835
-coef_1 = -90.66004813477687
-
-[calibration_config.discriminators.lda.q8]
-intercept = 11.710918701506499
-coef_0 = 1772.8950180698316
-coef_1 = 916.7283495434342
-
-[calibration_config.discriminators.lda.q9]
-intercept = 1.5192331864104767
-coef_0 = -3605.2523239420734
-coef_1 = 887.7905115161115
-
-[calibration_config.discriminators.lda.q10]
-intercept = 27.886206575432258
-coef_0 = 2929.2382879657407
-coef_1 = -1233.2987098430888
 
 # What the device's pulse-level jobs may play: OpenPulse cal blocks and defcals, from the
 # projects MSS lets send them. Without this section the device refuses them all, so set

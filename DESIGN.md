@@ -829,8 +829,9 @@ encrypted with a Hashicorp Vault key (`sops_hc_vault__`) into the environment, t
 
 ## 13. Deployment
 
-BCC installs from its release's deb (amd64) or macOS arm64 installer: Nuitka's standalone
-build, `bcc`. Each instance is a device on clusters or a simulated one: `bcc-provision <name>
+BCC installs from its release's deb (amd64) or macOS arm64 installer: `pkg/build.sh`'s
+`build/bcc`, uv's own build of Python with the dependencies `uv.lock` pins and the backend's
+wheel installed into it, compiled to bytecode, and `bcc`, which runs `python -I -m main` on it. Each instance is a device on clusters or a simulated one: `bcc-provision <name>
 [--device cluster|sim_1q|sim_2q]` writes `/etc/bcc/<name>/` (its `backend.env`, a key pair and
 the example configs) and its calibration seed into `/var/lib/bcc/<name>/`, which recalibrations
 rewrite while `/etc` is read-only to the service; the `bcc@<name>` systemd service runs it from
@@ -893,8 +894,9 @@ On every push and merge request, `tests` runs with uv from `uv.lock` on Python 3
 `ruff format --check` and `ruff check`, then the tests as §14 runs them.
 
 On a `v*` tag, GitHub's `release.yml` and GitLab's `package linux`, `package macos` and
-`release` jobs build `bcc` with Nuitka, package it as a deb and a macOS installer, install each
-and smoke-test an instance of a device on clusters and of a simulated one with it, and attach
+`release` jobs build `build/bcc`, package it as a deb and a macOS installer, install each
+and smoke-test an instance of a device on clusters and of a simulated one with it, failing if
+its heavy worker stops or logs a traceback within a minute, and attach
 them to the release. GitLab's macOS job runs only where `PUBLISH_MACOS_ARM64` is `true`.
 
 ## 16. Working on this repo

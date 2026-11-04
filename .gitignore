@@ -183,8 +183,7 @@ node_config.toml
 calib_device_config.toml
 spi_config.toml
 
-# nuitka builds
+# the Nuitka builds of earlier releases, which a checkout may still hold
 main.dist/
 main.build/
 main.onefile-build/
-bcc

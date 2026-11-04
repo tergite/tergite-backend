@@ -164,15 +164,16 @@ sudo systemctl enable --now bcc@lab1
 journalctl -u bcc@lab1 -f
 ```
 
-## Build Executable with [Nuitka](https://nuitka.net/)
+## Build the Packages' Folder
 
-- Ensure you have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed. 
- (_You could simply have python +3.13 installed instead._)
+The deb and the macOS installer install `build/bcc`: uv's own build of Python, with the
+dependencies `uv.lock` pins and the backend's wheel installed into it, and the `bcc` that runs
+it. It is built for the machine's own OS and architecture, in a minute or two.
+
+- Ensure you have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed.
 
 ```shell
-wget -qO- https://astral.sh/uv/install.sh | sh
-# or use curl
-# curl -LsSf https://astral.sh/uv/install.sh | sh
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 - Clone the repo
@@ -182,21 +183,21 @@ git clone git@github.com:tergite/tergite-backend.git
 cd tergite-backend
 ```
 
-- Build the main.py file, which installs the dependencies first
+- Build the folder
 
 ```shell
 pkg/build.sh
 ```
 
-- After the build, the app will be at `main.dist/bcc`, in the folder it needs beside it. You can run it.
+- After the build, the app is `build/bcc/bcc`, which runs the Python beside it. You can run it.
 
 ```shell
 # serve the API, and run one heavy worker for preprocessing, executions and recalibrations
 # and `--light-workers` (default 1) for postprocessing, stopping them all if
 # any stops; it reads the .env file named by BCC_ENV_FILE, and takes `--port`, `--host`,
 # `--forwarded-allow-ips` and `--workers`, the number of API processes ($WEB_CONCURRENCY or 1)
-BCC_ENV_FILE="$PWD/.env" main.dist/bcc start  # or just main.dist/bcc, as start is the default
-# or one at a time: `main.dist/bcc serve`, `main.dist/bcc worker --kind heavy`, `main.dist/bcc worker --kind light`
+BCC_ENV_FILE="$PWD/.env" build/bcc/bcc start  # or just build/bcc/bcc, as start is the default
+# or one at a time: `build/bcc/bcc serve`, `build/bcc/bcc worker --kind heavy`, `build/bcc/bcc worker --kind light`
 
 # serve several devices from one process: each device's env file once; its API is then at
 # /<its DEFAULT_PREFIX>/..., say http://localhost:8000/loke/bookings, a path naming no device
@@ -204,9 +205,9 @@ BCC_ENV_FILE="$PWD/.env" main.dist/bcc start  # or just main.dist/bcc, as start 
 # device's jobs; in the shell, BCC_<NAME>, e.g.
 # BCC_MAX_IDLE_TIME, sets every device's <NAME> over its env file, and BCC_<PREFIX>_<NAME>,
 # e.g. BCC_LOKE_MAX_IDLE_TIME, one device's over that; see .env.example
-main.dist/bcc start --env-file loke.env --env-file thor.env
+build/bcc/bcc start --env-file loke.env --env-file thor.env
 # or, as BCC_ENV_FILE may name several separated as in PATH
-BCC_ENV_FILE="$PWD/loke.env:$PWD/thor.env" main.dist/bcc start
+BCC_ENV_FILE="$PWD/loke.env:$PWD/thor.env" build/bcc/bcc start
 ```
 
 ## References

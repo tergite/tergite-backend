@@ -10,59 +10,6 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 
-# a folder the packages install whole, as a onefile binary would unpack itself on every start
-# nuitka-project: --standalone
-
-# nuitka-project: --include-package=fastapi
-# nuitka-project: --include-package=uvicorn
-# nuitka-project: --include-package=toml
-# nuitka-project: --include-package=tabulate
-# nuitka-project: --include-package=cryptography
-# nuitka-project: --include-package=filelock
-# nuitka-project: --include-package=yaml
-# nuitka-project: --include-package=sqlmodel
-# nuitka-project: --include-package=jwt
-# nuitka-project: --include-package=pydantic
-# nuitka-project: --include-package=alembic
-# nuitka-project: --include-data-files={MAIN_DIRECTORY}/alembic.ini=alembic.ini
-# nuitka-project: --include-data-files={MAIN_DIRECTORY}/migrations/env.py=migrations/env.py
-# nuitka-project: --include-data-files={MAIN_DIRECTORY}/migrations/versions/*.py=migrations/versions/
-# uvicorn imports the app by name, which Nuitka cannot follow
-# nuitka-project: --include-module=api
-
-# nuitka-project: --output-filename=bcc
-# nuitka-project: --include-package=quantify_core
-# nuitka-project: --include-package=quantify_scheduler
-# data these read at import or run time, which Nuitka includes only when told; it leaves
-# .py files out of package data, so quantify's version files are named
-# nuitka-project: --include-package-data=qcodes
-# nuitka-project: --include-package-data=quantify_core
-# nuitka-project: --include-package-data=quantify_scheduler
-# nuitka-project: --include-data-files={MAIN_DIRECTORY}/.venv/lib/python*/site-packages/quantify_core/_static_version.py=quantify_core/_static_version.py
-# nuitka-project: --include-data-files={MAIN_DIRECTORY}/.venv/lib/python*/site-packages/quantify_scheduler/_static_version.py=quantify_scheduler/_static_version.py
-# nuitka-project: --include-package=qblox_instruments
-# nuitka-project: --include-package=tergite_tuner
-# nuitka-project: --include-package=networkx
-# nuitka-project: --include-package=numpy
-# nuitka-project: --include-package=h5py
-# nuitka-project: --include-package=qutip
-# each loads parts of itself by name, xarray its I/O backends by entry point: the results'
-# datasets, the tuner's discriminators, the simulated chip's exponentials
-# nuitka-project: --include-package=xarray
-# nuitka-project: --include-package=sklearn
-# nuitka-project: --include-package=scipy
-# openqasm3 imports its parser by the version of ANTLR, which Nuitka cannot follow, from
-# the directory of that version, which its ANTLR data files make in the binary
-# nuitka-project: --include-package=openqasm3
-# nuitka-project: --include-package-data=openqasm3
-# nuitka-project: --include-package=openpulse
-# qcodes and quantify-core install a GUI, a notebook kernel and data formats the backend
-# never imports, some 400 MB; its tests pass without them installed
-# nuitka-project: --nofollow-import-to=PyQt5,pyqtgraph,IPython,ipykernel,ipywidgets
-# nuitka-project: --nofollow-import-to=jedi,parso,debugpy,zmq,jupyter_client,jupyter_core
-# nuitka-project: --nofollow-import-to=comm,matplotlib_inline,prompt_toolkit,tornado
-# nuitka-project: --nofollow-import-to=dask,plotly,netCDF4,pydap,pyarrow
-
 import argparse
 import math
 import multiprocessing
@@ -260,8 +207,10 @@ def _run_command(args: argparse.Namespace) -> None:
 
 def _get_argument_parser() -> argparse.ArgumentParser:
     """Gets the parser of the bcc command's arguments"""
+    # named bcc, also where the packages run it as python -m main
     parser = argparse.ArgumentParser(
-        description="Manage the Backend Control Computer (BCC); start is the default command."
+        prog="bcc",
+        description="Manage the Backend Control Computer (BCC); start is the default command.",
     )
     commands = parser.add_subparsers(dest="command", required=True)
     start_parser = commands.add_parser(
