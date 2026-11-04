@@ -134,16 +134,13 @@ def _recalibrate_all_qubits(
             )
         elif run_mode == _RunMode.ONE_QUBIT_AT_A_TIME:
             for qubit in qubits:
-                # without the couplers, of which the tuner builds every one into a node's
-                # device, and so fails to compile one of its qubits alone; the next node
-                # of all qubits brings them back
                 session, _ = run_node(
                     session=session,
                     qubits=[qubit],
                     node=node,
                     refresh_session=False,
                     keep_data_files=False,
-                    **{**session_options, "couplers": []},
+                    **session_options,
                 )
         else:
             raise RuntimeError(f"Unknown run mode: {run_mode}")
