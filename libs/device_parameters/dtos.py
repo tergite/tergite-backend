@@ -942,34 +942,34 @@ class ChipConfig(BaseModel):
 
 
 class SimulatorConfig(BaseModel):
-    """A simulated device, which its backend config's simulator section sets: its chip,
-    on which its schedules play as compiled for its dummy clusters; or, without one, how
-    QuTiP reads its qubits out, its jobs played on a model drawn from its calibration"""
+    """A simulated device, which its backend config's simulator section sets: its chip, on
+    which its schedules play as compiled for its dummy clusters"""
 
     model_config = ConfigDict(extra="forbid")
 
-    # each qubit's IQ point of state 0 and of state 1, by its id, e.g. {"q0": [[1, 0], [-1, 0]]}
-    readout_iq: Optional[Dict[str, Tuple[Tuple[float, float], Tuple[float, float]]]] = (
-        None
-    )
-    # the standard deviation of a shot's I, and of its Q, about its state's point
-    readout_noise: Optional[_NonNegative] = None
-    chip: Optional[ChipConfig] = None
+    chip: ChipConfig
 
-    @model_validator(mode="after")
-    def check_readout(self) -> Self:
-        """Requires a chip, or the readout's IQ points and noise
+    @model_validator(mode="before")
+    @classmethod
+    def check_retired_readout(cls, data: Any) -> Any:
+        """Refuses the readout points of the QuTiP simulators, which a chip replaced
+
+        Args:
+            data: the raw simulator section
+
+        Returns:
+            the section
 
         Raises:
-            ValueError: a simulator section takes a chip, or readout_iq and readout_noise
+            ValueError: a simulator section takes a chip, its readout_iq and readout_noise
+                going with the QuTiP simulators; see docs/configuration.md
         """
-        if self.chip is None and (
-            self.readout_iq is None or self.readout_noise is None
-        ):
+        if isinstance(data, dict) and {"readout_iq", "readout_noise"} & set(data):
             raise ValueError(
-                "a simulator section takes a chip, or readout_iq and readout_noise"
+                "a simulator section takes a chip, its readout_iq and readout_noise "
+                "going with the QuTiP simulators; see docs/configuration.md"
             )
-        return self
+        return data
 
 
 class BackendConfig(BaseModel):
@@ -982,7 +982,7 @@ class BackendConfig(BaseModel):
     calibration_config: Optional[_BackendCalibrationConfig] = None
     # none takes no pulse-level jobs
     pulse_limits: Optional[PulseLimits] = None
-    # a simulated device's; none of one on clusters
+    # a simulated device's chip; none of a chip on clusters
     simulator: Optional[SimulatorConfig] = None
 
     @classmethod

@@ -12,7 +12,7 @@ Choices: cluster, sim_1q, sim_2q
 Default: cluster
 Description: Device of the instance:
  cluster runs a device on Qblox clusters; sim_1q and sim_2q simulate one
- transmon, or two and their coupler, on QuTiP.
+ transmon, or two and their coupler, on a chip behind dummy clusters.
 
 Template: @PACKAGE@/port
 Type: string

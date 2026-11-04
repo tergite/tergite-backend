@@ -32,6 +32,9 @@ install -m 0644 backend_config.example.toml calibration.seed.example.toml \
 	node_config.example.toml spi_config.example.toml \
 	tests/fixtures/backend_config.simq1.toml tests/fixtures/backend_config.simq2.toml \
 	tests/fixtures/qiskit_pulse_1q.seed.toml tests/fixtures/qiskit_pulse_2q.seed.toml \
+	tests/fixtures/dummy-quantify-config.json tests/fixtures/dummy-quantify-metadata.yml \
+	tests/fixtures/chip_calib_device_config.toml tests/fixtures/chip_node_config.toml \
+	tests/fixtures/dummy_spi_config.calib.toml \
 	"$share/examples/"
 # extended attributes, like a download's quarantine, ship as ._ entries that Installer
 # reapplies; com.apple.provenance cannot be removed and stays

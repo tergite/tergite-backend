@@ -1,46 +1,108 @@
 {
-  "basis_gates": ["rz", "sx", "x", "rx", "measure", "reset", "delay", "cz"],
-  "characterized": true,
-  "coordinates": [],
-  "coupling_dict": { "u0": ["q0", "q1"] },
+  "name": "qiskit_pulse_2q",
+  "version": "1.0.0",
+  "number_of_qubits": 2,
+  "last_online": "2024-09-11T18:07:31",
+  "is_online": true,
+  "basis_gates": [
+    "rz",
+    "sx",
+    "x",
+    "rx",
+    "measure",
+    "reset",
+    "delay",
+    "cz"
+  ],
   "coupling_map": [
-    [0, 1],
-    [1, 0]
+    [
+      0,
+      1
+    ],
+    [
+      1,
+      0
+    ]
+  ],
+  "coordinates": [
+    [
+      0,
+      0
+    ],
+    [
+      0,
+      1
+    ]
+  ],
+  "is_simulator": true,
+  "coupling_dict": {
+    "u0": [
+      "q12",
+      "q13"
+    ]
+  },
+  "characterized": true,
+  "open_pulse": true,
+  "meas_map": [
+    [
+      0,
+      1
+    ]
   ],
   "description": "Two simulated transmons and their coupler",
-  "dt": 1e-9,
-  "dtm": 1e-9,
+  "number_of_couplers": 1,
+  "number_of_resonators": 2,
+  "dt": 1e-09,
+  "dtm": 1e-09,
+  "qubit_ids": [
+    "q12",
+    "q13"
+  ],
+  "meas_lo_freq": null,
+  "qubit_lo_freq": null,
   "gates": {
-    "x": {
-      "coupling_map": [
-        [0, 1],
-        [1, 0]
+    "u": {
+      "qubits": [
+        0
       ],
-      "parameters": [],
-      "qasm_def": "gate x q { U(pi, 0, pi) q; }"
+      "qasm_def": "gate id q { U(0, 0, 0) q; }",
+      "parameters": []
+    },
+    "h": {
+      "qubits": [
+        0
+      ],
+      "qasm_def": "gate id q { U(0, 0, 0) q; }",
+      "parameters": []
+    },
+    "x": {
+      "qubits": [
+        0
+      ],
+      "qasm_def": "gate id q { U(0, 0, 0) q; }",
+      "parameters": []
     }
   },
-  "qubit_ids_coupler_map": [
-    [[0, 1], 0],
-    [[1, 0], 0]
-  ],
   "is_active": true,
-  "is_online": true,
-  "is_simulator": true,
-  "last_online": "2024-09-11T18:07:31",
-  "meas_lo_freq": null,
-  "meas_map": [[0], [1]],
-  "name": "qiskit_pulse_2q",
-  "num_couplers": 1,
-  "number_of_couplers": 1,
+  "qubit_ids_coupler_map": [
+    [
+      [
+        12,
+        13
+      ],
+      0
+    ],
+    [
+      [
+        13,
+        12
+      ],
+      0
+    ]
+  ],
   "num_qubits": 2,
+  "num_couplers": 1,
   "num_resonators": 2,
-  "number_of_resonators": 2,
-  "number_of_qubits": 2,
-  "online_date": "2024-09-11T18:07:31",
-  "open_pulse": true,
-  "qubit_ids": ["q0", "q1"],
-  "qubit_lo_freq": null,
   "simulator": true,
-  "version": "1.0.0"
+  "online_date": "2024-09-11T18:07:31"
 }

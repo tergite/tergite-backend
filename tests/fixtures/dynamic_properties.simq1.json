@@ -1,109 +1,105 @@
 {
-  "couplers": [],
-  "discriminators": {
-    "lda": {
-      "q0": {
-        "coef_0": -2.0,
-        "coef_1": 0.0,
-        "intercept": 0.0
-      }
-    }
-  },
-  "last_calibrated": "NOW-PLACEHOLDER",
   "name": "qiskit_pulse_1q",
+  "version": "1.0.0",
   "qubits": [
     {
-      "anharmonicity": null,
+      "t1_decoherence": null,
+      "t2_decoherence": null,
       "frequency": {
-        "date": "NOW-PLACEHOLDER",
+        "value": 4511600250.540639,
         "unit": "Hz",
-        "value": 4700000000.0
+        "date": "NOW-PLACEHOLDER"
       },
-      "id": 0,
-      "index": null,
-      "name": "q0",
+      "anharmonicity": null,
+      "readout_assignment_error": null,
       "pi_pulse_amplitude": {
-        "date": "NOW-PLACEHOLDER",
+        "value": 0.35595428737685286,
         "unit": "",
-        "value": 0.0284977
+        "date": "NOW-PLACEHOLDER"
       },
       "pi_pulse_duration": {
-        "date": "NOW-PLACEHOLDER",
-        "unit": "",
-        "value": 5.6e-08
+        "value": 2.8e-08,
+        "unit": "s",
+        "date": "NOW-PLACEHOLDER"
       },
-      "pi_pulse_motzoi": null,
-      "pulse_sigma": {
-        "date": "NOW-PLACEHOLDER",
+      "pi_pulse_motzoi": {
+        "value": -0.10512820512820514,
         "unit": "",
-        "value": 7e-09
+        "date": "NOW-PLACEHOLDER"
       },
       "pulse_type": {
-        "date": "NOW-PLACEHOLDER",
+        "value": "Gaussian",
         "unit": "",
-        "value": "Gaussian"
+        "date": "NOW-PLACEHOLDER"
       },
-      "readout_assignment_error": null,
-      "t1_decoherence": {
-        "date": "NOW-PLACEHOLDER",
-        "unit": "s",
-        "value": 7.1e-05
+      "pulse_sigma": {
+        "value": 0.0,
+        "unit": "",
+        "date": "NOW-PLACEHOLDER"
       },
-      "t2_decoherence": {
-        "date": "NOW-PLACEHOLDER",
-        "unit": "s",
-        "value": 6.9e-05
-      },
+      "id": 12,
+      "index": null,
       "x_position": null,
-      "xy_drive_line": null,
       "y_position": null,
-      "z_drive_line": null
+      "xy_drive_line": null,
+      "z_drive_line": null,
+      "name": "q12"
     }
   ],
   "resonators": [
     {
       "acq_delay": {
-        "date": "NOW-PLACEHOLDER",
+        "value": 2.2e-07,
         "unit": "s",
-        "value": 5e-08
+        "date": "NOW-PLACEHOLDER"
       },
       "acq_integration_time": {
-        "date": "NOW-PLACEHOLDER",
+        "value": 2.5e-06,
         "unit": "s",
-        "value": 1e-06
+        "date": "NOW-PLACEHOLDER"
       },
       "frequency": {
-        "date": "NOW-PLACEHOLDER",
+        "value": 7259855555.555555,
         "unit": "Hz",
-        "value": 7260080000.0
+        "date": "NOW-PLACEHOLDER"
       },
-      "id": 0,
-      "index": null,
-      "name": "q0",
       "pulse_amplitude": {
-        "date": "NOW-PLACEHOLDER",
+        "value": 0.04936363636363636,
         "unit": "",
-        "value": 0.1266499392606423
+        "date": "NOW-PLACEHOLDER"
       },
       "pulse_delay": {
-        "date": "NOW-PLACEHOLDER",
+        "value": 0.0,
         "unit": "s",
-        "value": 0.0
+        "date": "NOW-PLACEHOLDER"
       },
       "pulse_duration": {
-        "date": "NOW-PLACEHOLDER",
+        "value": 2.5e-06,
         "unit": "s",
-        "value": 9e-07
+        "date": "NOW-PLACEHOLDER"
       },
       "pulse_type": {
-        "date": "NOW-PLACEHOLDER",
+        "value": "Square",
         "unit": "",
-        "value": "Square"
+        "date": "NOW-PLACEHOLDER"
       },
-      "readout_line": null,
+      "id": 12,
+      "index": null,
       "x_position": null,
-      "y_position": null
+      "y_position": null,
+      "readout_line": null,
+      "name": "q12"
     }
   ],
-  "version": "1.0.0"
+  "couplers": [],
+  "discriminators": {
+    "lda": {
+      "q12": {
+        "coef_0": -1735.394415958757,
+        "coef_1": 6254.284998331873,
+        "intercept": -7.047913271055627
+      }
+    }
+  },
+  "last_calibrated": "NOW-PLACEHOLDER"
 }

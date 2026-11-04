@@ -55,7 +55,7 @@ and `BCC_QUANTIFY_METADATA_FILE=foobar.yml`_
 We configure all backends using the `backend_config.toml`.   
 We use the [`backend_config.example.toml`](../backend_config.example.toml) as a template.  
 
-A `[simulator]` section in it makes the device a simulated one, run on QuTiP instead of clusters; see
+A `[simulator]` section in it makes the device a simulated one, a chip behind dummy clusters; see
 [Simulated Devices](#simulated-devices).
 
 _NOTE: You don't need to pass the `.env` file, the `backend_config.toml` file or the quantify files to the 
@@ -95,37 +95,12 @@ device that sets none.
 
 #### Simulated Devices
 
-A device whose `backend_config.toml` has a `[simulator]` section without a chip runs its jobs on
-QuTiP, not on clusters: each circuit, gate-level or pulse-level, is compiled as on a chip, from the
-calibration seed, and the pulses it plays drive a model of the chip.
-
-- Each transmon the circuit touches has three levels, in the frame of its drive clock, and is
-  driven at the Rabi rate that makes its calibrated pi pulse a pi rotation; DRAG, the
-  anharmonicity (-200 MHz where the seed gives none) and leakage act as they would.
-- A coupler's pulse switches on a ZZ interaction between its two transmons, scaled so that
-  the calibrated CZ adds a phase of pi to |11>; a CZ that plays no coupler pulse entangles
-  nothing, and its phase corrections should be 0.
-- T1 and T2 come from the seed.
-- A measurement reads the state, without collapsing it, into IQ points about each qubit's
-  points for states 0 and 1, from which the device's discriminators are drawn; so each
-  qubit is measured once, after anything else plays on it, and a level above 0 reads as 1.
-
-```toml
-[simulator]
-# the standard deviation of a shot's I, and of its Q, about its state's point
-readout_noise = 0.1
-
-[simulator.readout_iq]
-# each qubit's IQ point of state 0 and of state 1, by its id
-q0 = [[1.0, 0.0], [-1.0, 0.0]]
-q1 = [[0.0, 1.0], [0.0, -1.0]]
-```
-
-A `[simulator.chip]` section instead puts a simulated chip behind the device's dummy clusters:
-its jobs compile for the clusters, as on hardware, and each schedule plays on the chip's true
-parameters, which its calibration does not see, so the calibration may be off as a real
-chip's is. Its quantify metadata lists dummy clusters only, and the qubits' frequencies must
-lie within reach of their LOs in the quantify hardware config.
+A `[simulator.chip]` section in its `backend_config.toml` puts a simulated chip behind the
+device's dummy clusters: its jobs compile for the clusters, as on hardware, and each schedule
+plays on the chip's true parameters, which its calibration does not see, so the calibration
+may be off as a real chip's is. Its quantify metadata lists dummy instruments only, and the
+qubits' frequencies must lie within reach of their LOs in the quantify hardware config. The
+`readout_iq` and `readout_noise` of the QuTiP simulators it replaced are refused.
 
 - Each pulse plays at its clock's frequency, detuned from the chip's true frequency, on a
   transmon of three levels with the chip's anharmonicity, Rabi frequency, T1 and T2; a reset
@@ -189,27 +164,17 @@ q12 = 0.1e9                 # Hz
 q13 = 0.1e9
 ```
 
-The test fixtures hold a simulated one-qubit device and a two-qubit one with a coupler, which
-run with the default `BCC_EXECUTOR_TYPE=quantify`; a simulated device needs no quantify hardware
-config or metadata and none of tergite-tuner's configs:
+The test fixtures hold two simulated devices, `qiskit_pulse_1q`, a transmon, and
+`qiskit_pulse_2q`, two and their coupler, with the dummy cluster they play behind and
+tergite-tuner's configs to recalibrate them. Their seeds are what the tuner found from the
+rough guesses of `chip_calib_device_config.toml`; each recalibrates as it starts, in a minute
+or three, as a device on clusters does (`tests/services/test_simulated_chip_calibration.py`
+calibrates the two-qubit one from `qiskit_pulse_2q.rough.seed.toml`):
 
 ```shell
 # on the root of the project
 cp tests/fixtures/backend_config.simq2.toml backend_config.toml
 cp tests/fixtures/qiskit_pulse_2q.seed.toml calibration.seed.toml
-./dev/start_bcc.sh
-```
-
-They also hold a simulated chip device, two transmons and their coupler behind a dummy
-cluster, with tergite-tuner's configs to calibrate it: its device config guesses each
-frequency within the tuner's sweeps but not at the chip's, and its seed is as rough, so its
-first recalibration finds the chip, in some three minutes, and jobs then run on what it
-found (`tests/services/test_simulated_chip_calibration.py`):
-
-```shell
-# on the root of the project
-cp tests/fixtures/backend_config.chip.toml backend_config.toml
-cp tests/fixtures/chip.seed.toml calibration.seed.toml
 cp tests/fixtures/dummy-quantify-config.json quantify-config.json
 cp tests/fixtures/dummy-quantify-metadata.yml quantify-metadata.yml
 cp tests/fixtures/chip_calib_device_config.toml device_config.calib.toml

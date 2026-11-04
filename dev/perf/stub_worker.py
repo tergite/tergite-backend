@@ -9,18 +9,18 @@
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
-"""Runs main.py with the QuTiP executor's simulation stubbed out, so that the performance
-baselines measure the scheduler and not the physics; dev/perf/record.sh runs the heavy worker
-with it
+"""Runs main.py with the simulated chip's physics stubbed out, and its recalibration a no-op,
+so that the performance baselines measure the scheduler and not the physics or the tuner;
+dev/perf/record.sh runs the heavy worker with it
 
-The QuTiP executor is swapped before main.py builds one, so BCC_ENV_FILE must name the
+The chip is swapped before main.py builds the executor, so BCC_ENV_FILE must name the
 device's env file: settings is read on import, before main.py could set it.
 """
-
-import libs.quantum_executor.quantify.qutip_executor as qutip_executor
+import libs.quantum_executor.quantify.executor as executor
 import main
-from dev.perf.stub_executor import StubExecutor
+from dev.perf.stub_chip import StubChip
 
 if __name__ == "__main__":
-    qutip_executor.QutipExecutor = StubExecutor
+    executor.SimulatedChip = StubChip
+    executor.recalibrate = lambda **_: None
     main.main()

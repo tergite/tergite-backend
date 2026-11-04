@@ -1,4 +1,4 @@
-# tergite-tuner's device config of the simulated chip device, backend_config.chip.toml: the
+# tergite-tuner's device config of the simulated devices, backend_config.simq1.toml and simq2: the
 # rough guesses, as from a VNA, that it calibrates the chip from, each within its sweep of
 # the chip's true value but not at it
 

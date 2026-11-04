@@ -86,7 +86,7 @@ class DeviceSettings(BaseSettings):
     private_key_file: Path = _ROOT_PATH / "private-bcc-key.pem"
     private_key_password: Optional[bytes] = None
 
-    # the only executor; a backend config with a simulator section runs it on QuTiP
+    # the only executor; a backend config with a simulator section runs it on a simulated chip
     executor_type: Literal["quantify"] = "quantify"
     # the cluster or other instrument set-up; see quantify-config.example.yml and
     # quantify-metadata.example.yml

@@ -14,9 +14,16 @@ dt = 1e-9
 dtm = 1e-9
 
 [device_config]
-discriminators = [ "lda" ]
-qubit_ids = [ "q0", "q1" ]
-meas_map = [ [ 0 ], [ 1 ] ]
+# config names for specification of calibration values
+# probably not entirely true for everything herein but mostly so
+discriminators = [ "lda"]
+
+qubit_ids = [ "q12", "q13" ]
+
+coordinates = [ [ 0, 0 ], [ 0, 1 ] ]
+
+meas_map = [ [ 0, 1 ] ]
+fixed_duration_couplers = [ "q12_q13" ]
 
 qubit_parameters = [
   "id",
@@ -62,11 +69,11 @@ coupler_parameters = [
   "control_rz_lambda",
   "target_rz_lambda",
   "pulse_type"
-
 ]
 
 [device_config.coupling_dict]
-u0 = ["q0", "q1"]
+u0 = ["q12", "q13"]
+
 
 [device_config.discriminator_parameters]
 lda = [
@@ -75,15 +82,69 @@ lda = [
   "intercept"
 ]
 
+[gates.u]
+qubits = [ 0 ]
+qasm_def = "gate id q { U(0, 0, 0) q; }"
+parameters = [ ]
+
+[gates.h]
+qubits = [ 0 ]
+qasm_def = "gate id q { U(0, 0, 0) q; }"
+parameters = [ ]
+
 [gates.x]
-coupling_map = [ [ 0, 1], [1, 0] ]
-qasm_def = "gate x q { U(pi, 0, pi) q; }"
-parameters = []
+qubits = [ 0 ]
+qasm_def = "gate id q { U(0, 0, 0) q; }"
+parameters = [ ]
 
-# runs its jobs on QuTiP, each qubit read out about these IQ points of states 0 and 1
-[simulator]
-readout_noise = 0.1
 
-[simulator.readout_iq]
-q0 = [[1.0, 0.0], [-1.0, 0.0]]
-q1 = [[0.0, 1.0], [0.0, -1.0]]
+# the chip as it is, behind the dummy clusters of dummy-quantify-config.json, within reach of
+# their LOs; the calibration does not see it. See docs/configuration.md
+[simulator.chip]
+readout_noise = 0.002
+
+[simulator.chip.qubits.q12]
+frequency = 4.5116e9
+anharmonicity = -0.21e9
+rabi_frequency = 1.62e8
+t1 = 6e-5
+t2 = 5e-5
+
+[simulator.chip.qubits.q13]
+frequency = 5.2003e9
+anharmonicity = -0.2e9
+rabi_frequency = 1.6e8
+t1 = 6e-5
+t2 = 5e-5
+
+[simulator.chip.resonators.q12]
+frequency = 7.2601e9
+dispersive_shift = -0.5e6
+bare_frequency = 7.2581e9
+critical_amplitude = 0.4
+internal_quality = 60000
+coupling_quality = 20000
+amplitude = 0.3
+phase = 0.4
+
+[simulator.chip.resonators.q13]
+frequency = 7.2002e9
+dispersive_shift = -0.45e6
+bare_frequency = 7.1982e9
+critical_amplitude = 0.4
+internal_quality = 60000
+coupling_quality = 20000
+amplitude = 0.3
+phase = -1.1
+
+[simulator.chip.couplers.q12_q13]
+max_frequency = 7.5e9
+anharmonicity = -0.15e9
+# parked off its sweet spot, where its frequency moves with the flux's first harmonic
+flux_offset = 0.25
+flux_per_current = 100.0
+flux_per_amplitude = 0.1
+
+[simulator.chip.couplers.q12_q13.couplings]
+q12 = 0.1e9
+q13 = 0.1e9

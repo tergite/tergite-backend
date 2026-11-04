@@ -13,8 +13,8 @@ this document is the map that ties them together.
 
 `tergite-backend` is the device-facing half of the [Tergite stack](https://tergite.github.io/)
 for the WACQT quantum computers. A BCC runs the jobs of one or more quantum devices: real
-devices through Qblox clusters with [quantify](https://quantify-os.org/), or simulated ones
-compiled as on clusters and played on [QuTiP](https://qutip.org/). Users never reach
+devices through Qblox clusters with [quantify](https://quantify-os.org/), or simulated ones,
+a simulated chip behind dummy clusters. Users never reach
 it directly except to upload a job: everything else comes through MSS, the Main Service Server
 in [tergite-frontend](https://github.com/tergite/tergite-frontend).
 
@@ -22,7 +22,7 @@ in [tergite-frontend](https://github.com/tergite/tergite-frontend).
 | --- | --- | --- | --- |
 | **API** | `api/` | Python 3.13+, FastAPI, uvicorn | The REST API MSS and the SDK call: jobs, bookings, users, the device's properties, recalibration and switch. |
 | **Workers** | `services/scheduler/` | the same process image, `main.py worker` | Run each job's stages and the recalibrations, claiming them from the SQL database. |
-| **Executors** | `libs/quantum_executor/` | quantify-scheduler, and Qblox or QuTiP | Compile jobs' OpenQASM 3 circuits, and the OpenPulse they may hold, to the device's native programs and run them. |
+| **Executors** | `libs/quantum_executor/` | quantify-scheduler and Qblox, QuTiP for simulated chips | Compile jobs' OpenQASM 3 circuits, and the OpenPulse they may hold, to the device's native programs and run them. |
 
 The backend installs as one package, `tergite-backend`, with no extras: every installation runs
 both devices on clusters and simulated ones.
@@ -145,7 +145,7 @@ roots (§5.2). `tests/test_styleguide.py` checks the direction.
 │   ├── devices/             # the device's properties, calibration and switch
 │   └── external/mss/        # the client to MSS, its events, signatures and nonces
 ├── libs/                    # imports no app code but utils
-│   ├── quantum_executor/    # base/, quantify/: compiling and running the jobs, on clusters or QuTiP
+│   ├── quantum_executor/    # base/, quantify/: compiling and running the jobs, on clusters or a simulated chip
 │   ├── device_parameters/   # BackendConfig, Device, DeviceCalibration
 │   └── queues/              # Job, Stage, JobStatus, ExecutorOptions
 ├── utils/                   # config, SQL, logging, datetimes, exceptions, strings
@@ -735,9 +735,9 @@ Circuit qubit `i` is the device's `i`-th qubit by the number in its id. The exec
 quantify against a `QuantumDevice` of a transmon per qubit and a `CouplerEdge` per coupler
 (`quantify/device.py`), each shot after an idle in which the qubits relax and its operations
 one after the other but for consecutive measurements, or delays, of distinct qubits, which
-start together. A simulated device compiles the same way, for a `QuantumDevice` without
-hardware, and plays the schedule on QuTiP (`quantify/simulator.py`), which reads a qubit
-without collapsing it, so it refuses a gate on a qubit after its measurement. A circuit that
+start together. A simulated device compiles the same way, for its dummy clusters, and plays
+the schedule on its chip, which reads a qubit without collapsing it, so it refuses a gate on
+a qubit after its measurement before a reset. A circuit that
 measures no qubit is refused, as it has no results. Each measurement is acquired on its own
 channel, numbered in the order
 the circuit measures; the `CircuitReadout` saved with the results names each channel's qubit
@@ -751,14 +751,11 @@ A job file whose `params` hold a `qobj`, the Pulse Qobj an SDK older than gate-l
 sends, is refused at upload with 400: "the backend takes OpenQASM 3 circuits only, not a qobj;
 upgrade the tergite SDK to send them".
 
-`BCC_EXECUTOR_TYPE` is `quantify`, the only type; `_init_executor` in
-`services/scheduler/utils.py` picks the executor by the backend config:
-
-| Backend config | Executor |
-| --- | --- |
-| no `[simulator]` section | `QuantifyExecutor`: quantify-scheduler schedules on Qblox clusters, real or dummy (`quantify-config.json`, `quantify-metadata.yml`); recalibrates with tergite-tuner |
-| a `[simulator.chip]` section | `QuantifyExecutor` on dummy clusters, a simulated chip behind them (`quantify/simulated_chip/`) |
-| a `[simulator]` section without a chip | `QutipExecutor`: the same schedules played on QuTiP, a model of the device's transmons and couplers drawn from its calibration; never recalibrates |
+`BCC_EXECUTOR_TYPE` is `quantify`, the only type, and `QuantifyExecutor` the only executor:
+quantify-scheduler schedules on Qblox clusters, real or dummy (`quantify-config.json`,
+`quantify-metadata.yml`), recalibrated with tergite-tuner; a backend config's
+`[simulator.chip]` section puts a simulated chip behind its dummy clusters
+(`quantify/simulated_chip/`).
 
 A simulated chip is a device's true parameters, which its calibration does not see, behind
 its dummy clusters' API. The executor gives each dummy cluster a `SimulatingClusterComponent`
@@ -788,8 +785,8 @@ dummy mode replaces each node's acquisitions with the node's own fakes. While it
 `backend/hardware.py` imports for a dummy of the device's modules and the simulating
 component, and a test fails if the tuner stops connecting through them.
 
-It imports each only when it is chosen, so a process that runs no executor, such as the API,
-never takes the seconds quantify and QuTiP take to import. Adding one:
+It imports the executor only when a heavy worker builds one, so a process that runs no
+executor, such as the API, never takes the seconds quantify and QuTiP take to import. Adding one:
 [docs/executors.md](docs/executors.md).
 
 ## 12. Configuration
@@ -844,9 +841,10 @@ The suite runs in one environment, `.venv` (`uv sync --dev`), which has every de
   that matches their job.
 - `tests/api/` drives each router through the test client; `tests/services/` tests the
   executors and tasks; the files at the top test the rest.
-- The simulated devices' tests run their jobs on QuTiP, as a circuit takes milliseconds; the
-  device on clusters runs `MockQuantifyExecutor` on dummy clusters.
-- The simulated chip device recalibrates in one test, the whole of tergite-tuner's nodes
+- The simulated devices' tests run their jobs on their chips, as a circuit takes
+  milliseconds, their start-up recalibration kept to their seeds; the device on clusters runs
+  `MockQuantifyExecutor` on dummy clusters.
+- The two-qubit simulator recalibrates in one test, the whole of tergite-tuner's nodes
   from its rough seed, then runs gate-level jobs on what the tuner found: some three
   minutes, on one worker, with a timeout of its own.
 - The suite runs on 4 pytest-xdist workers, `--dist=worksteal`, as each has its own temporary

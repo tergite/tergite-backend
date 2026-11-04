@@ -97,6 +97,7 @@ def sim_1q_rest_client(
     monkeypatch.setenv("BCC_BACKEND_SETTINGS", TEST_SIMQ1_BACKEND_SETTINGS_FILE)
     monkeypatch.setenv("BCC_CALIBRATION_SEED", TEST_SIM_1Q_SEED_FILE)
     use_test_durations(mocker)
+    _keep_simulated_calibration(mocker)
     import settings
 
     importlib.reload(settings)
@@ -116,6 +117,7 @@ def sim_2q_rest_client(
     monkeypatch.setenv("BCC_BACKEND_SETTINGS", TEST_SIMQ2_BACKEND_SETTINGS_FILE)
     monkeypatch.setenv("BCC_CALIBRATION_SEED", TEST_SIM_2Q_SEED_FILE)
     use_test_durations(mocker)
+    _keep_simulated_calibration(mocker)
     import settings
 
     importlib.reload(settings)
@@ -123,6 +125,14 @@ def sim_2q_rest_client(
 
     yield get_test_client(api.app)
     _clear_test_db(TEST_BOOKING_DB_URL)
+
+
+def _keep_simulated_calibration(mocker) -> None:
+    """Makes a simulated device's recalibration, which each device runs as it starts, keep
+    its seed's calibration rather than run tergite-tuner for minutes"""
+    mocker.patch(
+        "libs.quantum_executor.quantify.executor.recalibrate", return_value=None
+    )
 
 
 def _clear_test_db(url: str = TEST_BOOKING_DB_URL):

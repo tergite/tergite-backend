@@ -83,15 +83,11 @@ def check_device(settings: DeviceSettings) -> List[Finding]:
         settings: the device's settings, as read from its env file
 
     Returns:
-        what the check found; nothing for a device QuTiP simulates, which has no
-        hardware config
+        what the check found
     """
     backend_config = BackendConfig.from_toml(
         settings.backend_settings, seed_file=settings.calibration_seed
     )
-    simulator = backend_config.simulator
-    if simulator is not None and simulator.chip is None:
-        return []
     hardware_config = load_quantify_config(settings.quantify_config_file)
     return check_configs(backend_config, hardware_config)
 

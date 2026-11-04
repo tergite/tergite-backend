@@ -2,12 +2,10 @@
 
 The executor is the core component to run the quantum circuit on a backend.
 It manages the access to the instruments or sets up the simulator in case the backend is a simulator.
-Right now, `BCC_EXECUTOR_TYPE=quantify` is the only executor type, and it runs a device on one of two executors:
-- `QuantifyExecutor`, in `libs/quantum_executor/quantify/executor.py`: quantify-scheduler schedules on Qblox clusters,
-  real or dummy; check out the [configuration manual](./configuration.md) on how to run dummy ones.
-- `QutipExecutor`, in `libs/quantum_executor/quantify/qutip_executor.py`: a simulated device, chosen by a `[simulator]`
-  section in its backend config, whose circuits are compiled as on clusters and played on QuTiP; see
-  [Simulated Devices](./configuration.md#simulated-devices).
+Right now, `BCC_EXECUTOR_TYPE=quantify` is the only executor type, and `QuantifyExecutor`, in
+`libs/quantum_executor/quantify/executor.py`, the only executor: quantify-scheduler schedules on Qblox clusters, real or
+dummy; check out the [configuration manual](./configuration.md) on how to run dummy ones. A `[simulator.chip]` section in
+a backend config puts a simulated chip behind its dummy clusters; see [Simulated Devices](./configuration.md#simulated-devices).
 
 If you want to implement a new executor, follow these steps below.
 
@@ -17,7 +15,7 @@ If you want to implement a new executor, follow these steps below.
 - Inherit from that class to create your own executor, implementing `to_circuit_experiments`, `run_native`,
   `recalibrate` (returning `None` if your backend does not recalibrate) and `close`.
 - If your backend needs some basic tune-up or training, such as a discriminator, do it when the executor is
-  constructed and put the result in its `backend_config`, as `QutipExecutor` does with its discriminators; the heavy worker publishes
+  constructed and put the result in its `backend_config`; the heavy worker publishes
   that config to MSS once the executor is loaded.
 
 ### 2. Implement a transpiler
@@ -27,13 +25,13 @@ If you want to implement a new executor, follow these steps below.
   backend runs, acquiring each `Measure` on its `channel`, and return them as `CircuitExperiment`s whose readout
   `NativeCircuit.to_readout` gives. `run_native` runs each of them.
 - A backend that cannot play pulse-level blocks (`PulseBlock`, in `libs/quantum_executor/base/gates.py`), or another
-  part of a circuit, refuses it with an `UnsupportedCircuitError`, as the simulator does a gate after a measurement in
-  `libs/quantum_executor/quantify/simulator.py`.
+  part of a circuit, refuses it with an `UnsupportedCircuitError`, as the simulated chip does a gate after a measurement in
+  `libs/quantum_executor/quantify/simulated_chip/engine.py`.
 - Other modules in `libs/quantum_executor` might have to be adapted or added.
 
 ### 3. Next steps
 - Load your executor in `_init_executor` in `services/scheduler/utils.py`, by a new `BCC_EXECUTOR_TYPE` (the
-  `executor_type` of `DeviceSettings`, in `utils/config.py`) or by a section of the backend config, as the simulator is.
+  `executor_type` of `DeviceSettings`, in `utils/config.py`) or by a section of the backend config.
 - Add its dependencies to `pyproject.toml`, and to the Nuitka options at the top of `main.py`.
 - Add documentation for your executor.
   - You probably have to update the `.env.example`, and add example configs beside `quantify-config.example.json`.

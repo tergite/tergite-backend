@@ -95,12 +95,18 @@ cp tests/fixtures/generic-quantify-config.yml quantify-metadata.yml
 cp backend_config.example.toml backend_config.toml
 ```
 
-_Note: For a simulated device, which runs its jobs on QuTiP, you can copy one of the test fixtures, with its
-calibration seed; its `[simulator]` section is what makes it simulated (see [docs/configuration.md](docs/configuration.md))_
+_Note: For a simulated device, a chip behind dummy clusters, you can copy one of the test fixtures, with its
+calibration seed, dummy cluster and tergite-tuner configs; its `[simulator]` section is what makes it simulated
+(see [docs/configuration.md](docs/configuration.md#simulated-devices))_
 
 ```shell
 cp tests/fixtures/backend_config.simq1.toml backend_config.toml
 cp tests/fixtures/qiskit_pulse_1q.seed.toml calibration.seed.toml
+cp tests/fixtures/dummy-quantify-config.json quantify-config.json
+cp tests/fixtures/dummy-quantify-metadata.yml quantify-metadata.yml
+cp tests/fixtures/chip_calib_device_config.toml device_config.calib.toml
+cp tests/fixtures/chip_node_config.toml node_config.calib.toml
+cp tests/fixtures/dummy_spi_config.calib.toml spi_config.calib.toml
 ```
 
 - Copy the example file for initial device calibrations `calibration.seed.example.toml` into the `calibration.seed.toml` file and update the variables accordingly. 

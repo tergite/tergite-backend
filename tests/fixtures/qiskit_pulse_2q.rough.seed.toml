@@ -1,4 +1,4 @@
-# the simulated chip device's calibration before tergite-tuner first finds the chip's:
+# the 2-qubit simulator's calibration before tergite-tuner first finds its chip's:
 # its tuner device config's rough guesses
 [calibration_config]
 [[calibration_config.qubit]]

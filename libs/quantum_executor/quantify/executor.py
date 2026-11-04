@@ -439,7 +439,7 @@ def _get_simulated_chip(
         ValueError: a simulated chip plays behind dummy instruments, but {name} is not one
     """
     simulator = backend_config.simulator
-    if simulator is None or simulator.chip is None:
+    if simulator is None:
         return None
     for name, conf in metadata.root.items():
         if not conf.is_dummy:

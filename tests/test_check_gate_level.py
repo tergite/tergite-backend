@@ -169,7 +169,10 @@ def test_main_prints_what_it_found_and_exits_1_on_an_error(tmp_path, capsys):
     assert "  error   q13: the LO of q13:mw-q13.01 is 5306.0 MHz" in "\n".join(lines)
 
 
-def test_simulated_device_is_not_checked(tmp_path, monkeypatch, capsys):
+def test_a_simulated_device_is_checked_as_one_on_clusters(
+    tmp_path, monkeypatch, capsys
+):
+    """Its chip plays behind dummy clusters, whose hardware config it has"""
     from dev.check_gate_level import main
 
     monkeypatch.setenv("BCC_BACKEND_SETTINGS", TEST_SIMQ2_BACKEND_SETTINGS_FILE)
@@ -180,7 +183,7 @@ def test_simulated_device_is_not_checked(tmp_path, monkeypatch, capsys):
     exit_code = main([str(env_file)])
 
     assert exit_code == 0
-    assert capsys.readouterr().out == f"{env_file} (quantify): 0 errors, 0 warnings\n"
+    assert f"{env_file} (quantify): 0 errors" in capsys.readouterr().out
 
 
 def _check(

@@ -9,7 +9,7 @@
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
-"""The simulated chip device, calibrated by tergite-tuner from rough guesses as the
+"""The 2-qubit simulator, calibrated by tergite-tuner from rough guesses as the
 backend recalibrates a chip, and its gate-level jobs on what the tuner found"""
 import shutil
 from typing import Dict
@@ -51,13 +51,13 @@ def test_the_tuner_calibrates_the_chip_from_rough_guesses_for_gate_level_jobs(
     """The tuner's device config guesses each frequency 0.5 to 1.3 MHz off"""
     from libs.quantum_executor.quantify.executor import QuantifyExecutor
 
-    seed_file = tmp_path / "chip.seed.toml"
-    shutil.copy(get_fixture_path("chip.seed.toml"), seed_file)
+    seed_file = tmp_path / "qiskit_pulse_2q.rough.seed.toml"
+    shutil.copy(get_fixture_path("qiskit_pulse_2q.rough.seed.toml"), seed_file)
     executor = QuantifyExecutor(
         quantify_config_file=TEST_QUANTIFY_CONFIG_FILE,
         quantify_metadata_file=TEST_QUANTIFY_METADATA_FILE,
         backend_config=BackendConfig.from_toml(
-            get_fixture_path("backend_config.chip.toml"), seed_file=seed_file
+            get_fixture_path("backend_config.simq2.toml"), seed_file=seed_file
         ),
         data_dir=tmp_path / "data",
         calib_node_conf=get_fixture_path("chip_node_config.toml"),

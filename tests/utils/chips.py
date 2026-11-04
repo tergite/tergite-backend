@@ -28,7 +28,7 @@ def get_chip_config() -> ChipConfig:
     Returns:
         the chip's true parameters
     """
-    settings = toml.load(get_fixture_path("backend_config.chip.toml"))
+    settings = toml.load(get_fixture_path("backend_config.simq2.toml"))
     return ChipConfig.model_validate(settings["simulator"]["chip"])
 
 

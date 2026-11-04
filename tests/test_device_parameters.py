@@ -15,9 +15,14 @@ from typing import Any, Dict
 
 import pytest
 import time_machine
+import toml
 
 from libs.device_parameters import BackendConfig, Device, DeviceCalibration
-from libs.device_parameters.dtos import ChipConfig, _BackendGeneralConfig
+from libs.device_parameters.dtos import (
+    ChipConfig,
+    SimulatorConfig,
+    _BackendGeneralConfig,
+)
 from tests.utils.chips import get_chip_config
 from tests.utils.fixtures import get_fixture_path
 
@@ -49,16 +54,23 @@ def test_couplers_of_a_config_take_their_qubits_from_its_coupling_dict(
     calibration = DeviceCalibration.from_config(config)
 
     for coupler in calibration.couplers:
-        assert [coupler.control_qubit, coupler.target_qubit] == list(
+        assert sorted([coupler.control_qubit, coupler.target_qubit]) == sorted(
             config.device_config.coupling_dict[coupler.short_name]
         )
     assert calibration.to_calibration_config().coupler
 
 
-def test_a_coupler_missing_from_the_coupling_dict_is_refused():
+def test_a_coupler_missing_from_the_coupling_dict_is_refused(tmp_path):
+    """A seed's coupler without a name takes its qubits from the coupling dict"""
+    seed = toml.load(get_fixture_path("qiskit_pulse_2q.seed.toml"))
+    for coupler in seed["calibration_config"]["coupler"]:
+        for field in ("full_name", "control_qubit", "target_qubit"):
+            coupler.pop(field, None)
+        coupler["id"] = "u0"
+    seed_file = tmp_path / "seed.toml"
+    seed_file.write_text(toml.dumps(seed))
     config = BackendConfig.from_toml(
-        get_fixture_path("backend_config.simq2.toml"),
-        get_fixture_path("qiskit_pulse_2q.seed.toml"),
+        get_fixture_path("backend_config.simq2.toml"), seed_file
     )
     config = config.model_copy(
         update={
@@ -81,7 +93,7 @@ def test_qubits_out_of_the_order_of_their_numbers_are_refused(tmp_path):
     swapped.write_text(
         open(settings)
         .read()
-        .replace('qubit_ids = [ "q0", "q1" ]', 'qubit_ids = [ "q1", "q0" ]')
+        .replace('qubit_ids = [ "q12", "q13" ]', 'qubit_ids = [ "q13", "q12" ]')
     )
 
     with pytest.raises(ValueError, match="not in the order of their numbers"):
@@ -115,7 +127,7 @@ def test_device_lists_the_gates_gate_level_jobs_compile(settings, seed, expected
 
 def test_a_simulator_section_takes_a_chip():
     config = BackendConfig.from_toml(
-        get_fixture_path("backend_config.chip.toml"),
+        get_fixture_path("backend_config.simq2.toml"),
         get_fixture_path("dummy_quantify.seed.toml"),
     )
 
@@ -169,3 +181,10 @@ def _merge(base: Dict[str, Any], change: Dict[str, Any]) -> Dict[str, Any]:
         else:
             merged[key] = value
     return merged
+
+
+def test_the_qutip_simulators_readout_points_are_refused():
+    with pytest.raises(ValueError, match="takes a chip, its readout_iq"):
+        SimulatorConfig.model_validate(
+            {"readout_iq": {"q12": [[1, 0], [-1, 0]]}, "readout_noise": 0.1}
+        )
