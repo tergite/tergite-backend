@@ -30,6 +30,7 @@ from .datetime import get_utc_now
 
 # the project's root, beside settings.py, where the default files are
 _ROOT_PATH = Path(__file__).parents[1]
+_SQLITE_URL_PREFIX = "sqlite:///"
 
 
 class DeviceSettings(BaseSettings):
@@ -198,6 +199,46 @@ class DeviceSettings(BaseSettings):
         if isinstance(value, str):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
+
+    @field_validator(
+        "storage_root",
+        "backend_settings",
+        "calibration_seed",
+        "calibration_node_config_file",
+        "calibration_device_config_file",
+        "calibration_spi_config_file",
+        "quantify_config_file",
+        "quantify_metadata_file",
+    )
+    @classmethod
+    def make_path_absolute(cls, path: str | Path) -> str | Path:
+        """Reads a relative path from the folder the settings are read in, as a heavy worker
+        then moves to its device's own
+
+        Args:
+            path: the path
+
+        Returns:
+            the absolute path, of the type it was given
+        """
+        return type(path)(Path(path).absolute())
+
+    @field_validator("booking_db_url")
+    @classmethod
+    def make_sqlite_path_absolute(cls, url: str) -> str:
+        """Reads a relative SQLite database path from the folder the settings are read in, as a
+        heavy worker then moves to its device's own
+
+        Args:
+            url: the database URL
+
+        Returns:
+            the URL, with an absolute path if it is a SQLite file's
+        """
+        path = url.removeprefix(_SQLITE_URL_PREFIX)
+        if path == url or path in ("", ":memory:") or Path(path).is_absolute():
+            return url
+        return f"{_SQLITE_URL_PREFIX}{Path(path).absolute()}"
 
     @field_validator("log_level")
     @classmethod

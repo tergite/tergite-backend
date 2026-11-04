@@ -7,6 +7,14 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.11.0-rc.5] - 2026-11-04
+
+### Fixed
+
+- Fixed devices on dummy clusters, the simulated ones among them, failing recalibrations or jobs with "Assembly failed"
+  when one `bcc start` served several of them from one folder: their heavy workers each assembled in `./tmp.q1asm`, and
+  now each runs in its device's own folder
+
 ## [2026.11.0-rc.4] - 2026-11-04
 
 ### Added

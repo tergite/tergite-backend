@@ -373,6 +373,12 @@ def _run_worker(
         else settings.get_device_names()
     )
     set_up_logging(settings.get_device_settings().log_level)
+    if is_heavy:
+        # qblox's dummy clusters assemble each program in ./tmp.q1asm, which the heavy
+        # workers of devices started from one folder would overwrite in each other
+        folder = settings.get_device_settings(devices[0]).executor_data_dir
+        folder.mkdir(parents=True, exist_ok=True)
+        os.chdir(folder)
     resources = {
         name: preload_worker_globals(
             settings.get_device_settings(name), should_load_executor=is_heavy

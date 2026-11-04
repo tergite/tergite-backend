@@ -1,6 +1,7 @@
 """Tests for the settings and configs"""
 
 import importlib
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -207,6 +208,35 @@ def test_executor_type_other_than_quantify_is_refused(monkeypatch, executor_type
 
     with pytest.raises(ValidationError, match="executor_type"):
         _reload_settings()
+
+
+def test_relative_paths_are_read_from_the_folder_the_settings_are_read_in(
+    monkeypatch, tmp_path
+):
+    """A heavy worker then moves to its device's own folder, where they would point
+    elsewhere"""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("BCC_QUANTIFY_CONFIG_FILE", "quantify-config.json")
+    monkeypatch.setenv("BCC_CALIBRATION_SEED", "calibration.seed.toml")
+    monkeypatch.setenv("BCC_BOOKING_DB_URL", "sqlite:///booking_db.db")
+
+    _reload_settings()
+
+    device = settings.get_device_settings()
+    assert device.quantify_config_file == Path.cwd() / "quantify-config.json"
+    assert device.calibration_seed == str(Path.cwd() / "calibration.seed.toml")
+    assert device.booking_db_url == f"sqlite:///{Path.cwd() / 'booking_db.db'}"
+
+
+@pytest.mark.parametrize(
+    "url", ["sqlite:////var/lib/bcc/booking_db.db", "sqlite:///:memory:", "sqlite://"]
+)
+def test_absolute_and_memory_database_urls_stay_as_they_are(monkeypatch, url):
+    monkeypatch.setenv("BCC_BOOKING_DB_URL", url)
+
+    _reload_settings()
+
+    assert settings.get_device_settings().booking_db_url == url
 
 
 def _reload_settings() -> None:
