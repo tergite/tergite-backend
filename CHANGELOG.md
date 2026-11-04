@@ -7,6 +7,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Added
+
+- Added `BCC_SHOULD_RECALIBRATE_AT_START`, on by default: off, a device starts with its calibration seed and first
+  recalibrates an interval later, where before every start ran tergite-tuner for minutes before any job
+
 ## [2026.11.0-rc.5] - 2026-11-04
 
 ### Fixed
