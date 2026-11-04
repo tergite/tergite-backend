@@ -12,6 +12,7 @@
 #
 
 """Definitions for some data transfer objects for the scheduler service"""
+
 from datetime import datetime
 from enum import Enum, unique
 from typing import Any, Optional

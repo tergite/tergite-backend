@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests for the order the dispatcher runs its devices' work in"""
+
 from types import SimpleNamespace
 
 from services.scheduler import dispatcher

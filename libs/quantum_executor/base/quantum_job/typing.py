@@ -11,6 +11,7 @@
 # that they have been altered from the originals.
 
 """Some Typing's to simplify reading the code"""
+
 from typing import Annotated, Dict, TypeAlias
 
 import numpy as np

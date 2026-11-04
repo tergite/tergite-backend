@@ -12,6 +12,7 @@
 # that they have been altered from the originals.
 #
 """Tests for the API's logfile routes"""
+
 import json
 
 import pytest
@@ -55,7 +56,7 @@ def test_download_logfile(
         # submit many jobs from many users
         submit_jobs(client, data=job_metadata_list)
 
-        response = client.get(f"/logfiles/{job["job_id"]}", headers=job_info["headers"])
+        response = client.get(f"/logfiles/{job['job_id']}", headers=job_info["headers"])
         file_content = json.loads(response.content)
         assert response.status_code == 200
         assert file_content == job
@@ -102,12 +103,12 @@ def test_unauthenticated_download_logfile(
         submit_jobs(client, data=job_metadata_list)
 
         # no authentication
-        response = client.get(f"/logfiles/{job["job_id"]}")
+        response = client.get(f"/logfiles/{job['job_id']}")
         assert response.status_code == 401
         assert response.json() == {"detail": "user not authenticated"}
 
         # wrong authentication
         headers = get_bearer_headers("foo")
-        response = client.get(f"/logfiles/{job["job_id"]}", headers=headers)
+        response = client.get(f"/logfiles/{job['job_id']}", headers=headers)
         assert response.status_code == 401
         assert response.json() == {"detail": "not authenticated"}

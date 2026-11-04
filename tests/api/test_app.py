@@ -12,6 +12,7 @@
 # that they have been altered from the originals.
 #
 """Tests for what every route of the API does: MSS's signed headers, request ids, errors and an offline device"""
+
 import asyncio
 import threading
 import time

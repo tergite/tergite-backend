@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests for the wake-ups of waiting workers"""
+
 import os
 import subprocess
 import sys

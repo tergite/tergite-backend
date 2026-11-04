@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Routes each request to the device its path names, e.g. /Loke/bookings to Loke's /bookings"""
+
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 import settings

@@ -14,6 +14,7 @@
 On the quantify executor, the dummy clusters acquire nothing meaningful, so each
 transmon's acquisitions are made those of a state the test chooses.
 """
+
 from pathlib import Path
 from typing import Any, Dict, Generator, List
 

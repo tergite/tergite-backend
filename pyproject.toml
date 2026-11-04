@@ -81,9 +81,8 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=8.3.5",
-    "black~=25.1.0",
-    "isort~=6.0.0",
-    "pyflakes~=4.0",
+    # formats, sorts the imports and finds what pyflakes did
+    "ruff==0.15.1",
     "time-machine~=3.5.1",
     "pytest-lazy-fixtures>=1.1.2",
     "pre-commit~=4.2.0",
@@ -101,6 +100,9 @@ dev = [
     "setuptools~=80.9.0"
 ]
 
+[project.scripts]
+bcc = "main:main"
+
 [project.urls]
 Homepage = "https://github.com/tergite/tergite-backend"
 Repository = "https://github.com/tergite/tergite-backend"
@@ -108,9 +110,14 @@ Documentation = "https://github.com/tergite/tergite-backend/tree/main/docs"
 Issues = "https://github.com/tergite/tergite-backend/issues"
 Changelog = "https://github.com/tergite/tergite-backend/blob/main/CHANGELOG.md"
 
+[tool.setuptools]
+# the bcc command's, beside the packages, as in the Nuitka build
+py-modules = ["main", "settings"]
+
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["api*", "libs*", "services*", "utils*"]
+# migrations has no __init__.py, which Alembic loads by path
+include = ["api*", "libs*", "services*", "utils*", "migrations*"]
 exclude = ["tests*", "build*", "dist*", "*.egg-info", ".venv*", "venv*"]
 
 [tool.setuptools_scm]
@@ -118,9 +125,16 @@ exclude = ["tests*", "build*", "dist*", "*.egg-info", ".venv*", "venv*"]
 version_scheme = "post-release"
 local_scheme = "no-local-version"
 
-[tool.isort]
-skip_gitignore = true
-profile = "black"
+[tool.ruff]
+target-version = "py313"
+
+[tool.ruff.lint]
+# pyflakes' findings and isort's order, as black, isort and pyflakes checked before
+select = ["F", "I"]
+
+[tool.ruff.lint.isort]
+# the top-level packages' names are generic, so ruff cannot tell them from third parties'
+known-first-party = ["api", "libs", "services", "utils", "migrations", "main", "settings", "tests", "dev"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

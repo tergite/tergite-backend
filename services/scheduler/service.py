@@ -16,6 +16,7 @@
 # - Martin Ahindura, 2023, 2025
 #
 """Module containing service for scheduling jobs"""
+
 import shutil
 from datetime import datetime
 from pathlib import Path

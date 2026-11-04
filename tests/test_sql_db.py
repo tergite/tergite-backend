@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests for the SQL engines the devices' stores run on"""
+
 from utils.sql_db import get_sql_engine
 
 

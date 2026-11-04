@@ -22,6 +22,7 @@ each shot, jointly with the others acquired at once, each with the noise of its 
 loop's body plays once, each of its iterations read out from it, so a body starts with a
 reset.
 """
+
 import math
 from bisect import bisect_left
 from collections import defaultdict

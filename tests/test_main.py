@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests for the bcc command's arguments and the processes bcc start runs"""
+
 import http.server
 import multiprocessing
 import signal

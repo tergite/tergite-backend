@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests for the client that sends the device's events to MSS"""
+
 import itertools
 from types import SimpleNamespace
 

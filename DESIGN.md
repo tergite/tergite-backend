@@ -820,6 +820,12 @@ there, logging to the journal; on macOS the paths are under `/usr/local/` and a 
 runs it. The deb asks debconf for a first instance. See
 [CONTRIBUTING.md](CONTRIBUTING.md#how-to-install-as-a-service).
 
+The package's wheel, which `uv tool install` installs from the repository, runs the same `bcc`
+with no service around it: `main.py` and `settings.py` as top-level modules, the migrations as
+a namespace package that `utils/sql_db.py` points Alembic at without `alembic.ini`, and the env
+file read from the folder it starts in. `tests/test_packaging.py` builds the wheel and runs it
+outside the checkout. See the [README](README.md#run-or-install-with-uv).
+
 ## 14. Testing
 
 | Level | Where | Command |
@@ -866,9 +872,7 @@ Both GitHub Actions ([.github/workflows](.github/workflows)) and GitLab CI
 mirror — see §16).
 
 On every push and merge request, `tests` runs with uv from `uv.lock` on Python 3.13:
-`black --check`, `isort --check-only` and `pyflakes` over
-`api libs services utils tests dev migrations main.py settings.py`, then the tests as §14 runs
-them.
+`ruff format --check` and `ruff check`, then the tests as §14 runs them.
 
 On a `v*` tag, GitHub's `release.yml` and GitLab's `package linux`, `package macos` and
 `release` jobs build `bcc` with Nuitka, package it as a deb and a macOS installer, install each
@@ -968,8 +972,7 @@ rules, and code a change touches is brought in line with them.
 
 ### Verifying a change
 
-**Every commit** runs `black` and `isort` with no flags and `pyflakes` over the source folders,
-then the tests the change can affect, serially, logged as [below](#slow-commands). A commit
+**Every commit** runs `ruff format` and `ruff check`, then the tests the change can affect, serially, logged as [below](#slow-commands). A commit
 that fixes a style violation deletes its line from the styleguide baseline; none adds one.
 
 **Before a merge request**:
@@ -999,9 +1002,9 @@ found nothing; confirm from the summary line or the recorded status.
 
 On top of the [style guide](#style-guide):
 
-- **`black` is authoritative** for formatting, a CI gate; `isort` for imports, configured with
-  `profile = "black"` so the two agree. Run both before committing; neither needs flags.
-- **`pyflakes`** finds unused imports and variables; CI fails on any finding.
+- **`ruff format` is authoritative** for formatting, a CI gate; `ruff check` sorts the imports
+  (`I`) and finds unused imports and variables and undefined names (`F`, pyflakes' checks), and
+  CI fails on any finding. Neither needs flags.
 - **Constants go at the top of the file**, after imports. The exception is a constant built
   from a function or class defined in the same file, which stays after it.
 - **Module-private helpers** (`_name`, not used outside the module) go at the **bottom**,

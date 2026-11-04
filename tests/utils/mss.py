@@ -12,6 +12,7 @@
 # that they have been altered from the originals.
 
 """Utilities for stuff related to MSS connection"""
+
 import base64
 import json
 import logging

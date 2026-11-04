@@ -11,6 +11,7 @@
 # that they have been altered from the originals.
 #
 """Shared Data Transfer Objects"""
+
 import dataclasses
 from datetime import datetime
 from enum import Enum, unique

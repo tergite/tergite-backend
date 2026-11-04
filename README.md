@@ -123,6 +123,40 @@ cp calibration.seed.example.toml calibration.seed.toml
 
 - Open your browser at [http://localhost:8000/docs](http://localhost:8000/docs) to see the interactive API docs
 
+## Run or install with uv
+
+bcc is the package's command, so [uv](https://docs.astral.sh/uv/) runs it from a checkout, from its repository
+without installing it, or installs it as a [tool](https://docs.astral.sh/uv/guides/tools/) on the `PATH`. uv
+fetches the Python 3.13 it needs.
+
+- From a checkout, after the Quick Start's setup, which `./dev/start_bcc.sh` does too, besides decrypting a
+  SOPS-encrypted `.env`:
+
+```shell
+uv run bcc start
+```
+
+- Once, without installing it:
+
+```shell
+uvx --from git+https://github.com/tergite/tergite-backend@v<version> bcc start --env-file backend.env
+```
+
+- Installed as a tool; to change version, install the other tag with `--force`, and `uv tool uninstall
+  tergite-backend` removes it:
+
+```shell
+uv tool install git+https://github.com/tergite/tergite-backend@v<version>
+bcc start --env-file /etc/bcc/loke/backend.env
+```
+
+Outside a checkout, bcc reads the `.env` in the folder it starts in, or the env files `--env-file` or `BCC_ENV_FILE`
+name. The other files' defaults are in the checkout, so give each of them in the env file with an absolute path, as
+the packages' `bcc-provision` writes it: `BCC_STORAGE_ROOT`, `BCC_BOOKING_DB_URL`, `BCC_PRIVATE_KEY_FILE`,
+`BCC_MSS_PUBLIC_KEY_PATH`, `BCC_BACKEND_SETTINGS`, `BCC_CALIBRATION_SEED`, `BCC_QUANTIFY_CONFIG_FILE`,
+`BCC_QUANTIFY_METADATA_FILE` and the three `BCC_CALIBRATION_*_CONFIG_FILE`s. A tool runs where it is started rather
+than as a service; for a service, install the deb or the macOS installer.
+
 ## Documentation
 
 Find how the backend is built, and the conventions to follow when changing it, in [DESIGN.md](./DESIGN.md),

@@ -16,6 +16,7 @@
 # - Martin Ahindura 2023
 #
 """Utilities for strings"""
+
 import random
 import string
 import uuid

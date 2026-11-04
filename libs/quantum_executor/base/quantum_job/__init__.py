@@ -49,9 +49,7 @@ _HDF5_JOB_RESULTS_PATH_REGEX = re.compile(
 _HDF5_READOUTS_PATH = "header/readouts"
 
 
-_dec_to_hex = np.frompyfunc(
-    hex, nin=1, nout=1
-)  # type: Callable[[npt.NDArray[np.int64]], npt.NDArray[np.str_]]
+_dec_to_hex = np.frompyfunc(hex, nin=1, nout=1)  # type: Callable[[npt.NDArray[np.int64]], npt.NDArray[np.str_]]
 """Converts a numpy 1D array of decimal numbers to a numpy array of hex strings
 
 Args:

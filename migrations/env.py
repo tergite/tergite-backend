@@ -16,6 +16,7 @@ the device's env file in BCC_ENV_FILE: `alembic upgrade head`, or `alembic revis
 -m "..."` against an up-to-date database after a model changes. Review a generated revision by
 hand before committing it.
 """
+
 from logging.config import fileConfig
 
 from alembic import context

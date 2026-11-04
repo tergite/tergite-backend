@@ -25,6 +25,7 @@ clock that gate-level jobs play, as a job does, so what the compiler refuses of 
 config shows; and it checks the frequency each sequencer's NCO would get, which only the
 instrument refuses.
 """
+
 import math
 import sys
 from dataclasses import dataclass

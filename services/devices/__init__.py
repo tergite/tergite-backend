@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """The device: its properties, calibration and switch"""
+
 from .service import (
     get_device_calibration_info,
     get_device_info,

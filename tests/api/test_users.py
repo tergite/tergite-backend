@@ -12,6 +12,7 @@
 # that they have been altered from the originals.
 #
 """Tests for the API's user and token routes"""
+
 from uuid import uuid4
 
 import jwt

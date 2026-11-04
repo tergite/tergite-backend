@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Routes for the device's static and dynamic properties"""
+
 from fastapi import APIRouter, Depends
 
 from services import devices

@@ -11,6 +11,7 @@
 # that they have been altered from the originals.
 """Telling systemd that the process is alive, for a unit with WatchdogSec, which restarts it
 when told nothing for that long; a datagram on NOTIFY_SOCKET, as sd_notify sends it"""
+
 import errno
 import os
 import socket

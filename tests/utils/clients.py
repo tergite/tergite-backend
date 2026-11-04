@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Fixtures of the REST API's test clients, one per executor"""
+
 import importlib
 import importlib.util
 from typing import (

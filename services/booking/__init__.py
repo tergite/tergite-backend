@@ -11,6 +11,7 @@
 # that they have been altered from the originals.
 #
 """Bookings of the device and its users, as MSS knows them"""
+
 from .dtos import (
     Booking,
     BookingsConfig,

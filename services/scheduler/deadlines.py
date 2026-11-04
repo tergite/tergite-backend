@@ -14,6 +14,7 @@
 A worker stuck in a call that never returns to Python cannot notice it, as neither its timers'
 signal handlers nor a thread of its own would tell; the process that started it can.
 """
+
 import math
 import multiprocessing
 import time

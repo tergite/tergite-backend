@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Utilities for testing on a simulated chip behind the dummy clusters"""
+
 from pathlib import Path
 
 import toml

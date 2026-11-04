@@ -20,6 +20,7 @@
 # - Adilet Tuleuov, 2025
 #
 """The device's parameters: its backend config, properties and calibration"""
+
 from .dtos import BackendConfig, Device, DeviceCalibration
 
 __all__ = ["BackendConfig", "Device", "DeviceCalibration"]

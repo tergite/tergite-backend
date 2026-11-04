@@ -12,6 +12,7 @@
 # that they have been altered from the originals.
 #
 """Tests for the API's switch routes"""
+
 import os
 import threading
 from datetime import datetime

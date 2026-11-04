@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Routes for the jobs: their upload, status, cancellation and removal"""
+
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Query, UploadFile

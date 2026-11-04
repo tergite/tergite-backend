@@ -16,6 +16,7 @@ dev/perf/record.sh runs the heavy worker with it
 The chip is swapped before main.py builds the executor, so BCC_ENV_FILE must name the
 device's env file: settings is read on import, before main.py could set it.
 """
+
 import libs.quantum_executor.quantify.executor as executor
 import main
 from dev.perf.stub_chip import StubChip

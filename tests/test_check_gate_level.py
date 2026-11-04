@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests of dev/check_gate_level.py, which checks a device's configs for gate-level jobs"""
+
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional

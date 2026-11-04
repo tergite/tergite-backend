@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Utilities for the bookings the tests make through the API"""
+
 from datetime import datetime, timedelta, timezone
 from typing import (
     Optional,

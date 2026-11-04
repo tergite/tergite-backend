@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests for the job supervisor log"""
+
 import re
 
 from services.scheduler.utils import log_job_error

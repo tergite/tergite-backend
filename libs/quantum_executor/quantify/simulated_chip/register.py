@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """The joint state of transmons that couplers' pulses may entangle"""
+
 from typing import List, Sequence
 
 import numpy as np

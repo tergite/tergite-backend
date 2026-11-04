@@ -12,6 +12,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Data Transfer objects for the Quantum job"""
+
 import enum
 from dataclasses import asdict, dataclass
 from enum import Enum

@@ -30,9 +30,8 @@ jobs:
       - name: Run tests
         run: |
           uv sync --dev
-          uv run black --check api libs services utils tests dev migrations main.py settings.py
-          uv run isort --check-only api libs services utils tests dev migrations main.py settings.py
-          uv run pyflakes api libs services utils tests dev migrations main.py settings.py
+          uv run ruff format --check
+          uv run ruff check
           uv run pytest tests -n 4 --dist=worksteal -m "not real_time"
           uv run pytest tests -m real_time
 

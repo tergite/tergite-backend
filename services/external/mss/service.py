@@ -11,6 +11,7 @@
 # that they have been altered from the originals.
 
 """Websocket connection that is synchronous connecting to MSS"""
+
 import json
 import math
 import time

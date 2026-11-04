@@ -10,6 +10,7 @@
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
 """Tests of the translation of gate-level jobs' OpenQASM 3 into native gates"""
+
 import math
 
 import numpy as np

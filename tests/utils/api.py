@@ -11,6 +11,7 @@
 # that they have been altered from the originals.
 #
 """Utilities for the api"""
+
 import base64
 import time
 from typing import (
@@ -64,30 +65,30 @@ def create_invalid_mss_headers(user_id: str = "") -> List[Dict[str, str]]:
         {
             "x-mss-request-id": request_id,
             "x-mss-timestamp": f"{timestamp}",
-            "x-mss-signature": f"{create_mss_signature(f"{request_id}-{request_id}-{timestamp}")}",
+            "x-mss-signature": f"{create_mss_signature(f'{request_id}-{request_id}-{timestamp}')}",
             "x-mss-user-id": user_id,
         },
         {
             "x-mss-request-id": request_id,
             "x-mss-timestamp": f"{timestamp}",
-            "x-mss-signature": f"{create_mss_signature(f"{request_id}-{request_id}-{timestamp}")}",
+            "x-mss-signature": f"{create_mss_signature(f'{request_id}-{request_id}-{timestamp}')}",
             "x-mss-user-id": user_id,
         },
         {
             "x-mss-request-id": request_id,
             "x-mss-timestamp": f"{timestamp - 500000}",
-            "x-mss-signature": f"{create_mss_signature(f"{request_id}-{request_id}-{timestamp}")}",
+            "x-mss-signature": f"{create_mss_signature(f'{request_id}-{request_id}-{timestamp}')}",
             "x-mss-user-id": user_id,
         },
         {
             "x-mss-request-id": request_id,
             "x-mss-timestamp": f"{timestamp}",
-            "x-mss-signature": f"{create_mss_signature(f"{user_id}-{timestamp}")}",
+            "x-mss-signature": f"{create_mss_signature(f'{user_id}-{timestamp}')}",
             "x-mss-user-id": user_id,
         },
         {
             "x-mss-request-id": request_id,
-            "x-mss-signature": f"{create_mss_signature(f"{user_id}-{request_id}")}",
+            "x-mss-signature": f"{create_mss_signature(f'{user_id}-{request_id}')}",
             "x-mss-user-id": user_id,
         },
         {},
