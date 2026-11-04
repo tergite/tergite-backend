@@ -43,18 +43,15 @@ tests:
       - .venv
 
 # On a v* tag, as .github/workflows/release.yml does on GitHub: the deb for amd64 and the macOS
-# installer of bcc, each built on its platform as Nuitka cannot cross-compile, uploaded to this
-# project's package registry and linked from the release.
+# installer of bcc, each built on its platform, as the Python they ship and some wheels are the
+# platform's, uploaded to this project's package registry and linked from the release.
 .package: &package
   stage: package
   needs: []
-  # quantify, qutip and scipy can make a build of an hour or more
-  timeout: 3h
+  timeout: 1h
   variables: &package_variables
-    # the Python the binaries are built with; uv would otherwise take the newest it can download
+    # the Python the packages ship; uv would otherwise take the newest it can download
     UV_PYTHON: "3.13"
-    # uv's own build of it, as Nuitka refuses e.g. Homebrew's on a Mac
-    UV_MANAGED_PYTHON: "1"
   artifacts:
     paths:
       - published/
@@ -62,18 +59,17 @@ tests:
   rules:
     - if: $CI_COMMIT_TAG =~ /^v/
 
-# its glibc 2.39 is the oldest the binaries then run on: Debian 13 and Ubuntu 24.04 onwards
+# built, installed and smoke-tested on Debian 13, the oldest Debian the package supports
 package linux:
   <<: *package
-  image: tergite/tergite-nuitka:v2026.10.0
-  tags: [nuitka]
+  image: debian:trixie
   variables:
     <<: *package_variables
-    # folders of the nuitka runner's host, kept between jobs
-    NUITKA_CACHE_DIR: /nuitka-cache/$CI_PROJECT_NAME/$CI_JOB_NAME_SLUG
-    UV_CACHE_DIR: /uv-cache
-    # uv cannot hard-link from a cache on another disk than the checkout
-    UV_LINK_MODE: copy
+    UV_CACHE_DIR: "$CI_PROJECT_DIR/.cache/uv"
+  cache:
+    key: "uv-cache-package-linux"
+    paths:
+      - .cache/uv
   script:
     - export VERSION=${CI_COMMIT_TAG#v}
     - pkg/build-linux.sh
@@ -83,14 +79,14 @@ package linux:
     - pkg/render.sh >/dev/null
     - mkdir -p dist
     - ARCH=amd64 nfpm package -f build/pkg-bcc/nfpm.yaml -p deb -t dist/
-    # build-linux.sh skips apt where the image has its tools, so the deb's dependencies need fresh lists
+    # build-linux.sh skips apt where the image has curl, so the deb's dependencies need fresh lists
     - apt-get update -qq
     - DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ./dist/*.deb
     - pkg/smoke-test.sh
     - pkg/publish.sh dist/*.deb
 
-# A Mac with uv and ccache, registered with the shell executor and tagged macos, whose home
-# folder keeps Nuitka's and uv's own caches between builds; only where PUBLISH_MACOS_ARM64 is
+# A Mac with uv, registered with the shell executor and tagged macos, whose home folder keeps
+# uv's cache between builds; only where PUBLISH_MACOS_ARM64 is
 # exactly true, so that a pipeline without such a runner does not wait on it. SIGN_IDENTITY,
 # set in the CI/CD variables, signs the installers. Not smoke-tested, as provisioning an
 # instance needs the root a shell runner lacks.

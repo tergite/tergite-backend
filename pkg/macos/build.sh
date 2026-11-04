@@ -1,7 +1,7 @@
 #!/bin/sh
-# Packages the built binary as a macOS installer: from the repo root, with VERSION set,
-# `pkg/macos/build.sh`. SIGN_IDENTITY, a "Developer ID Installer" certificate's name, signs it;
-# without one Gatekeeper blocks it.
+# Packages build/bcc, which pkg/build.sh builds, as a macOS installer: from the repo root, with
+# VERSION set, `pkg/macos/build.sh`. SIGN_IDENTITY, a "Developer ID Installer" certificate's
+# name, signs it; without one Gatekeeper blocks it.
 
 set -e
 
@@ -20,8 +20,9 @@ trap 'rm -rf "$root" "$scripts"' EXIT
 
 share=$root/usr/local/share/$package
 install -d "$root/usr/local/bin" "$root/usr/local/sbin" "$root/usr/local/lib" "$share/examples"
-# Nuitka's standalone build, whose executable finds the folder through the link
-cp -R main.dist "$root/usr/local/lib/$package"
+# uv's Python with the backend installed into it, and the bcc that runs it, which finds the
+# folder through the link
+cp -R build/bcc "$root/usr/local/lib/$package"
 ln -s "../lib/$package/$binary" "$root/usr/local/bin/$binary"
 install -m 0755 "$rendered/provision.sh" "$root/usr/local/sbin/$binary-provision"
 install -m 0755 "$rendered/macos/uninstall.sh" "$share/"

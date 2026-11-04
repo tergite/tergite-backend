@@ -23,7 +23,7 @@ from sqlmodel import Session, SQLModel, col, create_engine, desc
 
 from .exc import InvalidRequestError
 
-# beside main.py, in a checkout, a wheel and the Nuitka build
+# beside main.py, in a checkout and in the wheel the packages install
 _MIGRATIONS_DIR = Path(__file__).parents[1] / "migrations"
 
 

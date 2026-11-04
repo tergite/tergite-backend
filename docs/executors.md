@@ -32,7 +32,7 @@ If you want to implement a new executor, follow these steps below.
 ### 3. Next steps
 - Load your executor in `_init_executor` in `services/scheduler/utils.py`, by a new `BCC_EXECUTOR_TYPE` (the
   `executor_type` of `DeviceSettings`, in `utils/config.py`) or by a section of the backend config.
-- Add its dependencies to `pyproject.toml`, and to the Nuitka options at the top of `main.py`.
+- Add its dependencies to `pyproject.toml`, which the packages install from `uv.lock`.
 - Add documentation for your executor.
   - You probably have to update the `.env.example`, and add example configs beside `quantify-config.example.json`.
   - Provisioning, in `pkg/provision.sh`, writes an instance's example configs for its device.

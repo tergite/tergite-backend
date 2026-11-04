@@ -89,9 +89,6 @@ dev = [
     "pytest-mock~=3.14.1",
     "pytest-timeout~=2.3.1",
     "pytest-xdist~=3.8.0",
-    "nuitka>=4.3.1",
-    # compresses Nuitka's onefile binaries; nuitka's sdist does not declare its onefile extra
-    "zstandard>=0.15",
     # deps of deps
     # -----------
     # Adding these here to constrain their versions to
@@ -111,7 +108,7 @@ Issues = "https://github.com/tergite/tergite-backend/issues"
 Changelog = "https://github.com/tergite/tergite-backend/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
-# the bcc command's, beside the packages, as in the Nuitka build
+# the bcc command's, beside the packages
 py-modules = ["main", "settings"]
 
 [tool.setuptools.packages.find]

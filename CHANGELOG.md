@@ -18,9 +18,14 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   pyflakes did; contributors run `ruff format` and `ruff check` where they ran the three
 - Changed the default `.env`, and a relative `BCC_ENV_FILE`, to be read from the folder bcc starts in, where before
   they were read from beside `settings.py`
+- Changed the debs and macOS packages to install uv's own build of Python with the dependencies `uv.lock` pins and the
+  backend installed into it, where before they installed Nuitka's standalone build; a release builds them in minutes
+  rather than in nearly two hours
 
 ### Fixed
 
+- Fixed `bcc start` from the debs and macOS packages, whose workers stopped as they started, unable to load openqasm3's
+  and openpulse's parsers, which Nuitka left out, or to look for dask, which it excluded
 - Fixed the packages' smoke test passing a heavy worker that stopped on any error but an import one, as rc.7's did on
   openqasm3's parser; it now fails on a worker that stops within its minute or logs a traceback
 
