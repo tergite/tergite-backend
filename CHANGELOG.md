@@ -18,6 +18,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   pyflakes did; contributors run `ruff format` and `ruff check` where they ran the three
 - Changed the default `.env`, and a relative `BCC_ENV_FILE`, to be read from the folder bcc starts in, where before
   they were read from beside `settings.py`
+- Changed the calibration the backend sends MSS to carry only the fields its qubits, resonators and couplers declare,
+  where before it also passed on any other key a calibration seed held
 
 ### Fixed
 

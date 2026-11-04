@@ -135,8 +135,6 @@ class Device(BaseModel):
 class CalibrationValue(BaseModel, Generic[_CalibValueType]):
     """A calibration value"""
 
-    model_config = ConfigDict(extra="allow")
-
     value: _CalibValueType
     unit: str = ""
     date: Optional[str] = None
@@ -162,8 +160,6 @@ class CalibrationValue(BaseModel, Generic[_CalibValueType]):
 
 class QubitCalibration(BaseModel):
     """Schema for the calibration data of the qubit"""
-
-    model_config = ConfigDict(extra="allow")
 
     t1_decoherence: Optional[CalibrationValue[float]] = None
     t2_decoherence: Optional[CalibrationValue[float]] = None
@@ -272,8 +268,6 @@ class QubitCalibration(BaseModel):
 class ResonatorCalibration(BaseModel):
     """Schema for the calibration data of the resonator"""
 
-    model_config = ConfigDict(extra="allow")
-
     acq_delay: Optional[CalibrationValue[float]] = None
     acq_integration_time: Optional[CalibrationValue[float]] = None
     frequency: Optional[CalibrationValue[float]] = None
@@ -375,8 +369,6 @@ class ResonatorCalibration(BaseModel):
 
 class CouplerCalibration(BaseModel):
     """Schema for the calibration data of the coupler"""
-
-    model_config = ConfigDict(extra="allow")
 
     frequency: Optional[CalibrationValue[float]] = None
     frequency_detuning: Optional[CalibrationValue[float]] = None
@@ -577,8 +569,6 @@ class GateDefcal(BaseModel):
 
 class DeviceCalibration(BaseModel):
     """Schema for the calibration data of a given device"""
-
-    model_config = ConfigDict(extra="allow")
 
     name: str
     version: str
