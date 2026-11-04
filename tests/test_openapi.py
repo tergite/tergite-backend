@@ -19,3 +19,15 @@ def test_committed_schema_matches_the_app():
     assert SCHEMA_FILE.read_text() == render_schema(app.openapi()), (
         f"{SCHEMA_FILE.name} is stale: run python -m dev.openapi.export"
     )
+
+
+def test_schema_holds_the_events_the_backend_sends_mss():
+    """MSS generates its models of the websocket's events and its replies from these"""
+    schemas = app.openapi()["components"]["schemas"]
+
+    event_data = {
+        ref["$ref"].rsplit("/", 1)[-1] for ref in schemas["DeviceEventData"]["anyOf"]
+    }
+
+    assert event_data == {"Device", "DeviceCalibration", "Job", "DeviceSwitchData"}
+    assert {"DeviceEvent", "EventResponse"} <= set(schemas)

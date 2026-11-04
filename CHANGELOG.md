@@ -11,6 +11,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 - Added the `bcc` command to the package, so `uv tool install` installs bcc from its repository with its migrations,
   where before only the deb and macOS installers ran it outside a checkout
+- Added the events the backend sends MSS over its websocket, `DeviceEvent` with its `Device`, `DeviceCalibration`,
+  `Job` and `DeviceSwitchData`, and MSS's `EventResponse`, to the OpenAPI spec, so that MSS generates its models of them
 
 ### Changed
 
