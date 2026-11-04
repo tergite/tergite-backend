@@ -101,7 +101,7 @@ calibration seed, dummy cluster and tergite-tuner configs; its `[simulator]` sec
 
 ```shell
 cp tests/fixtures/backend_config.simq1.toml backend_config.toml
-cp tests/fixtures/qiskit_pulse_1q.seed.toml calibration.seed.toml
+cp tests/fixtures/sim_1q.seed.toml calibration.seed.toml
 cp tests/fixtures/dummy-quantify-config.json quantify-config.json
 cp tests/fixtures/dummy-quantify-metadata.yml quantify-metadata.yml
 cp tests/fixtures/chip_calib_device_config.toml device_config.calib.toml

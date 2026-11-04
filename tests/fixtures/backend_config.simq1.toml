@@ -1,5 +1,5 @@
 [general_config]
-name = "qiskit_pulse_1q"
+name = "sim_1q"
 is_active = true
 characterized = true
 open_pulse = true

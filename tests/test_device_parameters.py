@@ -39,7 +39,7 @@ def test_online_date_defaults_to_when_the_config_is_made():
 @pytest.mark.parametrize(
     "backend_config_file, seed_file",
     [
-        ("backend_config.simq2.toml", "qiskit_pulse_2q.seed.toml"),
+        ("backend_config.simq2.toml", "sim_2q.seed.toml"),
         ("backend_config.toml", "dummy_quantify.seed.toml"),
     ],
 )
@@ -62,7 +62,7 @@ def test_couplers_of_a_config_take_their_qubits_from_its_coupling_dict(
 
 def test_a_coupler_missing_from_the_coupling_dict_is_refused(tmp_path):
     """A seed's coupler without a name takes its qubits from the coupling dict"""
-    seed = toml.load(get_fixture_path("qiskit_pulse_2q.seed.toml"))
+    seed = toml.load(get_fixture_path("sim_2q.seed.toml"))
     for coupler in seed["calibration_config"]["coupler"]:
         for field in ("full_name", "control_qubit", "target_qubit"):
             coupler.pop(field, None)
@@ -97,14 +97,14 @@ def test_qubits_out_of_the_order_of_their_numbers_are_refused(tmp_path):
     )
 
     with pytest.raises(ValueError, match="not in the order of their numbers"):
-        BackendConfig.from_toml(swapped, get_fixture_path("qiskit_pulse_2q.seed.toml"))
+        BackendConfig.from_toml(swapped, get_fixture_path("sim_2q.seed.toml"))
 
 
 @pytest.mark.parametrize(
     "settings, seed, expected_cz",
     [
-        ("backend_config.simq1.toml", "qiskit_pulse_1q.seed.toml", []),
-        ("backend_config.simq2.toml", "qiskit_pulse_2q.seed.toml", ["cz"]),
+        ("backend_config.simq1.toml", "sim_1q.seed.toml", []),
+        ("backend_config.simq2.toml", "sim_2q.seed.toml", ["cz"]),
     ],
 )
 def test_device_lists_the_gates_gate_level_jobs_compile(settings, seed, expected_cz):

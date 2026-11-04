@@ -100,7 +100,7 @@ start_stack() {
 write_env_file() {
   mkdir "$WORK_PATH/storage"
   # the executor may write its calibration back, so a copy
-  cp "$FIXTURES_PATH/qiskit_pulse_1q.seed.toml" "$WORK_PATH/calibration.seed.toml"
+  cp "$FIXTURES_PATH/sim_1q.seed.toml" "$WORK_PATH/calibration.seed.toml"
   {
     echo "BCC_DEFAULT_PREFIX=perf"
     echo "BCC_EXECUTOR_TYPE=quantify"

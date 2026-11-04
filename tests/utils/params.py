@@ -85,19 +85,16 @@ SIMPLE_UPLOAD_JOB_PARAMS = (
 
 ALL_UPLOAD_JOB_PARAMS = (
     [(*args, {"0x0": 750}, "system_test") for args in QUANTIFY_UPLOAD_JOB_PARAMS]
-    + [(*args, {"0x0": 750}, "qiskit_pulse_1q") for args in SIM_1Q_UPLOAD_JOB_PARAMS]
-    + [
-        (*args, {"0x0": 400, "0x3": 400}, "qiskit_pulse_2q")
-        for args in SIM_2Q_UPLOAD_JOB_PARAMS
-    ]
+    + [(*args, {"0x0": 750}, "sim_1q") for args in SIM_1Q_UPLOAD_JOB_PARAMS]
+    + [(*args, {"0x0": 400, "0x3": 400}, "sim_2q") for args in SIM_2Q_UPLOAD_JOB_PARAMS]
     # the bell state of 00 and 11 == ~512
 )
 
 # client, worker, job, device_name
 VIEW_JOBS_PARAMS = (
     [(*args, "system_test") for args in QUANTIFY_UPLOAD_JOB_PARAMS]
-    + [(*args, "qiskit_pulse_1q") for args in SIM_1Q_UPLOAD_JOB_PARAMS]
-    + [(*args, "qiskit_pulse_2q") for args in SIM_2Q_UPLOAD_JOB_PARAMS]
+    + [(*args, "sim_1q") for args in SIM_1Q_UPLOAD_JOB_PARAMS]
+    + [(*args, "sim_2q") for args in SIM_2Q_UPLOAD_JOB_PARAMS]
 )
 
 # client, worker, job, device_name, user

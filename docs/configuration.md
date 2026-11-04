@@ -164,17 +164,17 @@ q12 = 0.1e9                 # Hz
 q13 = 0.1e9
 ```
 
-The test fixtures hold two simulated devices, `qiskit_pulse_1q`, a transmon, and
-`qiskit_pulse_2q`, two and their coupler, with the dummy cluster they play behind and
+The test fixtures hold two simulated devices, `sim_1q`, a transmon, and
+`sim_2q`, two and their coupler, with the dummy cluster they play behind and
 tergite-tuner's configs to recalibrate them. Their seeds are what the tuner found from the
 rough guesses of `chip_calib_device_config.toml`; each recalibrates as it starts, in a minute
 or three, as a device on clusters does (`tests/services/test_simulated_chip_calibration.py`
-calibrates the two-qubit one from `qiskit_pulse_2q.rough.seed.toml`):
+calibrates the two-qubit one from `sim_2q.rough.seed.toml`):
 
 ```shell
 # on the root of the project
 cp tests/fixtures/backend_config.simq2.toml backend_config.toml
-cp tests/fixtures/qiskit_pulse_2q.seed.toml calibration.seed.toml
+cp tests/fixtures/sim_2q.seed.toml calibration.seed.toml
 cp tests/fixtures/dummy-quantify-config.json quantify-config.json
 cp tests/fixtures/dummy-quantify-metadata.yml quantify-metadata.yml
 cp tests/fixtures/chip_calib_device_config.toml device_config.calib.toml

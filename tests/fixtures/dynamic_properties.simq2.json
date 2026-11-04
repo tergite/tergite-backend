@@ -1,5 +1,5 @@
 {
-  "name": "qiskit_pulse_2q",
+  "name": "sim_2q",
   "version": "1.0.0",
   "qubits": [
     {

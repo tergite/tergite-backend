@@ -43,12 +43,12 @@ _SIMULATED_SHOTS = 100
 _SIM_1Q_CLIENT_AND_WORKER = pytest.param(
     lazy_fixture("sim_1q_rest_client"),
     lazy_fixture("sim_1q_worker"),
-    id="qiskit_pulse_1q",
+    id="sim_1q",
 )
 _SIM_2Q_CLIENT_AND_WORKER = pytest.param(
     lazy_fixture("sim_2q_rest_client"),
     lazy_fixture("sim_2q_worker"),
-    id="qiskit_pulse_2q",
+    id="sim_2q",
 )
 _QUANTIFY_CLIENT_AND_WORKER = [
     pytest.param(
@@ -407,7 +407,7 @@ def test_simulated_iq_memory_is_in_clbit_order(
     with client as client:
         got = _run_job(client, worker, job, mocker=mocker, jobs_folder=jobs_folder)
         calibration = get_device_calibration_info(
-            create_engine(TEST_BOOKING_DB_URL), backend_name="qiskit_pulse_2q"
+            create_engine(TEST_BOOKING_DB_URL), backend_name="sim_2q"
         )
 
     [memory] = got.result.memory

@@ -43,6 +43,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Changed the backend to install as one package with no extras, one `bcc` binary replacing `bcc` and `bcc.simulator`,
   and deleted the qiskit-dynamics simulators: `BCC_EXECUTOR_TYPE=qiskit_pulse_1q`/`qiskit_pulse_2q` is now refused, a
   simulated device being executor type `quantify` with a `[simulator]` section in its backend config
+- Changed the simulated devices' names, and their example seeds', to `sim_1q` and `sim_2q`, as `bcc-provision` calls
+  them; a device provisioned before keeps the name its backend config gives it
 
 ### Fixed
 

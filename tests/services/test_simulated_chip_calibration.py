@@ -51,8 +51,8 @@ def test_the_tuner_calibrates_the_chip_from_rough_guesses_for_gate_level_jobs(
     """The tuner's device config guesses each frequency 0.5 to 1.3 MHz off"""
     from libs.quantum_executor.quantify.executor import QuantifyExecutor
 
-    seed_file = tmp_path / "qiskit_pulse_2q.rough.seed.toml"
-    shutil.copy(get_fixture_path("qiskit_pulse_2q.rough.seed.toml"), seed_file)
+    seed_file = tmp_path / "sim_2q.rough.seed.toml"
+    shutil.copy(get_fixture_path("sim_2q.rough.seed.toml"), seed_file)
     executor = QuantifyExecutor(
         quantify_config_file=TEST_QUANTIFY_CONFIG_FILE,
         quantify_metadata_file=TEST_QUANTIFY_METADATA_FILE,

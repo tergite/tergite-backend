@@ -1,5 +1,5 @@
 {
-  "name": "qiskit_pulse_1q",
+  "name": "sim_1q",
   "version": "1.0.0",
   "number_of_qubits": 1,
   "last_online": "2024-09-11T18:07:31",

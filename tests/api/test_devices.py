@@ -53,8 +53,8 @@ PULSE_CALIBRATIONS = {
             ("cz", [2, 0]),
         ],
     },
-    "qiskit_pulse_1q": {"frames": None, "defcals": None},
-    "qiskit_pulse_2q": {"frames": None, "defcals": None},
+    "sim_1q": {"frames": None, "defcals": None},
+    "sim_2q": {"frames": None, "defcals": None},
 }
 
 

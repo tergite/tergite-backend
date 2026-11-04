@@ -147,12 +147,12 @@ copy_examples() {
 			;;
 		sim_1q)
 			install -m 0640 "$examples/backend_config.simq1.toml" "$dir/backend_config.toml"
-			install_seed "$examples/qiskit_pulse_1q.seed.toml"
+			install_seed "$examples/sim_1q.seed.toml"
 			copy_simulator_examples
 			;;
 		sim_2q)
 			install -m 0640 "$examples/backend_config.simq2.toml" "$dir/backend_config.toml"
-			install_seed "$examples/qiskit_pulse_2q.seed.toml"
+			install_seed "$examples/sim_2q.seed.toml"
 			copy_simulator_examples
 			;;
 		*) fail "@BINARY@ knows no device '$1'; it takes cluster, sim_1q or sim_2q" ;;
