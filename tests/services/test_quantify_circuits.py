@@ -11,6 +11,7 @@
 # that they have been altered from the originals.
 """Tests of the quantify schedules of gate-level circuits"""
 
+import gc
 import math
 from typing import Any, Dict, Generator, List
 
@@ -242,6 +243,49 @@ def test_a_czs_phase_corrections_go_to_its_qubits_by_role(tmp_path, roles, expec
     got = (edge.parent_phase_correction(), edge.child_phase_correction())
     device.close()
     assert got == pytest.approx(tuple(corrections[role] for role in expected))
+
+
+def test_a_device_reapplied_after_its_instruments_closed_keeps_the_new_ones(
+    quantum_device,
+):
+    """QCoDeS holds instruments only weakly, so the device must hold the new ones"""
+    from qcodes.instrument import Instrument
+
+    from libs.quantum_executor.quantify.device import apply_calibration
+
+    names = [*quantum_device.elements(), *quantum_device.edges()]
+    for name in names:
+        Instrument.find_instrument(name).close()
+
+    apply_calibration(
+        quantum_device,
+        BackendConfig.from_toml(
+            TEST_BACKEND_SETTINGS_FILE, seed_file=TEST_QUANTIFY_SEED_FILE
+        ),
+    )
+    gc.collect()
+
+    assert [name for name in names if not Instrument.exist(name)] == []
+
+
+def test_a_device_reapplied_without_its_couplers_drops_their_edges(quantum_device):
+    from libs.quantum_executor.quantify.device import apply_calibration
+
+    backend_config = BackendConfig.from_toml(
+        TEST_BACKEND_SETTINGS_FILE, seed_file=TEST_QUANTIFY_SEED_FILE
+    )
+    without_couplers = backend_config.model_copy(
+        update={
+            "calibration_config": backend_config.calibration_config.model_copy(
+                update={"coupler": []}
+            )
+        }
+    )
+
+    apply_calibration(quantum_device, without_couplers)
+
+    assert list(quantum_device.edges()) == []
+    assert list(quantum_device.elements()) == ["q12", "q13", "q14"]
 
 
 @pytest.mark.parametrize("qubit_id, expected", [(6, "q06"), (12, "q12")])

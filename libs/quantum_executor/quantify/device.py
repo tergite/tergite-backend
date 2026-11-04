@@ -167,33 +167,37 @@ def get_element_name(qubit_id: int) -> str:
 
 
 def apply_calibration(device: QuantumDevice, backend_config: BackendConfig) -> None:
-    """Sets the device's transmons and coupler edges from the backend's calibration,
-    adding those it lacks; a device without a calibration is left without them
+    """Sets the device's transmons and coupler edges from the backend's calibration, the
+    device holding those alone, whatever it held before; a device without a calibration
+    is left without them
 
     Args:
         device: the quantum device that gate-level jobs compile against
         backend_config: the backend's config, with its calibration
     """
-    if backend_config.calibration_config is None:
-        return
-    calibration = DeviceCalibration.from_config(backend_config)
-    resonators = {resonator.id: resonator for resonator in calibration.resonators or []}
-    for qubit in calibration.qubits:
-        transmon = _get_transmon(get_element_name(qubit.id))
-        _set_transmon(transmon, qubit, resonators.get(qubit.id))
-        _add_element(device, transmon)
+    transmons: List[BasicTransmonElement] = []
+    edges: List[CouplerEdge] = []
+    if backend_config.calibration_config is not None:
+        calibration = DeviceCalibration.from_config(backend_config)
+        resonators = {
+            resonator.id: resonator for resonator in calibration.resonators or []
+        }
+        for qubit in calibration.qubits:
+            transmon = _get_transmon(get_element_name(qubit.id))
+            _set_transmon(transmon, qubit, resonators.get(qubit.id))
+            transmons.append(transmon)
 
-    qubit_ids = {qubit.id for qubit in calibration.qubits}
-    for coupler in calibration.couplers or []:
-        parent_id, child_id = _get_coupler_qubit_ids(coupler)
-        if not {parent_id, child_id} <= qubit_ids:
-            continue
-        edge = _get_edge(
-            device, get_element_name(parent_id), get_element_name(child_id)
-        )
-        _set_edge(
-            edge, coupler, is_parent_control=_is_parent_control(coupler, parent_id)
-        )
+        qubit_ids = {qubit.id for qubit in calibration.qubits}
+        for coupler in calibration.couplers or []:
+            parent_id, child_id = _get_coupler_qubit_ids(coupler)
+            if not {parent_id, child_id} <= qubit_ids:
+                continue
+            edge = _get_edge(get_element_name(parent_id), get_element_name(child_id))
+            _set_edge(
+                edge, coupler, is_parent_control=_is_parent_control(coupler, parent_id)
+            )
+            edges.append(edge)
+    _set_elements(device, transmons, edges)
 
 
 def remove_elements(device: QuantumDevice) -> None:
@@ -291,10 +295,22 @@ def _set_transmon(
         )
 
 
-def _add_element(device: QuantumDevice, element: BasicTransmonElement) -> None:
-    """Adds the element to the device, unless it has it already"""
-    if element.name not in device.elements():
-        device.add_element(element)
+def _set_elements(
+    device: QuantumDevice,
+    transmons: List[BasicTransmonElement],
+    edges: List[CouplerEdge],
+) -> None:
+    """Makes the device hold the transmons and edges alone, in place of any instruments it
+    held by their names: QCoDeS holds instruments only weakly, so those the device does not
+    hold are lost to the next garbage collection"""
+    for name in list(device.edges()):
+        device.remove_edge(name)
+    for name in list(device.elements()):
+        device.remove_element(name)
+    for transmon in transmons:
+        device.add_element(transmon)
+    for edge in edges:
+        device.add_edge(edge)
 
 
 def _get_coupler_qubit_ids(coupler: CouplerCalibration) -> Tuple[int, int]:
@@ -303,20 +319,17 @@ def _get_coupler_qubit_ids(coupler: CouplerCalibration) -> Tuple[int, int]:
     return int(parent.lstrip("q")), int(child.lstrip("q"))
 
 
-def _get_edge(device: QuantumDevice, parent: str, child: str) -> CouplerEdge:
-    """Gets the device's edge between the two transmons, adding it if new; an instrument
-    of another type by its name is closed first"""
-    name = f"{parent}_{child}"
+def _get_edge(parent: str, child: str) -> CouplerEdge:
+    """Gets the edge between the two transmons that QCoDeS keeps, or else creates it; an
+    instrument of another type by its name is closed first"""
     try:
-        edge = Instrument.find_instrument(name)
+        edge = Instrument.find_instrument(f"{parent}_{child}")
     except KeyError:
-        edge = CouplerEdge(parent, child)
-    if not isinstance(edge, CouplerEdge):
-        edge.close()
-        edge = CouplerEdge(parent, child)
-    if name not in device.edges():
-        device.add_edge(edge)
-    return edge
+        return CouplerEdge(parent, child)
+    if isinstance(edge, CouplerEdge):
+        return edge
+    edge.close()
+    return CouplerEdge(parent, child)
 
 
 def _set_edge(

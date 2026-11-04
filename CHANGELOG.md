@@ -36,6 +36,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   and openpulse's parsers, which Nuitka left out, or to look for dask, which it excluded
 - Fixed the packages' smoke test passing a heavy worker that stopped on any error but an import one, as rc.7's did on
   openqasm3's parser; it now fails on a worker that stops within its minute or logs a traceback
+- Fixed gate-level jobs on clusters failing now and then with `Instrument with name q12_q13 does not exist` once the
+  device's transmons or coupler edges had been made anew, as after a recalibration, or a coupler had left its calibration
 
 ## [2026.11.0-rc.7] - 2026-11-04
 
