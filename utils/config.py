@@ -113,7 +113,7 @@ class DeviceSettings(BaseSettings):
     max_worker_wait_time: float = Field(default=5, gt=0)
     default_recalibration_interval: float = 24 * 60 * 60
     # off, a device starts with its seed's calibration and recalibrates an interval later
-    should_recalibrate_at_start: bool = True
+    should_recalibrate_at_start: bool = False
     booking_db_url: str = "sqlite:///booking_db.db"
 
     jwt_secret: str
