@@ -19,6 +19,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Changed the default `.env`, and a relative `BCC_ENV_FILE`, to be read from the folder bcc starts in, where before
   they were read from beside `settings.py`
 
+### Fixed
+
+- Fixed MSS on PostgreSQL or SQLite never registering the backend's device, which repeated five of its config's
+  values under names MSS does not declare, e.g. `num_qubits`; it, and `GET /static-properties`, now carry each once
+
 ## [2026.11.0-rc.7] - 2026-11-04
 
 ### Added

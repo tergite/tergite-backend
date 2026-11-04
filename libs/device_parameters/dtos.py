@@ -63,9 +63,8 @@ FrameKind = Literal["drive", "readout", "coupler"]
 
 
 class Device(BaseModel):
-    """The schema for device information"""
-
-    model_config = ConfigDict(extra="allow")
+    """The device's information, as the backend sends it MSS: these fields alone, as MSS keeps
+    only the fields it declares"""
 
     name: str
     version: str
@@ -102,24 +101,32 @@ class Device(BaseModel):
         Returns:
             an instance of Device extracted from the backend config
         """
+        general = conf.general_config
         qubit_ids = conf.device_config.qubit_ids
         return cls(
-            **conf.general_config.model_dump(),
+            name=general.name,
+            version=general.version,
+            description=general.description,
+            is_active=general.is_active,
+            characterized=general.characterized,
+            open_pulse=general.open_pulse,
+            dt=general.dt,
+            dtm=general.dtm,
             meas_map=conf.device_config.meas_map,
             qubit_ids=qubit_ids,
             gates=conf.gates,
-            number_of_qubits=conf.general_config.num_qubits,
-            number_of_couplers=conf.general_config.num_couplers,
-            number_of_resonators=conf.general_config.num_resonators,
-            last_online=conf.general_config.online_date,
-            is_online=conf.general_config.is_active,
+            number_of_qubits=general.num_qubits,
+            number_of_couplers=general.num_couplers,
+            number_of_resonators=general.num_resonators,
+            last_online=general.online_date,
+            is_online=general.is_active,
             basis_gates=[
                 *GATE_LEVEL_BASIS_GATES,
                 *(["cz"] if conf.device_config.coupling_dict else []),
             ],
             coupling_map=conf.device_config.coupling_map,
             coordinates=conf.device_config.coordinates,
-            is_simulator=conf.general_config.simulator,
+            is_simulator=general.simulator,
             coupling_dict=conf.device_config.coupling_dict,
             qubit_ids_coupler_map=conf.device_config.qubit_ids_coupler_map,
         )
