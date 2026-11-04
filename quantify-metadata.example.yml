@@ -19,11 +19,20 @@ cluster0:
   # Default is 0 (no delay).
   experiment_delay: 10
 
-  # this would only be used to set up dummy cluster modules
+  # this would only be used to set up dummy cluster modules, those of quantify-config.json:
+  # the qubits' drive lines, then the couplers' flux lines, then the readout of all three
   modules:
-    "2":
+    "7":
       instrument_type: QCM_RF
-    "16":
+    "8":
+      instrument_type: QCM_RF
+    "9":
+      instrument_type: QCM_RF
+    "11":
+      instrument_type: QCM_RF
+    "12":
+      instrument_type: QCM_RF
+    "17":
       instrument_type: QRM_RF
 
 # instrument name
@@ -32,7 +41,8 @@ spi_rack0:
   instrument_type: SPI-Rack
   # on Posix port looks like this
   port: "/dev/ttyACM0"
-  is_dummy: false
+  # true, as the cluster's, until the device's real SPI rack is on the port
+  is_dummy: true
   parking_current: 1e-4
 
   coupler_spi_mapping:

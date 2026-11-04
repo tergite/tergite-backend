@@ -24,6 +24,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ### Fixed
 
+- Fixed a device on clusters provisioned with `bcc-provision --device cluster` failing to start, as its example configs
+  disagreed on its qubits; they now describe one device, q12, q13 and q14 in a row, which runs on dummy clusters as given
 - Fixed `bcc start` from the debs and macOS packages, whose workers stopped as they started, unable to load openqasm3's
   and openpulse's parsers, which Nuitka left out, or to look for dask, which it excluded
 - Fixed the packages' smoke test passing a heavy worker that stopped on any error but an import one, as rc.7's did on

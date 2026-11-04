@@ -1,29 +1,278 @@
 {
-    "config_type": "quantify_scheduler.backends.qblox_backend.QbloxHardwareCompilationConfig",
-    "hardware_description": {
-        "cluster0": {
-            "instrument_type": "Cluster",
-            "ref": "internal",
-            "modules": {
-                "2": {
-                    "instrument_type": "QCM_RF"
-                },
-                "16": {
-                    "instrument_type": "QRM_RF" 
-                }
-            }
+  "config_type": "quantify_scheduler.backends.qblox_backend.QbloxHardwareCompilationConfig",
+  "hardware_description": {
+    "cluster0": {
+      "instrument_type": "Cluster",
+      "ref": "internal",
+      "modules": {
+        "7": {
+          "instrument_type": "QCM_RF"
+        },
+        "8": {
+          "instrument_type": "QCM_RF"
+        },
+        "9": {
+          "instrument_type": "QCM_RF"
+        },
+        "11": {
+          "instrument_type": "QCM_RF"
+        },
+        "12": {
+          "instrument_type": "QCM_RF"
+        },
+        "17": {
+          "instrument_type": "QRM_RF"
         }
-    },
-    "hardware_options": {
-        "modulation_frequencies": {
-            "q0:res-q0.ro": {"interm_freq": 100e6},
-	        "q0:mw-q0.01": {"interm_freq": 100e6} 
-        }
-    },
-    "connectivity": {
-        "graph": [
-            ["cluster0.module2.complex_output_0", "q0:mw"],
-	        ["cluster0.module16.complex_output_0", "q0:res"]
-        ]
+      }
     }
+  },
+  "hardware_options": {
+    "modulation_frequencies": {
+      "q12:mw-q12.01": {
+        "lo_freq": 4658426834.0
+      },
+      "q12:mw-q12.12": {
+        "lo_freq": 4658426834.0
+      },
+      "q13:mw-q13.01": {
+        "lo_freq": 5306017728.0
+      },
+      "q13:mw-q13.12": {
+        "lo_freq": 5306017728.0
+      },
+      "q14:mw-q14.01": {
+        "lo_freq": 4644250149.0
+      },
+      "q14:mw-q14.12": {
+        "lo_freq": 4644250149.0
+      },
+      "q12_q13:fl-q12_q13.cz": {
+        "lo_freq": 3900000000.0
+      },
+      "q13_q14:fl-q13_q14.cz": {
+        "lo_freq": 3900000000.0
+      },
+      "q12:res-q12.ro": {
+        "lo_freq": 6800000000.0
+      },
+      "q13:res-q13.ro": {
+        "lo_freq": 6800000000.0
+      },
+      "q14:res-q14.ro": {
+        "lo_freq": 6800000000.0
+      },
+      "q12:res-q12.ro1": {
+        "lo_freq": 6800000000.0
+      },
+      "q13:res-q13.ro1": {
+        "lo_freq": 6800000000.0
+      },
+      "q14:res-q14.ro1": {
+        "lo_freq": 6800000000.0
+      },
+      "q12:res-q12.ro2": {
+        "lo_freq": 6800000000.0
+      },
+      "q13:res-q13.ro2": {
+        "lo_freq": 6800000000.0
+      },
+      "q14:res-q14.ro2": {
+        "lo_freq": 6800000000.0
+      },
+      "q12:res-q12.ro_2st_opt": {
+        "lo_freq": 6800000000.0
+      },
+      "q13:res-q13.ro_2st_opt": {
+        "lo_freq": 6800000000.0
+      },
+      "q14:res-q14.ro_2st_opt": {
+        "lo_freq": 6800000000.0
+      },
+      "q12:res-q12.ro_3st_opt": {
+        "lo_freq": 6800000000.0
+      },
+      "q13:res-q13.ro_3st_opt": {
+        "lo_freq": 6800000000.0
+      },
+      "q14:res-q14.ro_3st_opt": {
+        "lo_freq": 6800000000.0
+      }
+    },
+    "mixer_corrections": {
+      "q12:mw-q12.01": {
+        "dc_offset_i": -0.0119001,
+        "dc_offset_q": -0.0095494,
+        "amp_ratio": 0.9697,
+        "phase_error": -22.47783
+      },
+      "q12:mw-q12.12": {
+        "dc_offset_i": -0.0119001,
+        "dc_offset_q": -0.0095494,
+        "amp_ratio": 0.9587,
+        "phase_error": -23.10181
+      },
+      "q13:mw-q13.01": {
+        "dc_offset_i": -0.0072355,
+        "dc_offset_q": -0.0026078,
+        "amp_ratio": 0.9476,
+        "phase_error": -17.3542
+      },
+      "q13:mw-q13.12": {
+        "dc_offset_i": -0.0072355,
+        "dc_offset_q": -0.0026078,
+        "amp_ratio": 1.0122,
+        "phase_error": -17.77063
+      },
+      "q14:mw-q14.01": {
+        "dc_offset_i": -0.010353,
+        "dc_offset_q": -0.0100086,
+        "amp_ratio": 0.966,
+        "phase_error": -16.8905
+      },
+      "q14:mw-q14.12": {
+        "dc_offset_i": -0.010353,
+        "dc_offset_q": -0.0100086,
+        "amp_ratio": 0.9934,
+        "phase_error": -17.93857
+      },
+      "q12_q13:fl-q12_q13.cz": {
+        "dc_offset_i": 0.0,
+        "dc_offset_q": 0.0,
+        "amp_ratio": 1.0,
+        "phase_error": 0.0
+      },
+      "q13_q14:fl-q13_q14.cz": {
+        "dc_offset_i": 0.0,
+        "dc_offset_q": 0.0,
+        "amp_ratio": 1.0,
+        "phase_error": 0.0
+      },
+      "q12:res-q12.ro": {
+        "dc_offset_i": -0.0072251,
+        "dc_offset_q": -0.0061963,
+        "amp_ratio": 0.9941,
+        "phase_error": 8.22565
+      },
+      "q13:res-q13.ro": {
+        "dc_offset_i": -0.0072251,
+        "dc_offset_q": -0.0061963,
+        "amp_ratio": 1.017,
+        "phase_error": 12.02659
+      },
+      "q14:res-q14.ro": {
+        "dc_offset_i": -0.0072251,
+        "dc_offset_q": -0.0061963,
+        "amp_ratio": 1.0065,
+        "phase_error": 5.7601
+      },
+      "q12:res-q12.ro1": {
+        "dc_offset_i": -0.0072251,
+        "dc_offset_q": -0.0061963,
+        "amp_ratio": 0.9941,
+        "phase_error": 8.22565
+      },
+      "q13:res-q13.ro1": {
+        "dc_offset_i": -0.0072251,
+        "dc_offset_q": -0.0061963,
+        "amp_ratio": 1.017,
+        "phase_error": 12.02659
+      },
+      "q14:res-q14.ro1": {
+        "dc_offset_i": -0.0072251,
+        "dc_offset_q": -0.0061963,
+        "amp_ratio": 1.0065,
+        "phase_error": 5.7601
+      },
+      "q12:res-q12.ro2": {
+        "dc_offset_i": -0.0072251,
+        "dc_offset_q": -0.0061963,
+        "amp_ratio": 0.9941,
+        "phase_error": 8.22565
+      },
+      "q13:res-q13.ro2": {
+        "dc_offset_i": -0.0072251,
+        "dc_offset_q": -0.0061963,
+        "amp_ratio": 1.017,
+        "phase_error": 12.02659
+      },
+      "q14:res-q14.ro2": {
+        "dc_offset_i": -0.0072251,
+        "dc_offset_q": -0.0061963,
+        "amp_ratio": 1.0065,
+        "phase_error": 5.7601
+      },
+      "q12:res-q12.ro_2st_opt": {
+        "dc_offset_i": -0.0072251,
+        "dc_offset_q": -0.0061963,
+        "amp_ratio": 0.9941,
+        "phase_error": 8.22565
+      },
+      "q13:res-q13.ro_2st_opt": {
+        "dc_offset_i": -0.0072251,
+        "dc_offset_q": -0.0061963,
+        "amp_ratio": 1.017,
+        "phase_error": 12.02659
+      },
+      "q14:res-q14.ro_2st_opt": {
+        "dc_offset_i": -0.0072251,
+        "dc_offset_q": -0.0061963,
+        "amp_ratio": 1.0065,
+        "phase_error": 5.7601
+      },
+      "q12:res-q12.ro_3st_opt": {
+        "dc_offset_i": -0.0072251,
+        "dc_offset_q": -0.0061963,
+        "amp_ratio": 0.9941,
+        "phase_error": 8.22565
+      },
+      "q13:res-q13.ro_3st_opt": {
+        "dc_offset_i": -0.0072251,
+        "dc_offset_q": -0.0061963,
+        "amp_ratio": 1.017,
+        "phase_error": 12.02659
+      },
+      "q14:res-q14.ro_3st_opt": {
+        "dc_offset_i": -0.0072251,
+        "dc_offset_q": -0.0061963,
+        "amp_ratio": 1.0065,
+        "phase_error": 5.7601
+      }
+    }
+  },
+  "connectivity": {
+    "graph": [
+      [
+        "cluster0.module7.complex_output_0",
+        "q12:mw"
+      ],
+      [
+        "cluster0.module8.complex_output_0",
+        "q13:mw"
+      ],
+      [
+        "cluster0.module9.complex_output_0",
+        "q14:mw"
+      ],
+      [
+        "cluster0.module11.complex_output_1",
+        "q12_q13:fl"
+      ],
+      [
+        "cluster0.module12.complex_output_1",
+        "q13_q14:fl"
+      ],
+      [
+        "cluster0.module17.complex_output_0",
+        "q12:res"
+      ],
+      [
+        "cluster0.module17.complex_output_0",
+        "q13:res"
+      ],
+      [
+        "cluster0.module17.complex_output_0",
+        "q14:res"
+      ]
+    ]
+  }
 }
