@@ -11,6 +11,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 - Added the `bcc` command to the package, so `uv tool install` installs bcc from its repository with its migrations,
   where before only the deb and macOS installers ran it outside a checkout
+- Added the events the backend sends MSS over its websocket, `DeviceEvent` with its `Device`, `DeviceCalibration`,
+  `Job` and `DeviceSwitchData`, and MSS's `EventResponse`, to the OpenAPI spec, so that MSS generates its models of them
 
 ### Changed
 
@@ -18,12 +20,16 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   pyflakes did; contributors run `ruff format` and `ruff check` where they ran the three
 - Changed the default `.env`, and a relative `BCC_ENV_FILE`, to be read from the folder bcc starts in, where before
   they were read from beside `settings.py`
+- Changed the calibration and the jobs the backend sends MSS to carry only the fields their models declare, where
+  before they also passed on any other key a calibration seed or a job held
 - Changed the debs and macOS packages to install uv's own build of Python with the dependencies `uv.lock` pins and the
   backend installed into it, where before they installed Nuitka's standalone build; a release builds them in minutes
   rather than in nearly two hours, and the deb is 305 MB, where Nuitka's was 426 MB
 
 ### Fixed
 
+- Fixed MSS on PostgreSQL or SQLite never registering the backend's device, which repeated five of its config's
+  values under names MSS does not declare, e.g. `num_qubits`; it, and `GET /static-properties`, now carry each once
 - Fixed a device on clusters provisioned with `bcc-provision --device cluster` failing to start, as its example configs
   disagreed on its qubits; they now describe one device, q12, q13 and q14 in a row, which runs on dummy clusters as given
 - Fixed `bcc start` from the debs and macOS packages, whose workers stopped as they started, unable to load openqasm3's

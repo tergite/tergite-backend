@@ -101,6 +101,53 @@ def test_qubits_out_of_the_order_of_their_numbers_are_refused(tmp_path):
         BackendConfig.from_toml(swapped, get_fixture_path("sim_2q.seed.toml"))
 
 
+def test_device_sends_each_config_value_once_under_its_own_name():
+    """MSS keeps only the fields it declares, and on SQL refuses a device with any other"""
+    config = BackendConfig.from_toml(
+        get_fixture_path("backend_config.simq2.toml"),
+        get_fixture_path("sim_2q.seed.toml"),
+    )
+    general = config.general_config
+
+    got = Device.from_config(config).model_dump()
+
+    assert set(got) == set(Device.model_fields)
+    assert (
+        got["number_of_qubits"],
+        got["number_of_couplers"],
+        got["number_of_resonators"],
+        got["is_simulator"],
+        got["last_online"],
+    ) == (
+        general.num_qubits,
+        general.num_couplers,
+        general.num_resonators,
+        general.simulator,
+        general.online_date,
+    )
+
+
+def test_calibration_drops_what_its_seed_holds_beyond_its_fields(tmp_path):
+    """MSS keeps only the fields it declares, so the backend sends no others"""
+    seed = toml.load(get_fixture_path("sim_2q.seed.toml"))
+    for kind in ("qubit", "readout_resonator", "coupler"):
+        seed["calibration_config"][kind][0]["legacy_note"] = "from an older seed"
+    seed_file = tmp_path / "sim_2q.seed.toml"
+    seed_file.write_text(toml.dumps(seed))
+    config = BackendConfig.from_toml(
+        get_fixture_path("backend_config.simq2.toml"), seed_file
+    )
+
+    calibration = DeviceCalibration.from_config(config)
+
+    for part in [*calibration.qubits, *calibration.resonators, *calibration.couplers]:
+        model = type(part)
+        assert set(part.model_dump()) == {
+            *model.model_fields,
+            *model.model_computed_fields,
+        }
+
+
 @pytest.mark.parametrize(
     "settings, seed, expected_cz",
     [

@@ -79,11 +79,29 @@ BCC depends on MSS only through:
    connection is signed with BCC's private key (`BCC_PRIVATE_KEY_FILE`); MSS replies to each
    event by its id. See `MssClient` in
    [services/external/mss/service.py](services/external/mss/service.py) (§8).
+   `dev/openapi/openapi.json` publishes the events, `DeviceEvent` with what each carries, and
+   MSS's `EventResponse`, from which MSS generates its models of them; see "The events'
+   schemas" below.
 3. **Job tokens** — `POST /token` gives MSS a JWT for one user and one job, encrypted with
    MSS's public key; MSS hands it, decrypted, to the user's SDK, which uploads the job with it.
 
 MSS keeps users, projects, QPU seconds and the job's record; BCC keeps the bookings, its own
 copy of the users who have booked or submitted, the jobs it runs and the device's parameters.
+
+#### The events' schemas
+
+What BCC sends MSS is a contract, and its spec the source of it:
+
+- **Nothing undeclared is sent.** The device, calibration and job models declare every field
+  they send and drop any other they are given, as a seed's computed names are; a test fails on
+  any schema an event carries that allows fields it does not declare. MSS keeps only the
+  fields it declares, and on SQL refuses a document with any other.
+- **Changes are additive.** A field is added as optional with a default, so that an MSS
+  without it drops it and an older BCC, not sending it, is still read; it is never renamed,
+  retyped or removed in a release, but kept, and deprecated, for one release before it goes.
+- **In order:** a field lands here and in the spec first; then MSS copies the spec
+  (`dev/openapi/sync.sh`), regenerates its models and declares where it keeps the field; then
+  the SDK regenerates its models from both specs.
 
 ### 3.2 Job submission — the one flow that crosses everything
 
