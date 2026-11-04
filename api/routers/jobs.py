@@ -39,7 +39,20 @@ MAX_JOBS_PAGE_SIZE = 1000
 router = APIRouter()
 
 
-@router.post("/jobs", dependencies=[Depends(check_device_is_online)])
+@router.post(
+    "/jobs",
+    dependencies=[Depends(check_device_is_online)],
+    # the uploaded file is a JobFile's JSON, which the spec's components hold
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "multipart/form-data": {
+                    "encoding": {"upload_file": {"contentType": "application/json"}}
+                }
+            }
+        }
+    },
+)
 async def submit_job(
     device: DeviceResourcesDep,
     upload_file: Annotated[UploadFile, Depends(validate_job_file)] = File(...),

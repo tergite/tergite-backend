@@ -20,6 +20,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 import settings
+from services.scheduler import JobFile
 
 from .dependencies import get_verified_mss_user_id, lifespan
 from .device_routing import DeviceRoutingMiddleware
@@ -88,3 +89,24 @@ app.include_router(bookings.router)
 app.include_router(jobs.router)
 app.include_router(recalibration.router)
 app.include_router(switch.router)
+
+_get_routes_openapi = app.openapi
+
+
+def get_openapi() -> dict:
+    """Gets the API's OpenAPI schema, whose components also hold the job file that a job's
+    upload carries, as no route's parameters name it
+
+    Returns:
+        the schema
+    """
+    if app.openapi_schema is None:
+        job_file = JobFile.model_json_schema(
+            ref_template="#/components/schemas/{model}"
+        )
+        schemas = _get_routes_openapi()["components"]["schemas"]
+        schemas.update({**job_file.pop("$defs"), "JobFile": job_file})
+    return app.openapi_schema
+
+
+app.openapi = get_openapi
