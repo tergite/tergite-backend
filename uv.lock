@@ -3043,7 +3043,7 @@ wheels = [
 
 [[package]]
 name = "tergite-backend"
-version = "2026.11.0rc8"
+version = "2026.11.0rc9"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
