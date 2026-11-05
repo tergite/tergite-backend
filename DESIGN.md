@@ -872,6 +872,12 @@ The suite runs in one environment, `.venv` (`uv sync --dev`), which has every de
   whose jobs take the duration in their header), `jobs.py`, `bookings.py`, `users.py`,
   `devices.py`, `env.py`, `io.py`, `records.py`, and so on. Put new helpers there, in the file
   that matches their job.
+- `tests/services/test_schedule_snapshots.py` compiles 24 seeded random circuits and checks,
+  qubit by qubit, that they play what the backend before its refactor (e9f2dea1, with the SDK
+  of v2026.06.0) played: the same pulses in the same order, at the same frequencies and phases,
+  with no longer idles. `tests/fixtures/schedule_snapshots/` holds those snapshots and the
+  calibration they were taken with; `dev/schedule_snapshots/generate.sh` takes them again, in
+  worktrees of that backend and SDK, should more circuits be wanted.
 - `tests/api/` drives each router through the test client; `tests/services/` tests the
   executors and tasks; the files at the top test the rest.
 - The simulated devices' tests run their jobs on their chips, as a circuit takes
