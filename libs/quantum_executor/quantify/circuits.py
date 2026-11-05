@@ -16,16 +16,7 @@
 
 import math
 from dataclasses import dataclass
-from typing import (
-    Collection,
-    Dict,
-    FrozenSet,
-    List,
-    Mapping,
-    Optional,
-    Sequence,
-    Tuple,
-)
+from typing import Collection, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 from quantify_scheduler import Schedule
@@ -46,10 +37,11 @@ from utils.exc import UnsupportedCircuitError
 
 from ..base import gates
 from ..base.quantum_job.dtos import NativeQobjConfig
-from .device import QBLOX_TIMEGRID_INTERVAL, GateDurations
+from .device import QBLOX_TIMEGRID_INTERVAL, get_element_name
+from .scheduling import get_clbit_name, mark_holds
 
 # the seconds each shot idles first, for the qubits to relax
-INITIAL_RESET_VALUE = 500e-6
+RELAXATION_DURATION = 500e-6
 
 
 @dataclass(frozen=True)
@@ -61,41 +53,30 @@ class DeviceFrames:
     frequencies: Mapping[str, float]
 
 
-@dataclass(frozen=True)
-class _Slot:
-    """What a gate plays and the circuit's qubits it occupies, for so many grid intervals"""
-
-    operations: Tuple[Operation, ...]
-    qubits: FrozenSet[int]
-    ticks: int
-
-
 def get_circuit_schedule(
     circuit: gates.NativeCircuit,
     native_config: NativeQobjConfig,
     element_names: Sequence[str],
     edge_names: Collection[str],
-    durations: GateDurations,
+    calibrated_elements: Collection[str],
     frames: Optional[DeviceFrames] = None,
     mirrored_elements: Collection[str] = (),
 ) -> Schedule:
-    """Gets the gate-level schedule of the circuit, for the device's transmons
+    """Gets the gate-level schedule of the circuit, for the device's transmons: its gates'
+    operations in order, each marked with the transmons and classical bits it holds, which
+    get_compilation_config's ALAP step times
 
-    Each shot starts after an idle of INITIAL_RESET_VALUE, in which the qubits relax.
-    Each operation then runs as late as the operations after it on its qubits let it, as
-    qiskit's ALAP scheduling does: it ends as the next on any of its qubits starts, and
-    each qubit's last ends with the circuit, so that a qubit idles least between its
-    preparation and its measurement, whatever the other qubits do meanwhile. A barrier
-    lines its qubits up; a pulse-level block occupies all of them. Each measurement is
-    acquired on its gate's channel, with the protocol and bin mode of the native config.
+    Each shot starts by letting every transmon relax for RELAXATION_DURATION. A barrier
+    holds its qubits for no time, which lines them up; a pulse-level block holds the
+    transmons of its frames and the bits it captures into. Each measurement is acquired on
+    its gate's channel, with the protocol and bin mode of the native config.
 
     Args:
         circuit: the circuit of native gates
         native_config: the native config of the job, with its shots
         element_names: the name of the transmon of each of the circuit's qubits, in order
         edge_names: the names of the device's edges, each {parent}_{child}
-        durations: the seconds each of the device's gates takes, as get_gate_durations
-            gives them
+        calibrated_elements: the names of the transmons the device has calibrated
         frames: the device's frames, which pulse-level blocks play on; none if it plays none
         mirrored_elements: the transmons whose drives turn phases the other way, as
             get_mirrored_elements gives them, on which the gates' and blocks' phases are
@@ -117,19 +98,23 @@ def get_circuit_schedule(
         )
 
     schedule = Schedule(circuit.name, repetitions=native_config.shots)
-    start = schedule.add(IdlePulse(duration=INITIAL_RESET_VALUE))
-    frequencies = _reset_frame_frequencies(schedule, circuit, frames, start=start)
-    slots = _get_slots(
-        circuit,
-        native_config,
-        element_names,
-        edge_names,
-        durations,
-        frames,
-        frequencies,
-        mirrored_elements,
-    )
-    _add_slots(schedule, slots, start)
+    relaxation = schedule.add(IdlePulse(duration=RELAXATION_DURATION))
+    mark_holds(relaxation, element_names)
+    frequencies = _reset_frame_frequencies(schedule, circuit, frames, start=relaxation)
+    for gate in circuit.gates:
+        holds = _get_holds(gate, element_names)
+        operations = _get_operations(
+            gate,
+            native_config,
+            element_names,
+            edge_names,
+            calibrated_elements,
+            frames,
+            frequencies,
+            mirrored_elements,
+        )
+        for operation in operations:
+            mark_holds(schedule.add(operation), holds)
     return schedule
 
 
@@ -165,75 +150,108 @@ def _reset_frame_frequencies(
     return frequencies
 
 
-def _get_slots(
-    circuit: gates.NativeCircuit,
+def _get_holds(gate: gates.Gate, element_names: Sequence[str]) -> List[str]:
+    """Gets what a gate holds: the transmons it plays on, and the classical bits it
+    measures into"""
+    if isinstance(gate, gates.PulseBlock):
+        return _get_block_holds(gate)
+    if isinstance(gate, (gates.Delay, gates.Barrier)):
+        return [element_names[qubit] for qubit in gate.qubits]
+    if isinstance(gate, gates.CZ):
+        return [element_names[gate.control], element_names[gate.target]]
+    if isinstance(gate, gates.Measure):
+        return [element_names[gate.qubit], get_clbit_name(gate.clbit)]
+    return [element_names[gate.qubit]]
+
+
+def _get_block_holds(block: gates.PulseBlock) -> List[str]:
+    """Gets what a pulse-level block holds: the transmons of the frames it plays on, a
+    coupler's both, and the classical bits it captures into"""
+    frames = set()
+    clbits = set()
+    for op in block.operations:
+        if isinstance(op, gates.FrameBarrier):
+            frames.update(op.frames)
+            continue
+        frames.add(op.frame)
+        if isinstance(op, gates.Capture):
+            clbits.add(get_clbit_name(op.clbit))
+    elements = {
+        get_element_name(qubit_id) for frame in frames for qubit_id in frame.qubit_ids
+    }
+    return sorted(elements | clbits)
+
+
+def _get_operations(
+    gate: gates.Gate,
     native_config: NativeQobjConfig,
     element_names: Sequence[str],
     edge_names: Collection[str],
-    durations: GateDurations,
+    calibrated_elements: Collection[str],
     frames: Optional[DeviceFrames],
     frequencies: Dict[gates.Frame, float],
     mirrored_elements: Collection[str],
-) -> List[_Slot]:
-    """Gets the slot of each of the circuit's gates, in order, but a delay of no duration;
-    a pulse-level block occupies every qubit
+) -> List[Operation | Schedule]:
+    """Gets the quantify operations of a native gate, in order; none for a delay of no
+    duration. A rotation's phase on a mirrored transmon is negated
 
     Raises:
         UnsupportedCircuitError: qubits {a} and {b} have no coupler
         UnsupportedCircuitError: qubit {name} is not calibrated
         UnsupportedCircuitError: frame {name} is not one of the device's: {names}
     """
-    slots = []
-    for gate in circuit.gates:
-        if isinstance(gate, gates.PulseBlock):
-            slot = _get_block_slot(
-                gate,
-                frozenset(range(circuit.num_qubits)),
-                native_config,
-                frames,
-                frequencies,
-                mirrored_elements,
+    if isinstance(gate, gates.PulseBlock):
+        return [
+            _get_pulse_schedule(
+                gate, native_config, frames, frequencies, mirrored_elements
             )
-        else:
-            slot = _get_gate_slot(
-                gate,
-                native_config,
-                element_names,
-                edge_names,
-                durations,
-                mirrored_elements,
+        ]
+    if isinstance(gate, gates.Delay):
+        duration = (
+            round(gate.duration / QBLOX_TIMEGRID_INTERVAL) * QBLOX_TIMEGRID_INTERVAL
+        )
+        return [IdlePulse(duration=duration)] if duration > 0 else []
+    if isinstance(gate, gates.Barrier):
+        return [IdlePulse(duration=0)]
+    if isinstance(gate, gates.CZ):
+        return [_get_cz(gate, element_names, edge_names)]
+    if not isinstance(gate, (gates.Measure, gates.Reset, gates.Rxy, gates.Rz)):
+        return []
+
+    element = element_names[gate.qubit]
+    if element not in calibrated_elements:
+        raise UnsupportedCircuitError(f"qubit {element} is not calibrated")
+    sign = -1 if element in mirrored_elements else 1
+    if isinstance(gate, gates.Measure):
+        return [_get_measure(gate, element, native_config)]
+    if isinstance(gate, gates.Reset):
+        return [Reset(element)]
+    if isinstance(gate, gates.Rxy):
+        return [
+            Rxy(
+                theta=math.degrees(gate.theta),
+                phi=sign * math.degrees(gate.phi),
+                qubit=element,
             )
-        if slot is not None:
-            slots.append(slot)
-    return slots
+        ]
+    # a Qblox sequencer updates a clock's phase at most once per grid interval
+    return [
+        Rz(theta=sign * math.degrees(gate.theta), qubit=element),
+        IdlePulse(duration=QBLOX_TIMEGRID_INTERVAL),
+    ]
 
 
-def _add_slots(schedule: Schedule, slots: Sequence[_Slot], start: Schedulable) -> None:
-    """Adds the slots' operations to the schedule, each slot as late as the ones after it
-    on its qubits let it, from the end of the start"""
-    for slot, tick in zip(slots, _get_start_ticks(slots)):
-        for operation in slot.operations:
-            schedule.add(
-                operation,
-                ref_op=start,
-                ref_pt="end",
-                rel_time=tick * QBLOX_TIMEGRID_INTERVAL,
-            )
-
-
-def _get_block_slot(
+def _get_pulse_schedule(
     block: gates.PulseBlock,
-    qubits: FrozenSet[int],
     native_config: NativeQobjConfig,
     frames: Optional[DeviceFrames],
     frequencies: Dict[gates.Frame, float],
     mirrored_elements: Collection[str],
-) -> _Slot:
-    """Gets the slot of a pulse-level block on the qubits: its schedule, each frame's
-    operations one after the other from its start, on the Qblox time grid; a phase or
-    frequency update takes a grid interval, as a sequencer takes one at a time. The
-    frequencies of the frames changed so far are updated, and a mirrored transmon's drive
-    frame turns its phases the other way
+) -> Schedule:
+    """Gets the schedule of a pulse-level block, each frame's operations one after the
+    other from its start, on the Qblox time grid; a phase or frequency update takes a grid
+    interval, as a sequencer takes one at a time. The frequencies of the frames changed so
+    far are updated, and a mirrored transmon's drive frame turns its phases the other way
 
     Raises:
         UnsupportedCircuitError: frame {name} is not one of the device's: {names}
@@ -261,113 +279,25 @@ def _get_block_slot(
     end = max(cursors.values(), default=0.0)
     if end > 0:
         schedule.add(IdlePulse(duration=end), ref_op=start, ref_pt="start")
-    return _Slot((schedule,), qubits, _to_ticks(end))
+    return schedule
 
 
-def _get_gate_slot(
-    gate: gates.Gate,
-    native_config: NativeQobjConfig,
-    element_names: Sequence[str],
-    edge_names: Collection[str],
-    durations: GateDurations,
-    mirrored_elements: Collection[str],
-) -> Optional[_Slot]:
-    """Gets the slot of a native gate but a pulse-level block: its quantify operations,
-    the qubits it occupies and for how long; a barrier has no operations nor duration.
-    None for a delay of no duration. A rotation's phase on a mirrored transmon is negated
+def _get_cz(
+    gate: gates.CZ, element_names: Sequence[str], edge_names: Collection[str]
+) -> CZ:
+    """Gets the CZ on the edge between the gate's transmons, whose order it takes, as a
+    CZ is the same either way
 
     Raises:
         UnsupportedCircuitError: qubits {a} and {b} have no coupler
-        UnsupportedCircuitError: qubit {name} is not calibrated
-    """
-    if isinstance(gate, gates.Delay):
-        ticks = round(gate.duration / QBLOX_TIMEGRID_INTERVAL)
-        if ticks <= 0:
-            return None
-        idle = IdlePulse(duration=ticks * QBLOX_TIMEGRID_INTERVAL)
-        return _Slot((idle,), frozenset(gate.qubits), ticks)
-    if isinstance(gate, gates.Barrier):
-        return _Slot((), frozenset(gate.qubits), 0)
-    if isinstance(gate, gates.CZ):
-        return _get_cz_slot(gate, element_names, edge_names, durations)
-    if not isinstance(gate, (gates.Measure, gates.Reset, gates.Rxy, gates.Rz)):
-        return None
-
-    element = element_names[gate.qubit]
-    qubits = frozenset({gate.qubit})
-    sign = -1 if element in mirrored_elements else 1
-    if isinstance(gate, gates.Measure):
-        ticks = _to_ticks(_get_duration(durations.measures, element))
-        return _Slot((_get_measure(gate, element, native_config),), qubits, ticks)
-    if isinstance(gate, gates.Reset):
-        ticks = _to_ticks(_get_duration(durations.resets, element))
-        return _Slot((Reset(element),), qubits, ticks)
-    if isinstance(gate, gates.Rxy):
-        rotation = Rxy(
-            theta=math.degrees(gate.theta),
-            phi=sign * math.degrees(gate.phi),
-            qubit=element,
-        )
-        ticks = _to_ticks(_get_duration(durations.rotations, element))
-        return _Slot((rotation,), qubits, ticks)
-    # a Qblox sequencer updates a clock's phase at most once per grid interval
-    rotation = Rz(theta=sign * math.degrees(gate.theta), qubit=element)
-    return _Slot((rotation,), qubits, 1)
-
-
-def _get_start_ticks(slots: Sequence[_Slot]) -> List[int]:
-    """Gets the grid interval each slot starts at, from the earliest's, each as late as
-    the slots after it on its qubits let it, each qubit's last ending together"""
-    # the tick each qubit is free until, counting back from the end at 0
-    free_until: Dict[int, int] = {}
-    starts = []
-    for slot in reversed(slots):
-        end = min((free_until.get(qubit, 0) for qubit in slot.qubits), default=0)
-        slot_start = end - slot.ticks
-        for qubit in slot.qubits:
-            free_until[qubit] = slot_start
-        starts.append(slot_start)
-    starts.reverse()
-    earliest = min(starts, default=0)
-    return [slot_start - earliest for slot_start in starts]
-
-
-def _get_cz_slot(
-    gate: gates.CZ,
-    element_names: Sequence[str],
-    edge_names: Collection[str],
-    durations: GateDurations,
-) -> _Slot:
-    """Gets the slot of the CZ on the edge between the gate's transmons, whose order it
-    takes, as a CZ is the same either way
-
-    Raises:
-        UnsupportedCircuitError: qubits {a} and {b} have no coupler
-        UnsupportedCircuitError: qubit {name} is not calibrated
     """
     control = element_names[gate.control]
     target = element_names[gate.target]
     if f"{control}_{target}" in edge_names:
-        parent, child = control, target
-    elif f"{target}_{control}" in edge_names:
-        parent, child = target, control
-    else:
-        raise UnsupportedCircuitError(f"qubits {control} and {target} have no coupler")
-    ticks = _to_ticks(_get_duration(durations.czs, f"{parent}_{child}"))
-    qubits = frozenset({gate.control, gate.target})
-    return _Slot((CZ(qC=parent, qT=child),), qubits, ticks)
-
-
-def _get_duration(durations: Mapping[str, float], name: str) -> float:
-    """Gets the seconds the gate of the transmon, or edge, of the name takes
-
-    Raises:
-        UnsupportedCircuitError: qubit {name} is not calibrated
-    """
-    try:
-        return durations[name]
-    except KeyError:
-        raise UnsupportedCircuitError(f"qubit {name} is not calibrated")
+        return CZ(qC=control, qT=target)
+    if f"{target}_{control}" in edge_names:
+        return CZ(qC=target, qT=control)
+    raise UnsupportedCircuitError(f"qubits {control} and {target} have no coupler")
 
 
 def _get_measure(
@@ -492,11 +422,6 @@ def _get_port_clock(frame: gates.Frame) -> Tuple[str, str]:
     if frame.kind == "readout":
         return f"{element}:res", f"{element}.ro"
     return f"{element}:fl", f"{element}.cz"
-
-
-def _to_ticks(seconds: float) -> int:
-    """Gets the grid intervals that hold the seconds, a part of one counting whole"""
-    return math.ceil(seconds / QBLOX_TIMEGRID_INTERVAL - 1e-9)
 
 
 def _to_timegrid_after(seconds: float) -> float:

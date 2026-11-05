@@ -16,8 +16,7 @@
 an edge for each coupler, set from the backend's calibration"""
 
 import math
-from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from qcodes import Instrument, ManualParameter
 from quantify_scheduler import Schedule
@@ -45,17 +44,6 @@ from libs.device_parameters.dtos import (
 QBLOX_TIMEGRID_INTERVAL = 4e-9
 # how long a reset waits for the qubit to relax, as the SDK's reset did
 RESET_DURATION = 300e-6
-
-
-@dataclass(frozen=True)
-class GateDurations:
-    """The seconds each of a device's gates takes: a rotation, reset and measurement by
-    its transmon's name, a CZ by its coupler edge's"""
-
-    rotations: Mapping[str, float]
-    resets: Mapping[str, float]
-    measures: Mapping[str, float]
-    czs: Mapping[str, float]
 
 
 class CouplerEdge(Edge):
@@ -266,47 +254,6 @@ def get_edge_names(device: QuantumDevice) -> List[str]:
     return list(device.edges())
 
 
-def get_gate_durations(device: QuantumDevice) -> GateDurations:
-    """Gets the seconds each gate of the device's transmons and coupler edges takes, as
-    they compile
-
-    Args:
-        device: the quantum device, with its calibrated transmons and edges
-
-    Returns:
-        the durations of its gates
-    """
-    rotations, resets, measures = {}, {}, {}
-    for name in device.elements():
-        element = device.get_element(name)
-        rotations[name] = element.rxy.duration()
-        resets[name] = element.reset.duration()
-        measures[name] = get_measure_duration(
-            pulse_duration=element.measure.pulse_duration(),
-            acq_delay=element.measure.acq_delay(),
-            integration_time=element.measure.integration_time(),
-        )
-    czs = {name: _get_cz_duration(device.get_edge(name)) for name in device.edges()}
-    return GateDurations(rotations=rotations, resets=resets, measures=measures, czs=czs)
-
-
-def get_measure_duration(
-    pulse_duration: float, acq_delay: float, integration_time: float
-) -> float:
-    """Gets the seconds a transmon's measurement takes: its pulse, or its acquisition
-    after the delay, whichever ends later
-
-    Args:
-        pulse_duration: the duration of the readout pulse, in seconds
-        acq_delay: the delay of the acquisition from the pulse's start, in seconds
-        integration_time: the duration of the acquisition, in seconds
-
-    Returns:
-        the duration of the measurement
-    """
-    return max(pulse_duration, acq_delay + integration_time)
-
-
 def get_mirrored_elements(
     device: QuantumDevice, hardware_config: Optional[QbloxHardwareCompilationConfig]
 ) -> Set[str]:
@@ -464,14 +411,6 @@ def _get_value(value: Optional[CalibrationValue]) -> float:
 def _to_timegrid(seconds: float) -> float:
     """Gets the time on the Qblox time grid nearest the given one, in seconds"""
     return round(seconds / QBLOX_TIMEGRID_INTERVAL) * QBLOX_TIMEGRID_INTERVAL
-
-
-def _get_cz_duration(edge: CouplerEdge) -> float:
-    """Gets the seconds the edge's CZ takes, as get_cz_schedule plays it"""
-    duration = QBLOX_TIMEGRID_INTERVAL
-    if edge.cz_duration() > 0:
-        duration += edge.cz_duration() + 2 * max(edge.cz_wait(), 0.0)
-    return duration
 
 
 def _close_instrument(name: str) -> None:

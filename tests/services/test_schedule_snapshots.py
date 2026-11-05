@@ -127,6 +127,7 @@ def _get_timeline(
     from quantify_scheduler.backends.graph_compilation import SerialCompiler
 
     from libs.quantum_executor.quantify.experiments import get_circuit_experiments
+    from libs.quantum_executor.quantify.scheduling import get_compilation_config
 
     params = CircuitJobParams(
         circuits=[
@@ -146,6 +147,6 @@ def _get_timeline(
         device, backend_config, compiler, params.circuits, native_config
     )
     compiled = compiler.compile(
-        experiment.schedule, config=device.generate_compilation_config()
+        experiment.schedule, config=get_compilation_config(device)
     )
     return get_timeline(compiled)

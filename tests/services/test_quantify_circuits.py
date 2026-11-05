@@ -25,6 +25,7 @@ from libs.quantum_executor.base import gates
 from libs.quantum_executor.base.circuits import QasmCircuit
 from libs.quantum_executor.base.qasm import to_native_circuit
 from libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
+from libs.quantum_executor.quantify.scheduling import get_compilation_config
 from tests.utils.circuits import get_gate_level_seed, get_qasm
 from tests.utils.env import (
     TEST_BACKEND_SETTINGS_FILE,
@@ -82,12 +83,12 @@ def calibrated_device(calibrated_backend_config) -> Generator[Any, Any, None]:
 
 
 def test_each_shot_starts_after_the_qubits_relax(quantum_device):
-    """The first operation of a shot waits INITIAL_RESET_VALUE, so that a shot does not
+    """The first operation of a shot waits RELAXATION_DURATION, so that a shot does not
     start in the state the last one left"""
     from quantify_scheduler.backends.graph_compilation import SerialCompiler
 
     from libs.quantum_executor.quantify.circuits import (
-        INITIAL_RESET_VALUE,
+        RELAXATION_DURATION,
         get_circuit_schedule,
     )
 
@@ -96,11 +97,11 @@ def test_each_shot_starts_after_the_qubits_relax(quantum_device):
         circuit, _NATIVE_CONFIG, **_get_kwargs(quantum_device)
     )
     compiled = SerialCompiler("test").compile(
-        schedule, config=quantum_device.generate_compilation_config()
+        schedule, config=get_compilation_config(quantum_device)
     )
 
     idle, measure = list(schedule.schedulables)
-    assert compiled.schedulables[measure]["abs_time"] == INITIAL_RESET_VALUE
+    assert compiled.schedulables[measure]["abs_time"] == RELAXATION_DURATION
 
 
 def test_a_reset_of_one_qubit_leaves_no_other_idle(quantum_device):
@@ -145,7 +146,7 @@ def test_a_barrier_lines_its_qubits_up(quantum_device):
         ]
     )
 
-    first, second, third = _get_start_times(quantum_device, circuit)
+    first, _, second, third = _get_start_times(quantum_device, circuit)
 
     assert second == pytest.approx(first + 56 * _NS)
     assert third == pytest.approx(second + 56 * _NS)
@@ -165,28 +166,20 @@ def test_measurements_of_one_qubit_follow_each_other(quantum_device):
     assert got == pytest.approx([0.0, measure_duration])
 
 
-def test_gates_take_the_durations_they_compile_to(calibrated_device):
-    from quantify_scheduler import Schedule
-    from quantify_scheduler.backends.graph_compilation import SerialCompiler
-    from quantify_scheduler.operations.gate_library import CZ, Measure, Reset, Rxy
+def test_a_gate_ends_where_the_next_on_its_qubits_starts(calibrated_device):
+    """Each gate takes the time quantify compiles it to, its CZ's waits included"""
+    circuit = _get_circuit(
+        [
+            gates.Rxy(0, math.pi, 0.0),
+            gates.CZ(control=0, target=1),
+            gates.Rxy(1, math.pi, 0.0),
+        ]
+    )
 
-    from libs.quantum_executor.quantify.device import get_gate_durations
+    before, cz, after = _get_start_times(calibrated_device, circuit)
 
-    durations = get_gate_durations(calibrated_device)
-    operations = {
-        durations.rotations["q12"]: Rxy(theta=90, phi=0, qubit="q12"),
-        durations.resets["q12"]: Reset("q12"),
-        durations.measures["q12"]: Measure("q12"),
-        durations.czs["q12_q13"]: CZ(qC="q12", qT="q13"),
-    }
-
-    for expected, operation in operations.items():
-        schedule = Schedule("duration")
-        schedule.add(operation)
-        compiled = SerialCompiler("test").compile(
-            schedule, config=calibrated_device.generate_compilation_config()
-        )
-        assert compiled.duration == pytest.approx(expected), operation.name
+    assert cz == pytest.approx(before + 56 * _NS)
+    assert after == pytest.approx(cz + _get_cz_duration(calibrated_device))
 
 
 def test_delays_of_one_qubit_follow_each_other(quantum_device):
@@ -378,7 +371,9 @@ def test_operations_of_a_frame_follow_each_other_on_the_time_grid(calibrated_dev
     assert got[("SSBIntegrationComplex", "q12:res")] == pytest.approx(start + 20 * _NS)
 
 
-def test_what_follows_a_pulse_block_starts_once_its_frames_are_done(calibrated_device):
+def test_a_pulse_block_holds_only_the_transmons_of_its_frames(calibrated_device):
+    """A gate on q12 waits for the block's q12 frames to be done; one on q13, which the
+    block does not play on, runs beside it"""
     block = gates.PulseBlock(
         operations=(
             gates.Play(frame=_DRIVE, samples=(0.1,) * 8),
@@ -386,12 +381,15 @@ def test_what_follows_a_pulse_block_starts_once_its_frames_are_done(calibrated_d
             gates.Capture(frame=_READOUT, duration=16 * _NS, clbit=0, channel=0),
         )
     )
-    circuit = _get_circuit([block, gates.Rxy(1, math.pi, 0.0)])
+    circuit = _get_circuit(
+        [block, gates.Rxy(0, math.pi, 0.0), gates.Rxy(1, math.pi, 0.0)]
+    )
 
     got = _get_pulse_times(calibrated_device, circuit)
 
     start = got[("NumericalPulse", "q12:mw")]
-    assert got[("Rxy", "q13:mw")] == pytest.approx(start + 36 * _NS)
+    assert got[("Rxy", "q12:mw")] == pytest.approx(start + 36 * _NS)
+    assert got[("Rxy", "q13:mw")] == pytest.approx(got[("Rxy", "q12:mw")])
 
 
 def test_a_frame_whose_frequency_changes_starts_each_shot_at_its_own(calibrated_device):
@@ -556,23 +554,36 @@ def _get_circuit(native_gates: List[gates.Gate]) -> gates.NativeCircuit:
 
 def _get_kwargs(quantum_device) -> Dict[str, Any]:
     """Gets the device's arguments of get_circuit_schedule"""
-    from libs.quantum_executor.quantify.device import (
-        get_edge_names,
-        get_gate_durations,
-    )
+    from libs.quantum_executor.quantify.device import get_edge_names
 
     return {
         "element_names": _ELEMENTS,
         "edge_names": get_edge_names(quantum_device),
-        "durations": get_gate_durations(quantum_device),
+        "calibrated_elements": list(quantum_device.elements()),
     }
 
 
 def _get_measure_duration(quantum_device, element: str) -> float:
-    """Gets the seconds a measurement of the device's transmon takes"""
-    from libs.quantum_executor.quantify.device import get_gate_durations
+    """Gets the seconds a measurement of the device's transmon takes: its pulse, or its
+    acquisition after the delay, whichever ends later"""
+    measure = quantum_device.get_element(element).measure
+    return max(
+        measure.pulse_duration(), measure.acq_delay() + measure.integration_time()
+    )
 
-    return get_gate_durations(quantum_device).measures[element]
+
+def _get_cz_duration(quantum_device) -> float:
+    """Gets the seconds the device's CZ of q12 and q13 takes, as quantify compiles it"""
+    from quantify_scheduler import Schedule
+    from quantify_scheduler.backends.graph_compilation import SerialCompiler
+    from quantify_scheduler.operations.gate_library import CZ
+
+    schedule = Schedule("cz")
+    schedule.add(CZ(qC="q12", qT="q13"))
+    compiled = SerialCompiler("test").compile(
+        schedule, config=quantum_device.generate_compilation_config()
+    )
+    return compiled.duration
 
 
 def _get_start_times(quantum_device, circuit: gates.NativeCircuit) -> List[float]:
@@ -586,14 +597,14 @@ def _get_start_times(quantum_device, circuit: gates.NativeCircuit) -> List[float
         circuit, _NATIVE_CONFIG, **_get_kwargs(quantum_device)
     )
     compiled = SerialCompiler("test").compile(
-        schedule, config=quantum_device.generate_compilation_config()
+        schedule, config=get_compilation_config(quantum_device)
     )
-    from libs.quantum_executor.quantify.circuits import INITIAL_RESET_VALUE
+    from libs.quantum_executor.quantify.circuits import RELAXATION_DURATION
 
     _, *times = [
         compiled.schedulables[label]["abs_time"] for label in schedule.schedulables
     ]
-    return [time - INITIAL_RESET_VALUE for time in times]
+    return [time - RELAXATION_DURATION for time in times]
 
 
 def _get_gate_operations(schedule) -> List[Any]:
@@ -638,7 +649,7 @@ def _get_pulse_times(quantum_device, circuit: gates.NativeCircuit) -> Dict[Any, 
 
     compiled = SerialCompiler("test").compile(
         _get_schedule(quantum_device, circuit),
-        config=quantum_device.generate_compilation_config(),
+        config=get_compilation_config(quantum_device),
     )
     return {
         (str(row.operation).split("(")[0], row.port or row.clock): row.abs_time
@@ -666,7 +677,7 @@ def _get_played(
 
     compiled = SerialCompiler("test").compile(
         _get_schedule(quantum_device, circuit, mirrored_elements),
-        config=quantum_device.generate_compilation_config(),
+        config=get_compilation_config(quantum_device),
     )
     played = []
     for start, pulse in _get_timed_pulses(compiled, 0.0):

@@ -29,9 +29,9 @@ from .device import (
     get_edge_names,
     get_element_name,
     get_frame_frequencies,
-    get_gate_durations,
     get_mirrored_elements,
 )
+from .scheduling import get_compilation_config
 
 
 def get_circuit_experiments(
@@ -61,10 +61,9 @@ def get_circuit_experiments(
     qubit_ids = backend_config.device_config.qubit_numbers
     element_names = [get_element_name(qubit_id) for qubit_id in qubit_ids]
     edge_names = get_edge_names(device)
-    durations = get_gate_durations(device)
     frames = DeviceFrames(dt=dt, frequencies=get_frame_frequencies(device))
     mirrored_elements = get_mirrored_elements(device, device.hardware_config())
-    compilation_config = device.generate_compilation_config()
+    compilation_config = get_compilation_config(device)
 
     experiments = []
     for idx, circuit in enumerate(circuits):
@@ -74,7 +73,7 @@ def get_circuit_experiments(
             native_config,
             element_names=element_names,
             edge_names=edge_names,
-            durations=durations,
+            calibrated_elements=list(device.elements()),
             frames=frames,
             mirrored_elements=mirrored_elements,
         )

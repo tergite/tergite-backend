@@ -44,9 +44,9 @@ from libs.quantum_executor.quantify.device import (
     apply_calibration,
     get_edge_names,
     get_element_name,
-    get_gate_durations,
     remove_elements,
 )
+from libs.quantum_executor.quantify.scheduling import get_compilation_config
 from libs.quantum_executor.quantify.utils.config import load_quantify_config
 from utils.config import DeviceSettings, read_device_settings
 
@@ -343,10 +343,10 @@ def _get_nco_frequencies(
         native_config,
         element_names=element_names,
         edge_names=get_edge_names(device),
-        durations=get_gate_durations(device),
+        calibrated_elements=list(device.elements()),
     )
     compiled = SerialCompiler(name="gate_level_check").compile(
-        schedule, config=device.generate_compilation_config()
+        schedule, config=get_compilation_config(device)
     )
     return [
         sequencer.modulation_freq

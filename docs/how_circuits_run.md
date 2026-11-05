@@ -35,8 +35,10 @@ decay.
   end. Use it where gates on different qubits must keep their order in time.
 - A mid-circuit measurement runs as late as the gates after it on its qubit let it; with none after it, it ends with
   the circuit, with the final measurements.
-- A pulse-level block (a `cal` block, or a gate with a `defcal`) occupies every qubit of the circuit: what comes before
-  it ends before it starts, and what comes after it starts once its frames are done.
+- A pulse-level block (a `cal` block, or a gate with a `defcal`) holds the qubits its frames play on, both of a
+  coupler's: what comes before it on them ends before it starts, and what comes after it on them starts once its frames
+  are done. Gates on other qubits run beside it.
+- A measurement holds its classical bit too, so two measurements into one bit keep their order.
 
 ## Times are on a 4 ns grid
 

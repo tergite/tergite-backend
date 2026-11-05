@@ -740,7 +740,7 @@ physical qubits and parameters, plays on the frames the device publishes, named 
 ports (`q12_drive`, `q12_readout`, `q12_q13_coupler`): OpenPulse's waveform generators or
 arrays of samples, phase and frequency shifts and sets, delays, barriers, and `capture_v1`
 into a classical bit, read out as a measurement of the frame's qubit. Each block runs its
-frames side by side, from where what precedes it ends (`quantify/circuits.py`). A pulse-level
+frames side by side, from where what precedes it on its frames' qubits ends (`quantify/circuits.py`). A pulse-level
 job is let in only for a project MSS says may send one, when it asks for the job's token (`MSSTokenClaims.is_pulse_allowed`,
 signed as the token's `pulse` claim), and only within the limits the device's operators
 set in its backend config's `pulse_limits` (`base/pulse_limits.py`): amplitude and energy
@@ -759,8 +759,12 @@ Circuit qubit `i` is the device's `i`-th qubit by the number in its id. The exec
 quantify against a `QuantumDevice` of a transmon per qubit and a `CouplerEdge` per coupler
 (`quantify/device.py`), each shot after an idle in which the qubits relax, then each gate as
 late as the gates after it on its own qubits let it, as qiskit's ALAP scheduling does, so that
-a qubit idles least before its measurement: a barrier lines its qubits up, and a pulse-level
-block occupies all of them. `get_gate_durations` gives what each gate takes, as it compiles.
+a qubit idles least before its measurement. `quantify/circuits.py` only translates: it adds the
+gates' operations in order, each marked with the transmons and classical bits it holds. A step
+of quantify's device compilation (`quantify/scheduling.py`, which `get_compilation_config`
+inserts) times them once they are pulses, by the durations quantify gives them: a barrier
+lines its qubits up, a pulse-level block holds the transmons of its frames and the bits it
+captures into, and an operation that holds a bit follows the measurement into it.
 A simulated device compiles the same way, for its dummy clusters, and plays
 the schedule on its chip, which reads a qubit without collapsing it, so it refuses a gate on
 a qubit after its measurement before a reset. A circuit that
