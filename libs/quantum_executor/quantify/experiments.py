@@ -25,7 +25,12 @@ from ..base.qasm import to_native_circuit
 from ..base.quantum_job import get_experiment_name
 from ..base.quantum_job.dtos import NativeQobjConfig
 from .circuits import DeviceFrames, get_circuit_schedule, get_measure_duration
-from .device import get_edge_names, get_element_name, get_frame_frequencies
+from .device import (
+    get_edge_names,
+    get_element_name,
+    get_frame_frequencies,
+    get_mirrored_elements,
+)
 
 
 def get_circuit_experiments(
@@ -57,6 +62,7 @@ def get_circuit_experiments(
     edge_names = get_edge_names(device)
     measure_durations = _get_measure_durations(device, element_names)
     frames = DeviceFrames(dt=dt, frequencies=get_frame_frequencies(device))
+    mirrored_elements = get_mirrored_elements(device, device.hardware_config())
     compilation_config = device.generate_compilation_config()
 
     experiments = []
@@ -69,6 +75,7 @@ def get_circuit_experiments(
             edge_names=edge_names,
             measure_durations=measure_durations,
             frames=frames,
+            mirrored_elements=mirrored_elements,
         )
         compiled = compiler.compile(schedule, config=compilation_config)
         experiments.append(

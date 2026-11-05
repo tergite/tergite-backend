@@ -177,7 +177,9 @@ class QuantifyExecutor(QuantumExecutor):
             the calibration, with the frames and defcals where the device takes
             pulse-level jobs
         """
-        return add_pulse_calibration(calibration, self.backend_config)
+        return add_pulse_calibration(
+            calibration, self.backend_config, self.quantify_config
+        )
 
     def _connect_if_stale(self) -> None:
         """Connects the clusters and gets the quantum device anew, if a recalibration

@@ -15,11 +15,12 @@ defcals, which it publishes with its calibration"""
 
 import math
 import uuid
-from typing import Any, Dict, Iterator, List, Sequence, Tuple
+from typing import Any, Collection, Dict, Iterator, List, Optional, Sequence, Tuple
 
 import numpy as np
 from quantify_scheduler import Schedule
 from quantify_scheduler.backends.graph_compilation import SerialCompiler
+from quantify_scheduler.backends.qblox_backend import QbloxHardwareCompilationConfig
 from quantify_scheduler.device_under_test.quantum_device import QuantumDevice
 from quantify_scheduler.helpers.waveforms import get_waveform
 from quantify_scheduler.operations.gate_library import CZ, Rxy
@@ -36,6 +37,7 @@ from .device import (
     get_edge_names,
     get_element_name,
     get_frame_frequencies,
+    get_mirrored_elements,
 )
 
 # the kind of frame that each suffix of a port, and of a clock, names
@@ -46,7 +48,9 @@ RZ_BODY = "shift_phase({frame}, theta);"
 
 
 def add_pulse_calibration(
-    calibration: DeviceCalibration, backend_config: BackendConfig
+    calibration: DeviceCalibration,
+    backend_config: BackendConfig,
+    hardware_config: Optional[QbloxHardwareCompilationConfig] = None,
 ) -> DeviceCalibration:
     """Adds to the calibration the frames the device's pulse-level jobs may play on and its
     gates' defcals, as its gate-level jobs play them; none if its backend config sets no
@@ -55,6 +59,8 @@ def add_pulse_calibration(
     Args:
         calibration: the device's calibration, of the backend config
         backend_config: the device's backend config
+        hardware_config: the hardware config of the device's clusters, which says which
+            transmons' drives are mirrored; none for no clusters
 
     Returns:
         the calibration, with the frames and defcals where the device takes pulse-level
@@ -62,12 +68,13 @@ def add_pulse_calibration(
     """
     if backend_config.pulse_limits is None:
         return calibration
-    frames, defcals = get_pulse_calibration(backend_config)
+    frames, defcals = get_pulse_calibration(backend_config, hardware_config)
     return calibration.model_copy(update={"frames": frames, "defcals": defcals})
 
 
 def get_pulse_calibration(
     backend_config: BackendConfig,
+    hardware_config: Optional[QbloxHardwareCompilationConfig] = None,
 ) -> Tuple[List[PulseFrame], List[GateDefcal]]:
     """Gets the frames a device's pulse-level jobs may play on, and the defcals of its x,
     sx, rz and cz, each playing exactly what a job's gate of that name plays
@@ -77,6 +84,8 @@ def get_pulse_calibration(
 
     Args:
         backend_config: the device's backend config, with its calibration
+        hardware_config: the hardware config of the device's clusters, which says which
+            transmons' drives are mirrored; none for no clusters
 
     Returns:
         the frames, by name, and the defcals; none of either for a device without a
@@ -93,7 +102,10 @@ def get_pulse_calibration(
         qubit_numbers = backend_config.device_config.qubit_numbers
         dt = backend_config.general_config.dt
         frames = _get_frames(frequencies, qubit_numbers)
-        defcals = list(_get_defcals(device, frequencies, qubit_numbers, dt))
+        mirrored_elements = get_mirrored_elements(device, hardware_config)
+        defcals = list(
+            _get_defcals(device, frequencies, qubit_numbers, dt, mirrored_elements)
+        )
     finally:
         device.close()
     return frames, defcals
@@ -124,15 +136,21 @@ def _get_defcals(
     frequencies: Dict[str, float],
     qubit_numbers: Sequence[int],
     dt: float,
+    mirrored_elements: Collection[str],
 ) -> Iterator[GateDefcal]:
-    """Gets the defcals of each driven qubit's x, sx and rz, and each coupler's cz"""
+    """Gets the defcals of each driven qubit's x, sx and rz, and each coupler's cz; a
+    phase shift a gate plays on a mirrored drive is published negated, as a cal block's
+    is negated there"""
+    mirrored_clocks = {f"{element}.01" for element in mirrored_elements}
     for index, qubit_id in enumerate(qubit_numbers):
         element = get_element_name(qubit_id)
         frame = f"{element}_drive"
         if frame not in frequencies:
             continue
         for gate, theta in (("x", 180), ("sx", 90)):
-            body = _get_gate_body(device, Rxy(theta=theta, phi=0, qubit=element), dt)
+            body = _get_gate_body(
+                device, Rxy(theta=theta, phi=0, qubit=element), dt, mirrored_clocks
+            )
             yield _get_defcal(gate, [index], body)
         yield _get_defcal("rz", [index], RZ_BODY.format(frame=frame), "angle theta")
 
@@ -141,15 +159,24 @@ def _get_defcals(
         if not {parent, child} <= set(qubit_numbers):
             continue
         body = _get_gate_body(
-            device, CZ(get_element_name(parent), get_element_name(child)), dt
+            device,
+            CZ(get_element_name(parent), get_element_name(child)),
+            dt,
+            mirrored_clocks,
         )
         indices = [qubit_numbers.index(parent), qubit_numbers.index(child)]
         yield _get_defcal("cz", indices, body)
         yield _get_defcal("cz", indices[::-1], body)
 
 
-def _get_gate_body(device: QuantumDevice, operation: Operation, dt: float) -> str:
-    """Gets the OpenPulse statements that play what the gate compiles to on the device
+def _get_gate_body(
+    device: QuantumDevice,
+    operation: Operation,
+    dt: float,
+    mirrored_clocks: Collection[str],
+) -> str:
+    """Gets the OpenPulse statements that play what the gate compiles to on the device,
+    its phase shifts on the mirrored clocks negated
 
     Raises:
         ValueError: {pulse} has no OpenPulse counterpart in a defcal
@@ -161,7 +188,9 @@ def _get_gate_body(device: QuantumDevice, operation: Operation, dt: float) -> st
         schedule, config=device.generate_compilation_config()
     )
     timed_pulses = sorted(_get_timed_pulses(compiled, 0.0), key=lambda v: v[0])
-    return _to_openpulse(timed_pulses, duration=compiled.duration, dt=dt)
+    return _to_openpulse(
+        timed_pulses, duration=compiled.duration, dt=dt, mirrored_clocks=mirrored_clocks
+    )
 
 
 def _get_defcal(
@@ -197,11 +226,15 @@ def _get_timed_pulses(
 
 
 def _to_openpulse(
-    timed_pulses: List[Tuple[float, Dict[str, Any]]], duration: float, dt: float
+    timed_pulses: List[Tuple[float, Dict[str, Any]]],
+    duration: float,
+    dt: float,
+    mirrored_clocks: Collection[str],
 ) -> str:
     """Converts the timed pulses into OpenPulse statements that play them at those times,
     each frame running its own, as a cal block does: waveforms as declared samples,
-    phase shifts as they are, and a wait where a frame idles
+    phase shifts as they are but negated on the mirrored clocks, and a wait where a frame
+    idles
 
     Raises:
         ValueError: {pulse} has no OpenPulse counterpart in a defcal
@@ -222,6 +255,8 @@ def _to_openpulse(
         elif "phase_shift" in pulse:
             frame = _get_clock_frame(pulse["clock"])
             radians = math.radians(pulse["phase_shift"])
+            if pulse["clock"] in mirrored_clocks:
+                radians = -radians
             operation, length = (
                 f"shift_phase({frame}, {radians!r});",
                 QBLOX_TIMEGRID_INTERVAL,

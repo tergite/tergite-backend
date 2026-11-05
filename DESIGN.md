@@ -749,6 +749,10 @@ again before the job runs. A device that takes them publishes its frames and its
 and cz as `defcal`s with its calibration (`quantify/defcals.py`): each gate compiled on the
 device and its pulses written as declared samples, delays and phase shifts, so a job that
 copies one plays exactly what the gate does; measure, which a job may not define, is left out.
+On a transmon whose drive's local oscillator, in the hardware config, sits below its frequency,
+the clusters turn a phase the other way, so the executor negates an `Rz`'s angle, an `Rxy`'s axis
+and a cal block's phase shifts on its drive (`get_mirrored_elements`), and its defcals carry the
+phase shifts its gates compile to negated, so that they still play what the gates do.
 Circuit qubit `i` is the device's `i`-th qubit by the number in its id. The executor compiles them with the device's own calibration:
 quantify against a `QuantumDevice` of a transmon per qubit and a `CouplerEdge` per coupler
 (`quantify/device.py`), each shot after an idle in which the qubits relax and its operations

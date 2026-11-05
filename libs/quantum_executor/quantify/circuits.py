@@ -59,6 +59,7 @@ def get_circuit_schedule(
     edge_names: Collection[str],
     measure_durations: Mapping[str, float],
     frames: Optional[DeviceFrames] = None,
+    mirrored_elements: Collection[str] = (),
 ) -> Schedule:
     """Gets the gate-level schedule of the circuit, for the device's transmons
 
@@ -76,6 +77,9 @@ def get_circuit_schedule(
         edge_names: the names of the device's edges, each {parent}_{child}
         measure_durations: the seconds each transmon's measurement takes, by its name
         frames: the device's frames, which pulse-level blocks play on; none if it plays none
+        mirrored_elements: the transmons whose drives turn phases the other way, as
+            get_mirrored_elements gives them, on which the gates' and blocks' phases are
+            negated
 
     Returns:
         the schedule of the circuit, repeated for each shot
@@ -114,12 +118,17 @@ def get_circuit_schedule(
             operation, qubits = IdlePulse(duration=duration), set(gate.qubits)
         elif isinstance(gate, gates.PulseBlock):
             group_kind, group_qubits = None, set()
-            block = _get_pulse_schedule(gate, native_config, frames, frequencies)
+            block = _get_pulse_schedule(
+                gate, native_config, frames, frequencies, mirrored_elements
+            )
             after = schedule.add(block, ref_op=after)
             continue
         else:
             group_kind, group_qubits = None, set()
-            for operation in _get_operations(gate, element_names, edge_names):
+            operations = _get_operations(
+                gate, element_names, edge_names, mirrored_elements
+            )
+            for operation in operations:
                 schedule.add(operation, ref_op=after)
                 after = None
             continue
@@ -180,26 +189,34 @@ def _get_measure(
 
 
 def _get_operations(
-    gate: gates.Gate, element_names: Sequence[str], edge_names: Collection[str]
+    gate: gates.Gate,
+    element_names: Sequence[str],
+    edge_names: Collection[str],
+    mirrored_elements: Collection[str],
 ) -> List[Operation]:
     """Gets the quantify operations of a native gate but a measurement or a delay; a
-    barrier has none, as the operations run one after the other
+    barrier has none, as the operations run one after the other. A rotation's phase on a
+    mirrored transmon is negated
 
     Raises:
         UnsupportedCircuitError: qubits {a} and {b} have no coupler
     """
     if isinstance(gate, gates.Rxy):
+        element = element_names[gate.qubit]
+        sign = -1 if element in mirrored_elements else 1
         return [
             Rxy(
                 theta=math.degrees(gate.theta),
-                phi=math.degrees(gate.phi),
-                qubit=element_names[gate.qubit],
+                phi=sign * math.degrees(gate.phi),
+                qubit=element,
             )
         ]
     if isinstance(gate, gates.Rz):
+        element = element_names[gate.qubit]
+        sign = -1 if element in mirrored_elements else 1
         # a Qblox sequencer updates a clock's phase at most once per grid interval
         return [
-            Rz(theta=math.degrees(gate.theta), qubit=element_names[gate.qubit]),
+            Rz(theta=sign * math.degrees(gate.theta), qubit=element),
             IdlePulse(duration=QBLOX_TIMEGRID_INTERVAL),
         ]
     if isinstance(gate, gates.CZ):
@@ -264,11 +281,12 @@ def _get_pulse_schedule(
     native_config: NativeQobjConfig,
     frames: Optional[DeviceFrames],
     frequencies: Dict[gates.Frame, float],
+    mirrored_elements: Collection[str],
 ) -> Schedule:
     """Gets the schedule of a pulse-level block, each frame's operations one after the
     other from its start, on the Qblox time grid; a phase or frequency update takes a grid
     interval, as a sequencer takes one at a time. The frequencies of the frames changed so
-    far are updated
+    far are updated, and a mirrored transmon's drive frame turns its phases the other way
 
     Raises:
         UnsupportedCircuitError: frame {name} is not one of the device's: {names}
@@ -285,7 +303,7 @@ def _get_pulse_schedule(
         if op.frame.kind == "coupler":
             _add_coupler_clock(schedule, op.frame, frames)
         for operation, duration in _get_frame_operations(
-            op, native_config, frames, frequencies
+            op, native_config, frames, frequencies, mirrored_elements
         ):
             at = cursors.get(op.frame, 0.0)
             if operation is not None:
@@ -304,6 +322,7 @@ def _get_frame_operations(
     native_config: NativeQobjConfig,
     frames: Optional[DeviceFrames],
     frequencies: Dict[gates.Frame, float],
+    mirrored_elements: Collection[str],
 ) -> List[Tuple[Optional[Operation], float]]:
     """Gets the quantify operations of a pulse operation on a frame, each with the time it
     takes of the frame, none for a wait; a frequency changed is kept in the frequencies
@@ -316,14 +335,14 @@ def _get_frame_operations(
     if isinstance(op, gates.Play):
         pulse = _get_numerical_pulse(op, port, clock, frames.dt)
         return [(pulse, len(op.samples) * frames.dt)]
-    # FIXME: the qobj path flipped the sign of a phase shift on a drive whose LO sits below
-    #   its frequency; these pass the phase as is. Check on hardware which way a frame with
-    #   its LO below its RF turns before relying on pulse-level phases.
+    sign = -1 if _is_mirrored(op.frame, mirrored_elements) else 1
+    # a played envelope is not conjugated on a mirrored drive: a gate's is not either,
+    # its motzoi calibrated as it plays
     if isinstance(op, gates.ShiftPhase):
-        shift = ShiftClockPhase(phase_shift=math.degrees(op.phase), clock=clock)
+        shift = ShiftClockPhase(phase_shift=sign * math.degrees(op.phase), clock=clock)
         return [(shift, QBLOX_TIMEGRID_INTERVAL)]
     if isinstance(op, gates.SetPhase):
-        shift = ShiftClockPhase(phase_shift=math.degrees(op.phase), clock=clock)
+        shift = ShiftClockPhase(phase_shift=sign * math.degrees(op.phase), clock=clock)
         return [
             (ResetClockPhase(clock=clock), QBLOX_TIMEGRID_INTERVAL),
             (shift, QBLOX_TIMEGRID_INTERVAL),
@@ -389,9 +408,19 @@ def _get_frame_frequency(frame: gates.Frame, frames: Optional[DeviceFrames]) -> 
     return frames.frequencies[frame.name]
 
 
+def _is_mirrored(frame: gates.Frame, mirrored_elements: Collection[str]) -> bool:
+    """Whether the frame is the drive of a mirrored transmon"""
+    return frame.kind == "drive" and _get_element(frame) in mirrored_elements
+
+
+def _get_element(frame: gates.Frame) -> str:
+    """Gets the name of the transmon, or coupler edge, the frame is of"""
+    return frame.name.removesuffix(f"_{frame.kind}")
+
+
 def _get_port_clock(frame: gates.Frame) -> Tuple[str, str]:
     """Gets the port and clock of the frame, as the hardware config names them"""
-    element = frame.name.removesuffix(f"_{frame.kind}")
+    element = _get_element(frame)
     if frame.kind == "drive":
         return f"{element}:mw", f"{element}.01"
     if frame.kind == "readout":

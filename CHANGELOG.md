@@ -7,6 +7,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed rz, a rotation's axis and a cal block's phase shifts turning the wrong way on a qubit whose drive LO sits below
+  its frequency, as the qobj path's sign flip there went with it; they are negated there again, as the defcals' are
+
 ## [2026.11.0-rc.8] - 2026-11-04
 
 ### Added

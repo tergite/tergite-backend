@@ -16,11 +16,12 @@
 an edge for each coupler, set from the backend's calibration"""
 
 import math
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from qcodes import Instrument, ManualParameter
 from quantify_scheduler import Schedule
 from quantify_scheduler.backends.graph_compilation import OperationCompilationConfig
+from quantify_scheduler.backends.qblox_backend import QbloxHardwareCompilationConfig
 from quantify_scheduler.device_under_test.edge import Edge
 from quantify_scheduler.device_under_test.quantum_device import QuantumDevice
 from quantify_scheduler.device_under_test.transmon_element import BasicTransmonElement
@@ -251,6 +252,38 @@ def get_edge_names(device: QuantumDevice) -> List[str]:
         the names of its edges
     """
     return list(device.edges())
+
+
+def get_mirrored_elements(
+    device: QuantumDevice, hardware_config: Optional[QbloxHardwareCompilationConfig]
+) -> Set[str]:
+    """Gets the transmons whose drive's local oscillator sits below their frequency, on
+    which the clusters turn a phase the other way, so that a gate's or a cal block's phase
+    is negated to turn as on the others
+
+    Args:
+        device: the quantum device, with its calibrated transmons
+        hardware_config: the hardware config of the clusters; none for no clusters
+
+    Returns:
+        the names of the transmons; none without a hardware config
+    """
+    if hardware_config is None:
+        return set()
+    modulations = hardware_config.hardware_options.modulation_frequencies or {}
+    mirrored = set()
+    for name in device.elements():
+        frequency = device.get_element(name).clock_freqs.f01()
+        modulation = modulations.get(f"{name}:mw-{name}.01")
+        if modulation is None or frequency is None or math.isnan(frequency):
+            continue
+        if modulation.lo_freq is not None:
+            is_lo_below = modulation.lo_freq < frequency
+        else:
+            is_lo_below = (modulation.interm_freq or 0.0) > 0
+        if is_lo_below:
+            mirrored.add(name)
+    return mirrored
 
 
 def _get_transmon(name: str) -> BasicTransmonElement:

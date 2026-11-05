@@ -12,8 +12,9 @@
 """Tests of the quantify schedules of gate-level circuits"""
 
 import gc
+import json
 import math
-from typing import Any, Dict, Generator, List
+from typing import Any, Collection, Dict, Generator, List, Optional
 
 import numpy as np
 import pytest
@@ -25,7 +26,11 @@ from libs.quantum_executor.base.circuits import QasmCircuit
 from libs.quantum_executor.base.qasm import to_native_circuit
 from libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
 from tests.utils.circuits import get_gate_level_seed, get_qasm
-from tests.utils.env import TEST_BACKEND_SETTINGS_FILE, TEST_QUANTIFY_SEED_FILE
+from tests.utils.env import (
+    TEST_BACKEND_SETTINGS_FILE,
+    TEST_QUANTIFY_CONFIG_FILE,
+    TEST_QUANTIFY_SEED_FILE,
+)
 from utils.exc import UnsupportedCircuitError
 
 _ELEMENTS = ["q12", "q13", "q14"]
@@ -399,22 +404,91 @@ def test_the_published_frames_are_those_a_job_plays_on(
     assert "q12_q14_coupler" not in by_name
 
 
+def test_a_transmon_whose_drive_lo_sits_below_its_frequency_is_mirrored(
+    calibrated_device,
+):
+    """The gate-level seed's q14 is driven at 4.7 GHz, above the dummy clusters' LO of
+    4.644 GHz; q12 and q13 below theirs"""
+    from libs.quantum_executor.quantify.device import get_mirrored_elements
+
+    hardware_config = _get_hardware_config()
+
+    assert get_mirrored_elements(calibrated_device, hardware_config) == {"q14"}
+    assert get_mirrored_elements(calibrated_device, None) == set()
+
+
+def test_a_mirrored_transmons_rotations_turn_the_other_way(quantum_device):
+    circuit = _get_circuit(
+        [
+            gates.Rz(0, 0.3),
+            gates.Rxy(0, math.pi / 2, 0.4),
+            gates.Rz(1, 0.3),
+            gates.Rxy(1, math.pi / 2, 0.4),
+        ]
+    )
+
+    schedule = _get_schedule(quantum_device, circuit, mirrored_elements={"q12"})
+
+    q12_rz, q12_rxy, q13_rz, q13_rxy = [
+        operation.data["gate_info"] for operation in _get_gate_operations(schedule)
+    ]
+    assert q12_rz["theta"] % 360 == pytest.approx(-math.degrees(0.3) % 360)
+    assert q12_rxy["phi"] % 360 == pytest.approx(-math.degrees(0.4) % 360)
+    assert q12_rxy["theta"] == pytest.approx(90.0)
+    assert q13_rz["theta"] % 360 == pytest.approx(math.degrees(0.3))
+    assert q13_rxy["phi"] % 360 == pytest.approx(math.degrees(0.4))
+
+
+def test_a_cal_blocks_phases_turn_the_other_way_on_a_mirrored_drive(calibrated_device):
+    block = gates.PulseBlock(
+        operations=(
+            gates.ShiftPhase(frame=_DRIVE, phase=0.5),
+            gates.SetPhase(frame=_DRIVE, phase=0.25),
+            gates.ShiftPhase(frame=_READOUT, phase=0.5),
+        )
+    )
+    circuit = _get_circuit([block])
+
+    schedule = _get_schedule(calibrated_device, circuit, mirrored_elements={"q12"})
+
+    got = [
+        (info["clock"], info["phase_shift"])
+        for operation in _get_all_operations(schedule)
+        for info in operation.data["pulse_info"]
+        if "phase_shift" in info
+    ]
+    assert got == [
+        ("q12.01", pytest.approx(-math.degrees(0.5))),
+        ("q12.01", pytest.approx(-math.degrees(0.25))),
+        ("q12.ro", pytest.approx(math.degrees(0.5))),
+    ]
+
+
+@pytest.mark.parametrize("is_q13_mirrored", [False, True])
 @pytest.mark.parametrize(
     "statement",
     ["x $1;", "sx $1;", "rz(0.3) $1;", "cz $0, $1;", "cz $1, $0;", "cz $0, $2;"],
 )
 def test_a_published_defcal_plays_what_its_gate_plays(
-    calibrated_device, calibrated_backend_config, statement
+    calibrated_device, calibrated_backend_config, statement, is_q13_mirrored
 ):
+    """Also on a mirrored drive, whose cal blocks' phases turn the other way, as its
+    gates' do, though not the CZ's calibrated phase corrections"""
     from libs.quantum_executor.quantify.defcals import get_pulse_calibration
+    from libs.quantum_executor.quantify.device import get_mirrored_elements
 
-    _, defcals = get_pulse_calibration(calibrated_backend_config)
+    hardware_config = None
+    if is_q13_mirrored:
+        hardware_config = _get_hardware_config(lo_frequencies={"q13": 5.0e9})
+    mirrored_elements = get_mirrored_elements(calibrated_device, hardware_config)
+    _, defcals = get_pulse_calibration(calibrated_backend_config, hardware_config)
     programs = "\n".join(defcal.program for defcal in defcals)
 
-    by_gate = _get_played(calibrated_device, _translate(statement))
+    by_gate = _get_played(calibrated_device, _translate(statement), mirrored_elements)
     by_defcal = _get_played(
         calibrated_device,
         _translate(f'defcalgrammar "openpulse";\n{programs}\n{statement}'),
+        mirrored_elements,
     )
 
     assert by_gate
@@ -496,8 +570,13 @@ def _get_gate_operations(schedule) -> List[Any]:
     ]
 
 
-def _get_schedule(quantum_device, circuit: gates.NativeCircuit) -> Any:
-    """Gets the circuit's schedule, its pulse-level blocks on the device's frames"""
+def _get_schedule(
+    quantum_device,
+    circuit: gates.NativeCircuit,
+    mirrored_elements: Collection[str] = (),
+) -> Any:
+    """Gets the circuit's schedule, its pulse-level blocks on the device's frames, the
+    mirrored transmons' phases turning the other way"""
     from libs.quantum_executor.quantify.circuits import (
         DeviceFrames,
         get_circuit_schedule,
@@ -506,7 +585,11 @@ def _get_schedule(quantum_device, circuit: gates.NativeCircuit) -> Any:
 
     frames = DeviceFrames(dt=_NS, frequencies=get_frame_frequencies(quantum_device))
     return get_circuit_schedule(
-        circuit, _NATIVE_CONFIG, **_get_kwargs(quantum_device), frames=frames
+        circuit,
+        _NATIVE_CONFIG,
+        **_get_kwargs(quantum_device),
+        frames=frames,
+        mirrored_elements=mirrored_elements,
     )
 
 
@@ -533,7 +616,11 @@ def _translate(statements: str) -> gates.NativeCircuit:
     return to_native_circuit(QasmCircuit(name="test", qasm=qasm, num_clbits=0), dt=_NS)
 
 
-def _get_played(quantum_device, circuit: gates.NativeCircuit) -> List[Any]:
+def _get_played(
+    quantum_device,
+    circuit: gates.NativeCircuit,
+    mirrored_elements: Collection[str] = (),
+) -> List[Any]:
     """Gets what the circuit's compiled schedule plays, in time order: each waveform's
     samples and each phase shift, with the nanosecond it starts at and its port, or its
     clock where it has none"""
@@ -541,7 +628,7 @@ def _get_played(quantum_device, circuit: gates.NativeCircuit) -> List[Any]:
     from quantify_scheduler.helpers.waveforms import get_waveform
 
     compiled = SerialCompiler("test").compile(
-        _get_schedule(quantum_device, circuit),
+        _get_schedule(quantum_device, circuit, mirrored_elements),
         config=quantum_device.generate_compilation_config(),
     )
     played = []
@@ -552,6 +639,21 @@ def _get_played(quantum_device, circuit: gates.NativeCircuit) -> List[Any]:
         elif "phase_shift" in pulse:
             played.append((round(start / _NS), pulse["clock"], [pulse["phase_shift"]]))
     return sorted(played, key=lambda event: event[:2])
+
+
+def _get_hardware_config(lo_frequencies: Optional[Dict[str, float]] = None) -> Any:
+    """Gets the dummy clusters' hardware config, the transmons' drive LOs at the given
+    frequencies, in hertz, by their names"""
+    from quantify_scheduler.backends.qblox_backend import (
+        QbloxHardwareCompilationConfig,
+    )
+
+    with open(TEST_QUANTIFY_CONFIG_FILE) as file:
+        config = json.load(file)
+    modulations = config["hardware_options"]["modulation_frequencies"]
+    for element, frequency in (lo_frequencies or {}).items():
+        modulations[f"{element}:mw-{element}.01"]["lo_freq"] = frequency
+    return QbloxHardwareCompilationConfig.model_validate(config)
 
 
 def _get_timed_pulses(schedule, offset: float) -> List[Any]:
