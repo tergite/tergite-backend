@@ -37,7 +37,7 @@ _REF = "#/components/schemas/{model}"
 app = FastAPI(
     title="Backend Control Computer",
     description="Interfaces Quantum processor via REST API",
-    version="v2026.11.0-rc.8",
+    version="v2026.11.0-rc.9",
     lifespan=lifespan,
 )
 

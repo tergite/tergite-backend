@@ -7,6 +7,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.11.0-rc.9] - 2026-11-05
+
 ### Added
 
 - Added `docs/how_circuits_run.md`, on what the backend does to a circuit that can change a job's results: when its
