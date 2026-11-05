@@ -249,8 +249,8 @@ def test_executor_adds_frames_and_defcals_only_where_the_device_has_pulse_limits
     )
     if not is_pulse_limited:
         backend_config = backend_config.model_copy(update={"pulse_limits": None})
-    # it reads no more of the executor than its backend config
-    executor = SimpleNamespace(backend_config=backend_config)
+    # it reads no more of the executor than its backend and hardware configs
+    executor = SimpleNamespace(backend_config=backend_config, quantify_config=None)
     calibration = DeviceCalibration.from_config(backend_config)
 
     got = QuantifyExecutor.add_pulse_calibration(executor, calibration)

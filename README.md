@@ -160,7 +160,8 @@ than as a service; for a service, install the deb or the macOS installer.
 ## Documentation
 
 Find how the backend is built, and the conventions to follow when changing it, in [DESIGN.md](./DESIGN.md),
-and more documentation in the [docs folder](./docs)
+and more documentation in the [docs folder](./docs). What the backend does to a circuit that can change a job's
+results, such as how it schedules gates, is in [docs/how_circuits_run.md](./docs/how_circuits_run.md).
 
 ## Contribution Guidelines
 

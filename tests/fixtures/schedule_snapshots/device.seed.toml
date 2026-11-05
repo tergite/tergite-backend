@@ -1,0 +1,141 @@
+[calibration_config]
+[[calibration_config.qubit]]
+id = "q12"
+t1_decoherence = 3.4e-5
+t2_decoherence = 3.3e-5
+frequency = 4511480043.556283
+pi_pulse_amplitude = 0.17555712637424228
+pi_pulse_duration = 5.6e-8
+pulse_type = "Gaussian"
+pulse_sigma = 7e-9
+pi_pulse_motzoi = -0.105
+
+[[calibration_config.qubit]]
+id = "q13"
+t1_decoherence = 3.4e-5
+t2_decoherence = 3.3e-5
+frequency = 5200000000.0
+pi_pulse_amplitude = 0.17535338530538067
+pi_pulse_duration = 5.6e-8
+pulse_type = "Gaussian"
+pulse_sigma = 7e-9
+pi_pulse_motzoi = 0.08
+
+[[calibration_config.qubit]]
+id = "q14"
+t1_decoherence = 3.4e-5
+t2_decoherence = 3.3e-5
+frequency = 4700000000.0
+pi_pulse_amplitude = 0.17873594718151276
+pi_pulse_duration = 5.6e-8
+pulse_type = "Gaussian"
+pulse_sigma = 7e-9
+pi_pulse_motzoi = -0.21
+
+[[calibration_config.readout_resonator]]
+id = "q12"
+acq_delay = 5e-8
+acq_integration_time = 1e-6
+frequency = 7260080000.0
+pulse_amplitude = 0.1266499392606423
+pulse_delay = 0.0
+pulse_duration = 9e-7
+pulse_type = "Square"
+
+[[calibration_config.readout_resonator]]
+id = "q13"
+acq_delay = 5e-8
+acq_integration_time = 1e-6
+frequency = 7200000000.0
+pulse_amplitude = 0.12660078572926436
+pulse_delay = 0.0
+pulse_duration = 9e-7
+pulse_type = "Square"
+
+[[calibration_config.readout_resonator]]
+id = "q14"
+acq_delay = 5e-8
+acq_integration_time = 1e-6
+frequency = 7100000000.0
+pulse_amplitude = 0.08245560237524203
+pulse_delay = 0.0
+pulse_duration = 9e-7
+pulse_type = "Square"
+
+[[calibration_config.coupler]]
+id = "u0"
+frequency = 4000000000.0
+frequency_detuning = 0
+anharmonicity = 0
+coupling_strength_02 = 0
+coupling_strength_12 = 0
+cz_pulse_amplitude = 0.1
+cz_pulse_dc_bias = 0
+cz_pulse_phase_offset = 0
+cz_pulse_duration_before = 8e-9
+cz_pulse_duration_rise = 2.4e-8
+cz_pulse_duration_constant = 2e-7
+control_rz_lambda = 0.6
+target_rz_lambda = 0.3
+pulse_type = ""
+
+[[calibration_config.coupler]]
+id = "u1"
+frequency = 0
+frequency_detuning = 0
+anharmonicity = 0
+coupling_strength_02 = 0
+coupling_strength_12 = 0
+cz_pulse_amplitude = 0
+cz_pulse_dc_bias = 0
+cz_pulse_phase_offset = 0
+cz_pulse_duration_before = 0
+cz_pulse_duration_rise = 0
+cz_pulse_duration_constant = 0
+control_rz_lambda = 0.6
+target_rz_lambda = 0.3
+pulse_type = ""
+
+[calibration_config.units.qubit]
+frequency = "Hz"
+t1_decoherence = "s"
+t2_decoherence = "s"
+anharmonicity = "Hz"
+
+[calibration_config.units.readout_resonator]
+acq_delay = "s"
+acq_integration_time = "s"
+frequency = "Hz"
+pulse_delay = "s"
+pulse_duration = "s"
+pulse_amplitude = ""
+pulse_type = ""
+
+[calibration_config.units.coupler]
+frequency = "Hz"
+frequency_detuning = "Hz"
+anharmonicity = "Hz"
+coupling_strength_02 = "Hz"
+coupling_strength_12 = "Hz"
+cz_pulse_amplitude = ""
+cz_pulse_dc_bias = ""
+cz_pulse_phase_offset = "rad"
+cz_pulse_duration_before = "s"
+cz_pulse_duration_rise = "s"
+cz_pulse_duration_constant = "s"
+pulse_type = ""
+
+[calibration_config.discriminators.lda.q12]
+intercept = -38.4344477840827
+coef_0 = -98953.87504155144
+coef_1 = -114154.48696231026
+
+[calibration_config.discriminators.lda.q13]
+intercept = -42.05181160328822
+coef_0 = -107941.00358803963
+coef_1 = -124239.32054386326
+
+[calibration_config.discriminators.lda.q14]
+intercept = -22.684588212281916
+coef_0 = -191087.42493249022
+coef_1 = -20803.06874845618

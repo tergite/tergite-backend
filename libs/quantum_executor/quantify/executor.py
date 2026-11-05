@@ -45,6 +45,7 @@ from libs.quantum_executor.base.quantum_job.typing import QExperimentResult
 from libs.quantum_executor.quantify.defcals import add_pulse_calibration
 from libs.quantum_executor.quantify.device import apply_calibration, remove_elements
 from libs.quantum_executor.quantify.experiments import get_circuit_experiments
+from libs.quantum_executor.quantify.scheduling import get_compilation_config
 from libs.quantum_executor.quantify.simulated_chip.component import (
     SimulatingClusterComponent,
 )
@@ -177,7 +178,9 @@ class QuantifyExecutor(QuantumExecutor):
             the calibration, with the frames and defcals where the device takes
             pulse-level jobs
         """
-        return add_pulse_calibration(calibration, self.backend_config)
+        return add_pulse_calibration(
+            calibration, self.backend_config, self.quantify_config
+        )
 
     def _connect_if_stale(self) -> None:
         """Connects the clusters and gets the quantum device anew, if a recalibration
@@ -248,7 +251,7 @@ class QuantifyExecutor(QuantumExecutor):
 
         compiled_schedule = self._compiler.compile(
             schedule=experiment.schedule,
-            config=self._quantum_device.generate_compilation_config(),
+            config=get_compilation_config(self._quantum_device),
         )
 
         logger.log_Q1ASM_programs(compiled_schedule)

@@ -5,8 +5,10 @@ This document describes the architecture of `tergite-backend`, the Backend Contr
 its devices apart, where it stores what, how it is configured, deployed and tested, and the
 conventions a contributor is expected to follow. The narrower docs —
 [docs/auth.md](docs/auth.md), [docs/booking_and_queuing.md](docs/booking_and_queuing.md),
-[docs/configuration.md](docs/configuration.md), [docs/executors.md](docs/executors.md) — remain
-the reference for the signatures, the booking rules, the config files and adding an executor;
+[docs/configuration.md](docs/configuration.md), [docs/executors.md](docs/executors.md),
+[docs/how_circuits_run.md](docs/how_circuits_run.md) — remain the reference for the signatures,
+the booking rules, the config files, adding an executor and what the backend does to a circuit
+that can change its results;
 this document is the map that ties them together.
 
 ## 1. What this repo is
@@ -738,7 +740,7 @@ physical qubits and parameters, plays on the frames the device publishes, named 
 ports (`q12_drive`, `q12_readout`, `q12_q13_coupler`): OpenPulse's waveform generators or
 arrays of samples, phase and frequency shifts and sets, delays, barriers, and `capture_v1`
 into a classical bit, read out as a measurement of the frame's qubit. Each block runs its
-frames side by side, from where what precedes it ends (`quantify/circuits.py`). A pulse-level
+frames side by side, from where what precedes it on its frames' qubits ends (`quantify/circuits.py`). A pulse-level
 job is let in only for a project MSS says may send one, when it asks for the job's token (`MSSTokenClaims.is_pulse_allowed`,
 signed as the token's `pulse` claim), and only within the limits the device's operators
 set in its backend config's `pulse_limits` (`base/pulse_limits.py`): amplitude and energy
@@ -749,11 +751,21 @@ again before the job runs. A device that takes them publishes its frames and its
 and cz as `defcal`s with its calibration (`quantify/defcals.py`): each gate compiled on the
 device and its pulses written as declared samples, delays and phase shifts, so a job that
 copies one plays exactly what the gate does; measure, which a job may not define, is left out.
+On a transmon whose drive's local oscillator, in the hardware config, sits below its frequency,
+the clusters turn a phase the other way, so the executor negates an `Rz`'s angle, an `Rxy`'s axis
+and a cal block's phase shifts on its drive (`get_mirrored_elements`), and its defcals carry the
+phase shifts its gates compile to negated, so that they still play what the gates do.
 Circuit qubit `i` is the device's `i`-th qubit by the number in its id. The executor compiles them with the device's own calibration:
 quantify against a `QuantumDevice` of a transmon per qubit and a `CouplerEdge` per coupler
-(`quantify/device.py`), each shot after an idle in which the qubits relax and its operations
-one after the other but for consecutive measurements, or delays, of distinct qubits, which
-start together. A simulated device compiles the same way, for its dummy clusters, and plays
+(`quantify/device.py`), each shot after an idle in which the qubits relax, then each gate as
+late as the gates after it on its own qubits let it, as qiskit's ALAP scheduling does, so that
+a qubit idles least before its measurement. `quantify/circuits.py` only translates: it adds the
+gates' operations in order, each marked with the transmons and classical bits it holds. A step
+of quantify's device compilation (`quantify/scheduling.py`, which `get_compilation_config`
+inserts) times them once they are pulses, by the durations quantify gives them: a barrier
+lines its qubits up, a pulse-level block holds the transmons of its frames and the bits it
+captures into, and an operation that holds a bit follows the measurement into it.
+A simulated device compiles the same way, for its dummy clusters, and plays
 the schedule on its chip, which reads a qubit without collapsing it, so it refuses a gate on
 a qubit after its measurement before a reset. A circuit that
 measures no qubit is refused, as it has no results. Each measurement is acquired on its own
@@ -864,6 +876,12 @@ The suite runs in one environment, `.venv` (`uv sync --dev`), which has every de
   whose jobs take the duration in their header), `jobs.py`, `bookings.py`, `users.py`,
   `devices.py`, `env.py`, `io.py`, `records.py`, and so on. Put new helpers there, in the file
   that matches their job.
+- `tests/services/test_schedule_snapshots.py` compiles 24 seeded random circuits and checks,
+  qubit by qubit, that they play what the backend before its refactor (e9f2dea1, with the SDK
+  of v2026.06.0) played: the same pulses in the same order, at the same frequencies and phases,
+  with no longer idles. `tests/fixtures/schedule_snapshots/` holds those snapshots and the
+  calibration they were taken with; `dev/schedule_snapshots/generate.sh` takes them again, in
+  worktrees of that backend and SDK, should more circuits be wanted.
 - `tests/api/` drives each router through the test client; `tests/services/` tests the
   executors and tasks; the files at the top test the rest.
 - The simulated devices' tests run their jobs on their chips, as a circuit takes
