@@ -12,7 +12,7 @@
 """The experiments of a gate-level job's circuits, compiled for a quantify device, whether
 clusters or the simulator then run them"""
 
-from typing import Dict, List
+from typing import List
 
 from quantify_scheduler import Schedule
 from quantify_scheduler.backends.graph_compilation import SerialCompiler
@@ -24,11 +24,12 @@ from ..base.circuits import CircuitExperiment, QasmCircuit
 from ..base.qasm import to_native_circuit
 from ..base.quantum_job import get_experiment_name
 from ..base.quantum_job.dtos import NativeQobjConfig
-from .circuits import DeviceFrames, get_circuit_schedule, get_measure_duration
+from .circuits import DeviceFrames, get_circuit_schedule
 from .device import (
     get_edge_names,
     get_element_name,
     get_frame_frequencies,
+    get_gate_durations,
     get_mirrored_elements,
 )
 
@@ -60,7 +61,7 @@ def get_circuit_experiments(
     qubit_ids = backend_config.device_config.qubit_numbers
     element_names = [get_element_name(qubit_id) for qubit_id in qubit_ids]
     edge_names = get_edge_names(device)
-    measure_durations = _get_measure_durations(device, element_names)
+    durations = get_gate_durations(device)
     frames = DeviceFrames(dt=dt, frequencies=get_frame_frequencies(device))
     mirrored_elements = get_mirrored_elements(device, device.hardware_config())
     compilation_config = device.generate_compilation_config()
@@ -73,7 +74,7 @@ def get_circuit_experiments(
             native_config,
             element_names=element_names,
             edge_names=edge_names,
-            measure_durations=measure_durations,
+            durations=durations,
             frames=frames,
             mirrored_elements=mirrored_elements,
         )
@@ -87,21 +88,3 @@ def get_circuit_experiments(
             )
         )
     return experiments
-
-
-def _get_measure_durations(
-    device: QuantumDevice, element_names: List[str]
-) -> Dict[str, float]:
-    """Gets the seconds each of the transmons' measurement takes, by its name, leaving out
-    those the device lacks, as their qubits are not calibrated"""
-    durations = {}
-    for name in element_names:
-        if name not in device.elements():
-            continue
-        measure = device.get_element(name).measure
-        durations[name] = get_measure_duration(
-            pulse_duration=measure.pulse_duration(),
-            acq_delay=measure.acq_delay(),
-            integration_time=measure.integration_time(),
-        )
-    return durations

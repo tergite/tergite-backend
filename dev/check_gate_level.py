@@ -39,14 +39,12 @@ from libs.device_parameters import BackendConfig, DeviceCalibration
 from libs.device_parameters.dtos import CalibrationValue, CouplerCalibration
 from libs.quantum_executor.base import gates
 from libs.quantum_executor.base.quantum_job.dtos import NativeQobjConfig
-from libs.quantum_executor.quantify.circuits import (
-    get_circuit_schedule,
-    get_measure_duration,
-)
+from libs.quantum_executor.quantify.circuits import get_circuit_schedule
 from libs.quantum_executor.quantify.device import (
     apply_calibration,
     get_edge_names,
     get_element_name,
+    get_gate_durations,
     remove_elements,
 )
 from libs.quantum_executor.quantify.utils.config import load_quantify_config
@@ -340,19 +338,12 @@ def _get_nco_frequencies(
     native_config = NativeQobjConfig.from_measurement_settings(
         meas_level=2, meas_return="single", shots=1, n_qubits=len(element_names)
     )
-    measure_durations = {
-        name: get_measure_duration(
-            measure.pulse_duration(), measure.acq_delay(), measure.integration_time()
-        )
-        for name in element_names
-        for measure in [device.get_element(name).measure]
-    }
     schedule = get_circuit_schedule(
         circuit,
         native_config,
         element_names=element_names,
         edge_names=get_edge_names(device),
-        measure_durations=measure_durations,
+        durations=get_gate_durations(device),
     )
     compiled = SerialCompiler(name="gate_level_check").compile(
         schedule, config=device.generate_compilation_config()

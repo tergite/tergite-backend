@@ -5,8 +5,10 @@ This document describes the architecture of `tergite-backend`, the Backend Contr
 its devices apart, where it stores what, how it is configured, deployed and tested, and the
 conventions a contributor is expected to follow. The narrower docs —
 [docs/auth.md](docs/auth.md), [docs/booking_and_queuing.md](docs/booking_and_queuing.md),
-[docs/configuration.md](docs/configuration.md), [docs/executors.md](docs/executors.md) — remain
-the reference for the signatures, the booking rules, the config files and adding an executor;
+[docs/configuration.md](docs/configuration.md), [docs/executors.md](docs/executors.md),
+[docs/how_circuits_run.md](docs/how_circuits_run.md) — remain the reference for the signatures,
+the booking rules, the config files, adding an executor and what the backend does to a circuit
+that can change its results;
 this document is the map that ties them together.
 
 ## 1. What this repo is
@@ -755,9 +757,11 @@ and a cal block's phase shifts on its drive (`get_mirrored_elements`), and its d
 phase shifts its gates compile to negated, so that they still play what the gates do.
 Circuit qubit `i` is the device's `i`-th qubit by the number in its id. The executor compiles them with the device's own calibration:
 quantify against a `QuantumDevice` of a transmon per qubit and a `CouplerEdge` per coupler
-(`quantify/device.py`), each shot after an idle in which the qubits relax and its operations
-one after the other but for consecutive measurements, or delays, of distinct qubits, which
-start together. A simulated device compiles the same way, for its dummy clusters, and plays
+(`quantify/device.py`), each shot after an idle in which the qubits relax, then each gate as
+late as the gates after it on its own qubits let it, as qiskit's ALAP scheduling does, so that
+a qubit idles least before its measurement: a barrier lines its qubits up, and a pulse-level
+block occupies all of them. `get_gate_durations` gives what each gate takes, as it compiles.
+A simulated device compiles the same way, for its dummy clusters, and plays
 the schedule on its chip, which reads a qubit without collapsing it, so it refuses a gate on
 a qubit after its measurement before a reset. A circuit that
 measures no qubit is refused, as it has no results. Each measurement is acquired on its own

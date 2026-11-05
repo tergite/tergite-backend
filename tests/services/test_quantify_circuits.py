@@ -103,21 +103,52 @@ def test_each_shot_starts_after_the_qubits_relax(quantum_device):
     assert compiled.schedulables[measure]["abs_time"] == INITIAL_RESET_VALUE
 
 
-def test_consecutive_measurements_of_distinct_qubits_start_together(quantum_device):
+def test_a_reset_of_one_qubit_leaves_no_other_idle(quantum_device):
+    """Each gate runs as late as the next on its qubits lets it, so q12's rotation waits
+    out q13's reset instead of holding its state through it"""
     circuit = _get_circuit(
         [
             gates.Rxy(0, math.pi, 0.0),
-            gates.Measure(qubit=0, clbit=1, channel=0),
-            gates.Measure(qubit=1, clbit=0, channel=1),
+            gates.Reset(1),
+            gates.Measure(qubit=0, clbit=0, channel=0),
+            gates.Measure(qubit=1, clbit=1, channel=1),
+        ]
+    )
+
+    rotation, reset, first_measure, second_measure = _get_start_times(
+        quantum_device, circuit
+    )
+
+    assert reset == 0.0
+    assert first_measure == second_measure == pytest.approx(300e-6)
+    assert rotation == pytest.approx(first_measure - 56 * _NS)
+
+
+def test_each_qubits_last_gate_ends_with_the_circuit(quantum_device):
+    circuit = _get_circuit(
+        [gates.Rxy(0, math.pi, 0.0), gates.Delay(qubits=(1,), duration=1e-6)]
+    )
+
+    rotation, delay = _get_start_times(quantum_device, circuit)
+
+    assert delay == 0.0
+    assert rotation == pytest.approx(1e-6 - 56 * _NS)
+
+
+def test_a_barrier_lines_its_qubits_up(quantum_device):
+    circuit = _get_circuit(
+        [
+            gates.Rxy(0, math.pi, 0.0),
+            gates.Barrier(qubits=(0, 1)),
+            gates.Rxy(1, math.pi, 0.0),
             gates.Rxy(1, math.pi, 0.0),
         ]
     )
 
-    _, first_measure, second_measure, after = _get_start_times(quantum_device, circuit)
+    first, second, third = _get_start_times(quantum_device, circuit)
 
-    measure_duration = _get_measure_duration(quantum_device, "q12")
-    assert first_measure == second_measure
-    assert after == pytest.approx(first_measure + measure_duration)
+    assert second == pytest.approx(first + 56 * _NS)
+    assert third == pytest.approx(second + 56 * _NS)
 
 
 def test_measurements_of_one_qubit_follow_each_other(quantum_device):
@@ -134,20 +165,28 @@ def test_measurements_of_one_qubit_follow_each_other(quantum_device):
     assert got == pytest.approx([0.0, measure_duration])
 
 
-def test_consecutive_delays_of_distinct_qubits_start_together(quantum_device):
-    """qiskit splits a delay of several qubits into one per qubit, which idle together"""
-    circuit = _get_circuit(
-        [
-            gates.Delay(qubits=(0,), duration=1e-6),
-            gates.Delay(qubits=(1,), duration=2e-6),
-            gates.Rxy(0, math.pi, 0.0),
-        ]
-    )
+def test_gates_take_the_durations_they_compile_to(calibrated_device):
+    from quantify_scheduler import Schedule
+    from quantify_scheduler.backends.graph_compilation import SerialCompiler
+    from quantify_scheduler.operations.gate_library import CZ, Measure, Reset, Rxy
 
-    first_delay, second_delay, after = _get_start_times(quantum_device, circuit)
+    from libs.quantum_executor.quantify.device import get_gate_durations
 
-    assert first_delay == second_delay == 0.0
-    assert after == pytest.approx(2e-6)
+    durations = get_gate_durations(calibrated_device)
+    operations = {
+        durations.rotations["q12"]: Rxy(theta=90, phi=0, qubit="q12"),
+        durations.resets["q12"]: Reset("q12"),
+        durations.measures["q12"]: Measure("q12"),
+        durations.czs["q12_q13"]: CZ(qC="q12", qT="q13"),
+    }
+
+    for expected, operation in operations.items():
+        schedule = Schedule("duration")
+        schedule.add(operation)
+        compiled = SerialCompiler("test").compile(
+            schedule, config=calibrated_device.generate_compilation_config()
+        )
+        assert compiled.duration == pytest.approx(expected), operation.name
 
 
 def test_delays_of_one_qubit_follow_each_other(quantum_device):
@@ -517,25 +556,23 @@ def _get_circuit(native_gates: List[gates.Gate]) -> gates.NativeCircuit:
 
 def _get_kwargs(quantum_device) -> Dict[str, Any]:
     """Gets the device's arguments of get_circuit_schedule"""
-    from libs.quantum_executor.quantify.device import get_edge_names
+    from libs.quantum_executor.quantify.device import (
+        get_edge_names,
+        get_gate_durations,
+    )
 
     return {
         "element_names": _ELEMENTS,
         "edge_names": get_edge_names(quantum_device),
-        "measure_durations": {
-            name: _get_measure_duration(quantum_device, name) for name in _ELEMENTS
-        },
+        "durations": get_gate_durations(quantum_device),
     }
 
 
 def _get_measure_duration(quantum_device, element: str) -> float:
     """Gets the seconds a measurement of the device's transmon takes"""
-    from libs.quantum_executor.quantify.circuits import get_measure_duration
+    from libs.quantum_executor.quantify.device import get_gate_durations
 
-    measure = quantum_device.get_element(element).measure
-    return get_measure_duration(
-        measure.pulse_duration(), measure.acq_delay(), measure.integration_time()
-    )
+    return get_gate_durations(quantum_device).measures[element]
 
 
 def _get_start_times(quantum_device, circuit: gates.NativeCircuit) -> List[float]:

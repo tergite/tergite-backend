@@ -7,8 +7,15 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Added
+
+- Added `docs/how_circuits_run.md`, on what the backend does to a circuit that can change a job's results: when its
+  gates run, the 4 ns grid, resets and the phase turned on drives whose LO sits below the qubit
+
 ### Fixed
 
+- Fixed a circuit's qubits holding their state through another qubit's reset or measurement, as its gates ran one
+  after the other; each now runs as late as the gates after it on its own qubits let it, as the SDK's pulse schedules did
 - Fixed rz, a rotation's axis and a cal block's phase shifts turning the wrong way on a qubit whose drive LO sits below
   its frequency, as the qobj path's sign flip there went with it; they are negated there again, as the defcals' are
 
