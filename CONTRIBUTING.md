@@ -13,10 +13,6 @@
 Tergite is developed on a separate version control system and mirrored publicly on GitHub.
 If you are reading this on GitHub, then you are looking at a mirror. 
 
-## Versioning
-
-When versioning we follow the format `{year}.{month}.{patch_number}` e.g. `2023.12.0`.
-
 ## Contacting the Tergite Developers
 
 Since the GitHub repositories are only mirrors, no GitHub pull requests or GitHub issue/bug reports 
@@ -78,137 +74,133 @@ you will also most likely need to sign a [corporate CLA](https://tergite.github.
 
 All signed CLAs are emails to us at <quantum-nextlabs@chalmers.se>.
 
-## How to Test
+## Set up and test
 
-- Ensure you have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed. 
- (_You could simply have python +3.13 installed instead._)
-
-```shell
-wget -qO- https://astral.sh/uv/install.sh | sh
-# or use curl
-# curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-- Clone the repo
-
-```shell
-git clone git@github.com:tergite/tergite-backend.git
-cd tergite-backend
-```
-
-- Install dependencies, the same for devices on Qblox clusters and simulated ones
-
-```shell
-uv sync --dev
-```
-
-- Activate your environment
+Set up the project as the [README's quick start](./README.md#quick-start) does, up to
+`uv sync --dev`, then:
 
 ```shell
 source .venv/bin/activate
-```
-
-- Lint with ruff, as CI does: `ruff format` and `ruff check --fix` fix what they find
-
-```shell
 ruff format --check
 ruff check
-```
-
-- Optionally enable the pre-commit hook to run ruff
-
-```shell
-pre-commit install
-```
-
-- Run the tests by running the commands below at the root of the project: the most of them
-  on 4 workers, then alone those marked `real_time`, whose outcome depends on how fast the
-  machine works through the jobs against bookings.
-
-```shell
 pytest tests -n 4 --dist=worksteal -m "not real_time"
 pytest tests -m real_time
 ```
 
-## How to Install as a Service
+- `ruff format` and `ruff check --fix` fix what they find. `pre-commit install` runs them on
+  every commit.
+- Tests marked `real_time` depend on how fast the machine works through jobs against
+  bookings, so they run alone, after the rest.
+- The two-qubit simulated device's recalibration test runs all of tergite-tuner's nodes and
+  takes about three minutes.
 
-- Download the package for your machine from the release, a deb for amd64 or a pkg for macOS
-  arm64: `tergite-backend` runs devices on Qblox clusters and simulated ones.
+### Where the tests are
 
-- Install it. A deb asks for a first backend instance: its name, which is its `DEFAULT_PREFIX`,
-  device, port and MSS URL.
+| Folder | Tests |
+| --- | --- |
+| `tests/api/` | each router, through the test client |
+| `tests/services/` | the executors, the dispatcher and the other services |
+| `tests/` | everything else, including `test_migrations.py`, `test_packaging.py` and `test_styleguide.py` |
+| `tests/utils/` | shared helpers and fixtures, one file per job: `clients.py`, `workers.py`, `mss.py` (a mock MSS), `executors/`, `jobs.py`, … |
 
-```shell
-sudo apt install ./tergite-backend_<version>_amd64.deb
-```
+- `tests/conftest.py` calls `setup_test_env()` **before any app import**, because `settings`
+  reads the env file when it is imported. Keep that order when adding fixtures.
+- `tests/services/test_schedule_snapshots.py` checks that random circuits still play what they
+  did before the v2026.11 refactor. `dev/schedule_snapshots/generate.sh` regenerates the
+  snapshots.
+- `tests/test_styleguide.py` checks the style rules below that a parser can see.
+  `tests/fixtures/styleguide_baseline.txt` lists code that broke them when the test was
+  added. It only shrinks: a fix deletes its line, and nothing adds one.
 
-- Create any other instance, or the first on macOS, which asks nothing.
-  `--device` (`cluster`, the default, or `sim_1q` or `sim_2q`, a simulated device with one
-  transmon, or two and their coupler), `--port` and `--mss-url` override the defaults.
+### Before a merge request
 
-```shell
-sudo bcc-provision lab1
-# or for a simulator
-# sudo bcc-provision sim1 --device sim_2q --port 8001
-```
+- the full test suite;
+- tergite-frontend's [`dev/e2e_native_test.sh`](https://github.com/tergite/tergite-frontend/blob/main/dev/e2e_native_test.sh)
+  against this checkout: `BACKEND_PATH=../tergite-backend ./dev/e2e_native_test.sh`;
+- for performance-sensitive changes, `./dev/perf/record.sh <dir>`, then
+  `python3 dev/perf/compare.py dev/perf/baselines <dir>`. The numbers are your machine's, so
+  on a busy machine record the base commit too and compare the two;
+- the change tried on a running BCC with a simulated device and MSS.
 
-- Edit the instance's configs in `/etc/bcc/<name>/` for the device, and its starting
-  calibration in `/var/lib/bcc/<name>/calibration.seed.toml`, which recalibrations rewrite;
-  copy MSS's `public-mss-key.pem` to `/etc/bcc/<name>/` unless MSS runs on the same machine,
-  and give MSS the `[[backends]]` entry and `public-bcc-key.pem` that provisioning printed.
+CI (GitLab, mirrored by GitHub Actions) runs ruff and the test suite on every push, and builds
+the packages on every `v*` tag.
 
-- Start the instance, and on every boot. Its data is in `/var/lib/bcc/<name>/`.
+## Where to start
 
-```shell
-sudo systemctl enable --now bcc@lab1
-journalctl -u bcc@lab1 -f
-```
+| Task | Where |
+| --- | --- |
+| New endpoint | a router in `api/routers/`, a service function, and a `tests/api/test_*.py` case |
+| New setting | a field on `DeviceSettings` in `utils/config.py` **and** an entry in `.env.example` |
+| New table | a SQLModel table in the service's `store.py` or `dtos.py`, imported by `migrations/env.py`, and an Alembic revision |
+| New domain error | a subclass in `utils/exc.py`, and its status code in `api/errors.py` |
+| New event to MSS | a member of `DeviceEventName` in `services/external/mss/dtos.py`; see [docs/mss_events.md](./docs/mss_events.md#changing-an-events-schema) |
+| New job stage or scheduling rule | `services/scheduler/dispatcher.py`; see [docs/dispatcher.md](./docs/dispatcher.md) |
+| New executor | [docs/executors.md](./docs/executors.md#adding-an-executor) |
 
-## Build the Packages' Folder
+Read [DESIGN.md](./DESIGN.md) first for how the code is laid out.
 
-The deb and the macOS installer install `build/bcc`: uv's own build of Python, with the
-dependencies `uv.lock` pins and the backend's wheel installed into it, and the `bcc` that runs
-it. It is built for the machine's own OS and architecture, in a minute or two.
+## Conventions
 
-- Ensure you have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed.
+### Code structure
 
-```shell
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
+Code reads like an article: the overview first, the detail below it. New code follows these
+rules, and code a change touches is brought in line with them.
 
-- Clone the repo
+1. **A public function is a short list of calls**, each to a function named for the one thing
+   it does. Don't extract one-liners, and don't split performance-critical loops.
+2. **Callees sit below their callers.** A file runs: constants, public functions in the order
+   a caller uses them, then private helpers (`_name`) in the order they are first called.
+3. **A comment that labels a phase is a missing function.** `# Construct the pulse schedule`
+   becomes the name of a function.
+4. **Data is a struct; state gets a class.** Data is a Pydantic model, a frozen `@dataclass`,
+   an `Enum` or an `Exception`, with only derived views and `from_*`/`to_*` conversions. A
+   component that owns state across calls (a websocket, an instrument coordinator, the
+   dispatcher) is a class.
+5. **Stateless behaviour is a module-level function** with explicit arguments. No objects that
+   only carry other objects, no `Protocol` or ABC with one implementation, no inheritance to
+   share behaviour.
+6. **Dependencies arrive as arguments.** Nothing reads a global or `settings`, except the
+   composition roots (see [DESIGN.md](./DESIGN.md#startup)). Code that needs the database or MSS
+   is given the engine, store or client, never a URL.
+7. **One home per kind of thing.** Routes in `api/routers/`. `HTTPException` only in `api/`;
+   services raise the domain errors of `utils/exc.py`. Imports run `api → services → libs`.
+   Dev and test tooling in `dev/`.
+8. **Everything a device owns is keyed by the device.** One process serves several devices.
+9. **Prefer a reputable library to our own code.** The commit that adds our own says why.
+10. **Obvious beats clever.** Plain `if`/`else` over loops over tuples of fields or merged
+    dicts. A value that is only defined stays where it is used.
 
-```shell
-git clone git@github.com:tergite/tergite-backend.git
-cd tergite-backend
-```
+### Style
 
-- Build the folder
+- **`ruff format` and `ruff check` are authoritative**; CI fails on any finding.
+- **Names**: variables are nouns naming their content (`job_filter`, not `data`); functions
+  are verbs; booleans start with `is_`/`should_`. A thing that is constructed is a class;
+  anything else is got, so `get_*`, not `build_*`/`make_*`.
+- **Constants at the top** of the file, after imports.
+- **Type hints everywhere.** DTOs are Pydantic models, never bare dicts across a service
+  boundary.
+- **Docstrings**: one line where one line does; Google style (`Args:`, `Returns:`, `Raises:`)
+  where a function takes several arguments or raises domain errors.
+- **Comments must earn their place**: the constraint, the gotcha, the *why* the code cannot
+  say. Never restate the code or narrate a fix's history.
+- **No banner comments** (`# --- section ---`).
+- **Tests**: the name says what it tests.
+- **Licence header**: every Python file carries the Tergite Apache-2.0 header.
 
-```shell
-pkg/build.sh
-```
+### Commits and changelog
 
-- After the build, the app is `build/bcc/bcc`, which runs the Python beside it. You can run it.
+- One logical change per commit. A change to a file that a doc names updates that doc in the
+  same commit.
+- Every change users or operators notice gets a [CHANGELOG.md](./CHANGELOG.md) entry under
+  `[Unreleased]`, in `Added`/`Changed`/`Fixed`: one or two sentences on what changed and what
+  an operator would have hit before. The reasoning goes in the commit body.
+- A change to how circuits play is also recorded in [docs/how_circuits_run.md](./docs/how_circuits_run.md).
 
-```shell
-# serve the API, and run one heavy worker for preprocessing, executions and recalibrations
-# and `--light-workers` (default 1) for postprocessing, stopping them all if
-# any stops; it reads the .env file named by BCC_ENV_FILE, and takes `--port`, `--host`,
-# `--forwarded-allow-ips` and `--workers`, the number of API processes ($WEB_CONCURRENCY or 1)
-BCC_ENV_FILE="$PWD/.env" build/bcc/bcc start  # or just build/bcc/bcc, as start is the default
-# or one at a time: `build/bcc/bcc serve`, `build/bcc/bcc worker --kind heavy`, `build/bcc/bcc worker --kind light`
+### Releases
 
-# serve several devices from one process: each device's env file once; its API is then at
-# /<its DEFAULT_PREFIX>/..., say http://localhost:8000/loke/bookings, a path naming no device
-# reaching the first; each device gets a heavy worker, and the light workers postprocess every
-# device's jobs; in the shell, BCC_<NAME>, e.g.
-# BCC_MAX_IDLE_TIME, sets every device's <NAME> over its env file, and BCC_<PREFIX>_<NAME>,
-# e.g. BCC_LOKE_MAX_IDLE_TIME, one device's over that; see .env.example
-build/bcc/bcc start --env-file loke.env --env-file thor.env
-# or, as BCC_ENV_FILE may name several separated as in PATH
-BCC_ENV_FILE="$PWD/loke.env:$PWD/thor.env" build/bcc/bcc start
-```
+Versions are `{year}.{month}.{patch}`, e.g. `2026.06.0`. A release bumps the version in
+`pyproject.toml` and `api/__init__.py`, regenerates `uv.lock`, and dates the `[Unreleased]`
+section of the changelog.
 
 ## References
 

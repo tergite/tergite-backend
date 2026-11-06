@@ -7,6 +7,20 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.11.0-rc.10] - 2026-11-06
+
+### Changed
+
+- Changed the README back to a short quick start, and moved DESIGN.md's details into pages under `docs/` by reader:
+  the dispatcher, MSS events, executors and deployment, with the conventions in CONTRIBUTING.md
+
+### Fixed
+
+- Fixed `uv sync` and `uv tool install` picking Python 3.14, on which the pinned pydantic-core does not build;
+  the package now requires Python 3.13
+- Fixed a `.env` copied from `.env.example` stopping the backend at start, as its MSS URLs were placeholders;
+  they are now the defaults, MSS at `http://localhost:8002`
+
 ## [2026.11.0-rc.9] - 2026-11-05
 
 ### Added

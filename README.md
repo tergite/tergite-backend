@@ -3,6 +3,7 @@
 ![CI](https://github.com/tergite/tergite-backend/actions/workflows/ci.yml/badge.svg)
 
 The Backend in the [Tergite software stack](https://tergite.github.io/) of the WACQT quantum computer.
+It runs quantum jobs on devices controlled by Qblox clusters, or on simulated devices.
 
 **This project is developed by a core group of collaborators.**    
 **Chalmers Next Labs AB (CNL) takes on the role of managing and maintaining this project.**
@@ -15,16 +16,17 @@ If you are reading this on GitHub, then you are looking at a mirror.
 ## Dependencies
 
 - [Python 3.13](https://www.python.org/)
+- [uv](https://docs.astral.sh/uv/)
 
 ## Quick Start
 
-- Ensure you have [uv](https://docs.astral.sh/uv/getting-started/installation/) installed. 
- (_You could simply have python +3.13 installed instead._)
+This starts the backend from a checkout with a simulated one-qubit device, so it needs no
+hardware. To install it as a service instead, see [docs/deployment.md](./docs/deployment.md).
+
+- Install [uv](https://docs.astral.sh/uv/getting-started/installation/), if you don't have it.
 
 ```shell
-wget -qO- https://astral.sh/uv/install.sh | sh
-# or use curl
-# curl -LsSf https://astral.sh/uv/install.sh | sh
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 - Clone the repo
@@ -34,70 +36,36 @@ git clone git@github.com:tergite/tergite-backend.git
 cd tergite-backend
 ```
 
-- Install dependencies, the same for a device on Qblox clusters and for a simulated one
+- Install the dependencies and activate the environment
 
 ```shell
 uv sync --dev
-```
-
-- Activate your environment
-
-```shell
 source .venv/bin/activate
 ```
 
-- If you don't have a key certificate pair for MSS, generate them on the MSS machine 
-  and copy the public key certificate to the backend machine in this root folder.
+- Generate the backend's key pair. MSS checks the backend's events with its public key.
 
 ```shell
-## use param -aes-256-cbc for password-protection
-openssl genpkey -algorithm RSA -out private-mss-key.pem -pkeyopt rsa_keygen_bits:4096
-openssl rsa -pubout -in private-mss-key.pem -out public-mss-key.pem
-# scp public-mss-key.pem backend-host:~/tergite-backend/
-```
-
-- If you don't have a key certificate pair for BCC, generate them her 
-  and copy the public key certificate to the MSS machine in this `bcc_certs` folder and update its `mss-config.toml`
-
-```shell
-## use param -aes-256-cbc for password-protection
 openssl genpkey -algorithm RSA -out private-bcc-key.pem -pkeyopt rsa_keygen_bits:4096
 openssl rsa -pubout -in private-bcc-key.pem -out public-bcc-key.pem
-# scp public-bcc-key.pem backend-host:~/tergite-frontend/bcc_certs
-# then update the public_key_path for the backend in mss-config.toml of MSS
 ```
 
-- Copy the `.env.example` file to `.env` and update the environment variables there appropriately.
+- Put MSS's public key, `public-mss-key.pem`, in this folder: copy it from the MSS machine, or, if you
+  are not running MSS, generate a throwaway pair here.
+
+```shell
+openssl genpkey -algorithm RSA -out private-mss-key.pem -pkeyopt rsa_keygen_bits:4096
+openssl rsa -pubout -in private-mss-key.pem -out public-mss-key.pem
+```
+
+- Copy the example environment file. It expects MSS at `http://localhost:8002`; change
+  `BCC_MSS_MACHINE_ROOT_URL` if yours is elsewhere.
 
 ```shell
 cp .env.example .env
 ```
 
-- **For a device on Qblox clusters**, copy the quantify example config file `quantify-config.example.json` and `quantify-metadata.example.yml` into 
- the `quantify-config.json` and `quantify-metadata.yml` file and update the variables there in.    
- **Ignore this for a simulated device**, which needs neither
-
-```shell
-cp quantify-config.example.json quantify-config.json
-cp quantify-metadata.example.yml quantify-metadata.yml 
-```
-
-_Note: If you want to just run a dummy cluster, you can copy the one in the test fixtures_
-
-```shell
-cp tests/fixtures/generic-quantify-config.json quantify-config.json
-cp tests/fixtures/generic-quantify-config.yml quantify-metadata.yml
-```
-
-- Copy the backend example config file `backend_config.example.toml` into the `backend_config.toml` file and update the variables there in.
-
-```shell
-cp backend_config.example.toml backend_config.toml
-```
-
-_Note: For a simulated device, a chip behind dummy clusters, you can copy one of the test fixtures, with its
-calibration seed, dummy cluster and tergite-tuner configs; its `[simulator]` section is what makes it simulated
-(see [docs/configuration.md](docs/configuration.md#simulated-devices))_
+- Copy the configs of the simulated device
 
 ```shell
 cp tests/fixtures/backend_config.simq1.toml backend_config.toml
@@ -109,59 +77,28 @@ cp tests/fixtures/chip_node_config.toml node_config.calib.toml
 cp tests/fixtures/dummy_spi_config.calib.toml spi_config.calib.toml
 ```
 
-- Copy the example file for initial device calibrations `calibration.seed.example.toml` into the `calibration.seed.toml` file and update the variables accordingly. 
-
-```shell
-cp calibration.seed.example.toml calibration.seed.toml
-```
-
-- Run start script
+- Start the backend
 
 ```shell
 ./dev/start_bcc.sh
 ```
 
-- Open your browser at [http://localhost:8000/docs](http://localhost:8000/docs) to see the interactive API docs
+- Open [http://localhost:8000/docs](http://localhost:8000/docs) to see the interactive API docs.
 
-## Run or install with uv
-
-bcc is the package's command, so [uv](https://docs.astral.sh/uv/) runs it from a checkout, from its repository
-without installing it, or installs it as a [tool](https://docs.astral.sh/uv/guides/tools/) on the `PATH`. uv
-fetches the Python 3.13 it needs.
-
-- From a checkout, after the Quick Start's setup, which `./dev/start_bcc.sh` does too, besides decrypting a
-  SOPS-encrypted `.env`:
-
-```shell
-uv run bcc start
-```
-
-- Once, without installing it:
-
-```shell
-uvx --from git+https://github.com/tergite/tergite-backend@v<version> bcc start --env-file backend.env
-```
-
-- Installed as a tool; to change version, install the other tag with `--force`, and `uv tool uninstall
-  tergite-backend` removes it:
-
-```shell
-uv tool install git+https://github.com/tergite/tergite-backend@v<version>
-bcc start --env-file /etc/bcc/loke/backend.env
-```
-
-Outside a checkout, bcc reads the `.env` in the folder it starts in, or the env files `--env-file` or `BCC_ENV_FILE`
-name. The other files' defaults are in the checkout, so give each of them in the env file with an absolute path, as
-the packages' `bcc-provision` writes it: `BCC_STORAGE_ROOT`, `BCC_BOOKING_DB_URL`, `BCC_PRIVATE_KEY_FILE`,
-`BCC_MSS_PUBLIC_KEY_PATH`, `BCC_BACKEND_SETTINGS`, `BCC_CALIBRATION_SEED`, `BCC_QUANTIFY_CONFIG_FILE`,
-`BCC_QUANTIFY_METADATA_FILE` and the three `BCC_CALIBRATION_*_CONFIG_FILE`s. A tool runs where it is started rather
-than as a service; for a service, install the deb or the macOS installer.
+Without MSS running, the backend still starts; it keeps its events and sends them once MSS is up.
+To run a real device on Qblox clusters, see [docs/configuration.md](./docs/configuration.md).
 
 ## Documentation
 
-Find how the backend is built, and the conventions to follow when changing it, in [DESIGN.md](./DESIGN.md),
-and more documentation in the [docs folder](./docs). What the backend does to a circuit that can change a job's
-results, such as how it schedules gates, is in [docs/how_circuits_run.md](./docs/how_circuits_run.md).
+| Document | Read it to |
+| --- | --- |
+| [DESIGN.md](./DESIGN.md) | understand how the backend is built, before changing it |
+| [CONTRIBUTING.md](./CONTRIBUTING.md) | run the tests and follow the code conventions |
+| [docs/configuration.md](./docs/configuration.md) | configure a device, real or simulated |
+| [docs/deployment.md](./docs/deployment.md) | install and run the backend as a service |
+| [docs/how_circuits_run.md](./docs/how_circuits_run.md) | know what the backend does to a circuit that can change its results |
+| [docs/booking_and_queuing.md](./docs/booking_and_queuing.md) | know how bookings decide which job runs |
+| [docs/](./docs) | dig into the internals: the dispatcher, MSS events, auth, executors |
 
 ## Contribution Guidelines
 
