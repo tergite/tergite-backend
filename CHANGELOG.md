@@ -7,6 +7,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.11.0-rc.11] - 2026-11-06
+
 ### Fixed
 
 - Fixed a circuit with a syntax error outside its `cal` blocks failing its job with nothing after "is not valid
