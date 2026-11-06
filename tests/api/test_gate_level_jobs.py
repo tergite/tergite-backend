@@ -246,17 +246,37 @@ def test_circuit_that_measures_nothing_fails_its_job(
 
 
 @pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)
-def test_cz_of_uncoupled_qubits_fails_its_job(
-    client, worker, jobs_folder, mocker, fake_clock
+@pytest.mark.parametrize(
+    "body, message",
+    [
+        (
+            "x $3;\nc[0] = measure $0;",
+            "circuit bad has 4 qubits, but the device has 3",
+        ),
+        ("cz $1, $2;\nc[0] = measure $1;", "qubits q13 and q14 have no coupler"),
+    ],
+    ids=["too-many-qubits", "no-coupler"],
+)
+def test_a_circuit_that_does_not_fit_the_device_is_refused_at_upload(
+    client, worker, jobs_folder, mocker, fake_clock, body, message
 ):
-    circuit = get_circuit("cz", "cz $1, $2;\nc[0] = measure $1;", num_clbits=1)
-    job = get_circuit_job([circuit], shots=_SHOTS)
+    circuits = [
+        get_circuit("fine", "cz $0, $1;\nc[0] = measure $0;", num_clbits=1),
+        get_circuit("bad", body, num_clbits=1),
+    ]
+    job = get_circuit_job(circuits, shots=_SHOTS)
 
     with client as client:
-        got = _run_job(client, worker, job, mocker=mocker, jobs_folder=jobs_folder)
+        response = _upload_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
 
-    assert got.status == JobStatus.FAILED
-    assert got.failure_reason == "qubits q13 and q14 have no coupler"
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "message": message,
+        "circuit_index": 1,
+        "line": None,
+        "column": None,
+    }
+    assert get_stored_jobs() == []
 
 
 @pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)

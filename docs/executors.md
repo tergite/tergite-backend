@@ -52,10 +52,13 @@ declares; if not, the circuit has those.
 
 A circuit that measures no qubit is refused, since it has no results.
 
-**Refused at upload.** The upload translates each circuit into native gates (steps 1 and 2),
-so a circuit that does not translate is refused with 422 before the job is created: one that
-is not valid OpenQASM 3, a gate given the wrong parameters or qubits, a statement or gate that
-is not supported, or a `num_clbits` other than the OpenQASM's. The `detail` gives the reason,
+**Refused at upload.** The upload translates each circuit into native gates (steps 1 and 2)
+and checks them against the qubits and couplers of the device's config
+(`base/device_checks.py`), so a circuit the device cannot run is refused with 422 before the
+job is created: one that is not valid OpenQASM 3, a gate given the wrong parameters or
+qubits, a statement or gate that is not supported, a `num_clbits` other than the OpenQASM's,
+more qubits than the device has, or a CZ on qubits no coupler couples. The `detail` gives the
+reason,
 the circuit's index in the job file and, for a syntax error outside a `cal` block, its line
 (from 1) and column (from 0); they are `null` for any other error:
 
@@ -70,9 +73,11 @@ the circuit's index in the job file and, for a syntax error outside a `cal` bloc
 }
 ```
 
-What depends on the device and its calibration, such as a CZ on qubits without a coupler, an
-uncalibrated qubit or more qubits than the device has, fails the job in preprocessing, with
-the reason as its `failure_reason`.
+What depends on the calibration, as a gate on an uncalibrated qubit or a CZ whose coupler is
+not calibrated, is checked in preprocessing only: a job may wait in the queue, as behind a
+booking, while the device is recalibrated, so the calibration at upload need not be the one
+it runs on. Preprocessing checks the qubits and couplers again too. What fails there, or a
+circuit that measures no qubit, fails the job with the reason as its `failure_reason`.
 
 **Readout.** Each measurement is acquired on its own channel, numbered in the order the
 circuit measures. The `CircuitReadout` saved with the results maps each channel to its qubit

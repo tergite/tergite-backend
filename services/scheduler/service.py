@@ -20,12 +20,13 @@
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Iterable, List, Optional, Sequence, Tuple
 
 from fastapi import UploadFile
 from sqlmodel import or_
 
 from libs.quantum_executor.base.circuits import QasmCircuit
+from libs.quantum_executor.base.device_checks import check_circuit_fits_device
 from libs.quantum_executor.base.gates import NativeCircuit, PulseBlock
 from libs.quantum_executor.base.pulse_limits import (
     check_pulse_limits,
@@ -166,7 +167,8 @@ def submit_job_file(
     Raises:
         ConflictError: job_id {job_id} already exists
         InvalidCircuitError: a circuit the device cannot run, such as one that is not
-            valid OpenQASM 3; see qasm.to_native_circuit
+            valid OpenQASM 3 or needs a coupler the device lacks; see
+            qasm.to_native_circuit and device_checks.check_circuit_fits_device
         UnauthorizedError: the job's project may not send pulse-level jobs
         InvalidRequestError: a pulse-level block beyond the device's limits; see
             pulse_limits.check_pulse_limits
@@ -386,12 +388,13 @@ def get_recalibration_info(device: DeviceResources) -> RecalibrationInfo:
 def _check_circuits(
     device: DeviceResources, upload_file: UploadFile, credentials: MSSTokenClaims
 ) -> None:
-    """Refuses a job whose circuits do not translate into native gates, or a pulse-level
-    job its project may not send or beyond the device's limits; what depends on the
-    device's calibration, as its couplers, is left to the job's preprocessing
+    """Refuses a job whose circuits do not translate into native gates or do not fit the
+    device's qubits and couplers, or a pulse-level job its project may not send or beyond
+    the device's limits; what the calibration holds, as which qubits are calibrated, is
+    left to the job's preprocessing, as the device may be recalibrated before it runs
 
     Raises:
-        InvalidCircuitError: a circuit that does not translate, with the reason
+        InvalidCircuitError: a circuit that does not translate or fit, with the reason
         UnauthorizedError: the job's project may not send pulse-level jobs
         InvalidRequestError: a pulse-level block beyond the device's limits
     """
@@ -400,8 +403,15 @@ def _check_circuits(
     upload_file.file.seek(0)
     backend_config = device.executor_options.backend_config
     dt = backend_config.general_config.dt
+    device_config = backend_config.device_config
     circuits = [
-        _to_native_circuit(circuit, index=index, dt=dt)
+        _get_fitting_circuit(
+            circuit,
+            index=index,
+            dt=dt,
+            qubit_ids=device_config.qubit_numbers,
+            couplings=[pair for pair, _ in device_config.qubit_ids_coupler_map],
+        )
         for index, circuit in enumerate(job_file.params.circuits)
     ]
     if not any(isinstance(g, PulseBlock) for c in circuits for g in c.gates):
@@ -420,22 +430,35 @@ def _check_circuits(
         raise InvalidRequestError(f"{exp}") from exp
 
 
-def _to_native_circuit(circuit: QasmCircuit, index: int, dt: float) -> NativeCircuit:
-    """Translates a job file's circuit into native gates
+def _get_fitting_circuit(
+    circuit: QasmCircuit,
+    index: int,
+    dt: float,
+    qubit_ids: Sequence[int],
+    couplings: Iterable[Tuple[int, int]],
+) -> NativeCircuit:
+    """Translates a job file's circuit into native gates that fit the device's qubits and
+    couplers
 
     Args:
         circuit: the circuit, as uploaded
         index: the circuit's index in the job file's circuits
         dt: the device's sample time in seconds
+        qubit_ids: the numbers in the device's qubits' ids, in order
+        couplings: the pairs of qubits the device's couplers couple, by the numbers in
+            their ids
 
     Returns:
         the circuit of native gates
 
     Raises:
-        InvalidCircuitError: the circuit does not translate, with the reason and index
+        InvalidCircuitError: the circuit does not translate or fit, with the reason and
+            index
     """
     try:
-        return to_native_circuit(circuit, dt=dt)
+        native_circuit = to_native_circuit(circuit, dt=dt)
+        check_circuit_fits_device(native_circuit, qubit_ids, couplings=couplings)
+        return native_circuit
     except UnsupportedCircuitError as exp:
         raise InvalidCircuitError(
             f"{exp}", circuit_index=index, line=exp.line, column=exp.column

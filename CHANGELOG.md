@@ -11,9 +11,10 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 - Changed a circuit's `num_clbits` in a job file to be optional, the circuit having its OpenQASM's classical bits when it
   is left out, where before a job file without it was refused at upload with 400
-- Changed a circuit that does not translate into native gates, such as one that is not valid OpenQASM 3, to be refused
-  at upload with 422, its detail giving the circuit's index and a syntax error's line and column, where before the job
-  was taken and failed in preprocessing
+- Changed a circuit the device cannot run, such as one that is not valid OpenQASM 3, has more qubits than the device or
+  a CZ on uncoupled qubits, to be refused at upload with 422, its detail giving the circuit's index and a syntax error's
+  line and column, where before the job was taken and failed in preprocessing; a gate on an uncalibrated qubit still
+  fails in preprocessing, as the device may be recalibrated while the job waits
 
 ## [2026.11.0-rc.11] - 2026-11-06
 
