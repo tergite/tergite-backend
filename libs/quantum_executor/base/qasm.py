@@ -137,7 +137,7 @@ def to_native_circuit(circuit: QasmCircuit, dt: float) -> gates.NativeCircuit:
     Raises:
         UnsupportedCircuitError: circuit {name} is not valid OpenQASM 3: {error}
         UnsupportedCircuitError: circuit {name} declares {n} classical bits, but its
-            OpenQASM has {m}
+            OpenQASM has {m}; a circuit without num_clbits has its OpenQASM's
         UnsupportedCircuitError: gate {name} is not supported
         UnsupportedCircuitError: gate {name} has a parameter that is not a number
         UnsupportedCircuitError: gate {name} takes {n} parameters and {m} qubits, but
@@ -151,7 +151,7 @@ def to_native_circuit(circuit: QasmCircuit, dt: float) -> gates.NativeCircuit:
         _add_statement(scope, statement)
 
     num_clbits = sum(len(bits) for bits in scope.clbits.values())
-    if num_clbits != circuit.num_clbits:
+    if circuit.num_clbits is not None and num_clbits != circuit.num_clbits:
         raise UnsupportedCircuitError(
             f"circuit {circuit.name} declares {circuit.num_clbits} classical bits, "
             f"but its OpenQASM has {num_clbits}"

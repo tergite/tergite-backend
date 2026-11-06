@@ -1523,7 +1523,7 @@
       },
       "QasmCircuit": {
         "additionalProperties": false,
-        "description": "A circuit of a gate-level job, written in OpenQASM 3",
+        "description": "A circuit of a gate-level job, written in OpenQASM 3\n\nnum_clbits, if given, must be the number of classical bits its OpenQASM declares;\nif not, it is that number.",
         "properties": {
           "metadata": {
             "additionalProperties": true,
@@ -1536,9 +1536,17 @@
             "type": "string"
           },
           "num_clbits": {
-            "minimum": 0,
-            "title": "Num Clbits",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Num Clbits"
           },
           "qasm": {
             "title": "Qasm",
@@ -1547,8 +1555,7 @@
         },
         "required": [
           "name",
-          "qasm",
-          "num_clbits"
+          "qasm"
         ],
         "title": "QasmCircuit",
         "type": "object"

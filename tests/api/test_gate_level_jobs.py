@@ -208,6 +208,25 @@ def test_quantify_averaged_iq_memory_has_one_point_per_clbit(
 
 
 @pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)
+def test_a_circuit_without_num_clbits_has_those_its_qasm_declares(
+    client, worker, jobs_folder, mocker, fake_clock
+):
+    from tests.utils.executors.quantify import use_excited_transmons
+
+    use_excited_transmons(mocker, excited={"q12"})
+    circuit = get_circuit("x", "x $0;\nc[1] = measure $0;", num_clbits=2)
+    del circuit["num_clbits"]
+    job = get_circuit_job([circuit], shots=_SHOTS)
+
+    with client as client:
+        got = _run_job(client, worker, job, mocker=mocker, jobs_folder=jobs_folder)
+
+    assert got.status == JobStatus.SUCCESSFUL
+    assert [(c.name, c.num_clbits) for c in got.result.circuits] == [("x", 2)]
+    assert got.result.memory == [["0x2"] * _SHOTS]
+
+
+@pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)
 def test_unsupported_circuit_fails_its_job_with_the_reason(
     client, worker, jobs_folder, mocker, fake_clock
 ):

@@ -34,7 +34,9 @@ seconds quantify takes to import.
 ## Gate-level jobs
 
 A job file's `params` (`CircuitJobParams`, in `services/scheduler/dtos.py`) hold OpenQASM 3
-circuits, with `shots`, `meas_level` (1 or 2) and `meas_return`.
+circuits, with `shots`, `meas_level` (1 or 2) and `meas_return`. Each circuit has a `name`, its
+`qasm` and, optionally, `num_clbits`: if given, it must match the classical bits the OpenQASM
+declares; if not, the circuit has those.
 
 1. **Parse.** `base/qasm.py` parses each circuit with `openpulse`.
 2. **Translate to native gates** (`base/gates.py`): `Rxy`, `Rz`, `CZ`, `Measure`, `Reset`,

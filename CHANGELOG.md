@@ -7,6 +7,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Changed
+
+- Changed a circuit's `num_clbits` in a job file to be optional, the circuit having its OpenQASM's classical bits when it
+  is left out, where before a job file without it was refused at upload with 400
+
 ## [2026.11.0-rc.11] - 2026-11-06
 
 ### Fixed
