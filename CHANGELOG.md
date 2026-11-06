@@ -16,6 +16,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   line and column, where before the job was taken and failed in preprocessing; a gate on an uncalibrated qubit still
   fails in preprocessing, as the device may be recalibrated while the job waits
 
+### Fixed
+
+- Fixed an expression that cannot be computed, as in `rx(1/0) $0;`, making the upload answer 500; it is refused with
+  422, e.g. "gate rx has a parameter that cannot be computed: division by zero"
+
 ## [2026.11.0-rc.11] - 2026-11-06
 
 ### Fixed

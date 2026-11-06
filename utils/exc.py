@@ -123,6 +123,18 @@ class UnsupportedCircuitError(BaseBccException):
         self.column = column
 
 
+class UncomputableExpressionError(UnsupportedCircuitError):
+    """Error when an expression of a circuit cannot be computed, as on a division by zero
+
+    Attributes:
+        reason: why it cannot, e.g. division by zero
+    """
+
+    def __init__(self, reason: str):
+        super().__init__(f"an expression cannot be computed: {reason}")
+        self.reason = reason
+
+
 class InvalidCircuitError(BaseBccException):
     """Error when a job file holds a circuit the device cannot run, whatever its state
 

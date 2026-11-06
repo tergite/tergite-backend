@@ -317,8 +317,33 @@ def test_a_syntax_error_is_refused_at_upload_saying_where_it_is(
             "gate U takes 3 parameters and 1 qubit, but got 2 parameters",
         ),
         ("c[0] = measure $0;\nif (c[0]) { x $0; }", "if statements are not supported"),
+        (
+            "rx(1/0) $0;\nc[0] = measure $0;",
+            "gate rx has a parameter that cannot be computed: division by zero",
+        ),
+        (
+            "rz(10**400) $0;\nc[0] = measure $0;",
+            "gate rz has a parameter that cannot be computed: overflow",
+        ),
+        (
+            "ry(log(0)) $0;\nc[0] = measure $0;",
+            "gate ry has a parameter that cannot be computed: math domain error",
+        ),
+        (
+            "qubit[1/0] q;\nc[0] = measure $0;",
+            "an expression cannot be computed: division by zero",
+        ),
     ],
-    ids=["parameter-missing", "qubit-missing", "too-few-parameters", "if-statement"],
+    ids=[
+        "parameter-missing",
+        "qubit-missing",
+        "too-few-parameters",
+        "if-statement",
+        "division-by-zero",
+        "overflow",
+        "math-domain-error",
+        "register-size-of-division-by-zero",
+    ],
 )
 def test_a_circuit_that_does_not_translate_is_refused_at_upload_with_the_reason(
     client, worker, jobs_folder, mocker, fake_clock, body, message

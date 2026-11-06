@@ -18,7 +18,7 @@ from typing import Callable, Dict, Mapping
 
 from openpulse import ast
 
-from utils.exc import UnsupportedCircuitError
+from utils.exc import UncomputableExpressionError, UnsupportedCircuitError
 
 SECONDS_PER_UNIT = {"s": 1.0, "ms": 1e-3, "us": 1e-6, "ns": 1e-9}
 # OpenQASM's constants, by their ASCII and their Unicode names
@@ -62,8 +62,11 @@ def get_number(expression: ast.Expression, parameters: Mapping[str, complex]) ->
 
     Raises:
         UnsupportedCircuitError: {expression} is not a number
+        UncomputableExpressionError: an expression cannot be computed: {reason}
     """
     value = get_complex(expression, parameters)
+    if not cmath.isfinite(value):
+        raise UncomputableExpressionError("overflow")
     if abs(value.imag) > 1e-12:
         raise UnsupportedCircuitError(f"{value} is not a real number")
     return value.real
@@ -83,6 +86,7 @@ def get_complex(
 
     Raises:
         UnsupportedCircuitError: {expression} is not a number
+        UncomputableExpressionError: an expression cannot be computed: {reason}
     """
     if isinstance(expression, (ast.IntegerLiteral, ast.FloatLiteral)):
         return complex(expression.value)
@@ -99,14 +103,15 @@ def get_complex(
     elif isinstance(expression, ast.BinaryExpression):
         operation = BINARY_OPERATIONS.get(expression.op.name)
         if operation is not None:
-            return operation(
+            return _compute(
+                operation,
                 get_complex(expression.lhs, parameters),
                 get_complex(expression.rhs, parameters),
             )
     elif isinstance(expression, ast.FunctionCall):
         function = FUNCTIONS.get(expression.name.name)
         if function is not None and len(expression.arguments) == 1:
-            return function(get_complex(expression.arguments[0], parameters))
+            return _compute(function, get_complex(expression.arguments[0], parameters))
     raise UnsupportedCircuitError(f"{type(expression).__name__} is not a number")
 
 
@@ -135,3 +140,24 @@ def get_seconds(duration: ast.Expression, dt: float) -> float:
     if unit not in SECONDS_PER_UNIT:
         raise UnsupportedCircuitError(f"unit {unit} is not supported")
     return float(duration.value) * SECONDS_PER_UNIT[unit]
+
+
+def _compute(operation: Callable[..., complex], *operands: complex) -> complex:
+    """Applies the operation to the operands
+
+    Raises:
+        UncomputableExpressionError: an expression cannot be computed: division by zero
+        UncomputableExpressionError: an expression cannot be computed: overflow
+        UncomputableExpressionError: an expression cannot be computed: math domain error
+    """
+    try:
+        value = operation(*operands)
+    except ZeroDivisionError as exp:
+        raise UncomputableExpressionError("division by zero") from exp
+    except OverflowError as exp:
+        raise UncomputableExpressionError("overflow") from exp
+    except ValueError as exp:
+        raise UncomputableExpressionError(f"{exp}") from exp
+    if not cmath.isfinite(value):
+        raise UncomputableExpressionError("overflow")
+    return value

@@ -29,7 +29,7 @@ from openpulse import ast
 from openqasm3._antlr.qasm3Lexer import qasm3Lexer
 from openqasm3._antlr.qasm3Parser import qasm3Parser
 
-from utils.exc import UnsupportedCircuitError
+from utils.exc import UncomputableExpressionError, UnsupportedCircuitError
 
 from . import gates
 from .circuits import QasmCircuit
@@ -140,8 +140,11 @@ def to_native_circuit(circuit: QasmCircuit, dt: float) -> gates.NativeCircuit:
             OpenQASM has {m}; a circuit without num_clbits has its OpenQASM's
         UnsupportedCircuitError: gate {name} is not supported
         UnsupportedCircuitError: gate {name} has a parameter that is not a number
+        UnsupportedCircuitError: gate {name} has a parameter that cannot be computed:
+            {reason}
         UnsupportedCircuitError: gate {name} takes {n} parameters and {m} qubits, but
             got {k} parameters
+        UnsupportedCircuitError: an expression cannot be computed: {reason}
         UnsupportedCircuitError: unit {unit} is not supported
         UnsupportedCircuitError: {statements} are not supported
     """
@@ -356,6 +359,8 @@ def _add_gate(
     Raises:
         UnsupportedCircuitError: gate {name} is not supported
         UnsupportedCircuitError: gate {name} has a parameter that is not a number
+        UnsupportedCircuitError: gate {name} has a parameter that cannot be computed:
+            {reason}
         UnsupportedCircuitError: gate {name} takes {n} parameters and {m} qubits, but
             got {k} parameters
     """
@@ -374,6 +379,10 @@ def _add_gate(
         raise UnsupportedCircuitError(f"gate {name} with a duration is not supported")
     try:
         params = [get_number(argument, parameters) for argument in gate.arguments]
+    except UncomputableExpressionError as exp:
+        raise UnsupportedCircuitError(
+            f"gate {name} has a parameter that cannot be computed: {exp.reason}"
+        ) from exp
     except UnsupportedCircuitError as exp:
         raise UnsupportedCircuitError(
             f"gate {name} has a parameter that is not a number"
