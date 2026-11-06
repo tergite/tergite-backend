@@ -37,7 +37,7 @@ maintainers = [
 version = "v2026.11.0-rc.9"
 description = "the Backend of the Tergite software stack of the WACQT Quantum Computer."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<3.14"
 keywords = ["quantum", "quantify", "qutip"]
 license = {file = "LICENSE.txt"}
 classifiers = [
