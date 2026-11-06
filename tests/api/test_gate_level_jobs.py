@@ -15,6 +15,7 @@ On the quantify executor, the dummy clusters acquire nothing meaningful, so each
 transmon's acquisitions are made those of a state the test chooses.
 """
 
+import tracemalloc
 from pathlib import Path
 from typing import Any, Dict, Generator, List
 
@@ -280,6 +281,61 @@ def test_a_circuit_that_does_not_fit_the_device_is_refused_at_upload(
 
 
 @pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)
+@pytest.mark.parametrize(
+    "body, message",
+    [
+        (
+            "qubit[100000000] q;\nc[0] = measure q[0];",
+            "circuit huge has 100000000 qubits, but the device has 3",
+        ),
+        (
+            "qreg q[100000000];\nc[0] = measure q[0];",
+            "circuit huge has 100000000 qubits, but the device has 3",
+        ),
+        (
+            "x $99999999;\nbarrier;\nc[0] = measure $0;",
+            "circuit huge has 100000000 qubits, but the device has 3",
+        ),
+        (
+            "bit[100000000] d;\nc[0] = measure $0;",
+            "circuit huge has 100000001 classical bits, but a circuit may have at most "
+            "1024",
+        ),
+        (
+            "creg d[100000000];\nc[0] = measure $0;",
+            "circuit huge has 100000001 classical bits, but a circuit may have at most "
+            "1024",
+        ),
+    ],
+    ids=["qubit", "qreg", "physical-qubit", "bit", "creg"],
+)
+def test_a_huge_register_is_refused_at_upload_without_being_made(
+    client, worker, jobs_folder, mocker, fake_clock, body, message
+):
+    """A register of 10^8 bits, made, would take hundreds of megabytes"""
+    circuit = get_circuit("huge", body, num_clbits=1)
+    job = get_circuit_job([circuit], shots=_SHOTS)
+
+    with client as client:
+        tracemalloc.start()
+        try:
+            response = _upload_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+            _, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+
+    assert peak < 50 * 2**20
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "message": message,
+        "circuit_index": 0,
+        "line": None,
+        "column": None,
+    }
+    assert get_stored_jobs() == []
+
+
+@pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)
 def test_a_syntax_error_is_refused_at_upload_saying_where_it_is(
     client, worker, jobs_folder, mocker, fake_clock
 ):
@@ -333,6 +389,14 @@ def test_a_syntax_error_is_refused_at_upload_saying_where_it_is(
             "qubit[1/0] q;\nc[0] = measure $0;",
             "an expression cannot be computed: division by zero",
         ),
+        (
+            "qubit[-2] q;\nc[0] = measure $0;",
+            "a register's size must be a whole number, not -2",
+        ),
+        (
+            "bit[2.5] d;\nc[0] = measure $0;",
+            "a register's size must be a whole number, not 2.5",
+        ),
     ],
     ids=[
         "parameter-missing",
@@ -343,6 +407,8 @@ def test_a_syntax_error_is_refused_at_upload_saying_where_it_is(
         "overflow",
         "math-domain-error",
         "register-size-of-division-by-zero",
+        "negative-register-size",
+        "fractional-register-size",
     ],
 )
 def test_a_circuit_that_does_not_translate_is_refused_at_upload_with_the_reason(

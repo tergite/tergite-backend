@@ -57,8 +57,10 @@ and checks them against the qubits and couplers of the device's config
 (`base/device_checks.py`), so a circuit the device cannot run is refused with 422 before the
 job is created: one that is not valid OpenQASM 3, a gate given the wrong parameters or
 qubits, a statement or gate that is not supported, a `num_clbits` other than the OpenQASM's,
-more qubits than the device has, or a CZ on qubits no coupler couples. The `detail` gives the
-reason,
+more qubits than the device has, more than 1024 classical bits (`MAX_CLBITS`), or a CZ on
+qubits no coupler couples. The qubits and classical bits are counted from the registers'
+declared sizes before any register is made, so a huge one, as `qubit[100000000] q;`, is
+refused at once. The `detail` gives the reason,
 the circuit's index in the job file and, for a syntax error outside a `cal` block, its line
 (from 1) and column (from 0); they are `null` for any other error:
 

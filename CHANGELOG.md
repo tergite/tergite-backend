@@ -20,6 +20,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 - Fixed an expression that cannot be computed, as in `rx(1/0) $0;`, making the upload answer 500; it is refused with
   422, e.g. "gate rx has a parameter that cannot be computed: division by zero"
+- Fixed a huge register, as `qubit[100000000] q;`, being made at upload before the circuit's qubits were counted, taking
+  seconds and gigabytes of the API's memory; it is refused with 422, as is a circuit of more than 1024 classical bits
 
 ## [2026.11.0-rc.11] - 2026-11-06
 

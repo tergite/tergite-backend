@@ -36,6 +36,8 @@ from .circuits import QasmCircuit
 from .expressions import get_number, get_seconds
 from .pulses import get_pulse_block
 
+# the most classical bits a circuit may declare, checked before its registers are made
+MAX_CLBITS = 1024
 # the statements refused by name, which their AST classes do not say plainly
 _STATEMENT_NAMES = {
     "BranchingStatement": "if statements",
@@ -115,7 +117,9 @@ class _Scope:
     native_gates: List[gates.Gate] = field(default_factory=list)
 
 
-def to_native_circuit(circuit: QasmCircuit, dt: float) -> gates.NativeCircuit:
+def to_native_circuit(
+    circuit: QasmCircuit, dt: float, max_qubits: Optional[int] = None
+) -> gates.NativeCircuit:
     """Parses the circuit's OpenQASM 3 and translates its gates into native gates
 
     Gates beyond the native ones are decomposed into them, up to a global phase: those of
@@ -130,12 +134,18 @@ def to_native_circuit(circuit: QasmCircuit, dt: float) -> gates.NativeCircuit:
     Args:
         circuit: the circuit as uploaded
         dt: the device's sample time in seconds, which delays in dt are counted in
+        max_qubits: the qubits of the device, beyond which the circuit is refused
+            before its registers are made; None for no limit
 
     Returns:
         the circuit of native gates
 
     Raises:
         UnsupportedCircuitError: circuit {name} is not valid OpenQASM 3: {error}
+        UnsupportedCircuitError: circuit {name} has {n} qubits, but the device has {m}
+        UnsupportedCircuitError: circuit {name} has {n} classical bits, but a circuit
+            may have at most {MAX_CLBITS}
+        UnsupportedCircuitError: a register's size must be a whole number, not {size}
         UnsupportedCircuitError: circuit {name} declares {n} classical bits, but its
             OpenQASM has {m}; a circuit without num_clbits has its OpenQASM's
         UnsupportedCircuitError: gate {name} is not supported
@@ -149,7 +159,20 @@ def to_native_circuit(circuit: QasmCircuit, dt: float) -> gates.NativeCircuit:
         UnsupportedCircuitError: {statements} are not supported
     """
     program = _parse(circuit)
-    scope = _Scope(dt=dt, num_qubits=_get_num_qubits(program))
+    num_qubits = _get_num_qubits(program)
+    if max_qubits is not None and num_qubits > max_qubits:
+        raise UnsupportedCircuitError(
+            f"circuit {circuit.name} has {num_qubits} qubits, "
+            f"but the device has {max_qubits}"
+        )
+    num_declared_clbits = _get_num_declared_clbits(program)
+    if num_declared_clbits > MAX_CLBITS:
+        raise UnsupportedCircuitError(
+            f"circuit {circuit.name} has {num_declared_clbits} classical bits, "
+            f"but a circuit may have at most {MAX_CLBITS}"
+        )
+
+    scope = _Scope(dt=dt, num_qubits=num_qubits)
     for statement in program.statements:
         _add_statement(scope, statement)
 
@@ -230,9 +253,28 @@ class _SyntaxErrorListener(ErrorListener):
         self.errors.append(_SyntaxError(line=line, column=column, message=msg))
 
 
+def _get_num_declared_clbits(program: ast.Program) -> int:
+    """The number of the classical bits the program's bit registers declare, counted
+    without making the registers
+
+    Raises:
+        UnsupportedCircuitError: a register's size must be a whole number, not {size}
+    """
+    return sum(
+        _get_size(statement.type.size)
+        for statement in program.statements
+        if isinstance(statement, ast.ClassicalDeclaration)
+        and isinstance(statement.type, ast.BitType)
+    )
+
+
 def _get_num_qubits(program: ast.Program) -> int:
     """The number of the program's qubits: its declared ones, or one past the highest
-    physical qubit it names"""
+    physical qubit it names; counted without making the registers
+
+    Raises:
+        UnsupportedCircuitError: a register's size must be a whole number, not {size}
+    """
     declared = sum(
         _get_size(statement.size)
         for statement in program.statements
@@ -616,8 +658,20 @@ def _broadcast(operands: List[List[int]]) -> Iterator[List[int]]:
 
 
 def _get_size(size: ast.Expression | None) -> int:
-    """The size of a register as declared, one if it states none"""
-    return 1 if size is None else int(get_number(size, {}))
+    """The size of a register as declared, one if it states none
+
+    Raises:
+        UnsupportedCircuitError: a register's size must be a whole number, not {size}
+    """
+    if size is None:
+        return 1
+    value = get_number(size, {})
+    if value < 0 or not value.is_integer():
+        shown = int(value) if value.is_integer() else value
+        raise UnsupportedCircuitError(
+            f"a register's size must be a whole number, not {shown}"
+        )
+    return int(value)
 
 
 def _get_decomposition(

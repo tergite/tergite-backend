@@ -456,7 +456,7 @@ def _get_fitting_circuit(
             index
     """
     try:
-        native_circuit = to_native_circuit(circuit, dt=dt)
+        native_circuit = to_native_circuit(circuit, dt=dt, max_qubits=len(qubit_ids))
         check_circuit_fits_device(native_circuit, qubit_ids, couplings=couplings)
         return native_circuit
     except UnsupportedCircuitError as exp:
