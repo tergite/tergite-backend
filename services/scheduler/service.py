@@ -409,6 +409,7 @@ def _check_circuits(
             circuit,
             index=index,
             dt=dt,
+            max_clbits=backend_config.general_config.max_clbits,
             qubit_ids=device_config.qubit_numbers,
             couplings=[pair for pair, _ in device_config.qubit_ids_coupler_map],
         )
@@ -434,6 +435,7 @@ def _get_fitting_circuit(
     circuit: QasmCircuit,
     index: int,
     dt: float,
+    max_clbits: int,
     qubit_ids: Sequence[int],
     couplings: Iterable[Tuple[int, int]],
 ) -> NativeCircuit:
@@ -444,6 +446,7 @@ def _get_fitting_circuit(
         circuit: the circuit, as uploaded
         index: the circuit's index in the job file's circuits
         dt: the device's sample time in seconds
+        max_clbits: the most classical bits the device takes in a circuit
         qubit_ids: the numbers in the device's qubits' ids, in order
         couplings: the pairs of qubits the device's couplers couple, by the numbers in
             their ids
@@ -456,7 +459,9 @@ def _get_fitting_circuit(
             index
     """
     try:
-        native_circuit = to_native_circuit(circuit, dt=dt, max_qubits=len(qubit_ids))
+        native_circuit = to_native_circuit(
+            circuit, dt=dt, max_qubits=len(qubit_ids), max_clbits=max_clbits
+        )
         check_circuit_fits_device(native_circuit, qubit_ids, couplings=couplings)
         return native_circuit
     except UnsupportedCircuitError as exp:

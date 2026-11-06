@@ -36,8 +36,6 @@ from .circuits import QasmCircuit
 from .expressions import get_number, get_seconds
 from .pulses import get_pulse_block
 
-# the most classical bits a circuit may declare, checked before its registers are made
-MAX_CLBITS = 1024
 # the statements refused by name, which their AST classes do not say plainly
 _STATEMENT_NAMES = {
     "BranchingStatement": "if statements",
@@ -118,7 +116,10 @@ class _Scope:
 
 
 def to_native_circuit(
-    circuit: QasmCircuit, dt: float, max_qubits: Optional[int] = None
+    circuit: QasmCircuit,
+    dt: float,
+    max_qubits: Optional[int] = None,
+    max_clbits: Optional[int] = None,
 ) -> gates.NativeCircuit:
     """Parses the circuit's OpenQASM 3 and translates its gates into native gates
 
@@ -136,6 +137,8 @@ def to_native_circuit(
         dt: the device's sample time in seconds, which delays in dt are counted in
         max_qubits: the qubits of the device, beyond which the circuit is refused
             before its registers are made; None for no limit
+        max_clbits: the most classical bits the device takes, beyond which the circuit
+            is refused before its registers are made; None for no limit
 
     Returns:
         the circuit of native gates
@@ -143,8 +146,8 @@ def to_native_circuit(
     Raises:
         UnsupportedCircuitError: circuit {name} is not valid OpenQASM 3: {error}
         UnsupportedCircuitError: circuit {name} has {n} qubits, but the device has {m}
-        UnsupportedCircuitError: circuit {name} has {n} classical bits, but a circuit
-            may have at most {MAX_CLBITS}
+        UnsupportedCircuitError: circuit {name} has {n} classical bits, but the device
+            takes at most {max_clbits}
         UnsupportedCircuitError: a register's size must be a whole number, not {size}
         UnsupportedCircuitError: circuit {name} declares {n} classical bits, but its
             OpenQASM has {m}; a circuit without num_clbits has its OpenQASM's
@@ -166,10 +169,10 @@ def to_native_circuit(
             f"but the device has {max_qubits}"
         )
     num_declared_clbits = _get_num_declared_clbits(program)
-    if num_declared_clbits > MAX_CLBITS:
+    if max_clbits is not None and num_declared_clbits > max_clbits:
         raise UnsupportedCircuitError(
             f"circuit {circuit.name} has {num_declared_clbits} classical bits, "
-            f"but a circuit may have at most {MAX_CLBITS}"
+            f"but the device takes at most {max_clbits}"
         )
 
     scope = _Scope(dt=dt, num_qubits=num_qubits)

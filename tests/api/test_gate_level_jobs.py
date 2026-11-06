@@ -298,12 +298,12 @@ def test_a_circuit_that_does_not_fit_the_device_is_refused_at_upload(
         ),
         (
             "bit[100000000] d;\nc[0] = measure $0;",
-            "circuit huge has 100000001 classical bits, but a circuit may have at most "
+            "circuit huge has 100000001 classical bits, but the device takes at most "
             "1024",
         ),
         (
             "creg d[100000000];\nc[0] = measure $0;",
-            "circuit huge has 100000001 classical bits, but a circuit may have at most "
+            "circuit huge has 100000001 classical bits, but the device takes at most "
             "1024",
         ),
     ],
@@ -333,6 +333,56 @@ def test_a_huge_register_is_refused_at_upload_without_being_made(
         "column": None,
     }
     assert get_stored_jobs() == []
+
+
+@pytest.mark.parametrize(
+    "client, worker, body, message",
+    [
+        pytest.param(
+            *_QUANTIFY_CLIENT_AND_WORKER[0].values,
+            "bit[1024] d;\nc[0] = measure $0;",
+            "circuit wide has 1025 classical bits, but the device takes at most 1024",
+            id="default-limit",
+        ),
+        pytest.param(
+            *_SIM_2Q_CLIENT_AND_WORKER.values,
+            "bit[8] d;\nc[0] = measure $0;",
+            "circuit wide has 9 classical bits, but the device takes at most 8",
+            id="device-s-own-limit",
+        ),
+    ],
+)
+def test_a_circuit_of_more_clbits_than_the_device_takes_is_refused_at_upload(
+    client, worker, jobs_folder, mocker, fake_clock, body, message
+):
+    circuit = get_circuit("wide", body, num_clbits=1)
+    job = get_circuit_job([circuit], shots=_SHOTS)
+
+    with client as client:
+        response = _upload_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["message"] == message
+    assert get_stored_jobs() == []
+
+
+@pytest.mark.parametrize(
+    "client, worker, num_clbits",
+    [
+        pytest.param(*_QUANTIFY_CLIENT_AND_WORKER[0].values, 1024, id="default-limit"),
+        pytest.param(*_SIM_2Q_CLIENT_AND_WORKER.values, 8, id="device-s-own-limit"),
+    ],
+)
+def test_a_circuit_of_as_many_clbits_as_the_device_takes_is_taken(
+    client, worker, num_clbits, jobs_folder, mocker, fake_clock
+):
+    circuit = get_circuit("full", "c[0] = measure $0;", num_clbits=num_clbits)
+    job = get_circuit_job([circuit], shots=_SHOTS)
+
+    with client as client:
+        response = _upload_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+
+    assert response.status_code == 200
 
 
 @pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)

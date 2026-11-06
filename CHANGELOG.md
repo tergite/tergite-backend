@@ -7,6 +7,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Added
+
+- Added `max_clbits` to the backend config's `[general_config]`, the most classical bits a circuit may have, as the
+  device's readout instruments can acquire per shot; it is 1024 if left out, and a circuit with more is refused at upload
+
 ### Changed
 
 - Changed a circuit's `num_clbits` in a job file to be optional, the circuit having its OpenQASM's classical bits when it
@@ -21,7 +26,7 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Fixed an expression that cannot be computed, as in `rx(1/0) $0;`, making the upload answer 500; it is refused with
   422, e.g. "gate rx has a parameter that cannot be computed: division by zero"
 - Fixed a huge register, as `qubit[100000000] q;`, being made at upload before the circuit's qubits were counted, taking
-  seconds and gigabytes of the API's memory; it is refused with 422, as is a circuit of more than 1024 classical bits
+  seconds and gigabytes of the API's memory; it is refused with 422, as is a bit register beyond the device's `max_clbits`
 
 ## [2026.11.0-rc.11] - 2026-11-06
 

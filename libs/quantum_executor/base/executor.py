@@ -192,9 +192,12 @@ def preprocess_circuits(
         # checked again here, where the job runs, whatever way its file came
         dt = executor.backend_config.general_config.dt
         max_qubits = len(executor.backend_config.device_config.qubit_numbers)
+        max_clbits = executor.backend_config.general_config.max_clbits
         check_pulse_limits(
             [
-                to_native_circuit(circuit, dt=dt, max_qubits=max_qubits)
+                to_native_circuit(
+                    circuit, dt=dt, max_qubits=max_qubits, max_clbits=max_clbits
+                )
                 for circuit in params.circuits
             ],
             shots=params.shots,
