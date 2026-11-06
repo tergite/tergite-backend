@@ -7,6 +7,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.11.0-rc.10] - 2026-11-06
+
 ### Changed
 
 - Changed the README back to a short quick start, and moved DESIGN.md's details into pages under `docs/` by reader:
