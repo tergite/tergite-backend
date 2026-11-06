@@ -54,3 +54,25 @@ A user's SDK uploads a job to BCC directly, not through MSS, so it needs a crede
   file to `POST /jobs`. BCC refuses the upload if the file's `job_id` is not the token's job, or the job exists already.
 - The same token cancels that job (`POST /jobs/{job_id}/cancel`) and downloads its log file
   (`GET /logfiles/{job_id}`) without MSS; the other job routes take MSS's signed headers.
+
+## Who may call what
+
+Every path may be prefixed with a device's name (`/loke/jobs`); without one it reaches the first device.
+Interactive docs are at `/docs`.
+
+| Path | Auth | Notes |
+| --- | --- | --- |
+| `GET /` | MSS | a greeting, for MSS to check its signature |
+| `GET /health` | none | `{"status": "ok"}` while the API runs |
+| `/static-properties`, `/dynamic-properties` | MSS | the device's properties and calibration |
+| `POST /token` | MSS | a job token; creates the user if new |
+| `/me` | MSS | `GET` the user's profile; `DELETE` it, cancelling their jobs and bookings |
+| `/users`, `/users/{user_id}` | MSS admin | create, list, delete |
+| `/bookings` | MSS | create, list, `/{booking_id}/cancel`, `/config` |
+| `/jobs` | job token or MSS | `POST` uploads (token); `GET` lists (MSS), `GET`/`DELETE /{job_id}` (MSS); `/{job_id}/cancel` (either) |
+| `/logfiles/{job_id}` | job token | the job's results, as HDF5 |
+| `/recalibration` | MSS admin | `/init`, `/info`, `/cancel` |
+| `/switch` | MSS admin, or MSS for `/status` | `/off`, `/on`, `/status` |
+
+Admin-only routes use `get_verified_mss_admin_user_id`, which requires `x-mss-is-admin`. A job's or booking's
+routes also check that the user owns it, or is an admin.

@@ -7,6 +7,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Changed
+
+- Changed the README back to a short quick start, and moved DESIGN.md's details into pages under `docs/` by reader:
+  the dispatcher, MSS events, executors and deployment, with the conventions in CONTRIBUTING.md
+
 ### Fixed
 
 - Fixed `uv sync` and `uv tool install` picking Python 3.14, on which the pinned pydantic-core does not build;
