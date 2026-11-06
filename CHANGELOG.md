@@ -7,6 +7,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.11.0-rc.12] - 2026-11-06
+
 ### Added
 
 - Added `max_clbits` to the backend config's `[general_config]`, the most classical bits a circuit may have, as the
