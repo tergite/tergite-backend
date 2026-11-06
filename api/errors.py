@@ -12,7 +12,7 @@
 """The HTTP status code the API answers each error with"""
 
 import logging
-from typing import Awaitable, Callable, Dict, Type
+from typing import Any, Awaitable, Callable, Dict, Type
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.exception_handlers import http_exception_handler
@@ -23,6 +23,7 @@ from utils.exc import (
     BookingAlreadyCompleteError,
     ConflictError,
     InvalidBookingError,
+    InvalidCircuitError,
     InvalidJobIdInUploadedFileError,
     InvalidRequestError,
     IsOfflineError,
@@ -36,6 +37,8 @@ from utils.exc import (
     UnauthorizedError,
 )
 
+from .dtos import InvalidCircuitDetail
+
 HTTP_STATUS_CODES: Dict[Type[Exception], int] = {
     NotAuthenticatedError: 401,
     UnauthorizedError: 403,
@@ -48,6 +51,7 @@ HTTP_STATUS_CODES: Dict[Type[Exception], int] = {
     BookingAlreadyActiveError: 400,
     ValidationError: 422,
     InvalidBookingError: 422,
+    InvalidCircuitError: 422,
     ValueError: 500,
     IndexError: 500,
     TypeError: 500,
@@ -78,8 +82,22 @@ def _to_http_error(
 
     async def handle(request: Request, exp: Exception) -> Response:
         logging.error(exp)
-        # a server error's own message may tell internals
-        detail = "Unexpected server error" if status_code == 500 else f"{exp}"
+        detail = _get_detail(exp, status_code=status_code)
         return await http_exception_handler(request, HTTPException(status_code, detail))
 
     return handle
+
+
+def _get_detail(exp: Exception, status_code: int) -> Any:
+    """The detail of the error's response: its message, or the fields a client reads"""
+    if status_code == 500:
+        # a server error's own message may tell internals
+        return "Unexpected server error"
+    if isinstance(exp, InvalidCircuitError):
+        return InvalidCircuitDetail(
+            message=f"{exp}",
+            circuit_index=exp.circuit_index,
+            line=exp.line,
+            column=exp.column,
+        ).model_dump()
+    return f"{exp}"

@@ -365,6 +365,7 @@ def test_invalid_qasm_is_refused_naming_where_its_error_is():
     assert f"{error.value}" == (
         "circuit broken is not valid OpenQASM 3: line 4, column 0: missing ';' at 'cx'"
     )
+    assert (error.value.line, error.value.column) == (4, 0)
 
 
 def test_invalid_openpulse_is_refused_with_its_parser_s_reason():
@@ -378,6 +379,7 @@ def test_invalid_openpulse_is_refused_with_its_parser_s_reason():
         "circuit broken is not valid OpenQASM 3: "
         "Unexpected token '<EOF>' at line 1, column 7."
     )
+    assert (error.value.line, error.value.column) == (None, None)
 
 
 def _get_circuit(statements: str, num_clbits: int) -> QasmCircuit:

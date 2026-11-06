@@ -20,6 +20,25 @@ from pydantic import BaseModel
 ITEM = TypeVar("ITEM", bound=BaseModel)
 
 
+class InvalidCircuitDetail(BaseModel):
+    """Why a job file's circuit was refused at upload
+
+    line, from 1, and column, from 0, are those of a syntax error outside the circuit's
+    cal blocks, and None for any other error.
+    """
+
+    message: str
+    circuit_index: int
+    line: Optional[int]
+    column: Optional[int]
+
+
+class InvalidCircuitResponse(BaseModel):
+    """The body of the 422 that refuses a job file's circuit at upload"""
+
+    detail: InvalidCircuitDetail
+
+
 class CancellationDetails(BaseModel):
     """Details to do with a given cancellation request"""
 

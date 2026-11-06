@@ -227,22 +227,6 @@ def test_a_circuit_without_num_clbits_has_those_its_qasm_declares(
 
 
 @pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)
-def test_unsupported_circuit_fails_its_job_with_the_reason(
-    client, worker, jobs_folder, mocker, fake_clock
-):
-    circuit = get_circuit(
-        "branch", "c[0] = measure $0;\nif (c[0]) { x $0; }", num_clbits=1
-    )
-    job = get_circuit_job([circuit], shots=_SHOTS)
-
-    with client as client:
-        got = _run_job(client, worker, job, mocker=mocker, jobs_folder=jobs_folder)
-
-    assert got.status == JobStatus.FAILED
-    assert got.failure_reason == "if statements are not supported"
-
-
-@pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)
 def test_circuit_that_measures_nothing_fails_its_job(
     client, worker, jobs_folder, mocker, fake_clock
 ):
@@ -276,7 +260,7 @@ def test_cz_of_uncoupled_qubits_fails_its_job(
 
 
 @pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)
-def test_a_syntax_error_fails_its_job_naming_where_it_is(
+def test_a_syntax_error_is_refused_at_upload_saying_where_it_is(
     client, worker, jobs_folder, mocker, fake_clock
 ):
     circuit = get_circuit("broken", "h $0\nx $0;\nc[0] = measure $0;", num_clbits=1)
@@ -284,43 +268,76 @@ def test_a_syntax_error_fails_its_job_naming_where_it_is(
 
     with client as client:
         response = _upload_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
-        worker.run(is_burst=True)
 
-    assert response.status_code == 200
-    [got] = get_stored_jobs()
-    assert got.status == JobStatus.FAILED
-    assert got.failure_reason == (
-        "circuit broken is not valid OpenQASM 3: line 5, column 0: missing ';' at 'x'"
-    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "message": "circuit broken is not valid OpenQASM 3: "
+        "line 5, column 0: missing ';' at 'x'",
+        "circuit_index": 0,
+        "line": 5,
+        "column": 0,
+    }
+    assert get_stored_jobs() == []
 
 
 @pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)
 @pytest.mark.parametrize(
-    "statement, message",
+    "body, message",
     [
-        ("rx $0;", "gate rx takes 1 parameter and 1 qubit, but got 0 parameters"),
-        ("cx $0;", "gate cx takes 0 parameters and 2 qubits, but got 1 qubit"),
         (
-            "U(0.1, 0.2) $0;",
+            "rx $0;\nc[0] = measure $0;",
+            "gate rx takes 1 parameter and 1 qubit, but got 0 parameters",
+        ),
+        (
+            "cx $0;\nc[0] = measure $0;",
+            "gate cx takes 0 parameters and 2 qubits, but got 1 qubit",
+        ),
+        (
+            "U(0.1, 0.2) $0;\nc[0] = measure $0;",
             "gate U takes 3 parameters and 1 qubit, but got 2 parameters",
         ),
+        ("c[0] = measure $0;\nif (c[0]) { x $0; }", "if statements are not supported"),
     ],
-    ids=["parameter-missing", "qubit-missing", "too-few-parameters"],
+    ids=["parameter-missing", "qubit-missing", "too-few-parameters", "if-statement"],
 )
-def test_a_gate_of_the_wrong_arity_fails_its_job_with_the_reason(
-    client, worker, jobs_folder, mocker, fake_clock, statement, message
+def test_a_circuit_that_does_not_translate_is_refused_at_upload_with_the_reason(
+    client, worker, jobs_folder, mocker, fake_clock, body, message
 ):
-    circuit = get_circuit("arity", f"{statement}\nc[0] = measure $0;", num_clbits=1)
+    circuits = [
+        get_circuit("fine", "x $0;\nc[0] = measure $0;", num_clbits=1),
+        get_circuit("bad", body, num_clbits=1),
+    ]
+    job = get_circuit_job(circuits, shots=_SHOTS)
+
+    with client as client:
+        response = _upload_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "message": message,
+        "circuit_index": 1,
+        "line": None,
+        "column": None,
+    }
+    assert get_stored_jobs() == []
+
+
+@pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)
+def test_a_circuit_whose_num_clbits_differs_from_its_qasm_is_refused_at_upload(
+    client, worker, jobs_folder, mocker, fake_clock
+):
+    circuit = get_circuit("x", "x $0;\nc[0] = measure $0;", num_clbits=1)
+    circuit["num_clbits"] = 2
     job = get_circuit_job([circuit], shots=_SHOTS)
 
     with client as client:
         response = _upload_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
-        worker.run(is_burst=True)
 
-    assert response.status_code == 200
-    [got] = get_stored_jobs()
-    assert got.status == JobStatus.FAILED
-    assert got.failure_reason == message
+    assert response.status_code == 422
+    assert response.json()["detail"]["message"] == (
+        "circuit x declares 2 classical bits, but its OpenQASM has 1"
+    )
+    assert get_stored_jobs() == []
 
 
 @pytest.mark.parametrize(
