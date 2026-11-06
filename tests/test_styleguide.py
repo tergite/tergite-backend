@@ -199,6 +199,8 @@ BOOLEAN_ANNOTATIONS = frozenset(
     {"bool", "Optional[bool]", "bool | None", "None | bool"}
 )
 VALUE_DECORATORS = frozenset({"property", "cached_property", "computed_field"})
+# names a library's base class fixes, as ANTLR's ErrorListener does its callbacks'
+FRAMEWORK_NAMES = frozenset({"syntaxError"})
 LICENSE_MARKERS = (
     "# This code is part of Tergite",
     "This code is licensed under the Apache License, Version 2.0",
@@ -361,7 +363,10 @@ def _iter_python_files(root: Path, roots: Tuple[str, ...]) -> Iterator[Path]:
 def _check_verbs(module: Module) -> Iterator[Violation]:
     for qualname, node in _walk_functions(module.tree):
         if not (
-            _is_dunder(node.name) or _is_value(node) or _starts_with_verb(node.name)
+            _is_dunder(node.name)
+            or _is_value(node)
+            or node.name in FRAMEWORK_NAMES
+            or _starts_with_verb(node.name)
         ):
             yield Violation("verb", f"{module.name}::{qualname}")
 

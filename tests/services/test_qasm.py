@@ -303,11 +303,29 @@ def test_circuit_whose_clbits_differ_from_its_qasm_is_refused():
         to_native_circuit(circuit, dt=_DT)
 
 
-def test_invalid_qasm_is_refused():
-    circuit = QasmCircuit(name="broken", qasm="OPENQASM 3.0; x", num_clbits=0)
+def test_invalid_qasm_is_refused_naming_where_its_error_is():
+    qasm = "OPENQASM 3.0;\nqubit[2] q;\nh q[0]\ncx q[0], q[1];"
+    circuit = QasmCircuit(name="broken", qasm=qasm, num_clbits=0)
 
-    with pytest.raises(UnsupportedCircuitError, match="not valid OpenQASM 3"):
+    with pytest.raises(UnsupportedCircuitError) as error:
         to_native_circuit(circuit, dt=_DT)
+
+    assert f"{error.value}" == (
+        "circuit broken is not valid OpenQASM 3: line 4, column 0: missing ';' at 'cx'"
+    )
+
+
+def test_invalid_openpulse_is_refused_with_its_parser_s_reason():
+    qasm = 'OPENQASM 3.0;\ndefcalgrammar "openpulse";\ncal { play( }\n'
+    circuit = QasmCircuit(name="broken", qasm=qasm, num_clbits=0)
+
+    with pytest.raises(UnsupportedCircuitError) as error:
+        to_native_circuit(circuit, dt=_DT)
+
+    assert f"{error.value}" == (
+        "circuit broken is not valid OpenQASM 3: "
+        "Unexpected token '<EOF>' at line 1, column 7."
+    )
 
 
 def _get_circuit(statements: str, num_clbits: int) -> QasmCircuit:

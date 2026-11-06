@@ -22,7 +22,12 @@ from dataclasses import dataclass, field, fields, is_dataclass
 from typing import Dict, FrozenSet, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 import openpulse
+from antlr4 import CommonTokenStream, InputStream, Recognizer, Token
+from antlr4.error.ErrorListener import ErrorListener
+from antlr4.error.Errors import RecognitionException
 from openpulse import ast
+from openqasm3._antlr.qasm3Lexer import qasm3Lexer
+from openqasm3._antlr.qasm3Parser import qasm3Parser
 
 from utils.exc import UnsupportedCircuitError
 
@@ -138,9 +143,44 @@ def _parse(circuit: QasmCircuit) -> ast.Program:
     try:
         return openpulse.parse(circuit.qasm)
     except Exception as exp:
+        error = _get_syntax_error(circuit.qasm) or f"{exp}"
         raise UnsupportedCircuitError(
-            f"circuit {circuit.name} is not valid OpenQASM 3: {exp}"
+            f"circuit {circuit.name} is not valid OpenQASM 3: {error}"
         ) from exp
+
+
+def _get_syntax_error(qasm: str) -> Optional[str]:
+    """The first syntax error of the OpenQASM 3 outside its cal blocks, as where it is
+    and what, or None if it has none; openqasm3's own parse raises without saying it"""
+    listener = _SyntaxErrorListener()
+    lexer = qasm3Lexer(InputStream(qasm))
+    lexer.removeErrorListeners()
+    lexer.addErrorListener(listener)
+    parser = qasm3Parser(CommonTokenStream(lexer))
+    parser.removeErrorListeners()
+    parser.addErrorListener(listener)
+    parser.program()
+    return listener.errors[0] if listener.errors else None
+
+
+class _SyntaxErrorListener(ErrorListener):
+    """Keeps the syntax errors ANTLR reports, which it would otherwise print"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.errors: List[str] = []
+
+    def syntaxError(
+        self,
+        recognizer: Recognizer,
+        offendingSymbol: Token,
+        line: int,
+        column: int,
+        msg: str,
+        e: Optional[RecognitionException],
+    ) -> None:
+        """Keeps the error, as where it is and what"""
+        self.errors.append(f"line {line}, column {column}: {msg}")
 
 
 def _get_num_qubits(program: ast.Program) -> int:

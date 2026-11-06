@@ -256,6 +256,25 @@ def test_cz_of_uncoupled_qubits_fails_its_job(
     assert got.failure_reason == "qubits q13 and q14 have no coupler"
 
 
+@pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)
+def test_a_syntax_error_fails_its_job_naming_where_it_is(
+    client, worker, jobs_folder, mocker, fake_clock
+):
+    circuit = get_circuit("broken", "h $0\nx $0;\nc[0] = measure $0;", num_clbits=1)
+    job = get_circuit_job([circuit], shots=_SHOTS)
+
+    with client as client:
+        response = _upload_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        worker.run(is_burst=True)
+
+    assert response.status_code == 200
+    [got] = get_stored_jobs()
+    assert got.status == JobStatus.FAILED
+    assert got.failure_reason == (
+        "circuit broken is not valid OpenQASM 3: line 5, column 0: missing ';' at 'x'"
+    )
+
+
 @pytest.mark.parametrize(
     "params",
     [

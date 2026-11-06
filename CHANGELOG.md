@@ -7,6 +7,11 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed a circuit with a syntax error outside its `cal` blocks failing its job with nothing after "is not valid
+  OpenQASM 3:"; the reason now says where the error is and what, e.g. "line 4, column 0: missing ';' at 'cx'"
+
 ## [2026.11.0-rc.10] - 2026-11-06
 
 ### Changed
