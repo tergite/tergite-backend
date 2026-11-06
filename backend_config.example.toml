@@ -17,6 +17,9 @@ num_couplers = 2
 num_resonators = 3
 dt = 1e-9
 dtm = 1e-9
+# the most classical bits a circuit may have: what the readout instruments can acquire per
+# shot; 1024 if left out
+max_clbits = 1024
 
 [device_config]
 discriminators = [ "lda" ]

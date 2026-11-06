@@ -67,7 +67,12 @@ def get_circuit_experiments(
 
     experiments = []
     for idx, circuit in enumerate(circuits):
-        native_circuit = to_native_circuit(circuit, dt=dt)
+        native_circuit = to_native_circuit(
+            circuit,
+            dt=dt,
+            max_qubits=len(element_names),
+            max_clbits=backend_config.general_config.max_clbits,
+        )
         schedule = get_circuit_schedule(
             native_circuit,
             native_config,

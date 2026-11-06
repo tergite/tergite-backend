@@ -58,6 +58,10 @@ We use the [`backend_config.example.toml`](../backend_config.example.toml) as a 
 A `[simulator]` section in it makes the device a simulated one, a chip behind dummy clusters; see
 [Simulated Devices](#simulated-devices).
 
+`max_clbits` in `[general_config]` is the most classical bits a circuit may have, what the
+device's readout instruments can acquire per shot; it is 1024 if left out. A circuit that
+declares more is refused at upload with 422.
+
 _NOTE: You don't need to pass the `.env` file, the `backend_config.toml` file or the quantify files to the 
 start script as these are automatically loaded for you._  
 

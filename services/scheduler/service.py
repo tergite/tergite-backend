@@ -20,12 +20,14 @@
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Iterable, List, Optional, Sequence, Tuple
 
 from fastapi import UploadFile
 from sqlmodel import or_
 
-from libs.quantum_executor.base.gates import PulseBlock
+from libs.quantum_executor.base.circuits import QasmCircuit
+from libs.quantum_executor.base.device_checks import check_circuit_fits_device
+from libs.quantum_executor.base.gates import NativeCircuit, PulseBlock
 from libs.quantum_executor.base.pulse_limits import (
     check_pulse_limits,
     get_calibrated_frame_frequencies,
@@ -37,6 +39,7 @@ from utils.exc import (
     BookingAlreadyActiveError,
     BookingAlreadyCompleteError,
     ConflictError,
+    InvalidCircuitError,
     InvalidRequestError,
     ItemNotFoundError,
     JobAlreadyCompleteError,
@@ -163,6 +166,9 @@ def submit_job_file(
 
     Raises:
         ConflictError: job_id {job_id} already exists
+        InvalidCircuitError: a circuit the device cannot run, such as one that is not
+            valid OpenQASM 3 or needs a coupler the device lacks; see
+            qasm.to_native_circuit and device_checks.check_circuit_fits_device
         UnauthorizedError: the job's project may not send pulse-level jobs
         InvalidRequestError: a pulse-level block beyond the device's limits; see
             pulse_limits.check_pulse_limits
@@ -171,7 +177,7 @@ def submit_job_file(
     if device.jobs_store.is_stored(job_id):
         raise ConflictError(f"job_id {job_id} already exists")
 
-    _check_pulse_level_job(device, upload_file, credentials)
+    _check_circuits(device, upload_file, credentials)
     _save_uploaded_file(upload_file, target=device.settings.job_upload_pool / job_id)
     job = _get_new_job(device, credentials)
     dispatcher.enqueue_job(device, job, is_booking_excluded=should_force_normal_queue)
@@ -379,14 +385,16 @@ def get_recalibration_info(device: DeviceResources) -> RecalibrationInfo:
     return dispatcher.get_recalibration_info(device)
 
 
-def _check_pulse_level_job(
+def _check_circuits(
     device: DeviceResources, upload_file: UploadFile, credentials: MSSTokenClaims
 ) -> None:
-    """Refuses a pulse-level job its project may not send, or one beyond the device's
-    limits; a job whose circuits do not translate is left to its preprocessing, which
-    fails it with the reason
+    """Refuses a job whose circuits do not translate into native gates or do not fit the
+    device's qubits and couplers, or a pulse-level job its project may not send or beyond
+    the device's limits; what the calibration holds, as which qubits are calibrated, is
+    left to the job's preprocessing, as the device may be recalibrated before it runs
 
     Raises:
+        InvalidCircuitError: a circuit that does not translate or fit, with the reason
         UnauthorizedError: the job's project may not send pulse-level jobs
         InvalidRequestError: a pulse-level block beyond the device's limits
     """
@@ -395,10 +403,18 @@ def _check_pulse_level_job(
     upload_file.file.seek(0)
     backend_config = device.executor_options.backend_config
     dt = backend_config.general_config.dt
-    try:
-        circuits = [to_native_circuit(c, dt=dt) for c in job_file.params.circuits]
-    except UnsupportedCircuitError:
-        return
+    device_config = backend_config.device_config
+    circuits = [
+        _get_fitting_circuit(
+            circuit,
+            index=index,
+            dt=dt,
+            max_clbits=backend_config.general_config.max_clbits,
+            qubit_ids=device_config.qubit_numbers,
+            couplings=[pair for pair, _ in device_config.qubit_ids_coupler_map],
+        )
+        for index, circuit in enumerate(job_file.params.circuits)
+    ]
     if not any(isinstance(g, PulseBlock) for c in circuits for g in c.gates):
         return
     if not credentials.is_pulse_allowed:
@@ -413,6 +429,45 @@ def _check_pulse_level_job(
         )
     except UnsupportedCircuitError as exp:
         raise InvalidRequestError(f"{exp}") from exp
+
+
+def _get_fitting_circuit(
+    circuit: QasmCircuit,
+    index: int,
+    dt: float,
+    max_clbits: int,
+    qubit_ids: Sequence[int],
+    couplings: Iterable[Tuple[int, int]],
+) -> NativeCircuit:
+    """Translates a job file's circuit into native gates that fit the device's qubits and
+    couplers
+
+    Args:
+        circuit: the circuit, as uploaded
+        index: the circuit's index in the job file's circuits
+        dt: the device's sample time in seconds
+        max_clbits: the most classical bits the device takes in a circuit
+        qubit_ids: the numbers in the device's qubits' ids, in order
+        couplings: the pairs of qubits the device's couplers couple, by the numbers in
+            their ids
+
+    Returns:
+        the circuit of native gates
+
+    Raises:
+        InvalidCircuitError: the circuit does not translate or fit, with the reason and
+            index
+    """
+    try:
+        native_circuit = to_native_circuit(
+            circuit, dt=dt, max_qubits=len(qubit_ids), max_clbits=max_clbits
+        )
+        check_circuit_fits_device(native_circuit, qubit_ids, couplings=couplings)
+        return native_circuit
+    except UnsupportedCircuitError as exp:
+        raise InvalidCircuitError(
+            f"{exp}", circuit_index=index, line=exp.line, column=exp.column
+        ) from exp
 
 
 def _save_uploaded_file(file: UploadFile, target: Path) -> Path:

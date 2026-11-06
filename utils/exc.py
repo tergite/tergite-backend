@@ -13,6 +13,8 @@
 #
 """Utilities for exceptions"""
 
+from typing import Optional
+
 
 class BaseBccException(Exception):
     """The base of BCC's errors, whose message is its string"""
@@ -102,4 +104,55 @@ class MssTimeoutError(BaseBccException):
 
 
 class UnsupportedCircuitError(BaseBccException):
-    """Error when a gate-level job's circuit cannot be compiled for the device"""
+    """Error when a gate-level job's circuit cannot be compiled for the device
+
+    Attributes:
+        line: the line of the circuit's syntax error, from 1, if it is one whose place
+            is known
+        column: the column of that syntax error, from 0
+    """
+
+    def __init__(
+        self,
+        message: str = "",
+        line: Optional[int] = None,
+        column: Optional[int] = None,
+    ):
+        super().__init__(message)
+        self.line = line
+        self.column = column
+
+
+class UncomputableExpressionError(UnsupportedCircuitError):
+    """Error when an expression of a circuit cannot be computed, as on a division by zero
+
+    Attributes:
+        reason: why it cannot, e.g. division by zero
+    """
+
+    def __init__(self, reason: str):
+        super().__init__(f"an expression cannot be computed: {reason}")
+        self.reason = reason
+
+
+class InvalidCircuitError(BaseBccException):
+    """Error when a job file holds a circuit the device cannot run, whatever its state
+
+    Attributes:
+        circuit_index: the index of the circuit in the job file's circuits
+        line: the line of the circuit's syntax error, from 1, if it is one whose place
+            is known
+        column: the column of that syntax error, from 0
+    """
+
+    def __init__(
+        self,
+        message: str,
+        circuit_index: int,
+        line: Optional[int] = None,
+        column: Optional[int] = None,
+    ):
+        super().__init__(message)
+        self.circuit_index = circuit_index
+        self.line = line
+        self.column = column

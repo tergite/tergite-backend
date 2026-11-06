@@ -31,7 +31,7 @@ from ..dependencies import (
     get_verified_mss_user_id,
     validate_job_file,
 )
-from ..dtos import CancellationDetails
+from ..dtos import CancellationDetails, InvalidCircuitResponse
 
 # a page of jobs by default, and the most in one, so that no list reads a backlog whole
 JOBS_PAGE_SIZE = 100
@@ -43,6 +43,13 @@ router = APIRouter()
 @router.post(
     "/jobs",
     dependencies=[Depends(check_device_is_online)],
+    responses={
+        422: {
+            "model": InvalidCircuitResponse,
+            "description": "A circuit the device cannot run, as one that is not valid "
+            "OpenQASM 3",
+        }
+    },
     # the uploaded file is a JobFile's JSON, which the spec's components hold
     openapi_extra={
         "requestBody": {

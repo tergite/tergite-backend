@@ -34,7 +34,9 @@ seconds quantify takes to import.
 ## Gate-level jobs
 
 A job file's `params` (`CircuitJobParams`, in `services/scheduler/dtos.py`) hold OpenQASM 3
-circuits, with `shots`, `meas_level` (1 or 2) and `meas_return`.
+circuits, with `shots`, `meas_level` (1 or 2) and `meas_return`. Each circuit has a `name`, its
+`qasm` and, optionally, `num_clbits`: if given, it must match the classical bits the OpenQASM
+declares; if not, the circuit has those.
 
 1. **Parse.** `base/qasm.py` parses each circuit with `openpulse`.
 2. **Translate to native gates** (`base/gates.py`): `Rxy`, `Rz`, `CZ`, `Measure`, `Reset`,
@@ -49,6 +51,35 @@ circuits, with `shots`, `meas_level` (1 or 2) and `meas_return`.
    [how_circuits_run.md](how_circuits_run.md) for the rules.
 
 A circuit that measures no qubit is refused, since it has no results.
+
+**Refused at upload.** The upload translates each circuit into native gates (steps 1 and 2)
+and checks them against the qubits and couplers of the device's config
+(`base/device_checks.py`), so a circuit the device cannot run is refused with 422 before the
+job is created: one that is not valid OpenQASM 3, a gate given the wrong parameters or
+qubits, a statement or gate that is not supported, a `num_clbits` other than the OpenQASM's,
+more qubits than the device has, more classical bits than its `max_clbits` (1024 unless its
+backend config sets it), or a CZ on qubits no coupler couples. The qubits and classical bits are counted from the registers'
+declared sizes before any register is made, so a huge one, as `qubit[100000000] q;`, is
+refused at once. The `detail` gives the reason,
+the circuit's index in the job file and, for a syntax error outside a `cal` block, its line
+(from 1) and column (from 0); they are `null` for any other error:
+
+```json
+{
+  "detail": {
+    "message": "circuit bell is not valid OpenQASM 3: line 4, column 0: missing ';' at 'cx'",
+    "circuit_index": 0,
+    "line": 4,
+    "column": 0
+  }
+}
+```
+
+What depends on the calibration, as a gate on an uncalibrated qubit or a CZ whose coupler is
+not calibrated, is checked in preprocessing only: a job may wait in the queue, as behind a
+booking, while the device is recalibrated, so the calibration at upload need not be the one
+it runs on. Preprocessing checks the qubits and couplers again too. What fails there, or a
+circuit that measures no qubit, fails the job with the reason as its `failure_reason`.
 
 **Readout.** Each measurement is acquired on its own channel, numbered in the order the
 circuit measures. The `CircuitReadout` saved with the results maps each channel to its qubit

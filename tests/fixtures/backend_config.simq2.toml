@@ -12,6 +12,7 @@ num_resonators = 2
 description = "Two simulated transmons and their coupler"
 dt = 1e-9
 dtm = 1e-9
+max_clbits = 8
 
 [device_config]
 # config names for specification of calibration values

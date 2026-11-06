@@ -1050,6 +1050,62 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "InvalidCircuitDetail": {
+        "description": "Why a job file's circuit was refused at upload\n\nline, from 1, and column, from 0, are those of a syntax error outside the circuit's\ncal blocks, and None for any other error.",
+        "properties": {
+          "circuit_index": {
+            "title": "Circuit Index",
+            "type": "integer"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Column"
+          },
+          "line": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Line"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "circuit_index",
+          "line",
+          "column"
+        ],
+        "title": "InvalidCircuitDetail",
+        "type": "object"
+      },
+      "InvalidCircuitResponse": {
+        "description": "The body of the 422 that refuses a job file's circuit at upload",
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/InvalidCircuitDetail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "InvalidCircuitResponse",
+        "type": "object"
+      },
       "Job": {
         "description": "Representation of the job to be executed by this application\n\nAttributes:\n    job_id: the unique identifier of this job\n    user_id: the unique identifier of the user who owns this job\n    estimated_duration: the estimated time this job could take to execute in seconds;\n        default = None\n    timestamps: the timestamps for each stage of running this job; default = None\n    status: the status of this job; default = JobStatus.PENDING\n    failure_reason: the reason why the job has failed; default = None\n    etc.",
         "properties": {
@@ -1523,7 +1579,7 @@
       },
       "QasmCircuit": {
         "additionalProperties": false,
-        "description": "A circuit of a gate-level job, written in OpenQASM 3",
+        "description": "A circuit of a gate-level job, written in OpenQASM 3\n\nnum_clbits, if given, must be the number of classical bits its OpenQASM declares;\nif not, it is that number.",
         "properties": {
           "metadata": {
             "additionalProperties": true,
@@ -1536,9 +1592,17 @@
             "type": "string"
           },
           "num_clbits": {
-            "minimum": 0,
-            "title": "Num Clbits",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Num Clbits"
           },
           "qasm": {
             "title": "Qasm",
@@ -1547,8 +1611,7 @@
         },
         "required": [
           "name",
-          "qasm",
-          "num_clbits"
+          "qasm"
         ],
         "title": "QasmCircuit",
         "type": "object"
@@ -2286,7 +2349,7 @@
   "info": {
     "description": "Interfaces Quantum processor via REST API",
     "title": "Backend Control Computer",
-    "version": "v2026.11.0-rc.11"
+    "version": "v2026.11.0-rc.12"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -2679,11 +2742,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
+                  "$ref": "#/components/schemas/InvalidCircuitResponse"
                 }
               }
             },
-            "description": "Validation Error"
+            "description": "A circuit the device cannot run, as one that is not valid OpenQASM 3"
           }
         },
         "summary": "Submit Job"

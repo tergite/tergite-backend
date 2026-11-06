@@ -29,7 +29,7 @@ from openpulse import ast
 from openqasm3._antlr.qasm3Lexer import qasm3Lexer
 from openqasm3._antlr.qasm3Parser import qasm3Parser
 
-from utils.exc import UnsupportedCircuitError
+from utils.exc import UncomputableExpressionError, UnsupportedCircuitError
 
 from . import gates
 from .circuits import QasmCircuit
@@ -115,7 +115,12 @@ class _Scope:
     native_gates: List[gates.Gate] = field(default_factory=list)
 
 
-def to_native_circuit(circuit: QasmCircuit, dt: float) -> gates.NativeCircuit:
+def to_native_circuit(
+    circuit: QasmCircuit,
+    dt: float,
+    max_qubits: Optional[int] = None,
+    max_clbits: Optional[int] = None,
+) -> gates.NativeCircuit:
     """Parses the circuit's OpenQASM 3 and translates its gates into native gates
 
     Gates beyond the native ones are decomposed into them, up to a global phase: those of
@@ -130,28 +135,52 @@ def to_native_circuit(circuit: QasmCircuit, dt: float) -> gates.NativeCircuit:
     Args:
         circuit: the circuit as uploaded
         dt: the device's sample time in seconds, which delays in dt are counted in
+        max_qubits: the qubits of the device, beyond which the circuit is refused
+            before its registers are made; None for no limit
+        max_clbits: the most classical bits the device takes, beyond which the circuit
+            is refused before its registers are made; None for no limit
 
     Returns:
         the circuit of native gates
 
     Raises:
         UnsupportedCircuitError: circuit {name} is not valid OpenQASM 3: {error}
+        UnsupportedCircuitError: circuit {name} has {n} qubits, but the device has {m}
+        UnsupportedCircuitError: circuit {name} has {n} classical bits, but the device
+            takes at most {max_clbits}
+        UnsupportedCircuitError: a register's size must be a whole number, not {size}
         UnsupportedCircuitError: circuit {name} declares {n} classical bits, but its
-            OpenQASM has {m}
+            OpenQASM has {m}; a circuit without num_clbits has its OpenQASM's
         UnsupportedCircuitError: gate {name} is not supported
         UnsupportedCircuitError: gate {name} has a parameter that is not a number
+        UnsupportedCircuitError: gate {name} has a parameter that cannot be computed:
+            {reason}
         UnsupportedCircuitError: gate {name} takes {n} parameters and {m} qubits, but
             got {k} parameters
+        UnsupportedCircuitError: an expression cannot be computed: {reason}
         UnsupportedCircuitError: unit {unit} is not supported
         UnsupportedCircuitError: {statements} are not supported
     """
     program = _parse(circuit)
-    scope = _Scope(dt=dt, num_qubits=_get_num_qubits(program))
+    num_qubits = _get_num_qubits(program)
+    if max_qubits is not None and num_qubits > max_qubits:
+        raise UnsupportedCircuitError(
+            f"circuit {circuit.name} has {num_qubits} qubits, "
+            f"but the device has {max_qubits}"
+        )
+    num_declared_clbits = _get_num_declared_clbits(program)
+    if max_clbits is not None and num_declared_clbits > max_clbits:
+        raise UnsupportedCircuitError(
+            f"circuit {circuit.name} has {num_declared_clbits} classical bits, "
+            f"but the device takes at most {max_clbits}"
+        )
+
+    scope = _Scope(dt=dt, num_qubits=num_qubits)
     for statement in program.statements:
         _add_statement(scope, statement)
 
     num_clbits = sum(len(bits) for bits in scope.clbits.values())
-    if num_clbits != circuit.num_clbits:
+    if circuit.num_clbits is not None and num_clbits != circuit.num_clbits:
         raise UnsupportedCircuitError(
             f"circuit {circuit.name} declares {circuit.num_clbits} classical bits, "
             f"but its OpenQASM has {num_clbits}"
@@ -173,15 +202,20 @@ def _parse(circuit: QasmCircuit) -> ast.Program:
     try:
         return openpulse.parse(circuit.qasm)
     except Exception as exp:
-        error = _get_syntax_error(circuit.qasm) or f"{exp}"
+        prefix = f"circuit {circuit.name} is not valid OpenQASM 3"
+        error = _get_syntax_error(circuit.qasm)
+        if error is None:
+            raise UnsupportedCircuitError(f"{prefix}: {exp}") from exp
         raise UnsupportedCircuitError(
-            f"circuit {circuit.name} is not valid OpenQASM 3: {error}"
+            f"{prefix}: line {error.line}, column {error.column}: {error.message}",
+            line=error.line,
+            column=error.column,
         ) from exp
 
 
-def _get_syntax_error(qasm: str) -> Optional[str]:
-    """The first syntax error of the OpenQASM 3 outside its cal blocks, as where it is
-    and what, or None if it has none; openqasm3's own parse raises without saying it"""
+def _get_syntax_error(qasm: str) -> Optional["_SyntaxError"]:
+    """The first syntax error of the OpenQASM 3 outside its cal blocks, or None if it has
+    none; openqasm3's own parse raises without saying it"""
     listener = _SyntaxErrorListener()
     lexer = qasm3Lexer(InputStream(qasm))
     lexer.removeErrorListeners()
@@ -193,12 +227,21 @@ def _get_syntax_error(qasm: str) -> Optional[str]:
     return listener.errors[0] if listener.errors else None
 
 
+@dataclass(frozen=True)
+class _SyntaxError:
+    """A syntax error ANTLR reports: its line, from 1, its column, from 0, and what it is"""
+
+    line: int
+    column: int
+    message: str
+
+
 class _SyntaxErrorListener(ErrorListener):
     """Keeps the syntax errors ANTLR reports, which it would otherwise print"""
 
     def __init__(self) -> None:
         super().__init__()
-        self.errors: List[str] = []
+        self.errors: List[_SyntaxError] = []
 
     def syntaxError(
         self,
@@ -209,13 +252,32 @@ class _SyntaxErrorListener(ErrorListener):
         msg: str,
         e: Optional[RecognitionException],
     ) -> None:
-        """Keeps the error, as where it is and what"""
-        self.errors.append(f"line {line}, column {column}: {msg}")
+        """Keeps the error"""
+        self.errors.append(_SyntaxError(line=line, column=column, message=msg))
+
+
+def _get_num_declared_clbits(program: ast.Program) -> int:
+    """The number of the classical bits the program's bit registers declare, counted
+    without making the registers
+
+    Raises:
+        UnsupportedCircuitError: a register's size must be a whole number, not {size}
+    """
+    return sum(
+        _get_size(statement.type.size)
+        for statement in program.statements
+        if isinstance(statement, ast.ClassicalDeclaration)
+        and isinstance(statement.type, ast.BitType)
+    )
 
 
 def _get_num_qubits(program: ast.Program) -> int:
     """The number of the program's qubits: its declared ones, or one past the highest
-    physical qubit it names"""
+    physical qubit it names; counted without making the registers
+
+    Raises:
+        UnsupportedCircuitError: a register's size must be a whole number, not {size}
+    """
     declared = sum(
         _get_size(statement.size)
         for statement in program.statements
@@ -342,6 +404,8 @@ def _add_gate(
     Raises:
         UnsupportedCircuitError: gate {name} is not supported
         UnsupportedCircuitError: gate {name} has a parameter that is not a number
+        UnsupportedCircuitError: gate {name} has a parameter that cannot be computed:
+            {reason}
         UnsupportedCircuitError: gate {name} takes {n} parameters and {m} qubits, but
             got {k} parameters
     """
@@ -360,6 +424,10 @@ def _add_gate(
         raise UnsupportedCircuitError(f"gate {name} with a duration is not supported")
     try:
         params = [get_number(argument, parameters) for argument in gate.arguments]
+    except UncomputableExpressionError as exp:
+        raise UnsupportedCircuitError(
+            f"gate {name} has a parameter that cannot be computed: {exp.reason}"
+        ) from exp
     except UnsupportedCircuitError as exp:
         raise UnsupportedCircuitError(
             f"gate {name} has a parameter that is not a number"
@@ -593,8 +661,20 @@ def _broadcast(operands: List[List[int]]) -> Iterator[List[int]]:
 
 
 def _get_size(size: ast.Expression | None) -> int:
-    """The size of a register as declared, one if it states none"""
-    return 1 if size is None else int(get_number(size, {}))
+    """The size of a register as declared, one if it states none
+
+    Raises:
+        UnsupportedCircuitError: a register's size must be a whole number, not {size}
+    """
+    if size is None:
+        return 1
+    value = get_number(size, {})
+    if value < 0 or not value.is_integer():
+        shown = int(value) if value.is_integer() else value
+        raise UnsupportedCircuitError(
+            f"a register's size must be a whole number, not {shown}"
+        )
+    return int(value)
 
 
 def _get_decomposition(

@@ -13,7 +13,7 @@
 acquisitions map to its classical bits"""
 
 from dataclasses import dataclass
-from typing import Any, Dict, Generic, List, Literal, Tuple, TypeVar
+from typing import Any, Dict, Generic, List, Literal, Optional, Tuple, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -21,13 +21,17 @@ T = TypeVar("T")
 
 
 class QasmCircuit(BaseModel):
-    """A circuit of a gate-level job, written in OpenQASM 3"""
+    """A circuit of a gate-level job, written in OpenQASM 3
+
+    num_clbits, if given, must be the number of classical bits its OpenQASM declares;
+    if not, it is that number.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     name: str
     qasm: str
-    num_clbits: int = Field(ge=0)
+    num_clbits: Optional[int] = Field(default=None, ge=0)
     metadata: Dict[str, Any] = {}
 
 

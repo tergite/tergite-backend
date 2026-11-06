@@ -708,6 +708,9 @@ class _BackendGeneralConfig(BaseModel):
     num_resonators: int
     dt: float
     dtm: float
+    # the most classical bits a circuit may have: what the device's readout instruments
+    # can acquire per shot
+    max_clbits: int = Field(default=1024, ge=1)
     description: str = ""
     is_active: bool = True
     characterized: bool = True
