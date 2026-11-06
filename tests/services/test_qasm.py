@@ -295,6 +295,50 @@ def test_what_has_no_native_gates_is_refused(statements, message):
         to_native_circuit(circuit, dt=_DT)
 
 
+@pytest.mark.parametrize(
+    "statements, message",
+    [
+        ("rx $0;", "gate rx takes 1 parameter and 1 qubit, but got 0 parameters"),
+        ("x(0.5) $0;", "gate x takes 0 parameters and 1 qubit, but got 1 parameter"),
+        ("cx $0;", "gate cx takes 0 parameters and 2 qubits, but got 1 qubit"),
+        (
+            "cx(0.1) $0;",
+            "gate cx takes 0 parameters and 2 qubits, but got 1 parameter and 1 qubit",
+        ),
+        (
+            "U(0.1, 0.2) $0;",
+            "gate U takes 3 parameters and 1 qubit, but got 2 parameters",
+        ),
+        ("cp $0, $1;", "gate cp takes 1 parameter and 2 qubits, but got 0 parameters"),
+        (
+            "gate g(a) q { rx(a) q; }\ng $0;",
+            "gate g takes 1 parameter and 1 qubit, but got 0 parameters",
+        ),
+        (
+            'defcalgrammar "openpulse";\ndefcal pulse(angle a) $0 { }\npulse $0;',
+            "gate pulse takes 1 parameter and 1 qubit, but got 0 parameters",
+        ),
+    ],
+    ids=[
+        "native-parameter-missing",
+        "native-extra-parameter",
+        "native-qubit-missing",
+        "native-both-wrong",
+        "native-too-few-parameters",
+        "standard-definition",
+        "own-definition",
+        "defcal",
+    ],
+)
+def test_a_gate_of_the_wrong_arity_is_refused_saying_what_it_takes(statements, message):
+    circuit = _get_circuit(f"{statements}\nc[0] = measure $0;", num_clbits=1)
+
+    with pytest.raises(UnsupportedCircuitError) as error:
+        to_native_circuit(circuit, dt=_DT)
+
+    assert f"{error.value}" == message
+
+
 def test_circuit_whose_clbits_differ_from_its_qasm_is_refused():
     circuit = _get_circuit("c[0] = measure $0;", num_clbits=1)
     circuit = circuit.model_copy(update={"num_clbits": 2})

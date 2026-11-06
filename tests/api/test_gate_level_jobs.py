@@ -275,6 +275,35 @@ def test_a_syntax_error_fails_its_job_naming_where_it_is(
     )
 
 
+@pytest.mark.parametrize("client, worker", _QUANTIFY_CLIENT_AND_WORKER)
+@pytest.mark.parametrize(
+    "statement, message",
+    [
+        ("rx $0;", "gate rx takes 1 parameter and 1 qubit, but got 0 parameters"),
+        ("cx $0;", "gate cx takes 0 parameters and 2 qubits, but got 1 qubit"),
+        (
+            "U(0.1, 0.2) $0;",
+            "gate U takes 3 parameters and 1 qubit, but got 2 parameters",
+        ),
+    ],
+    ids=["parameter-missing", "qubit-missing", "too-few-parameters"],
+)
+def test_a_gate_of_the_wrong_arity_fails_its_job_with_the_reason(
+    client, worker, jobs_folder, mocker, fake_clock, statement, message
+):
+    circuit = get_circuit("arity", f"{statement}\nc[0] = measure $0;", num_clbits=1)
+    job = get_circuit_job([circuit], shots=_SHOTS)
+
+    with client as client:
+        response = _upload_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        worker.run(is_burst=True)
+
+    assert response.status_code == 200
+    [got] = get_stored_jobs()
+    assert got.status == JobStatus.FAILED
+    assert got.failure_reason == message
+
+
 @pytest.mark.parametrize(
     "params",
     [

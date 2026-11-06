@@ -11,6 +11,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 - Fixed a circuit with a syntax error outside its `cal` blocks failing its job with nothing after "is not valid
   OpenQASM 3:"; the reason now says where the error is and what, e.g. "line 4, column 0: missing ';' at 'cx'"
+- Fixed a gate given the wrong number of parameters or qubits, as `rx q[0];`, failing its upload with a 500; the job is
+  now taken and fails with e.g. "gate rx takes 1 parameter and 1 qubit, but got 0 parameters"
 
 ## [2026.11.0-rc.10] - 2026-11-06
 

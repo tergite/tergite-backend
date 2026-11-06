@@ -45,6 +45,34 @@ _STATEMENT_NAMES = {
     "SubroutineDefinition": "subroutines",
     "IODeclaration": "inputs and outputs",
 }
+# the parameters and qubits each gate of _get_decomposition's table takes
+_NATIVE_GATE_ARITIES: Dict[str, Tuple[int, int]] = {
+    "rz": (1, 1),
+    "p": (1, 1),
+    "u1": (1, 1),
+    "phase": (1, 1),
+    "z": (0, 1),
+    "s": (0, 1),
+    "sdg": (0, 1),
+    "t": (0, 1),
+    "tdg": (0, 1),
+    "rx": (1, 1),
+    "ry": (1, 1),
+    "x": (0, 1),
+    "y": (0, 1),
+    "sx": (0, 1),
+    "sxdg": (0, 1),
+    "h": (0, 1),
+    "u": (3, 1),
+    "U": (3, 1),
+    "u3": (3, 1),
+    "id": (0, 1),
+    "i": (0, 1),
+    "cz": (0, 2),
+    "cx": (0, 2),
+    "CX": (0, 2),
+    "swap": (0, 2),
+}
 # the gates of stdgates.inc that the table of native decompositions has not, as it defines
 # them, with U for its u1 and u3
 STANDARD_GATE_DEFINITIONS = """
@@ -112,6 +140,8 @@ def to_native_circuit(circuit: QasmCircuit, dt: float) -> gates.NativeCircuit:
             OpenQASM has {m}
         UnsupportedCircuitError: gate {name} is not supported
         UnsupportedCircuitError: gate {name} has a parameter that is not a number
+        UnsupportedCircuitError: gate {name} takes {n} parameters and {m} qubits, but
+            got {k} parameters
         UnsupportedCircuitError: unit {unit} is not supported
         UnsupportedCircuitError: {statements} are not supported
     """
@@ -312,6 +342,8 @@ def _add_gate(
     Raises:
         UnsupportedCircuitError: gate {name} is not supported
         UnsupportedCircuitError: gate {name} has a parameter that is not a number
+        UnsupportedCircuitError: gate {name} takes {n} parameters and {m} qubits, but
+            got {k} parameters
     """
     if gate.modifiers:
         raise UnsupportedCircuitError(
@@ -348,6 +380,7 @@ def _add_gate(
                 )
             )
             continue
+        _check_arity(scope, name, num_params=len(params), num_qubits=len(qubits))
         decomposition = _get_decomposition(name, qubits, params)
         if decomposition is not None:
             scope.native_gates.extend(decomposition)
@@ -393,6 +426,61 @@ def _count_acquisitions(scope: _Scope) -> int:
     return measures + captures
 
 
+def _check_arity(scope: _Scope, name: str, num_params: int, num_qubits: int) -> None:
+    """Refuses a gate applied to other than the parameters and qubits it takes, as the
+    decomposition table, its definition or the program's defcals of it say; a gate none
+    of them knows is left to be refused as unsupported
+
+    Raises:
+        UnsupportedCircuitError: gate {name} takes {n} parameters and {m} qubits, but
+            got {k} parameters
+    """
+    arity = _get_arity(scope, name, num_params, num_qubits)
+    if arity is None or arity == (num_params, num_qubits):
+        return
+    params, qubits = arity
+    if num_params == params:
+        got = _get_quantity(num_qubits, "qubit")
+    elif num_qubits == qubits:
+        got = _get_quantity(num_params, "parameter")
+    else:
+        got = (
+            f"{_get_quantity(num_params, 'parameter')} and "
+            f"{_get_quantity(num_qubits, 'qubit')}"
+        )
+    raise UnsupportedCircuitError(
+        f"gate {name} takes {_get_quantity(params, 'parameter')} and "
+        f"{_get_quantity(qubits, 'qubit')}, but got {got}"
+    )
+
+
+def _get_arity(
+    scope: _Scope, name: str, num_params: int, num_qubits: int
+) -> Optional[Tuple[int, int]]:
+    """The parameters and qubits the gate of the name takes: those of the decomposition
+    table, else of its definition, else of the program's defcals of it, any of which the
+    gate as applied may match; None if none of them knows the gate"""
+    if name in _NATIVE_GATE_ARITIES:
+        return _NATIVE_GATE_ARITIES[name]
+    definition = scope.definitions.get(name) or _get_standard_definitions().get(name)
+    if definition is not None:
+        return len(definition.arguments), len(definition.qubits)
+    defcal_arities = [
+        (len(defcal.arguments), len(defcal.qubits))
+        for (defcal_name, _), defcals in scope.defcals.items()
+        if defcal_name == name
+        for defcal in defcals
+    ]
+    if (num_params, num_qubits) in defcal_arities:
+        return num_params, num_qubits
+    return defcal_arities[-1] if defcal_arities else None
+
+
+def _get_quantity(count: int, noun: str) -> str:
+    """The count of the noun in words, as 1 qubit or 2 qubits"""
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
 def _add_defined_gates(
     scope: _Scope,
     definition: ast.QuantumGateDefinition,
@@ -401,19 +489,7 @@ def _add_defined_gates(
     defining: FrozenSet[str],
 ) -> None:
     """Appends the native gates of the definition's body, its parameters and qubits being
-    the given ones, in order
-
-    Raises:
-        UnsupportedCircuitError: gate {name} takes {n} parameters and {m} qubits
-    """
-    name = definition.name.name
-    if len(params) != len(definition.arguments) or len(qubits) != len(
-        definition.qubits
-    ):
-        raise UnsupportedCircuitError(
-            f"gate {name} takes {len(definition.arguments)} parameters and "
-            f"{len(definition.qubits)} qubits"
-        )
+    the given ones, in order, as many as it takes"""
     parameters = {arg.name: value for arg, value in zip(definition.arguments, params)}
     local_qubits = {arg.name: [qubit] for arg, qubit in zip(definition.qubits, qubits)}
     for statement in definition.body:
