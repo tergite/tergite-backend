@@ -90,6 +90,8 @@ class Device(BaseModel):
     gates: Optional[Dict[str, Any]] = None
     is_active: Optional[bool] = None
     qubit_ids_coupler_map: List[Tuple[Tuple[int, int], int]] = []
+    # what its pulse-level jobs may play; none for a device that refuses them
+    pulse_limits: Optional["PulseLimits"] = None
 
     @classmethod
     def from_config(cls, conf: "BackendConfig") -> "Device":
@@ -129,6 +131,7 @@ class Device(BaseModel):
             is_simulator=general.simulator,
             coupling_dict=conf.device_config.coupling_dict,
             qubit_ids_coupler_map=conf.device_config.qubit_ids_coupler_map,
+            pulse_limits=conf.pulse_limits,
         )
 
 

@@ -68,5 +68,6 @@
     }
   },
   "is_active": true,
-  "qubit_ids_coupler_map": []
+  "qubit_ids_coupler_map": [],
+  "pulse_limits": null
 }
