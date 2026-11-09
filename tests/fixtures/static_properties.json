@@ -52,5 +52,14 @@
   "open_pulse": true,
   "qubit_ids": ["q12", "q13", "q14"],
   "qubit_lo_freq": null,
+  "pulse_limits": {
+    "max_amplitude": { "drive": 0.8, "readout": 0.5, "coupler": 0.5 },
+    "max_frequency_offset": 100000000.0,
+    "max_energy_per_shot": { "drive": 1e-6, "readout": 1e-6, "coupler": 1e-6 },
+    "max_energy_per_job": { "drive": 0.001, "readout": 0.001, "coupler": 0.001 },
+    "max_pulse_duration": 0.0001,
+    "max_samples_per_waveform": 16384,
+    "max_capture_duration": 1.6e-5
+  },
   "version": "2023.06.10"
 }

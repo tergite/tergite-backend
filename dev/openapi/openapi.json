@@ -689,6 +689,17 @@
             "title": "Open Pulse",
             "type": "boolean"
           },
+          "pulse_limits": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PulseLimits"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "qubit_ids": {
             "default": [],
             "items": {
@@ -1575,6 +1586,88 @@
           "frequency"
         ],
         "title": "PulseFrame",
+        "type": "object"
+      },
+      "PulseLimits": {
+        "additionalProperties": false,
+        "description": "What a device's pulse-level jobs may play, which its operators set in the backend\nconfig's pulse_limits: amplitudes as fractions of full scale, energies in full scale\nsquared times seconds, on one frame. A kind of frame a limit by kind leaves out may not\nbe played",
+        "properties": {
+          "max_amplitude": {
+            "additionalProperties": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "propertyNames": {
+              "enum": [
+                "drive",
+                "readout",
+                "coupler"
+              ]
+            },
+            "title": "Max Amplitude",
+            "type": "object"
+          },
+          "max_capture_duration": {
+            "minimum": 0,
+            "title": "Max Capture Duration",
+            "type": "number"
+          },
+          "max_energy_per_job": {
+            "additionalProperties": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "propertyNames": {
+              "enum": [
+                "drive",
+                "readout",
+                "coupler"
+              ]
+            },
+            "title": "Max Energy Per Job",
+            "type": "object"
+          },
+          "max_energy_per_shot": {
+            "additionalProperties": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "propertyNames": {
+              "enum": [
+                "drive",
+                "readout",
+                "coupler"
+              ]
+            },
+            "title": "Max Energy Per Shot",
+            "type": "object"
+          },
+          "max_frequency_offset": {
+            "minimum": 0,
+            "title": "Max Frequency Offset",
+            "type": "number"
+          },
+          "max_pulse_duration": {
+            "minimum": 0,
+            "title": "Max Pulse Duration",
+            "type": "number"
+          },
+          "max_samples_per_waveform": {
+            "minimum": 0,
+            "title": "Max Samples Per Waveform",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "max_amplitude",
+          "max_frequency_offset",
+          "max_energy_per_shot",
+          "max_energy_per_job",
+          "max_pulse_duration",
+          "max_samples_per_waveform",
+          "max_capture_duration"
+        ],
+        "title": "PulseLimits",
         "type": "object"
       },
       "QasmCircuit": {

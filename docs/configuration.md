@@ -92,6 +92,9 @@ couplers, as on a chip whose couplers are parked by hand.
 For a sense of the energies: a constant pulse of 0.3 for 100 ns is 0.3² × 100e-9 = 9e-9; at
 1000 shots in each of two circuits, the job puts 1.8e-5 on that frame.
 
+The device publishes the limits to MSS as its `pulse_limits`, so that users can read them
+before they write a job.
+
 The commented section in [`backend_config.example.toml`](../backend_config.example.toml)
 shows the shape; its values are placeholders, to be replaced with limits chosen for the chip,
 its fridge and its amplifiers. `uv run python -m dev.check_gate_level <device>.env` warns of a

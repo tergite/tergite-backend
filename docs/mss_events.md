@@ -28,7 +28,7 @@ The socket stays open.
 
 | Event | `data` | Sent by | When |
 | --- | --- | --- | --- |
-| `initialized` | `Device`: the device's properties | heavy worker | at start, after loading the executor |
+| `initialized` | `Device`: the device's properties, with the `pulse_limits` of a device that takes pulse-level jobs | heavy worker | at start, after loading the executor |
 | `recalibrated` | `DeviceCalibration`, with the frames and `defcal`s of a device that takes pulse-level jobs | heavy worker | at start, right after `initialized`; after each recalibration |
 | `job_updated` | `Job`, whole | the worker running the job | when it fails; when it gets its results; at `FINAL_W` |
 | `switched_off` | `{"date"}` | API | on `POST /switch/off` |
