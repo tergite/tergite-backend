@@ -2442,7 +2442,7 @@
   "info": {
     "description": "Interfaces Quantum processor via REST API",
     "title": "Backend Control Computer",
-    "version": "v2026.11.0-rc.12"
+    "version": "v2026.11.0-rc.13"
   },
   "openapi": "3.1.0",
   "paths": {

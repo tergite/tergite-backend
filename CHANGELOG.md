@@ -7,6 +7,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.11.0-rc.13] - 2026-11-09
+
 ### Added
 
 - Added the device's `pulse_limits` to what it sends MSS on start, `null` for a device that takes no pulse-level jobs,
