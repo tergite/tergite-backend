@@ -15,6 +15,7 @@
 """Utility functions for the scheduler service"""
 
 import logging
+import shutil
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Optional, Tuple
@@ -148,13 +149,17 @@ def move_file(file: Path, new_folder: Path, ext: str = "") -> Path:
     return file.replace(new_file_path)
 
 
-def delete_job_files(device_settings: DeviceSettings, job_id: str) -> None:
+def delete_job_files(
+    device_settings: DeviceSettings, job_id: str, experiment_folder: Optional[Path]
+) -> None:
     """Deletes the files the device keeps of the job: its upload, its preprocessed
-    experiments and its results, those that there are
+    experiments, its results, and its experiments' folder in the executor's data, those
+    that there are
 
     Args:
         device_settings: the settings of the device
         job_id: the unique identifier of the job
+        experiment_folder: the folder of the job's experiments; None if it has none
     """
     job_files = (
         device_settings.job_upload_pool / job_id,
@@ -163,6 +168,11 @@ def delete_job_files(device_settings: DeviceSettings, job_id: str) -> None:
     )
     for job_file in job_files:
         job_file.unlink(missing_ok=True)
+    # removed only inside the executor's data, whatever the job's row says
+    if experiment_folder is not None and experiment_folder.resolve().is_relative_to(
+        device_settings.executor_data_dir.resolve()
+    ):
+        shutil.rmtree(experiment_folder, ignore_errors=True)
 
 
 def update_job_stage(jobs_store: JobsStore, job_id: str, stage: Stage) -> Job:

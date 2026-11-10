@@ -531,8 +531,8 @@ def delete_expired_jobs(device: DeviceResources) -> None:
     Args:
         device: what the device runs on
     """
-    for job_id in device.jobs_store.delete_expired():
-        delete_job_files(device.settings, job_id)
+    for job_id, experiment_folder in device.jobs_store.delete_expired().items():
+        delete_job_files(device.settings, job_id, experiment_folder=experiment_folder)
 
 
 def fail_abandoned_recalibrations(device: DeviceResources) -> None:

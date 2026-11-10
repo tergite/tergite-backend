@@ -153,11 +153,26 @@ class QuantumExecutor(abc.ABC):
         self.close()
 
 
+def create_experiment_folder(executor: QuantumExecutor) -> Tuple[TUID, Path]:
+    """Creates the folder in the executor's data of a new job's experiments, for
+    preprocess_circuits to be given its TUID
+
+    Args:
+        executor: the executor the job is to run on
+
+    Returns:
+        the experiments' TUID, and their folder
+    """
+    tuid = gen_tuid()
+    return tuid, Path(create_exp_folder(tuid=tuid, datadir=executor.data_dir))
+
+
 def preprocess_circuits(
     executor: QuantumExecutor,
     params: CircuitJobParams,
     job_id: str,
     results_folder: Path,
+    tuid: Optional[TUID] = None,
 ) -> Tuple[float, str]:
     """Compiles a gate-level job's circuits on the executor, but does not run them yet
 
@@ -166,6 +181,8 @@ def preprocess_circuits(
         params: the circuits of the job and how to measure them
         job_id: the ID of the job
         results_folder: the folder to store the experiment resulting files
+        tuid: the experiments' TUID, whose folder create_experiment_folder made; default:
+            a new one
 
     Returns:
         tuple of the duration and the path to the pickle file containing the experiments
@@ -180,7 +197,7 @@ def preprocess_circuits(
         params, n_qubits=executor.backend_config.general_config.num_qubits
     )
     expt_metadata = CircuitExptMetadata(
-        native_config=native_config, tuid=gen_tuid(), params=params
+        native_config=native_config, tuid=tuid or gen_tuid(), params=params
     )
     tuid = expt_metadata.tuid
     create_exp_folder(tuid=tuid, name=expt_metadata.tag, datadir=executor.data_dir)

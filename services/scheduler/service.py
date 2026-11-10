@@ -257,8 +257,8 @@ def delete_job(
             device, job_id=job_id, user_id=user_id, is_mss_admin=is_mss_admin
         )
 
-    device.jobs_store.delete(job_id)
-    delete_job_files(device.settings, job_id)
+    experiment_folder = device.jobs_store.delete(job_id)
+    delete_job_files(device.settings, job_id, experiment_folder=experiment_folder)
     return job
 
 

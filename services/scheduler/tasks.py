@@ -27,7 +27,11 @@ from typing import Iterator, Optional
 from pydantic import ValidationError
 
 from libs.device_parameters import DeviceCalibration
-from libs.quantum_executor.base.executor import preprocess_circuits, run_job
+from libs.quantum_executor.base.executor import (
+    create_experiment_folder,
+    preprocess_circuits,
+    run_job,
+)
 from libs.quantum_executor.base.quantum_job import (
     MeasLvl,
     discriminate_circuit_results,
@@ -200,13 +204,18 @@ def _read_job_file(job_file: Path) -> JobFile:
 
 
 def _estimate_duration(device: DeviceResources, job_file: JobFile) -> float:
-    """Compiles the job's circuits on the executor, and gets the seconds they would take"""
+    """Compiles the job's circuits on the executor, in a folder of the executor's data it
+    records for the job, and gets the seconds they would take"""
     with device.executor_lock:
+        tuid, experiment_folder = create_experiment_folder(device.executor)
+        # before compiling, which may fail, so that the folder goes with the job anyway
+        device.jobs_store.set_experiment_folder(job_file.job_id, experiment_folder)
         duration, _ = preprocess_circuits(
             device.executor,
             job_file.params,
             job_id=job_file.job_id,
             results_folder=device.settings.preprocessed_job_pool,
+            tuid=tuid,
         )
     return duration
 

@@ -14,7 +14,8 @@
 """The jobs of a device, in its SQL database"""
 
 from datetime import datetime, timedelta
-from typing import List, Optional, Self
+from pathlib import Path
+from typing import Dict, List, Optional, Self
 
 from sqlalchemy import Engine
 from sqlmodel import Field, Session, SQLModel, col, delete, select
@@ -46,11 +47,13 @@ class JobRow(SQLModel, table=True):
     estimated_duration: Optional[float] = None
     created_at: Optional[datetime] = Field(default=None, index=True)
     # the dispatcher's: when a worker claimed the job's current stage, when its execution
-    # ended, whether, booked, it waits for the time outside bookings, and its results
+    # ended, whether, booked, it waits for the time outside bookings, its results, and the
+    # folder of its experiments in the executor's data
     claimed_at: Optional[datetime] = None
     executed_at: Optional[datetime] = None
     is_booking_excluded: bool = False
     results_file: Optional[str] = None
+    experiment_folder: Optional[str] = None
 
 
 class RecalibrationRow(SQLModel, table=True):
@@ -189,27 +192,47 @@ class JobsStore:
                 )
             return _write_updates(session, row, job, updates)
 
-    def delete(self, job_id: str) -> None:
+    def set_experiment_folder(self, job_id: str, folder: Path) -> None:
+        """Records the folder of the job's experiments in the executor's data
+
+        Args:
+            job_id: the id of the job
+            folder: the folder
+
+        Raises:
+            ItemNotFoundError: '{job_id}' not found
+        """
+        with Session(self._db_engine) as session:
+            row = _get_row(session, self._device_name, job_id)
+            row.experiment_folder = str(folder)
+            session.add(row)
+            session.commit()
+
+    def delete(self, job_id: str) -> Optional[Path]:
         """Deletes the job of the given id, if the device has it
 
         Args:
             job_id: the id of the job
-        """
-        with Session(self._db_engine) as session:
-            session.exec(
-                delete(JobRow).where(
-                    col(JobRow.device_name) == self._device_name,
-                    col(JobRow.job_id) == job_id,
-                )
-            )
-            session.commit()
 
-    def delete_expired(self) -> List[str]:
+        Returns:
+            the folder of the job's experiments, if it was deleted and had one
+        """
+        with open_immediate_session(self._db_engine) as session:
+            row = session.get(JobRow, (self._device_name, job_id))
+            if row is None:
+                return None
+            experiment_folder = row.experiment_folder
+            session.delete(row)
+            session.commit()
+        return Path(experiment_folder) if experiment_folder else None
+
+    def delete_expired(self) -> Dict[str, Optional[Path]]:
         """Deletes the device's jobs that have ended and were last written over `ttl` seconds
         ago
 
         Returns:
-            the ids of the jobs deleted
+            the folders of the deleted jobs' experiments, None for a job without one, by
+            the jobs' ids
         """
         expired = (
             col(JobRow.device_name) == self._device_name,
@@ -218,10 +241,14 @@ class JobsStore:
             col(JobRow.updated_at) < get_utc_now() - self._ttl,
         )
         with open_immediate_session(self._db_engine) as session:
-            job_ids = list(session.exec(select(JobRow.job_id).where(*expired)))
+            expired_jobs = session.exec(
+                select(JobRow.job_id, JobRow.experiment_folder).where(*expired)
+            ).all()
             session.exec(delete(JobRow).where(*expired))
             session.commit()
-        return job_ids
+        return {
+            job_id: Path(folder) if folder else None for job_id, folder in expired_jobs
+        }
 
     def find(
         self,

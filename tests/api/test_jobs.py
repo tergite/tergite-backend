@@ -2030,21 +2030,52 @@ def test_files_of_a_deleted_job_are_deleted(
         assert [file.exists() for file in job_files] == [False, False]
 
 
+@pytest.mark.parametrize("should_preprocessing_fail", [False, True])
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS[:1])
+def test_experiment_folder_of_a_deleted_job_is_deleted(
+    client, jobs_folder, worker, job, mocker, fake_clock, should_preprocessing_fail
+):
+    """The executor makes it as preprocessing starts, so a failed job has one too"""
+    with client as client:
+        device = next(iter(worker.device_resources.values()))
+        folders_before = _get_experiment_folders(device)
+        if should_preprocessing_fail:
+            mocker.patch(
+                "libs.quantum_executor.base.executor.get_calibrated_frame_frequencies",
+                side_effect=ValueError("uncompilable circuits"),
+            )
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        worker.run(is_burst=True)
+        job_folders = _get_experiment_folders(device) - folders_before
+
+        client.delete(
+            f"/jobs/{job_info['job_id']}",
+            headers=create_mss_headers(user_id=job_info["user_id"]),
+        )
+
+        assert job_folders != set()
+        assert [folder for folder in job_folders if folder.exists()] == []
+
+
 @pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS[:1])
 def test_files_of_an_expired_job_are_deleted(
     client, jobs_folder, worker, job, mocker, fake_clock
 ):
     with client as client:
+        device = next(iter(worker.device_resources.values()))
+        folders_before = _get_experiment_folders(device)
         job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
         worker.run(is_burst=True)
-        device = next(iter(worker.device_resources.values()))
         job_files = _get_job_files(device, job_info["job_id"])
+        job_folders = _get_experiment_folders(device) - folders_before
 
         fake_clock.shift(device.settings.jobs_store_ttl + 1)
         _submit_another_job(client, job, job_info, mocker, jobs_folder)
         worker.run(is_burst=True)
 
         assert [file.exists() for file in job_files] == [False, False]
+        assert job_folders != set()
+        assert [folder for folder in job_folders if folder.exists()] == []
 
 
 @pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS[:1])
@@ -2368,6 +2399,13 @@ def _get_job_files(device: DeviceResources, job_id: str) -> list[Path]:
         device.settings.job_upload_pool / job_id,
         device.settings.log_file_pool / f"{job_id}.hdf5",
     ]
+
+
+def _get_experiment_folders(device: DeviceResources) -> set[Path]:
+    """Gets the experiment folders in the device's executor data, as quantify names them:
+    <data dir>/<date>/<tuid>"""
+    data_dir = device.settings.executor_data_dir
+    return {folder for folder in data_dir.glob("[0-9]" * 8 + "/*") if folder.is_dir()}
 
 
 def _submit_another_job(

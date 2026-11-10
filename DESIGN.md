@@ -199,9 +199,10 @@ several: [docs/deployment.md](docs/deployment.md#serve-several-devices-from-one-
 Alembic migrates it at start. `tests/test_migrations.py` fails if a model changed without a
 revision. On SQLite the database runs in WAL mode, so it wants a local disk.
 
-**Files**, under `<BCC_STORAGE_ROOT>/<device>/`: uploaded and preprocessed job files and the
-results (as HDF5), kept until their job is deleted or expires, the executor's data and lock,
-the workers' wake-up port files and the job supervisor log.
+**Files**, under `<BCC_STORAGE_ROOT>/<device>/`: each job's upload, preprocessed experiments,
+results (as HDF5) and experiment folder in the executor's data, kept until the job is deleted
+or expires; the rest of the executor's data and its lock, the workers' wake-up port files and
+the job supervisor log.
 
 **Configuration**: each device's env file and the files it names. See
 [docs/configuration.md](docs/configuration.md).
