@@ -60,6 +60,10 @@ _DEADLINE_MARGIN_SECONDS = 60.0
 # picks, in the session, a waiting job of the device at the stage, or none
 _RowPicker = Callable[[Session, DeviceResources, Stage], Optional[JobRow]]
 _TERMINAL_STATUSES = tuple(status.value for status in JobStatus if status.is_terminal())
+_ENDED_RECALIBRATION_STATUSES = (
+    RecalibrationStatus.FINISHED,
+    RecalibrationStatus.FAILED,
+)
 
 
 class Dispatcher:
@@ -179,6 +183,7 @@ class Dispatcher:
         fail_jobs_queued_too_long(device)
         delete_expired_mss_nonces(device.bookings_db)
         delete_expired_jobs(device)
+        delete_expired_recalibrations(device)
         if self._should_run_light and run_next_postprocessing(device, self._deadline):
             return True
         if not self._should_run_heavy:
@@ -533,6 +538,36 @@ def delete_expired_jobs(device: DeviceResources) -> None:
     """
     for job_id, experiment_folder in device.jobs_store.delete_expired().items():
         delete_job_files(device.settings, job_id, experiment_folder=experiment_folder)
+
+
+def delete_expired_recalibrations(device: DeviceResources) -> None:
+    """Deletes the device's recalibrations that ended over BCC_RECALIBRATIONS_TTL ago, but
+    the last that ended, which /recalibration/info shows
+
+    Args:
+        device: what the device runs on
+    """
+    device_name = device.settings.default_prefix
+    expired_at = get_utc_now() - timedelta(seconds=device.settings.recalibrations_ttl)
+    with Session(device.bookings_db) as session:
+        ended = select(RecalibrationRow.id).where(
+            col(RecalibrationRow.device_name) == device_name,
+            col(RecalibrationRow.status).in_(_ENDED_RECALIBRATION_STATUSES),
+        )
+        last_id = session.exec(
+            ended.order_by(col(RecalibrationRow.ended_at).desc())
+        ).first()
+        if last_id is None:
+            return
+        session.exec(
+            delete(RecalibrationRow).where(
+                col(RecalibrationRow.device_name) == device_name,
+                col(RecalibrationRow.status).in_(_ENDED_RECALIBRATION_STATUSES),
+                col(RecalibrationRow.ended_at) <= expired_at,
+                col(RecalibrationRow.id) != last_id,
+            )
+        )
+        session.commit()
 
 
 def fail_abandoned_recalibrations(device: DeviceResources) -> None:

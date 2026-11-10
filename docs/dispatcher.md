@@ -259,6 +259,9 @@ A recalibration is a row of the `recalibration` table: `scheduled` with a `due_a
 - **Abandoned rows**: a starting heavy worker fails rows left `started` by a worker that
   stopped (`fail_abandoned_recalibrations`), unless another heavy worker holds the executor
   lock.
+- **Expiry**: an ended row is deleted `BCC_RECALIBRATIONS_TTL` seconds after it ended, by the
+  next worker pass (`delete_expired_recalibrations`); the device's last ended row is kept,
+  as `/recalibration/info` shows it.
 
 ## The executor lock
 

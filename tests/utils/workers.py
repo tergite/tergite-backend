@@ -92,6 +92,14 @@ def set_worker_executor(worker: TestWorker, executor: Any) -> None:
         )
 
 
+def set_worker_settings(worker: TestWorker, **updates: Any) -> None:
+    """Changes the given settings of the worker's devices"""
+    for device, resources in worker.device_resources.items():
+        worker.device_resources[device] = dataclasses.replace(
+            resources, settings=resources.settings.model_copy(update=updates)
+        )
+
+
 def _get_device_worker(prefix: str) -> Generator[TestWorker, Any, None]:
     device = preload_worker_globals(
         settings.get_device_settings(prefix), should_load_executor=True

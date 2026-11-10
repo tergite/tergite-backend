@@ -190,7 +190,7 @@ several: [docs/deployment.md](docs/deployment.md#serve-several-devices-from-one-
 | --- | --- |
 | `user`, `booking` | users who have booked or submitted, shared by the devices of the database, and each device's bookings |
 | `job` | each device's jobs and their stages |
-| `recalibration` | recalibrations done, running and due |
+| `recalibration` | recalibrations done, kept for `BCC_RECALIBRATIONS_TTL`, running and due |
 | `device_parameters` | each device's properties and calibration |
 | `switched_off_device` | devices that are switched off |
 | `mss_nonce` | MSS's request ids, against replays |

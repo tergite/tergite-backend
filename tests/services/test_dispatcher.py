@@ -42,6 +42,7 @@ def test_a_light_worker_takes_its_devices_in_turn(mocker):
     mocker.patch.object(dispatcher, "fail_overdue_jobs")
     mocker.patch.object(dispatcher, "fail_jobs_queued_too_long")
     mocker.patch.object(dispatcher, "delete_expired_jobs")
+    mocker.patch.object(dispatcher, "delete_expired_recalibrations")
     mocker.patch.object(dispatcher, "delete_expired_mss_nonces")
     mocker.patch.object(
         dispatcher, "run_next_postprocessing", side_effect=postprocess_next
@@ -63,6 +64,7 @@ def test_a_worker_with_nothing_to_do_waits_the_shortest_of_its_devices_settings(
     mocker.patch.object(dispatcher, "fail_overdue_jobs")
     mocker.patch.object(dispatcher, "fail_jobs_queued_too_long")
     mocker.patch.object(dispatcher, "delete_expired_jobs")
+    mocker.patch.object(dispatcher, "delete_expired_recalibrations")
     mocker.patch.object(dispatcher, "delete_expired_mss_nonces")
     mocker.patch.object(dispatcher, "run_next_postprocessing", return_value=False)
     listener = mocker.patch.object(dispatcher, "WakeUpListener").return_value
@@ -89,6 +91,7 @@ def test_a_pass_sweeps_the_devices_expired_mss_nonces(mocker):
     mocker.patch.object(dispatcher, "fail_overdue_jobs")
     mocker.patch.object(dispatcher, "fail_jobs_queued_too_long")
     mocker.patch.object(dispatcher, "delete_expired_jobs")
+    mocker.patch.object(dispatcher, "delete_expired_recalibrations")
     mocker.patch.object(dispatcher, "run_next_postprocessing", return_value=False)
     sweep = mocker.patch.object(dispatcher, "delete_expired_mss_nonces")
     device = _get_device("alpha")

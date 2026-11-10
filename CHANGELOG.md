@@ -34,6 +34,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   kept forever on disk; they are deleted with the job, when it is deleted or expires
 - Fixed the job supervisor log growing without bound; it is rotated past `BCC_JOB_SUPERVISOR_LOG_MAX_BYTES` (10 MiB),
   keeping `BCC_JOB_SUPERVISOR_LOG_BACKUP_COUNT` (5) backups
+- Fixed every recalibration done being kept in the database forever; one that ended is deleted
+  `BCC_RECALIBRATIONS_TTL` (two weeks) after it ended, but for the device's last
 
 ## [2026.11.0-rc.13] - 2026-11-09
 
