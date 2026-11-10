@@ -25,6 +25,8 @@ from .exc import InvalidRequestError
 
 # beside main.py, in a checkout and in the wheel the packages install
 _MIGRATIONS_DIR = Path(__file__).parents[1] / "migrations"
+# the key of the PostgreSQL advisory lock that immediate sessions take, "bcc_imme" in ASCII
+_IMMEDIATE_SESSION_LOCK_KEY = 0x6263_635F_696D_6D65
 
 
 def get_sql_engine(url: str) -> Engine:
@@ -75,8 +77,10 @@ def get_alembic_config(url: str) -> Config:
 
 @contextmanager
 def open_immediate_session(db_engine: Engine) -> Iterator[Session]:
-    """Opens a session that, on SQLite, takes the write lock as it begins, so that what it
-    reads cannot change before it writes, even from another process
+    """Opens a session that takes the database's write lock as it begins, so that what it
+    reads cannot change before it writes, even from another process: on SQLite, SQLite's
+    own; on PostgreSQL, one that only these sessions take, held to the end of the
+    transaction
 
     Args:
         db_engine: the engine of the database
@@ -87,6 +91,10 @@ def open_immediate_session(db_engine: Engine) -> Iterator[Session]:
     with Session(db_engine) as session:
         if db_engine.dialect.name == "sqlite":
             session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+        elif db_engine.dialect.name == "postgresql":
+            session.connection().exec_driver_sql(
+                f"SELECT pg_advisory_xact_lock({_IMMEDIATE_SESSION_LOCK_KEY})"
+            )
         yield session
 
 

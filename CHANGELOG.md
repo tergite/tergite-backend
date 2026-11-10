@@ -20,6 +20,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 - Fixed devices that share a database, as the example env file's do, sharing their bookings: one device's booking
   refused overlapping bookings on the others and reordered their job queues; existing bookings go to the device that
   migrates the database
+- Fixed the backend on PostgreSQL letting concurrent writes interleave: updates to a job could be lost, two bookings of
+  the same slot could both be taken, and two processes could send MSS the same kept event
 
 ## [2026.11.0-rc.13] - 2026-11-09
 

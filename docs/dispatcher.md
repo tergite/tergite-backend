@@ -96,7 +96,10 @@ Two workers never claim the same row:
 
 - On SQLite, `open_immediate_session` starts the transaction with `BEGIN IMMEDIATE`, which
   takes the write lock.
-- On PostgreSQL, the query uses `SELECT … FOR UPDATE SKIP LOCKED`.
+- On PostgreSQL, the query uses `SELECT … FOR UPDATE SKIP LOCKED`, and
+  `open_immediate_session` takes a transaction-scoped advisory lock, which serializes the
+  other reads-then-writes as SQLite's write lock does: a job's updates, a booking's overlap
+  check and the claim of a kept MSS event.
 
 ## Which job executes next
 

@@ -11,7 +11,10 @@
 # that they have been altered from the originals.
 """Tests for the SQL engines the devices' stores run on"""
 
-from utils.sql_db import get_sql_engine
+import threading
+
+from tests.utils.env import TEST_BOOKING_DB_URL
+from utils.sql_db import get_sql_engine, open_immediate_session
 
 
 def test_a_sqlite_file_is_written_ahead_and_synced_at_checkpoints(tmp_path):
@@ -24,3 +27,23 @@ def test_a_sqlite_file_is_written_ahead_and_synced_at_checkpoints(tmp_path):
 
     # 1 is NORMAL
     assert (journal_mode, synchronous) == ("wal", 1)
+
+
+def test_an_immediate_session_waits_for_another_to_end():
+    """So that what it reads cannot change before it writes, on each database the
+    tests run on"""
+    db_engine = get_sql_engine(TEST_BOOKING_DB_URL)
+    is_second_open = threading.Event()
+
+    def open_second_session() -> None:
+        with open_immediate_session(db_engine):
+            is_second_open.set()
+
+    second_session = threading.Thread(target=open_second_session)
+    with open_immediate_session(db_engine):
+        second_session.start()
+        is_second_open_meanwhile = is_second_open.wait(timeout=1)
+    second_session.join()
+
+    assert not is_second_open_meanwhile
+    assert is_second_open.is_set()
