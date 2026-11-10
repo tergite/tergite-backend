@@ -8,6 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+import time_machine
 
 from services.external.mss import MssClient
 from tests.utils.api import create_mss_headers, get_test_client
@@ -233,6 +234,26 @@ def test_a_booking_on_one_device_leaves_the_others_free(tmp_path, monkeypatch, m
     assert [booking["id"] for booking in beta_bookings.json()["data"]] == [
         beta_response.json()["id"]
     ]
+
+
+def test_a_restarted_device_keeps_the_recalibration_it_had_scheduled(
+    tmp_path, monkeypatch, mocker
+):
+    """A device restarted more often than its interval would otherwise never recalibrate"""
+    from api import app
+    from services.scheduler import get_recalibration_info
+
+    load_test_devices(tmp_path, monkeypatch, ["Alpha"])
+    mocker.patch.object(MssClient, "send_event")
+
+    with time_machine.travel(datetime.now(timezone.utc), tick=False) as clock:
+        with get_test_client(app):
+            first_info = get_recalibration_info(app.state.device_resources["Alpha"])
+        clock.shift(timedelta(hours=1))
+        with get_test_client(app):
+            info = get_recalibration_info(app.state.device_resources["Alpha"])
+
+    assert info.next_job_enqueued_at == first_info.next_job_enqueued_at
 
 
 def test_each_device_has_its_own_executor_lock(tmp_path, monkeypatch):

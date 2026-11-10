@@ -244,7 +244,8 @@ A recalibration is a row of the `recalibration` table: `scheduled` with a `due_a
 - **Scheduling** one replaces the device's scheduled rows and stops the running one from
   repeating. The new row is due now unless given a time, and repeats every
   `BCC_DEFAULT_RECALIBRATION_INTERVAL` unless given an interval. The API schedules one at
-  every start.
+  every start, due now or, without `BCC_SHOULD_RECALIBRATE_AT_START`, an interval later,
+  unless the one already scheduled is due sooner; stopping leaves it scheduled.
 - **Running**: a heavy worker starts the earliest due row and inserts the next one an
   interval later, in one transaction. It runs under the executor lock and
   `BCC_MAX_RECALIBRATION_QUEUE_TIME`.

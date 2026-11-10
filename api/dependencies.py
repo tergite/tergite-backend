@@ -39,8 +39,8 @@ from services.scheduler import (
     JobFile,
     close_device_resources,
     get_job,
+    get_recalibration_info,
     init_recalibration,
-    stop_recalibration,
 )
 from utils.config import create_device_folders
 from utils.datetime import get_utc_now
@@ -85,8 +85,6 @@ async def lifespan(app: FastAPI):
     logging.info(f"starting app at {get_utc_now()}")
     yield
 
-    for device_resources in app.state.device_resources.values():
-        stop_recalibration(device_resources)
     for device_resources in app.state.device_resources.values():
         close_device_resources(device_resources)
     app.state.device_resources.clear()
@@ -448,12 +446,14 @@ def get_verified_mss_details(request: Request) -> MSSAuthDetails:
 
 def _start_device(device: DeviceResources) -> None:
     """Starts the device's recalibrations, the first now or, where its settings say not to
-    recalibrate at start, an interval from now; its parameters are the heavy worker's to
-    publish"""
+    recalibrate at start, an interval from now, unless one scheduled before is due sooner;
+    its parameters are the heavy worker's to publish"""
     settings = device.settings
-    first_at = None
+    first_at = get_utc_now()
     if not settings.should_recalibrate_at_start:
-        first_at = get_utc_now() + timedelta(
-            seconds=settings.default_recalibration_interval
-        )
+        first_at += timedelta(seconds=settings.default_recalibration_interval)
+    # else a device restarted more often than its interval would never recalibrate
+    scheduled_at = get_recalibration_info(device).next_job_enqueued_at
+    if scheduled_at is not None:
+        first_at = min(first_at, scheduled_at)
     init_recalibration(device, start_timestamp=first_at)

@@ -26,6 +26,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   upload; that upload is refused with 409
 - Fixed two recalibrations scheduled at once, as by two requests to `/recalibration/init`, leaving two schedules that
   each repeated
+- Fixed each restart putting the next recalibration off by a whole `BCC_DEFAULT_RECALIBRATION_INTERVAL`, so that a
+  device restarted more often than that never recalibrated; a restart keeps the one already scheduled if it is due sooner
 
 ## [2026.11.0-rc.13] - 2026-11-09
 
