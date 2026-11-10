@@ -26,6 +26,8 @@ from utils.exc import ConflictError, ItemNotFoundError, JobAlreadyCompleteError
 from utils.sql_db import open_immediate_session
 from utils.strings import uuid_str
 
+_ENDED_STATUSES = tuple(status.value for status in JobStatus if status.is_terminal())
+
 
 class JobRow(SQLModel, table=True):
     """A job, in the jobs table that the devices sharing a database share"""
@@ -67,8 +69,8 @@ class RecalibrationRow(SQLModel, table=True):
 
 
 class JobsStore:
-    """The jobs of one device, which expire `ttl` seconds after they were last written; the
-    status of a job that has ended is final"""
+    """The jobs of one device, which expire `ttl` seconds after they were last written, once
+    they have ended, whose status is then final"""
 
     def __init__(self, db_engine: Engine, device_name: str, ttl: float):
         self._db_engine = db_engine
@@ -105,7 +107,8 @@ class JobsStore:
             return session.get(JobRow, (self._device_name, job_id)) is not None
 
     def insert(self, job: Job) -> Job:
-        """Inserts the job, unless the device has one of its id, and deletes the expired ones
+        """Inserts the job, unless the device has one of its id, and deletes the expired ones,
+        which have ended
 
         Args:
             job: the job to insert
@@ -121,6 +124,8 @@ class JobsStore:
             session.exec(
                 delete(JobRow).where(
                     col(JobRow.device_name) == self._device_name,
+                    # a job may wait unwritten at a stage without a time limit
+                    col(JobRow.status).in_(_ENDED_STATUSES),
                     col(JobRow.updated_at) < now - self._ttl,
                 )
             )

@@ -28,6 +28,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   each repeated
 - Fixed each restart putting the next recalibration off by a whole `BCC_DEFAULT_RECALIBRATION_INTERVAL`, so that a
   device restarted more often than that never recalibrated; a restart keeps the one already scheduled if it is due sooner
+- Fixed `BCC_JOBS_STORE_TTL` deleting jobs that had not ended, as one left waiting by a time limit of 0, without
+  telling MSS; only ended jobs expire
 
 ## [2026.11.0-rc.13] - 2026-11-09
 

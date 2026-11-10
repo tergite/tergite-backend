@@ -83,7 +83,7 @@ class DeviceSettings(BaseSettings):
     mss_public_key_path: Path = _ROOT_PATH / "public-mss-key.pem"
     # time-to-live for the nonce; defaults to 5 minutes
     mss_nonce_ttl: float = 300
-    # how long a job is kept after it last changed; defaults to 2 weeks
+    # how long a job that has ended is kept after it last changed; defaults to 2 weeks
     jobs_store_ttl: float = 3600 * 24 * 14
     private_key_file: Path = _ROOT_PATH / "private-bcc-key.pem"
     private_key_password: Optional[bytes] = None

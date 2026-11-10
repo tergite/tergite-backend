@@ -233,8 +233,9 @@ from a thread, while its deadline holds.
   overdue jobs cannot overwrite one another, and MSS hears of a job's end once.
 - **Deleting** cancels the job if it has not ended, then deletes its row. A worker that
   finds the job of its stage deleted drops it and goes on.
-- **Expiry**: a job's row is deleted `BCC_JOBS_STORE_TTL` seconds after it was last written,
-  when another job is inserted.
+- **Expiry**: an ended job's row is deleted `BCC_JOBS_STORE_TTL` seconds after it was last
+  written, when another job is inserted. A job that has not ended is kept, as it may wait
+  unwritten at a stage whose time limit is 0.
 
 ## Recalibration
 

@@ -19,11 +19,13 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 from itertools import zip_longest
+from pathlib import Path
 from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
 import time_machine
+from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
 
 from api.routers.jobs import JOBS_PAGE_SIZE
@@ -51,6 +53,7 @@ from tests.utils.env import (
     TEST_MAX_IDLE_TIME,
 )
 from tests.utils.jobs import (
+    JobSubmissionMetadata,
     cancel_job_via_mss,
     claim_job_long_ago,
     get_job_submission_metadata,
@@ -2007,6 +2010,29 @@ def test_job_whose_worker_died_fails_after_its_time_limit(
         assert stored_job.status == expected_status
 
 
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS[:1])
+def test_job_at_a_stage_without_a_time_limit_outlives_the_store_ttl(
+    client, jobs_folder, worker, job, mocker, fake_clock
+):
+    """A time limit of 0 is none, so the job may stay at its stage unwritten"""
+    with client as client:
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        worker.run(is_burst=True, max_jobs=1)
+        [device_name] = worker.device_resources
+        device = worker.device_resources[device_name]
+        claim_job_long_ago(device, job_id=job_info["job_id"], stage=Stage.EXEC_W)
+        worker.device_resources[device_name] = dataclasses.replace(
+            device,
+            settings=device.settings.model_copy(update={"max_execution_time": 0}),
+        )
+
+        fake_clock.shift(device.settings.jobs_store_ttl + 1)
+        _submit_another_job(client, job, job_info, mocker, jobs_folder)
+        worker.run(is_burst=True)
+
+        assert job_info["job_id"] in [job.job_id for job in get_stored_jobs()]
+
+
 @pytest.mark.timeout(60)
 @pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_waiting_workers_are_woken_for_a_new_job(
@@ -2297,3 +2323,21 @@ def _wait_for_job_to_end(max_wait_seconds: float) -> Job:
             break
         time.sleep(0.1)
     return stored_job
+
+
+def _submit_another_job(
+    client: TestClient,
+    job: dict,
+    job_info: JobSubmissionMetadata,
+    mocker: MockerFixture,
+    jobs_folder: Path,
+) -> None:
+    """Submits a new job like the one of the info, for its user"""
+    [other_job_info] = get_job_submission_metadata(
+        client,
+        jobs=get_raw_jobs(job, durations=[0.2]),
+        users=[{"id": job_info["user_id"]}],
+        mocker=mocker,
+        jobs_folder=jobs_folder,
+    )
+    submit_jobs(client, data=[other_job_info])
