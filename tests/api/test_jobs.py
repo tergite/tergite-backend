@@ -48,6 +48,7 @@ from tests.utils.bookings import (
 )
 from tests.utils.env import (
     TEST_JWT_TTL,
+    TEST_MAX_IDLE_TIME,
 )
 from tests.utils.jobs import (
     cancel_job_via_mss,
@@ -531,6 +532,41 @@ def test_booker_job_longer_than_the_time_left_fails(
         assert (
             job_in_db.failure_reason == "job too long for the time left in the booking"
         )
+
+
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS)
+def test_others_jobs_run_once_a_booker_whose_execution_failed_is_idle(
+    client, worker, job, jobs_folder, mocker, fake_clock
+):
+    """A job failed or cancelled in execution is left at that stage"""
+    with client as client:
+        [booker, other_user] = create_many_users(client, USERS[:2])
+        create_booking(
+            client, user_id=booker["id"], booking={"duration": 60, "starts_in": 0}
+        )
+        [booker_job, other_job] = get_job_submission_metadata(
+            client,
+            jobs=get_raw_jobs(job, durations=[0.2, 0.2]),
+            users=[booker, other_user],
+            mocker=mocker,
+            jobs_folder=jobs_folder,
+        )
+        submit_jobs(client, data=[booker_job])
+        failing_execution = mocker.patch.object(
+            scheduler_tasks, "run_job", side_effect=RuntimeError("device lost")
+        )
+        worker.run(is_burst=True)
+        mocker.stop(failing_execution)
+        submit_jobs(client, data=[other_job])
+
+        fake_clock.shift(TEST_MAX_IDLE_TIME + 1)
+        worker.run(is_burst=True)
+
+        stored_jobs = {job.job_id: job.status for job in get_stored_jobs()}
+        assert stored_jobs == {
+            booker_job["job_id"]: JobStatus.FAILED,
+            other_job["job_id"]: JobStatus.SUCCESSFUL,
+        }
 
 
 @pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)

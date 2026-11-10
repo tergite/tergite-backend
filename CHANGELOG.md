@@ -13,6 +13,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   executed ended failed if the execution then failed, and a timed-out job reached MSS failed twice with two reasons
 - Fixed deleting a job while a worker had it, as during its postprocessing, stopping that worker and so restarting the
   whole backend; the worker now drops the deleted job
+- Fixed a booker's job that failed or was cancelled while it executed keeping the booker from ever counting as idle, so
+  that no one else's job ran during that booker's bookings for the two weeks the job was kept
 
 ## [2026.11.0-rc.13] - 2026-11-09
 

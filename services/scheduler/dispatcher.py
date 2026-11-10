@@ -762,10 +762,14 @@ def _get_booker_active_at(device: DeviceResources, booking: Booking) -> datetime
                 ),
             )
         ).all()
-    if any(row.stage == Stage.EXEC_W.name for row in rows):
+    if any(
+        row.stage == Stage.EXEC_W.name and row.status not in _TERMINAL_STATUSES
+        for row in rows
+    ):
         return get_utc_now()
-    executed_times = [_to_aware(row.executed_at) for row in rows if row.executed_at]
-    return max([booking.start_utc, *executed_times])
+    # an execution that failed or was cancelled stays at its stage, ended when last written
+    active_times = [_to_aware(row.executed_at or row.updated_at) for row in rows]
+    return max([booking.start_utc, *active_times])
 
 
 def _get_max_idle_time(device: DeviceResources) -> timedelta:

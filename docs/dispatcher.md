@@ -117,7 +117,8 @@ flowchart TD
 ```
 
 - **Idle** counts from the later of the booking's start and the end of the booker's last
-  execution in it (`executed_at`). The booker is never idle while one of their jobs executes.
+  execution in it (`executed_at`, or, for one that failed or was cancelled, when it ended).
+  The booker is never idle while one of their jobs executes.
 - **Other users' jobs during a booking** run one at a time once the booker is idle. Each must
   end before the *next* booking starts, not before the current one ends. One that is already
   running when the booker submits again runs to completion.
