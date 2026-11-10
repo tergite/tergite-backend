@@ -11,6 +11,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 - Fixed a job's end being overwritten: a job cancelled while it postprocessed ended successful, one cancelled while it
   executed ended failed if the execution then failed, and a timed-out job reached MSS failed twice with two reasons
+- Fixed deleting a job while a worker had it, as during its postprocessing, stopping that worker and so restarting the
+  whole backend; the worker now drops the deleted job
 
 ## [2026.11.0-rc.13] - 2026-11-09
 

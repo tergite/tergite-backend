@@ -36,7 +36,7 @@ from sqlmodel.sql.expression import SelectOfScalar
 
 from libs.queues.dtos import Job, JobStatus, Stage
 from utils.datetime import get_utc_now, to_utc
-from utils.exc import PostProcessingError
+from utils.exc import ItemNotFoundError, PostProcessingError
 from utils.sql_db import open_immediate_session
 
 from ..booking import Booking, get_active_booking, get_next_booking
@@ -260,10 +260,15 @@ def mark_executed(device: DeviceResources, job_id: str, results_file: str) -> Jo
 
     Returns:
         the job, at its postprocessing queue's stage
+
+    Raises:
+        ItemNotFoundError: '{job_id}' not found
     """
     # before the stage, which lets a light worker claim the job and read its results file
     with Session(device.bookings_db) as session:
         row = session.get(JobRow, (device.settings.default_prefix, job_id))
+        if row is None:
+            raise ItemNotFoundError(f"'{job_id}' not found")
         row.executed_at = get_utc_now()
         row.results_file = results_file
         session.add(row)
@@ -307,16 +312,17 @@ def run_next_preprocessing(
         return False
     job = Job.model_validate_json(row.data)
     job_file = device.settings.job_upload_pool / job.job_id
-    preprocessed_job = _run_logged(
-        preprocess,
-        device,
-        job,
-        job_file=job_file,
-        timeout=device.settings.max_preprocessing_time,
-        deadline=deadline,
-    )
-    if preprocessed_job is not None:
-        mark_preprocessed(device, preprocessed_job)
+    with _ignore_deletion(job.job_id):
+        preprocessed_job = _run_logged(
+            preprocess,
+            device,
+            job,
+            job_file=job_file,
+            timeout=device.settings.max_preprocessing_time,
+            deadline=deadline,
+        )
+        if preprocessed_job is not None:
+            mark_preprocessed(device, preprocessed_job)
     return True
 
 
@@ -338,15 +344,16 @@ def run_next_execution(
     if row is None:
         return False
     job = Job.model_validate_json(row.data)
-    results_file = _run_logged(
-        execute,
-        device,
-        job,
-        timeout=device.settings.max_execution_time,
-        deadline=deadline,
-    )
-    if results_file is not None:
-        mark_executed(device, job.job_id, results_file=results_file)
+    with _ignore_deletion(job.job_id):
+        results_file = _run_logged(
+            execute,
+            device,
+            job,
+            timeout=device.settings.max_execution_time,
+            deadline=deadline,
+        )
+        if results_file is not None:
+            mark_executed(device, job.job_id, results_file=results_file)
     return True
 
 
@@ -368,16 +375,19 @@ def run_next_postprocessing(
     if row is None:
         return False
     job = Job.model_validate_json(row.data)
-    try:
-        with _raise_after(
-            device.settings.max_postprocessing_time, device=device, deadline=deadline
-        ):
-            postprocess(device, job, results_file=row.results_file)
-    except PostProcessingError as exp:
-        logging.error(exp.exp)
-        _fail_job(device, exp.job_id, reason="error during post processing")
-    else:
-        mark_postprocessed(device, job.job_id)
+    with _ignore_deletion(job.job_id):
+        try:
+            with _raise_after(
+                device.settings.max_postprocessing_time,
+                device=device,
+                deadline=deadline,
+            ):
+                postprocess(device, job, results_file=row.results_file)
+        except PostProcessingError as exp:
+            logging.error(exp.exp)
+            _fail_job(device, exp.job_id, reason="error during post processing")
+        else:
+            mark_postprocessed(device, job.job_id)
     return True
 
 
@@ -471,7 +481,8 @@ def fail_overdue_jobs(device: DeviceResources) -> None:
             )
         ).all()
     for job_id in overdue_job_ids:
-        _fail_job(device, job_id, reason="timed out")
+        with _ignore_deletion(job_id):
+            _fail_job(device, job_id, reason="timed out")
 
 
 def fail_jobs_queued_too_long(device: DeviceResources) -> None:
@@ -497,9 +508,12 @@ def fail_jobs_queued_too_long(device: DeviceResources) -> None:
             )
         ).all()
     for job_id in waited_job_ids:
-        _fail_job(
-            device, job_id, reason=f"waited longer than {max_wait_seconds} s to execute"
-        )
+        with _ignore_deletion(job_id):
+            _fail_job(
+                device,
+                job_id,
+                reason=f"waited longer than {max_wait_seconds} s to execute",
+            )
 
 
 def fail_abandoned_recalibrations(device: DeviceResources) -> None:
@@ -788,6 +802,16 @@ def _fail_job(device: DeviceResources, job_id: str, reason: str) -> None:
     )
     if job is not None:
         update_job_in_mss(device.bookings_db, device.mss_client, payload=job)
+
+
+@contextmanager
+def _ignore_deletion(job_id: str) -> Iterator[None]:
+    """Leaves the block quietly once it finds its job deleted, as a user may delete a job at
+    any stage, and a worker that raised would stop bcc start"""
+    try:
+        yield
+    except ItemNotFoundError:
+        logging.info(f"job {job_id} was deleted while a worker had it")
 
 
 def _run_logged(

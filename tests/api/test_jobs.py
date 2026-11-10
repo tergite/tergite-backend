@@ -30,6 +30,7 @@ from api.routers.jobs import JOBS_PAGE_SIZE
 from libs.queues.dtos import Job, JobStatus, Stage, Timestamps
 from services.booking import Booking
 from services.scheduler import WorkerDeadline
+from services.scheduler import dispatcher as scheduler_dispatcher
 from services.scheduler import service as scheduler_service
 from services.scheduler import tasks as scheduler_tasks
 from services.scheduler.dispatcher import (
@@ -1720,6 +1721,80 @@ def test_job_cancelled_while_it_executes_stays_cancelled_if_the_execution_fails(
 
         [stored_job] = get_stored_jobs()
         assert stored_job.status == JobStatus.CANCELLED
+
+
+@pytest.mark.parametrize("task_name", ["preprocess", "execute", "postprocess"])
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS)
+def test_job_deleted_as_a_stage_ends_leaves_the_worker_running(
+    client, jobs_folder, worker, job, mocker, fake_clock, task_name
+):
+    """A worker that stops on it stops bcc start, and so the whole backend"""
+    with client as client:
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        task = getattr(scheduler_tasks, task_name)
+
+        def run_then_delete(*args, **kwargs):
+            result = task(*args, **kwargs)
+            client.delete(
+                f"/jobs/{job_info['job_id']}",
+                headers=create_mss_headers(user_id=job_info["user_id"]),
+            )
+            return result
+
+        mocker.patch.object(scheduler_tasks, task_name, side_effect=run_then_delete)
+
+        worker.run(is_burst=True)
+
+        assert get_stored_jobs() == []
+
+
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS)
+def test_job_deleted_while_it_postprocesses_leaves_the_worker_running(
+    client, jobs_folder, worker, job, mocker, fake_clock
+):
+    with client as client:
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        read_results = scheduler_tasks.read_job_from_hdf5
+
+        def delete_then_read_results(*args, **kwargs):
+            client.delete(
+                f"/jobs/{job_info['job_id']}",
+                headers=create_mss_headers(user_id=job_info["user_id"]),
+            )
+            return read_results(*args, **kwargs)
+
+        mocker.patch.object(
+            scheduler_tasks, "read_job_from_hdf5", side_effect=delete_then_read_results
+        )
+
+        worker.run(is_burst=True)
+
+        assert get_stored_jobs() == []
+
+
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS)
+def test_job_deleted_before_a_sweep_fails_it_leaves_the_worker_running(
+    client, jobs_folder, worker, job, mocker, fake_clock
+):
+    """The sweep of overdue jobs picks them first and fails them after"""
+    with client as client:
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        worker.run(is_burst=True, max_jobs=1)
+        device = next(iter(worker.device_resources.values()))
+        claim_job_long_ago(device, job_id=job_info["job_id"], stage=Stage.EXEC_W)
+        mark_failed = scheduler_dispatcher.mark_job_failed
+
+        def delete_then_mark_failed(*args, **kwargs):
+            device.jobs_store.delete(job_info["job_id"])
+            return mark_failed(*args, **kwargs)
+
+        mocker.patch.object(
+            scheduler_dispatcher, "mark_job_failed", side_effect=delete_then_mark_failed
+        )
+
+        fail_overdue_jobs(device)
+
+        assert get_stored_jobs() == []
 
 
 @pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS)
