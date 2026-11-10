@@ -202,7 +202,8 @@ revision. On SQLite the database runs in WAL mode, so it wants a local disk.
 **Files**, under `<BCC_STORAGE_ROOT>/<device>/`: each job's upload, preprocessed experiments,
 results (as HDF5) and experiment folder in the executor's data, kept until the job is deleted
 or expires; the rest of the executor's data and its lock, the workers' wake-up port files and
-the job supervisor log.
+the job supervisor log, rotated as `BCC_JOB_SUPERVISOR_LOG_MAX_BYTES` and
+`BCC_JOB_SUPERVISOR_LOG_BACKUP_COUNT` say.
 
 **Configuration**: each device's env file and the files it names. See
 [docs/configuration.md](docs/configuration.md).

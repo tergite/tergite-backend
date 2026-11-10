@@ -1914,7 +1914,7 @@ def test_job_that_ended_is_not_failed_by_a_sweep_that_picked_it_before(
             device.jobs_store,
             job_id=job_info["job_id"],
             reason="timed out",
-            job_supervisor_log=device.settings.job_supervisor_log,
+            device_settings=device.settings,
         )
 
         [stored_job] = get_stored_jobs()

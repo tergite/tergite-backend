@@ -40,7 +40,7 @@ from libs.queues.dtos import (
 from utils.config import DeviceSettings
 from utils.datetime import utc_now_str
 from utils.exc import JobAlreadyCompleteError
-from utils.logging import err_logger
+from utils.logging import SharedRotatingFileHandler, err_logger
 
 from ..external.mss import DeviceEvent, DeviceEventName, MssClient, send_mss_event
 from .store import JobsStore
@@ -122,14 +122,14 @@ def get_executor(executor_options: ExecutorOptions) -> "QuantumExecutor":
     return executor
 
 
-def log_job_error(job_supervisor_log: Path, message: str) -> None:
+def log_job_error(device_settings: DeviceSettings, message: str) -> None:
     """Logs the error to the device's job supervisor log
 
     Args:
-        job_supervisor_log: the device's job supervisor log file
+        device_settings: the settings of the device, which name its log and how it rotates
         message: the error message
     """
-    _get_job_logger(job_supervisor_log).error(message)
+    _get_job_logger(device_settings).error(message)
 
 
 def move_file(file: Path, new_folder: Path, ext: str = "") -> Path:
@@ -207,7 +207,7 @@ def update_job_stage(jobs_store: JobsStore, job_id: str, stage: Stage) -> Job:
 
 
 def mark_job_failed(
-    jobs_store: JobsStore, job_id: str, reason: str, job_supervisor_log: Path
+    jobs_store: JobsStore, job_id: str, reason: str, device_settings: DeviceSettings
 ) -> Optional[Job]:
     """Marks the job failed for the reason, and logs it to the job supervisor log, unless
     it has already ended
@@ -216,7 +216,7 @@ def mark_job_failed(
         jobs_store: the device's jobs
         job_id: the unique identifier of the job
         reason: the failure reason
-        job_supervisor_log: the device's job supervisor log file
+        device_settings: the settings of the device, whose job supervisor log it logs to
 
     Returns:
         the failed job, or None if it had already ended
@@ -234,7 +234,7 @@ def mark_job_failed(
         return None
 
     log_job_error(
-        job_supervisor_log,
+        device_settings,
         f"Job {job_id} failed at {job.stage.verbose_name} due to {reason}",
     )
 
@@ -368,16 +368,21 @@ def _get_next_timestamps(job: Job, next_stage: Stage, current_time: str) -> Time
     return timestamps.model_copy(update=updated_pairs)
 
 
-def _get_job_logger(job_supervisor_log: Path) -> logging.Logger:
-    """Gets the logger that writes to the job supervisor log, which it opens at its first
-    record"""
+def _get_job_logger(device_settings: DeviceSettings) -> logging.Logger:
+    """Gets the logger that writes to the device's job supervisor log, which it opens at its
+    first record, rotating it as the settings first read for that log say"""
+    job_supervisor_log = device_settings.job_supervisor_log
     logger = logging.getLogger(f"bcc.job_supervisor.{job_supervisor_log}")
     if not logger.handlers:
         formatter = logging.Formatter(_JOB_LOG_FORMAT)
         formatter.converter = time.gmtime
         formatter.default_time_format = "%Y-%m-%dT%H:%M:%S"
         formatter.default_msec_format = "%s.%03dZ"
-        handler = logging.FileHandler(job_supervisor_log, delay=True)
+        handler = SharedRotatingFileHandler(
+            job_supervisor_log,
+            max_bytes=device_settings.job_supervisor_log_max_bytes,
+            backup_count=device_settings.job_supervisor_log_backup_count,
+        )
         handler.setFormatter(formatter)
         logger.addHandler(handler)
         logger.setLevel(logging.INFO)

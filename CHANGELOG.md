@@ -32,6 +32,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   telling MSS; only ended jobs expire
 - Fixed a job's uploaded file, preprocessed experiments, results file and experiment folder in the executor's data being
   kept forever on disk; they are deleted with the job, when it is deleted or expires
+- Fixed the job supervisor log growing without bound; it is rotated past `BCC_JOB_SUPERVISOR_LOG_MAX_BYTES` (10 MiB),
+  keeping `BCC_JOB_SUPERVISOR_LOG_BACKUP_COUNT` (5) backups
 
 ## [2026.11.0-rc.13] - 2026-11-09
 

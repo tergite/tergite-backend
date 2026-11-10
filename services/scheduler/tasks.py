@@ -264,7 +264,7 @@ def _fail_job(device: DeviceResources, job_id: str, reason: str) -> None:
         device.jobs_store,
         job_id=job_id,
         reason=reason,
-        job_supervisor_log=device.settings.job_supervisor_log,
+        device_settings=device.settings,
     )
     if job is not None:
         update_job_in_mss(device.bookings_db, device.mss_client, payload=job)

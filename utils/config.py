@@ -61,6 +61,10 @@ class DeviceSettings(BaseSettings):
     job_supervisor_log_name: str = Field(
         "job_supervisor.log", validation_alias="BCC_JOB_SUPERVISOR_LOG"
     )
+    # the job supervisor log is rotated past this size, into this many backups; 0 in either
+    # never rotates it
+    job_supervisor_log_max_bytes: int = Field(10 * 1024 * 1024, ge=0)
+    job_supervisor_log_backup_count: int = Field(5, ge=0)
     executor_data_dirname: str = "executor_data"
 
     backend_settings: str = str(_ROOT_PATH / "backend_config.toml")
