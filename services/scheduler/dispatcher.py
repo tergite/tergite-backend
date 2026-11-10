@@ -555,11 +555,13 @@ def schedule_recalibration(
         due_at: when the first recalibration is due; None for now
         interval: the seconds between recalibrations; 0 for no repeat
     """
-    stop_recalibration(device)
-    with Session(device.bookings_db) as session:
+    device_name = device.settings.default_prefix
+    # immediate, so that two schedulings at once leave one, not two that each repeat
+    with open_immediate_session(device.bookings_db) as session:
+        _stop_recalibration(session, device_name)
         session.add(
             RecalibrationRow(
-                device_name=device.settings.default_prefix,
+                device_name=device_name,
                 status=RecalibrationStatus.SCHEDULED,
                 due_at=to_utc(due_at) if due_at else get_utc_now(),
                 interval=interval,
@@ -575,21 +577,8 @@ def stop_recalibration(device: DeviceResources) -> None:
     Args:
         device: what the device runs on
     """
-    with Session(device.bookings_db) as session:
-        session.exec(
-            delete(RecalibrationRow).where(
-                col(RecalibrationRow.device_name) == device.settings.default_prefix,
-                col(RecalibrationRow.status) == RecalibrationStatus.SCHEDULED,
-            )
-        )
-        for row in session.exec(
-            select(RecalibrationRow).where(
-                col(RecalibrationRow.device_name) == device.settings.default_prefix,
-                col(RecalibrationRow.status) == RecalibrationStatus.STARTED,
-            )
-        ):
-            row.interval = None
-            session.add(row)
+    with open_immediate_session(device.bookings_db) as session:
+        _stop_recalibration(session, device.settings.default_prefix)
         session.commit()
 
 
@@ -783,6 +772,25 @@ def _is_booking_excluded(device: DeviceResources, job_id: str) -> bool:
     with Session(device.bookings_db) as session:
         row = session.get(JobRow, (device.settings.default_prefix, job_id))
         return row is not None and row.is_booking_excluded
+
+
+def _stop_recalibration(session: Session, device_name: str) -> None:
+    """Deletes the device's scheduled recalibrations, and keeps the one under way from
+    scheduling a next, in the session, which the caller commits"""
+    session.exec(
+        delete(RecalibrationRow).where(
+            col(RecalibrationRow.device_name) == device_name,
+            col(RecalibrationRow.status) == RecalibrationStatus.SCHEDULED,
+        )
+    )
+    for row in session.exec(
+        select(RecalibrationRow).where(
+            col(RecalibrationRow.device_name) == device_name,
+            col(RecalibrationRow.status) == RecalibrationStatus.STARTED,
+        )
+    ):
+        row.interval = None
+        session.add(row)
 
 
 def _record_recalibration_end(

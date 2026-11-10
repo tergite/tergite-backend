@@ -9,12 +9,20 @@
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
-"""Tests for the order the dispatcher runs its devices' work in"""
+"""Tests for the order the dispatcher runs its devices' work in, and its recalibrations"""
 
+import threading
+import time
 from types import SimpleNamespace
 
+from sqlmodel import Session, col, select
+
 from services.scheduler import dispatcher
-from services.scheduler.dispatcher import Dispatcher
+from services.scheduler.dispatcher import Dispatcher, schedule_recalibration
+from services.scheduler.dtos import RecalibrationStatus
+from services.scheduler.store import RecalibrationRow
+from utils.datetime import get_utc_now
+from utils.sql_db import get_sql_engine, migrate_sql_db
 
 
 def test_a_light_worker_takes_its_devices_in_turn(mocker):
@@ -87,6 +95,40 @@ def test_a_pass_sweeps_the_devices_expired_mss_nonces(mocker):
     )
 
     sweep.assert_called_with(device.bookings_db)
+
+
+def test_concurrent_schedulings_leave_one_recalibration_scheduled(tmp_path, mocker):
+    """Two would each repeat"""
+    db_url = f"sqlite:///{tmp_path}/bcc.db"
+    migrate_sql_db(db_url)
+    device = SimpleNamespace(
+        settings=SimpleNamespace(default_prefix="alpha"),
+        bookings_db=get_sql_engine(db_url),
+    )
+    mocker.patch.object(dispatcher, "wake_workers")
+
+    def get_utc_now_slowly():
+        # the other scheduling runs meanwhile
+        time.sleep(0.5)
+        return get_utc_now()
+
+    mocker.patch.object(dispatcher, "get_utc_now", side_effect=get_utc_now_slowly)
+    schedulings = [
+        threading.Thread(target=schedule_recalibration, args=(device, None, 60))
+        for _ in range(2)
+    ]
+    for scheduling in schedulings:
+        scheduling.start()
+    for scheduling in schedulings:
+        scheduling.join()
+
+    with Session(device.bookings_db) as session:
+        scheduled = session.exec(
+            select(RecalibrationRow).where(
+                col(RecalibrationRow.status) == RecalibrationStatus.SCHEDULED
+            )
+        ).all()
+    assert len(scheduled) == 1
 
 
 def _get_device(name: str, max_worker_wait_time: float = 5) -> SimpleNamespace:

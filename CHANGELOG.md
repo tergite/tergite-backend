@@ -24,6 +24,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   the same slot could both be taken, and two processes could send MSS the same kept event
 - Fixed a job uploaded twice at once, as to two API workers, being put back to the start of its queue by the second
   upload; that upload is refused with 409
+- Fixed two recalibrations scheduled at once, as by two requests to `/recalibration/init`, leaving two schedules that
+  each repeated
 
 ## [2026.11.0-rc.13] - 2026-11-09
 
