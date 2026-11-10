@@ -1528,6 +1528,48 @@ def test_job_cancelled_directly_is_sent_to_mss(
         assert job_updates[-1]["cancellation_reason"] == "just testing"
 
 
+@pytest.mark.parametrize("route", ["cancel", "delete"])
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS[:1])
+def test_api_answers_its_health_check_while_a_cancel_waits_on_mss(
+    client, jobs_folder, worker, job, mocker, route
+):
+    """bcc start kills an API that misses its health checks, and MSS may take minutes"""
+    with client as client:
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        is_sending, is_sent = threading.Event(), threading.Event()
+
+        def wait_on_mss(*args, **kwargs):
+            is_sending.set()
+            is_sent.wait(timeout=10)
+
+        mocker.patch.object(
+            scheduler_service, "update_job_in_mss", side_effect=wait_on_mss
+        )
+        if route == "cancel":
+            cancel = threading.Thread(
+                target=cancel_job_via_mss,
+                args=(client, job_info["user_id"], job_info["job_id"]),
+            )
+        else:
+            cancel = threading.Thread(
+                target=client.delete,
+                args=(f"/jobs/{job_info['job_id']}",),
+                kwargs={"headers": create_mss_headers(user_id=job_info["user_id"])},
+            )
+        cancel.start()
+        is_sending.wait(timeout=5)
+
+        health_check = threading.Thread(target=client.get, args=("/health",))
+        health_check.start()
+        health_check.join(timeout=2)
+        is_answered = not health_check.is_alive()
+        is_sent.set()
+        cancel.join()
+        health_check.join()
+
+        assert is_answered
+
+
 @pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_worker_deadline_covers_the_whole_time_limit_of_its_stage(
     client, jobs_folder, worker, job, mocker

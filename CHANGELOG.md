@@ -15,6 +15,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   whole backend; the worker now drops the deleted job
 - Fixed a booker's job that failed or was cancelled while it executed keeping the booker from ever counting as idle, so
   that no one else's job ran during that booker's bookings for the two weeks the job was kept
+- Fixed cancelling or deleting a job while MSS was down or slow stalling the whole API, until `bcc start` took it for
+  stuck and restarted the backend
 
 ## [2026.11.0-rc.13] - 2026-11-09
 
