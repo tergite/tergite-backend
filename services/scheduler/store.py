@@ -107,8 +107,7 @@ class JobsStore:
             return session.get(JobRow, (self._device_name, job_id)) is not None
 
     def insert(self, job: Job) -> Job:
-        """Inserts the job, unless the device has one of its id, and deletes the expired ones,
-        which have ended
+        """Inserts the job, unless the device has one of its id
 
         Args:
             job: the job to insert
@@ -119,20 +118,11 @@ class JobsStore:
         Raises:
             ConflictError: job_id {job_id} already exists
         """
-        now = get_utc_now()
         with open_immediate_session(self._db_engine) as session:
-            session.exec(
-                delete(JobRow).where(
-                    col(JobRow.device_name) == self._device_name,
-                    # a job may wait unwritten at a stage without a time limit
-                    col(JobRow.status).in_(_ENDED_STATUSES),
-                    col(JobRow.updated_at) < now - self._ttl,
-                )
-            )
             if session.get(JobRow, (self._device_name, job.job_id)) is not None:
                 raise ConflictError(f"job_id {job.job_id} already exists")
             row = JobRow(device_name=self._device_name, job_id=job.job_id, data="")
-            _write_job(row, job, now=now)
+            _write_job(row, job, now=get_utc_now())
             session.add(row)
             session.commit()
         return job
@@ -213,6 +203,25 @@ class JobsStore:
                 )
             )
             session.commit()
+
+    def delete_expired(self) -> List[str]:
+        """Deletes the device's jobs that have ended and were last written over `ttl` seconds
+        ago
+
+        Returns:
+            the ids of the jobs deleted
+        """
+        expired = (
+            col(JobRow.device_name) == self._device_name,
+            # a job may wait unwritten at a stage without a time limit
+            col(JobRow.status).in_(_ENDED_STATUSES),
+            col(JobRow.updated_at) < get_utc_now() - self._ttl,
+        )
+        with open_immediate_session(self._db_engine) as session:
+            job_ids = list(session.exec(select(JobRow.job_id).where(*expired)))
+            session.exec(delete(JobRow).where(*expired))
+            session.commit()
+        return job_ids
 
     def find(
         self,

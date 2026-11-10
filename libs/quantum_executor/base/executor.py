@@ -27,6 +27,7 @@ from libs.quantum_executor.base.circuits import (
     CircuitJobParams,
     QasmCircuit,
 )
+from libs.quantum_executor.base.job_files import get_expt_metadata_file
 from libs.quantum_executor.base.pulse_limits import (
     check_pulse_limits,
     get_calibrated_frame_frequencies,
@@ -219,7 +220,7 @@ def preprocess_circuits(
             )
         total_duration = sum(expt.duration for expt in experiments)
 
-        results_file_path = _get_expt_metadata_file(job_id, folder=results_folder)
+        results_file_path = get_expt_metadata_file(job_id, folder=results_folder)
         with open(results_file_path, "wb") as file:
             pickle.dump(expt_metadata.to_dict(), file)
 
@@ -241,7 +242,7 @@ def run_job(executor: QuantumExecutor, job_id: str, inputs_folder: Path) -> str:
     Returns:
         the path to the results obtained after measurement
     """
-    preprocessed_file = _get_expt_metadata_file(job_id, folder=inputs_folder)
+    preprocessed_file = get_expt_metadata_file(job_id, folder=inputs_folder)
     logger: Optional[ExperimentLogger] = None
     try:
         expt_metadata = _load_expt_metadata(preprocessed_file)
@@ -341,12 +342,6 @@ class CircuitExptMetadata:
             params=CircuitJobParams.model_validate(value["params"]),
             native_config=NativeQobjConfig.from_dict(value["native_config"]),
         )
-
-
-def _get_expt_metadata_file(job_id: str, folder: Path) -> Path:
-    """Gets the path of the file in the folder that the job's experiments' metadata is
-    pickled to"""
-    return folder / f"{job_id}-expt-metadata.pickle"
 
 
 def _load_expt_metadata(file: Path) -> CircuitExptMetadata:

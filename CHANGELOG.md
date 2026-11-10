@@ -30,6 +30,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   device restarted more often than that never recalibrated; a restart keeps the one already scheduled if it is due sooner
 - Fixed `BCC_JOBS_STORE_TTL` deleting jobs that had not ended, as one left waiting by a time limit of 0, without
   telling MSS; only ended jobs expire
+- Fixed a job's uploaded file, preprocessed experiments and results file being kept forever on disk; they are deleted
+  with the job, when it is deleted or expires
 
 ## [2026.11.0-rc.13] - 2026-11-09
 

@@ -46,7 +46,12 @@ from .deadlines import WorkerDeadline
 from .dtos import RecalibrationInfo, RecalibrationStatus
 from .resources import DeviceResources
 from .store import JobRow, RecalibrationRow
-from .utils import mark_job_failed, update_job_in_mss, update_job_stage
+from .utils import (
+    delete_job_files,
+    mark_job_failed,
+    update_job_in_mss,
+    update_job_stage,
+)
 from .wakeups import WakeUpListener, WorkerKind, wake_workers
 
 # what a worker may take past the time its step is allowed, MSS's response timeout aside,
@@ -173,6 +178,7 @@ class Dispatcher:
         fail_overdue_jobs(device)
         fail_jobs_queued_too_long(device)
         delete_expired_mss_nonces(device.bookings_db)
+        delete_expired_jobs(device)
         if self._should_run_light and run_next_postprocessing(device, self._deadline):
             return True
         if not self._should_run_heavy:
@@ -517,6 +523,16 @@ def fail_jobs_queued_too_long(device: DeviceResources) -> None:
                 job_id,
                 reason=f"waited longer than {max_wait_seconds} s to execute",
             )
+
+
+def delete_expired_jobs(device: DeviceResources) -> None:
+    """Deletes the device's jobs that ended over BCC_JOBS_STORE_TTL ago, and their files
+
+    Args:
+        device: what the device runs on
+    """
+    for job_id in device.jobs_store.delete_expired():
+        delete_job_files(device.settings, job_id)
 
 
 def fail_abandoned_recalibrations(device: DeviceResources) -> None:

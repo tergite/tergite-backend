@@ -24,6 +24,7 @@ from numpy import typing as npt
 from sqlalchemy import Engine
 
 from libs.device_parameters import BackendConfig, DeviceCalibration
+from libs.quantum_executor.base.job_files import get_expt_metadata_file
 from libs.queues.dtos import (
     ExecutorOptions,
     Job,
@@ -145,6 +146,23 @@ def move_file(file: Path, new_folder: Path, ext: str = "") -> Path:
     new_folder.mkdir(parents=True, exist_ok=True)
     new_file_path = (new_folder / new_file_name).with_suffix(ext)
     return file.replace(new_file_path)
+
+
+def delete_job_files(device_settings: DeviceSettings, job_id: str) -> None:
+    """Deletes the files the device keeps of the job: its upload, its preprocessed
+    experiments and its results, those that there are
+
+    Args:
+        device_settings: the settings of the device
+        job_id: the unique identifier of the job
+    """
+    job_files = (
+        device_settings.job_upload_pool / job_id,
+        get_expt_metadata_file(job_id, folder=device_settings.preprocessed_job_pool),
+        device_settings.log_file_pool / f"{job_id}.hdf5",
+    )
+    for job_file in job_files:
+        job_file.unlink(missing_ok=True)
 
 
 def update_job_stage(jobs_store: JobsStore, job_id: str, stage: Stage) -> Job:

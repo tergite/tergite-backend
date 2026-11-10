@@ -31,7 +31,7 @@ from pytest_mock import MockerFixture
 from api.routers.jobs import JOBS_PAGE_SIZE
 from libs.queues.dtos import Job, JobStatus, Stage, Timestamps
 from services.booking import Booking
-from services.scheduler import WorkerDeadline
+from services.scheduler import DeviceResources, WorkerDeadline
 from services.scheduler import dispatcher as scheduler_dispatcher
 from services.scheduler import service as scheduler_service
 from services.scheduler import tasks as scheduler_tasks
@@ -2011,6 +2011,43 @@ def test_job_whose_worker_died_fails_after_its_time_limit(
 
 
 @pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS[:1])
+def test_files_of_a_deleted_job_are_deleted(
+    client, jobs_folder, worker, job, mocker, fake_clock
+):
+    with client as client:
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        worker.run(is_burst=True)
+        device = next(iter(worker.device_resources.values()))
+        job_files = _get_job_files(device, job_info["job_id"])
+        is_each_kept_before = [file.exists() for file in job_files]
+
+        client.delete(
+            f"/jobs/{job_info['job_id']}",
+            headers=create_mss_headers(user_id=job_info["user_id"]),
+        )
+
+        assert is_each_kept_before == [True, True]
+        assert [file.exists() for file in job_files] == [False, False]
+
+
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS[:1])
+def test_files_of_an_expired_job_are_deleted(
+    client, jobs_folder, worker, job, mocker, fake_clock
+):
+    with client as client:
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        worker.run(is_burst=True)
+        device = next(iter(worker.device_resources.values()))
+        job_files = _get_job_files(device, job_info["job_id"])
+
+        fake_clock.shift(device.settings.jobs_store_ttl + 1)
+        _submit_another_job(client, job, job_info, mocker, jobs_folder)
+        worker.run(is_burst=True)
+
+        assert [file.exists() for file in job_files] == [False, False]
+
+
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS[:1])
 def test_job_at_a_stage_without_a_time_limit_outlives_the_store_ttl(
     client, jobs_folder, worker, job, mocker, fake_clock
 ):
@@ -2323,6 +2360,14 @@ def _wait_for_job_to_end(max_wait_seconds: float) -> Job:
             break
         time.sleep(0.1)
     return stored_job
+
+
+def _get_job_files(device: DeviceResources, job_id: str) -> list[Path]:
+    """Gets the job's uploaded file and its results file"""
+    return [
+        device.settings.job_upload_pool / job_id,
+        device.settings.log_file_pool / f"{job_id}.hdf5",
+    ]
 
 
 def _submit_another_job(

@@ -67,7 +67,7 @@ from ..devices import get_device_calibration_info
 from . import dispatcher
 from .dtos import JobFile, RecalibrationInfo
 from .resources import DeviceResources
-from .utils import update_job_in_mss
+from .utils import delete_job_files, update_job_in_mss
 from .wakeups import wake_workers
 
 
@@ -258,6 +258,7 @@ def delete_job(
         )
 
     device.jobs_store.delete(job_id)
+    delete_job_files(device.settings, job_id)
     return job
 
 
