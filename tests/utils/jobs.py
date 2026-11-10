@@ -47,6 +47,8 @@ from tests.utils.api import (
     get_token,
 )
 from tests.utils.env import TEST_BOOKING_DB_URL
+from tests.utils.params import USERS
+from tests.utils.users import create_many_users
 from utils.datetime import get_utc_now
 
 
@@ -174,6 +176,34 @@ def spy_on_mss_updates(mocker: MockerFixture) -> Mock:
 def get_jobs_sent_to_mss(mss_update_spy: Mock) -> List[Job]:
     """Gets the jobs, in order, that a spy on update_job_in_mss saw sent to MSS"""
     return [call.kwargs["payload"] for call in mss_update_spy.call_args_list]
+
+
+def submit_one_job(
+    client: "TestClient",
+    job: Dict[str, Any],
+    mocker: MockerFixture,
+    jobs_folder: Path,
+    duration: float = 0.2,
+) -> "JobSubmissionMetadata":
+    """Submits the job, taking the given seconds, as the first test user, whom it creates
+
+    Args:
+        client: the test client, entered
+        job: the job, as uploaded
+        mocker: the mocker for intercepting the generation of the user token
+        jobs_folder: the folder to save the job file in before it is uploaded
+        duration: the seconds the job takes in the tests
+
+    Returns:
+        the job's submission metadata
+    """
+    users = create_many_users(client, raw_users=USERS[:1])
+    [raw_job] = get_raw_jobs(job, durations=[duration])
+    [job_info] = get_job_submission_metadata(
+        client, jobs=[raw_job], users=users, mocker=mocker, jobs_folder=jobs_folder
+    )
+    submit_jobs(client, data=[job_info])
+    return job_info
 
 
 def submit_jobs(

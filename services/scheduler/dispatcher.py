@@ -786,7 +786,8 @@ def _fail_job(device: DeviceResources, job_id: str, reason: str) -> None:
         reason=reason,
         job_supervisor_log=device.settings.job_supervisor_log,
     )
-    update_job_in_mss(device.bookings_db, device.mss_client, payload=job)
+    if job is not None:
+        update_job_in_mss(device.bookings_db, device.mss_client, payload=job)
 
 
 def _run_logged(

@@ -30,11 +30,13 @@ from api.routers.jobs import JOBS_PAGE_SIZE
 from libs.queues.dtos import Job, JobStatus, Stage, Timestamps
 from services.booking import Booking
 from services.scheduler import WorkerDeadline
+from services.scheduler import service as scheduler_service
 from services.scheduler import tasks as scheduler_tasks
 from services.scheduler.dispatcher import (
     fail_jobs_queued_too_long,
     fail_overdue_jobs,
 )
+from services.scheduler.utils import mark_job_failed
 from tests.utils.api import (
     create_mss_headers,
     get_bearer_headers,
@@ -60,12 +62,14 @@ from tests.utils.jobs import (
     set_test_duration,
     spy_on_mss_updates,
     submit_jobs,
+    submit_one_job,
     view_job,
 )
 from tests.utils.params import (
     ALL_INVALID_UPLOAD_JOB_PARAMS,
     ALL_UPLOAD_JOB_PARAMS,
     FASTAPI_CLIENTS,
+    QUANTIFY_UPLOAD_JOB_PARAMS,
     SIMPLE_UPLOAD_JOB_PARAMS,
     USERS,
     VIEW_JOB_PARAMS,
@@ -1667,6 +1671,103 @@ def test_cancelled_job_is_not_executed(
         )
 
 
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS)
+def test_job_cancelled_while_it_postprocesses_stays_cancelled(
+    client, jobs_folder, worker, job, mocker, fake_clock
+):
+    with client as client:
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        read_results = scheduler_tasks.read_job_from_hdf5
+
+        def cancel_then_read_results(*args, **kwargs):
+            cancel_job_via_mss(
+                client, user_id=job_info["user_id"], job_id=job_info["job_id"]
+            )
+            return read_results(*args, **kwargs)
+
+        mocker.patch.object(
+            scheduler_tasks, "read_job_from_hdf5", side_effect=cancel_then_read_results
+        )
+        mss_update_spy = spy_on_mss_updates(mocker)
+
+        worker.run(is_burst=True)
+
+        [stored_job] = get_stored_jobs()
+        sent_statuses = [job.status for job in get_jobs_sent_to_mss(mss_update_spy)]
+        assert stored_job.status == JobStatus.CANCELLED
+        assert JobStatus.SUCCESSFUL not in sent_statuses
+
+
+@pytest.mark.parametrize(
+    "error", [RuntimeError("device lost"), TimeoutError("execution timed out")]
+)
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS)
+def test_job_cancelled_while_it_executes_stays_cancelled_if_the_execution_fails(
+    client, jobs_folder, worker, job, mocker, fake_clock, error
+):
+    with client as client:
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+
+        def cancel_then_fail(*args, **kwargs):
+            cancel_job_via_mss(
+                client, user_id=job_info["user_id"], job_id=job_info["job_id"]
+            )
+            raise error
+
+        mocker.patch.object(scheduler_tasks, "run_job", side_effect=cancel_then_fail)
+
+        worker.run(is_burst=True)
+
+        [stored_job] = get_stored_jobs()
+        assert stored_job.status == JobStatus.CANCELLED
+
+
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS)
+def test_job_timed_out_in_execution_is_failed_once(
+    client, jobs_folder, worker, job, mocker, fake_clock
+):
+    with client as client:
+        submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        mocker.patch.object(
+            scheduler_tasks, "run_job", side_effect=TimeoutError("took too long")
+        )
+        mss_update_spy = spy_on_mss_updates(mocker)
+
+        worker.run(is_burst=True)
+
+        failures_sent = [
+            job.failure_reason
+            for job in get_jobs_sent_to_mss(mss_update_spy)
+            if job.status == JobStatus.FAILED
+        ]
+        assert failures_sent == ["timed out"]
+
+
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS)
+def test_job_that_ended_is_not_failed_by_a_sweep_that_picked_it_before(
+    client, jobs_folder, worker, job, mocker, fake_clock
+):
+    """The sweeps of overdue and long-queued jobs pick them first and fail them after, so
+    one may end in between"""
+    with client as client:
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        worker.run(is_burst=True)
+        device = next(iter(worker.device_resources.values()))
+
+        mark_job_failed(
+            device.jobs_store,
+            job_id=job_info["job_id"],
+            reason="timed out",
+            job_supervisor_log=device.settings.job_supervisor_log,
+        )
+
+        [stored_job] = get_stored_jobs()
+        assert (stored_job.status, stored_job.failure_reason) == (
+            JobStatus.SUCCESSFUL,
+            None,
+        )
+
+
 @pytest.mark.parametrize(
     "max_execution_queue_time, expected_status, expected_reason",
     [
@@ -1836,6 +1937,28 @@ def test_cancel_finished_job(client, jobs_folder, worker, job, mocker, fake_cloc
 
         assert response.status_code == 406
         assert get_stored_jobs()[0].status == JobStatus.SUCCESSFUL
+
+
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS)
+def test_cancel_of_a_job_that_ends_meanwhile_is_refused(
+    client, jobs_folder, worker, job, mocker, fake_clock
+):
+    """A cancel reads the job before it writes it, so the job may end in between"""
+    with client as client:
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        [job_before_it_ended] = get_stored_jobs()
+        worker.run(is_burst=True)
+        mocker.patch.object(
+            scheduler_service, "get_job", return_value=job_before_it_ended
+        )
+
+        response = cancel_job_via_mss(
+            client, user_id=job_info["user_id"], job_id=job_info["job_id"]
+        )
+
+        [stored_job] = get_stored_jobs()
+        assert response.status_code == 406
+        assert stored_job.status == JobStatus.SUCCESSFUL
 
 
 @pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)

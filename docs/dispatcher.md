@@ -223,6 +223,10 @@ from a thread, while its deadline holds.
 - **Cancelling** sets the job's status to `cancelled`, which every claim's query excludes. A
   stage already running finishes; an execution's results are then dropped, so the job never
   reaches postprocessing.
+- **Ending is final.** `JobsStore.mark_ended` writes `successful`, `failed` or `cancelled`
+  only to a job that has not ended, checking in the transaction that writes, and
+  `JobsStore.update` keeps an ended job's status. So a cancel, a stage's end and a sweep of
+  overdue jobs cannot overwrite one another, and MSS hears of a job's end once.
 - **Deleting** cancels the job if it has not ended, then deletes its row.
 - **Expiry**: a job's row is deleted `BCC_JOBS_STORE_TTL` seconds after it was last written,
   when another job is inserted.

@@ -140,14 +140,17 @@ def postprocess(device: DeviceResources, job: Job, results_file: str) -> str:
             calibration = get_device_calibration_info(
                 device.bookings_db, backend_name=device.executor_options.backend_name
             )
-        job = update_job_results(
+        successful_job = update_job_results(
             jobs_store,
             job_id=job_id,
             result=_get_job_result(quantum_job, calibration),
             machine_root_url=device.settings.machine_root_url,
         )
-        update_job_in_mss(device.bookings_db, device.mss_client, payload=job)
-        return job.job_id
+        if successful_job is not None:
+            update_job_in_mss(
+                device.bookings_db, device.mss_client, payload=successful_job
+            )
+        return job_id
     except Exception as exp:
         raise PostProcessingError(exp=exp, job_id=job_id)
 
@@ -172,12 +175,14 @@ def recalibrate(device: DeviceResources) -> None:
 
 @contextmanager
 def _fail_on_error(device: DeviceResources, job_id: str) -> Iterator[None]:
-    """Fails the job, and tells MSS, on an error in the block but its cancellation; either
-    way, it re-raises"""
+    """Fails the job, and tells MSS, on an error in the block but its cancellation or its
+    timeout, which the dispatcher fails it for; either way, it re-raises"""
     try:
         yield
     except JobAlreadyCancelled as exp:
         logging.error(f"{exp}")
+        raise
+    except TimeoutError:
         raise
     except (ValidationError, UnsupportedCircuitError) as exp:
         _fail_job(device, job_id=job_id, reason=f"{exp}")
@@ -244,13 +249,13 @@ def _get_memory(
     raise NotImplementedError(f"meas_level {quantum_job.meas_level} is not supported")
 
 
-def _fail_job(device: DeviceResources, job_id: str, reason: str) -> Job:
-    """Marks the job as failed for the given reason, and tells MSS"""
+def _fail_job(device: DeviceResources, job_id: str, reason: str) -> None:
+    """Marks the job as failed for the given reason, and tells MSS, unless it has ended"""
     job = mark_job_failed(
         device.jobs_store,
         job_id=job_id,
         reason=reason,
         job_supervisor_log=device.settings.job_supervisor_log,
     )
-    update_job_in_mss(device.bookings_db, device.mss_client, payload=job)
-    return job
+    if job is not None:
+        update_job_in_mss(device.bookings_db, device.mss_client, payload=job)

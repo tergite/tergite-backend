@@ -18,6 +18,7 @@
 """Module containing service for scheduling jobs"""
 
 import shutil
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Tuple
@@ -208,14 +209,11 @@ def cancel_job(
         ItemNotFoundError: Job {job_id} not found
         JobAlreadyCompleteError: job {job_id} is already {status}
     """
-    job = get_job(device, job_id=job_id, user_id=user_id, is_mss_admin=is_mss_admin)
-    if job.status.is_terminal():
-        raise JobAlreadyCompleteError(f"job {job_id} is already {job.status.value}")
-
+    get_job(device, job_id=job_id, user_id=user_id, is_mss_admin=is_mss_admin)
     if reason is None:
         reason = "Cancelled by a user"
 
-    cancelled_job = device.jobs_store.update(
+    cancelled_job = device.jobs_store.mark_ended(
         job_id,
         {
             "status": JobStatus.CANCELLED,
@@ -250,7 +248,7 @@ def delete_job(
         ItemNotFoundError: Job {job_id} not found
     """
     job = get_job(device, job_id=job_id, user_id=user_id, is_mss_admin=is_mss_admin)
-    if not job.status.is_terminal():
+    with suppress(JobAlreadyCompleteError):
         job = cancel_job(
             device, job_id=job_id, user_id=user_id, is_mss_admin=is_mss_admin
         )
@@ -508,14 +506,16 @@ def _cancel_pending_jobs(device: DeviceResources, user_id: str) -> None:
     for job in device.jobs_store.find(user_id=user_id):
         if job.status.is_terminal():
             continue
-        device.jobs_store.update(
-            job.job_id,
-            {
-                "status": JobStatus.CANCELLED,
-                "cancellation_reason": "Cancelled on user deletion",
-                "updated_at": utc_now_str(),
-            },
-        )
+        # it may end after it was found
+        with suppress(JobAlreadyCompleteError):
+            device.jobs_store.mark_ended(
+                job.job_id,
+                {
+                    "status": JobStatus.CANCELLED,
+                    "cancellation_reason": "Cancelled on user deletion",
+                    "updated_at": utc_now_str(),
+                },
+            )
 
 
 def _cancel_incomplete_bookings(device: DeviceResources, user_id: str) -> None:

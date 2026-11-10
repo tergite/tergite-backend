@@ -17,7 +17,7 @@
 import logging
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Tuple
+from typing import TYPE_CHECKING, Dict, Optional, Tuple
 
 import numpy as np
 from numpy import typing as npt
@@ -37,6 +37,7 @@ from libs.queues.dtos import (
 )
 from utils.config import DeviceSettings
 from utils.datetime import utc_now_str
+from utils.exc import JobAlreadyCompleteError
 from utils.logging import err_logger
 
 from ..external.mss import DeviceEvent, DeviceEventName, MssClient, send_mss_event
@@ -149,7 +150,7 @@ def move_file(file: Path, new_folder: Path, ext: str = "") -> Path:
 def update_job_stage(jobs_store: JobsStore, job_id: str, stage: Stage) -> Job:
     """Updates the job's stage in the database
 
-    This also updates the timestamps and the status of the job
+    This also updates the timestamps, and the status of a job that has not ended
 
     Args:
         jobs_store: the device's jobs
@@ -165,12 +166,11 @@ def update_job_stage(jobs_store: JobsStore, job_id: str, stage: Stage) -> Job:
     timestamps = _get_next_timestamps(
         job, next_stage=stage, current_time=current_timestamp
     )
-    status = _get_next_status(job, next_stage=stage)
 
     return jobs_store.update(
         job_id,
         {
-            "status": status,
+            "status": _STAGE_STATUS_MAP[stage],
             "stage": stage,
             "timestamps": timestamps,
             "updated_at": current_timestamp,
@@ -180,8 +180,9 @@ def update_job_stage(jobs_store: JobsStore, job_id: str, stage: Stage) -> Job:
 
 def mark_job_failed(
     jobs_store: JobsStore, job_id: str, reason: str, job_supervisor_log: Path
-) -> Job:
-    """Marks the job failed for the reason, and logs it to the job supervisor log
+) -> Optional[Job]:
+    """Marks the job failed for the reason, and logs it to the job supervisor log, unless
+    it has already ended
 
     Args:
         jobs_store: the device's jobs
@@ -190,16 +191,19 @@ def mark_job_failed(
         job_supervisor_log: the device's job supervisor log file
 
     Returns:
-        the updated job with its failure status
+        the failed job, or None if it had already ended
     """
-    job = jobs_store.update(
-        job_id,
-        {
-            "status": JobStatus.FAILED,
-            "failure_reason": reason,
-            "updated_at": utc_now_str(),
-        },
-    )
+    try:
+        job = jobs_store.mark_ended(
+            job_id,
+            {
+                "status": JobStatus.FAILED,
+                "failure_reason": reason,
+                "updated_at": utc_now_str(),
+            },
+        )
+    except JobAlreadyCompleteError:
+        return None
 
     log_job_error(
         job_supervisor_log,
@@ -214,8 +218,8 @@ def update_job_results(
     job_id: str,
     result: JobResult,
     machine_root_url: str,
-) -> Job:
-    """Updates the results of the job and returns the updated job
+) -> Optional[Job]:
+    """Marks the job successful with its results, unless it has already ended
 
     Args:
         jobs_store: the device's jobs
@@ -224,17 +228,20 @@ def update_job_results(
         machine_root_url: the URL this device's API is reached at
 
     Returns:
-        the updated job
+        the successful job, or None if it had already ended
     """
-    return jobs_store.update(
-        job_id,
-        {
-            "status": JobStatus.SUCCESSFUL,
-            "result": result,
-            "download_url": f"{machine_root_url}/logfiles/{job_id}",
-            "updated_at": utc_now_str(),
-        },
-    )
+    try:
+        return jobs_store.mark_ended(
+            job_id,
+            {
+                "status": JobStatus.SUCCESSFUL,
+                "result": result,
+                "download_url": f"{machine_root_url}/logfiles/{job_id}",
+                "updated_at": utc_now_str(),
+            },
+        )
+    except JobAlreadyCompleteError:
+        return None
 
 
 def update_job_in_mss(db_engine: Engine, mss_client: MssClient, payload: Job) -> None:
@@ -312,22 +319,6 @@ def _init_executor(
         calib_seed_file=options.calibration_seed_file,
         calib_spi_conf=options.calibration_spi_config,
     )
-
-
-def _get_next_status(job: Job, next_stage: Stage) -> JobStatus:
-    """Gets the next status given a job and the next stage
-
-    Args:
-        job: the quantum job
-        next_stage: the next stage this job is to go to
-
-    Returns:
-        the next job status for that job
-    """
-    status = job.status
-    if not status.is_terminal():
-        status = _STAGE_STATUS_MAP[next_stage]
-    return status
 
 
 def _get_next_timestamps(job: Job, next_stage: Stage, current_time: str) -> Timestamps:
