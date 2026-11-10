@@ -7,6 +7,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.11.0-rc.14] - 2026-11-10
+
 ### Fixed
 
 - Fixed a job's end being overwritten: a job cancelled while it postprocessed ended successful, one cancelled while it
