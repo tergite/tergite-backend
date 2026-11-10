@@ -35,7 +35,7 @@ def main() -> None:
     user_id = os.environ["PERF_BACKLOG_USER_ID"]
     db_url = settings.get_device_settings().booking_db_url
     # seeded before the API starts, which would migrate it
-    migrate_sql_db(db_url)
+    migrate_sql_db(db_url, device_name=settings.get_device_settings().default_prefix)
     db_engine = get_sql_engine(db_url)
     store_jobs(db_engine, user_id)
     store_bookings(db_engine, user_id)
@@ -68,6 +68,7 @@ def store_bookings(db_engine: Engine, user_id: str) -> None:
                 Booking.model_validate(
                     {
                         "id": uuid_str(),
+                        "device_name": settings.get_device_settings().default_prefix,
                         "user_id": user_id,
                         "start_utc": start_utc,
                         "end_utc": start_utc + timedelta(minutes=30),

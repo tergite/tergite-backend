@@ -43,7 +43,9 @@ def preload_worker_globals(
     create_device_folders(device_settings)
     # as the API may not have yet, under the lock it migrates under
     with FileLock(device_settings.start_up_lock_file):
-        migrate_sql_db(device_settings.booking_db_url)
+        migrate_sql_db(
+            device_settings.booking_db_url, device_name=device_settings.default_prefix
+        )
     # so that the tasks' first run need not import them
     import_module("services.scheduler.tasks")
 

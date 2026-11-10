@@ -21,6 +21,7 @@ from utils.datetime import get_utc_now
 from utils.exc import ConflictError
 from utils.sql_db import get_sql_engine, migrate_sql_db
 
+_DEVICE_NAME = "alpha"
 _BOOKINGS_CONFIG = BookingsConfig(
     max_time_slot_length=3600,
     min_time_slot_length=2,
@@ -53,6 +54,7 @@ def test_concurrent_overlapping_bookings_book_the_slot_once(tmp_path, mocker):
         try:
             booking_service.create_booking(
                 db_engine,
+                _DEVICE_NAME,
                 user_id,
                 booking_info=booking_info,
                 config=_BOOKINGS_CONFIG,
@@ -67,5 +69,5 @@ def test_concurrent_overlapping_bookings_book_the_slot_once(tmp_path, mocker):
     for thread in threads:
         thread.join()
 
-    assert len(booking_service.get_many_bookings(db_engine)) == 1
+    assert len(booking_service.get_many_bookings(db_engine, _DEVICE_NAME)) == 1
     assert len(errors) == 1

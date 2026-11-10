@@ -16,8 +16,12 @@
         "type": "object"
       },
       "Booking": {
-        "description": "Schema for booking\n\nAttributes:\n    id: the unique identifier of the booking\n    user_id: the unique identifier of the user associated with this booking\n    user: the user associated with this booking",
+        "description": "Schema for booking\n\nAttributes:\n    id: the unique identifier of the booking\n    device_name: the device booked, of those that may share the database\n    user_id: the unique identifier of the user associated with this booking\n    user: the user associated with this booking",
         "properties": {
+          "device_name": {
+            "title": "Device Name",
+            "type": "string"
+          },
           "end_utc": {
             "format": "date-time",
             "title": "End Utc",
@@ -49,6 +53,7 @@
           }
         },
         "required": [
+          "device_name",
           "user_id",
           "start_utc",
           "end_utc",
@@ -2465,7 +2470,7 @@
     },
     "/bookings": {
       "get": {
-        "description": "Views all available bookings\n\nArgs:\n    skip: number of records to ignore at the top of the returned results; default is 0\n    limit: maximum number of records to return; default is None.\n    sort: fields to sort by; prepending \"-\" returns the records in descending order\n    db_engine: the SQL database engine to query\n    user_id: the unique identifier of the owner of the given bookings\n    min_start_utc: the minimum start time in UTC\n    max_start_utc: the maximum start time in UTC\n\nReturns:\n    the paginated list of the available bookings",
+        "description": "Views the device's bookings\n\nArgs:\n    device: what the device runs on\n    skip: number of records to ignore at the top of the returned results; default is 0\n    limit: maximum number of records to return; default is None.\n    sort: fields to sort by; prepending \"-\" returns the records in descending order\n    user_id: the unique identifier of the owner of the given bookings\n    min_start_utc: the minimum start time in UTC\n    max_start_utc: the maximum start time in UTC\n\nReturns:\n    the paginated list of the available bookings",
         "operationId": "view_bookings_bookings_get",
         "parameters": [
           {

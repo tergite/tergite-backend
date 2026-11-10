@@ -188,7 +188,7 @@ several: [docs/deployment.md](docs/deployment.md#serve-several-devices-from-one-
 
 | Table | Holds |
 | --- | --- |
-| `user`, `booking` | users who have booked or submitted, and their bookings |
+| `user`, `booking` | users who have booked or submitted, shared by the devices of the database, and each device's bookings |
 | `job` | each device's jobs and their stages |
 | `recalibration` | recalibrations done, running and due |
 | `device_parameters` | each device's properties and calibration |

@@ -15,7 +15,7 @@ from sqlalchemy import inspect
 
 import settings
 from api.worker import preload_worker_globals
-from services.booking import get_user_profile
+from services.booking import get_many_bookings, get_user_profile
 from services.scheduler import close_device_resources
 from tests.utils.params import FASTAPI_CLIENTS
 from utils.sql_db import get_alembic_config, get_sql_engine, migrate_sql_db
@@ -45,6 +45,23 @@ def test_a_database_from_before_alembic_is_upgraded_with_its_rows(tmp_path):
     user_columns = {column["name"] for column in inspect(db_engine).get_columns("user")}
     assert "password" not in user_columns
     assert get_user_profile(db_engine, "u1").email == "ada@example.com"
+
+
+def test_bookings_from_before_they_were_keyed_by_device_go_to_the_migrating_one(
+    tmp_path,
+):
+    url = f"sqlite:///{tmp_path}/bcc.db"
+    command.upgrade(get_alembic_config(url), "0009")
+    db_engine = get_sql_engine(url)
+    with db_engine.begin() as connection:
+        connection.exec_driver_sql(
+            "INSERT INTO booking (id, user_id, start_utc, end_utc, total_duration) "
+            "VALUES ('b1', NULL, '2026-11-10 10:00:00', '2026-11-10 11:00:00', 3600)"
+        )
+
+    migrate_sql_db(url, device_name="alpha")
+
+    assert [booking.id for booking in get_many_bookings(db_engine, "alpha")] == ["b1"]
 
 
 @pytest.mark.parametrize("client", FASTAPI_CLIENTS)

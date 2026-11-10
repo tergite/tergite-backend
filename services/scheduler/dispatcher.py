@@ -235,7 +235,7 @@ def mark_preprocessed(device: DeviceResources, job: Job) -> None:
         job: the preprocessed job
     """
     now = get_utc_now()
-    booking = get_active_booking(device.bookings_db)
+    booking = get_active_booking(device.bookings_db, device.settings.default_prefix)
     if (
         booking is not None
         and booking.user_id == job.user_id
@@ -665,13 +665,13 @@ def get_next_change_at(device: DeviceResources) -> Optional[datetime]:
 
     now = get_utc_now()
     times = []
-    booking = get_active_booking(device.bookings_db)
+    booking = get_active_booking(device.bookings_db, device.settings.default_prefix)
     if booking is not None:
         times.append(booking.end_utc)
         times.append(
             _get_booker_active_at(device, booking) + _get_max_idle_time(device)
         )
-    next_booking = get_next_booking(device.bookings_db)
+    next_booking = get_next_booking(device.bookings_db, device.settings.default_prefix)
     if next_booking is not None:
         times.append(next_booking.start_utc)
     later_times = [value for value in times if value > now]
@@ -712,12 +712,12 @@ def _pick_next_execution(
     """
     now = get_utc_now()
     waiting = _get_waiting_query(device, stage).with_for_update(skip_locked=True)
-    next_booking = get_next_booking(device.bookings_db)
+    next_booking = get_next_booking(device.bookings_db, device.settings.default_prefix)
     seconds_to_next = (
         (next_booking.start_utc - now).total_seconds() if next_booking else None
     )
 
-    booking = get_active_booking(device.bookings_db)
+    booking = get_active_booking(device.bookings_db, device.settings.default_prefix)
     if booking is not None:
         seconds_left = (booking.end_utc - now).total_seconds()
         booker_job = session.exec(

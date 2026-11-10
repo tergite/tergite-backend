@@ -3,6 +3,7 @@
 import os
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -201,6 +202,37 @@ def test_each_device_has_its_own_jobs(tmp_path, monkeypatch):
         db_engine, settings.get_device_settings("Alpha")
     )
     assert not alpha_jobs.is_stored(job.job_id)
+
+
+def test_a_booking_on_one_device_leaves_the_others_free(tmp_path, monkeypatch, mocker):
+    """Devices may share a database"""
+    from api import app
+
+    shared_db_url = f"sqlite:///{tmp_path}/shared.db"
+    load_test_devices(
+        tmp_path, monkeypatch, ["Alpha", "Beta"], {"BCC_BOOKING_DB_URL": shared_db_url}
+    )
+    mocker.patch.object(MssClient, "send_event")
+    start_utc = datetime.now(timezone.utc) + timedelta(hours=1)
+    booking_info = {
+        "start_utc": start_utc.isoformat(),
+        "end_utc": (start_utc + timedelta(minutes=10)).isoformat(),
+    }
+    user_id = f"{uuid4()}"
+
+    with get_test_client(app) as client:
+        alpha_response = client.post(
+            "/Alpha/bookings", json=booking_info, headers=create_mss_headers(user_id)
+        )
+        beta_response = client.post(
+            "/Beta/bookings", json=booking_info, headers=create_mss_headers(user_id)
+        )
+        beta_bookings = client.get("/Beta/bookings", headers=create_mss_headers())
+
+    assert (alpha_response.status_code, beta_response.status_code) == (200, 200)
+    assert [booking["id"] for booking in beta_bookings.json()["data"]] == [
+        beta_response.json()["id"]
+    ]
 
 
 def test_each_device_has_its_own_executor_lock(tmp_path, monkeypatch):

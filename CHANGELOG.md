@@ -17,6 +17,9 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   that no one else's job ran during that booker's bookings for the two weeks the job was kept
 - Fixed cancelling or deleting a job while MSS was down or slow stalling the whole API, until `bcc start` took it for
   stuck and restarted the backend
+- Fixed devices that share a database, as the example env file's do, sharing their bookings: one device's booking
+  refused overlapping bookings on the others and reordered their job queues; existing bookings go to the device that
+  migrates the database
 
 ## [2026.11.0-rc.13] - 2026-11-09
 

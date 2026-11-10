@@ -88,6 +88,7 @@ def submit_booking(
     """
     booking = create_booking(
         device.bookings_db,
+        device.settings.default_prefix,
         user_id=user_id,
         booking_info=booking_info,
         config=BookingsConfig.from_settings(device.settings),
@@ -127,6 +128,7 @@ def cancel_booking(
     is_admin = is_mss_admin or user.is_admin
     booking = get_booking(
         device.bookings_db,
+        device.settings.default_prefix,
         Booking.id == booking_id,
         or_(Booking.user_id == user_id, is_admin == True),
     )
@@ -144,7 +146,9 @@ def cancel_booking(
             f"the booking of id {booking_id} is already complete"
         )
 
-    delete_bookings(device.bookings_db, Booking.id == booking_id)
+    delete_bookings(
+        device.bookings_db, device.settings.default_prefix, Booking.id == booking_id
+    )
     wake_workers(device, "heavy")
 
 
@@ -520,10 +524,15 @@ def _cancel_pending_jobs(device: DeviceResources, user_id: str) -> None:
 
 def _cancel_incomplete_bookings(device: DeviceResources, user_id: str) -> None:
     """Deletes the user's bookings that have not ended"""
+    device_name = device.settings.default_prefix
     incomplete_bookings = get_many_bookings(
-        device.bookings_db, Booking.end_utc > get_utc_now(), Booking.user_id == user_id
+        device.bookings_db,
+        device_name,
+        Booking.end_utc > get_utc_now(),
+        Booking.user_id == user_id,
     )
     delete_bookings(
         device.bookings_db,
+        device_name,
         Booking.id.in_([booking.id for booking in incomplete_bookings]),
     )

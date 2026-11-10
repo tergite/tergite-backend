@@ -14,7 +14,7 @@
 
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Type
+from typing import Any, Iterable, Iterator, Optional, Type
 
 from alembic import command
 from alembic.config import Config
@@ -43,13 +43,17 @@ def get_sql_engine(url: str) -> Engine:
     return engine
 
 
-def migrate_sql_db(url: str) -> None:
+def migrate_sql_db(url: str, device_name: Optional[str] = None) -> None:
     """Migrates the database at the URL to the models' schema, with Alembic
 
     Args:
         url: the URL of the database
+        device_name: the device migrating it, to which the rows from before they were
+            keyed by device go; default: the env file's, read only if there are such rows
     """
-    command.upgrade(get_alembic_config(url), "head")
+    config = get_alembic_config(url)
+    config.attributes["device_name"] = device_name
+    command.upgrade(config, "head")
 
 
 def get_alembic_config(url: str) -> Config:

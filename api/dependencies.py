@@ -74,7 +74,10 @@ async def lifespan(app: FastAPI):
         # one API worker at a time, as starting a device migrates its database and
         # restarts its recalibration
         with FileLock(device_settings.start_up_lock_file):
-            migrate_sql_db(device_settings.booking_db_url)
+            migrate_sql_db(
+                device_settings.booking_db_url,
+                device_name=device_settings.default_prefix,
+            )
             resources = DeviceResources.from_settings(device_settings)
             app.state.device_resources[device] = resources
             _start_device(resources)

@@ -133,6 +133,7 @@ class Booking(SQLModel, table=True):
 
     Attributes:
         id: the unique identifier of the booking
+        device_name: the device booked, of those that may share the database
         user_id: the unique identifier of the user associated with this booking
         user: the user associated with this booking
     """
@@ -140,6 +141,7 @@ class Booking(SQLModel, table=True):
     model_config = ConfigDict(validate_assignment=True)
 
     id: str = Field(default_factory=uuid_str, primary_key=True, index=True)
+    device_name: str = Field(index=True)
     user_id: Optional[str] = Field(
         foreign_key="user.id", index=True, ondelete="SET NULL", nullable=True
     )
