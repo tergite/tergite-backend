@@ -22,7 +22,7 @@ from sqlmodel import Field, Session, SQLModel, col, delete, select
 from libs.queues.dtos import Job, JobStatus
 from utils.config import DeviceSettings
 from utils.datetime import get_utc_now, to_utc
-from utils.exc import ItemNotFoundError, JobAlreadyCompleteError
+from utils.exc import ConflictError, ItemNotFoundError, JobAlreadyCompleteError
 from utils.sql_db import open_immediate_session
 from utils.strings import uuid_str
 
@@ -105,13 +105,16 @@ class JobsStore:
             return session.get(JobRow, (self._device_name, job_id)) is not None
 
     def insert(self, job: Job) -> Job:
-        """Inserts the job, replacing any of the same id, and deletes the expired ones
+        """Inserts the job, unless the device has one of its id, and deletes the expired ones
 
         Args:
             job: the job to insert
 
         Returns:
             the inserted job
+
+        Raises:
+            ConflictError: job_id {job_id} already exists
         """
         now = get_utc_now()
         with open_immediate_session(self._db_engine) as session:
@@ -121,9 +124,11 @@ class JobsStore:
                     col(JobRow.updated_at) < now - self._ttl,
                 )
             )
+            if session.get(JobRow, (self._device_name, job.job_id)) is not None:
+                raise ConflictError(f"job_id {job.job_id} already exists")
             row = JobRow(device_name=self._device_name, job_id=job.job_id, data="")
             _write_job(row, job, now=now)
-            session.merge(row)
+            session.add(row)
             session.commit()
         return job
 

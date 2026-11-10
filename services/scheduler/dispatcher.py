@@ -215,6 +215,9 @@ def enqueue_job(
         device: what the device runs on
         job: the job, at its preprocessing queue's stage
         is_booking_excluded: whether a booker's job is to wait for the time outside bookings
+
+    Raises:
+        ConflictError: job_id {job_id} already exists
     """
     device.jobs_store.insert(job)
     if is_booking_excluded:

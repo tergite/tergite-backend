@@ -15,6 +15,7 @@ import pytest
 
 from libs.queues.dtos import Job, JobStatus, Stage
 from services.scheduler import JobsStore
+from utils.exc import ConflictError
 from utils.sql_db import get_sql_engine, migrate_sql_db
 
 _DEVICE_NAME = "alpha"
@@ -40,3 +41,14 @@ def test_a_job_that_ended_keeps_its_status_through_a_stage_update(jobs_store):
 
     stored_job = jobs_store.get_one(job.job_id)
     assert (stored_job.status, stored_job.stage) == (JobStatus.CANCELLED, Stage.EXEC_W)
+
+
+def test_a_job_inserted_again_is_refused_and_left_as_it_was(jobs_store):
+    """Two API workers may each take an upload of a job before either has stored it"""
+    job = jobs_store.insert(Job(device=_DEVICE_NAME, calibration_date=""))
+    jobs_store.update(job.job_id, {"stage": Stage.EXEC_Q})
+
+    with pytest.raises(ConflictError):
+        jobs_store.insert(job)
+
+    assert jobs_store.get_one(job.job_id).stage == Stage.EXEC_Q

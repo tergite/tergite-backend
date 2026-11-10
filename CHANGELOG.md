@@ -22,6 +22,8 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
   migrates the database
 - Fixed the backend on PostgreSQL letting concurrent writes interleave: updates to a job could be lost, two bookings of
   the same slot could both be taken, and two processes could send MSS the same kept event
+- Fixed a job uploaded twice at once, as to two API workers, being put back to the start of its queue by the second
+  upload; that upload is refused with 409
 
 ## [2026.11.0-rc.13] - 2026-11-09
 
