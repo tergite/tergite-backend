@@ -52,6 +52,7 @@ _Filter = _ColumnExpressionArgument[bool] | bool
 
 def create_booking(
     db_engine: Engine,
+    device_name: str,
     user_id: str,
     booking_info: NewBookingInfo,
     config: BookingsConfig,
@@ -61,6 +62,7 @@ def create_booking(
 
     Args:
         db_engine: the SQL engine to save new job in
+        device_name: the device to book
         user_id: the id of the User who is making the booking
         booking_info: the booking info
         config: the device's limits on bookings
@@ -76,15 +78,18 @@ def create_booking(
     """
     _validate_times(booking_info, config=config, now=now)
     with open_immediate_session(db_engine) as session:
-        _validate_no_overlap(session, booking_info)
+        _validate_no_overlap(session, device_name, booking_info=booking_info)
         _validate_max_slots(
             session,
+            device_name,
             user_id=user_id,
             booking_info=booking_info,
             max_slots_per_day=config.max_slots_per_day,
         )
 
-        booking = Booking(user_id=user_id, **booking_info.model_dump())
+        booking = Booking(
+            device_name=device_name, user_id=user_id, **booking_info.model_dump()
+        )
         session.add(booking)
         session.commit()
         session.refresh(booking)
@@ -94,31 +99,35 @@ def create_booking(
         return booking
 
 
-def delete_bookings(db_engine: Engine, *filters: _Filter):
-    """Deletes the bookings that match the given filters
+def delete_bookings(db_engine: Engine, device_name: str, *filters: _Filter):
+    """Deletes the device's bookings that match the given filters
 
     Args:
         db_engine: the SQL engine where the booking is saved
+        device_name: the device whose bookings to delete
         filters: the filters that the bookings should match
     """
     with Session(db_engine) as session:
-        statement = delete(Booking).where(*filters)
+        statement = delete(Booking).where(Booking.device_name == device_name, *filters)
         session.exec(statement)
         session.commit()
 
 
-def get_booking(db_engine: Engine, *filters: _Filter) -> Optional[Booking]:
-    """Retrieves the first booking that matches the given filters
+def get_booking(
+    db_engine: Engine, device_name: str, *filters: _Filter
+) -> Optional[Booking]:
+    """Retrieves the device's first booking that matches the given filters
 
     Args:
         db_engine: the SQL engine to query from
+        device_name: the device whose booking to get
         filters: the filters that the bookings should match
 
     Returns:
         the booking or None if it does not exist
     """
     with Session(db_engine) as session:
-        statement = select(Booking).where(*filters)
+        statement = select(Booking).where(Booking.device_name == device_name, *filters)
         results = session.exec(statement)
         booking = results.first()
         if booking is None:
@@ -132,15 +141,17 @@ def get_booking(db_engine: Engine, *filters: _Filter) -> Optional[Booking]:
 
 def get_many_bookings(
     db_engine: Engine,
+    device_name: str,
     *filters: _Filter,
     skip: int = 0,
     limit: int | None = None,
     sort: tuple[_ColumnExpressionOrStrLabelArgument[Any]] = (),
 ) -> List[Booking]:
-    """Retrieves the bookings that match the given filters
+    """Retrieves the device's bookings that match the given filters
 
     Args:
         db_engine: the SQL engine to query from
+        device_name: the device whose bookings to get
         filters: the filters that the bookings should match
         skip: number of records to ignore at the top of the returned results; default is 0
         limit: maximum number of records to return; default is None.
@@ -151,7 +162,11 @@ def get_many_bookings(
     """
     with Session(db_engine) as session:
         statement = (
-            select(Booking).where(*filters).limit(limit).offset(skip).order_by(*sort)
+            select(Booking)
+            .where(Booking.device_name == device_name, *filters)
+            .limit(limit)
+            .offset(skip)
+            .order_by(*sort)
         )
         results = session.exec(statement)
         records = list(results.all())
@@ -161,11 +176,12 @@ def get_many_bookings(
         return records
 
 
-def get_active_booking(db_engine: Engine) -> Optional[Booking]:
-    """Gets the booking which is currently active
+def get_active_booking(db_engine: Engine, device_name: str) -> Optional[Booking]:
+    """Gets the device's booking which is currently active
 
     Args:
         db_engine: the SQL engine to query from
+        device_name: the device whose booking to get
 
     Returns:
         the booking or None if no active booking
@@ -173,7 +189,9 @@ def get_active_booking(db_engine: Engine) -> Optional[Booking]:
     with Session(db_engine) as session:
         current_timestamp = get_utc_now()
         statement = select(Booking).where(
-            Booking.start_utc <= current_timestamp, Booking.end_utc >= current_timestamp
+            Booking.device_name == device_name,
+            Booking.start_utc <= current_timestamp,
+            Booking.end_utc >= current_timestamp,
         )
         results = session.exec(statement)
         booking = results.first()
@@ -186,11 +204,12 @@ def get_active_booking(db_engine: Engine) -> Optional[Booking]:
         return booking
 
 
-def get_next_booking(db_engine: Engine) -> Optional[Booking]:
-    """Gets the next booking
+def get_next_booking(db_engine: Engine, device_name: str) -> Optional[Booking]:
+    """Gets the device's next booking
 
     Args:
         db_engine: the SQL engine to query from
+        device_name: the device whose booking to get
 
     Returns:
         the earliest booking that has not yet started, or None if there is none
@@ -199,7 +218,10 @@ def get_next_booking(db_engine: Engine) -> Optional[Booking]:
         current_timestamp = get_utc_now()
         statement = (
             select(Booking)
-            .where(Booking.start_utc >= current_timestamp)
+            .where(
+                Booking.device_name == device_name,
+                Booking.start_utc >= current_timestamp,
+            )
             .order_by(Booking.start_utc)
             .limit(1)
         )
@@ -420,6 +442,7 @@ def get_mss_token_claims(
 
 def _get_overlapping_bookings(
     session: Session,
+    device_name: str,
     start_utc: datetime,
     end_utc: datetime,
     *filters: _Filter,
@@ -427,10 +450,11 @@ def _get_overlapping_bookings(
     limit: Optional[int] = None,
     sort: tuple[_ColumnExpressionOrStrLabelArgument[Any]] = (),
 ) -> List[Booking]:
-    """Gets the list of bookings that overlap in given period and fulfill the extra filters if any
+    """Gets the device's bookings that overlap in given period and fulfill the extra filters if any
 
     Args:
         session: the SQL session to query from
+        device_name: the device whose bookings to get
         start_utc: the start time of that period
         end_utc: the end time of that period
         filters: extra filters to match against
@@ -442,7 +466,12 @@ def _get_overlapping_bookings(
     """
     statement = (
         select(Booking)
-        .where(Booking.start_utc < end_utc, Booking.end_utc > start_utc, *filters)
+        .where(
+            Booking.device_name == device_name,
+            Booking.start_utc < end_utc,
+            Booking.end_utc > start_utc,
+            *filters,
+        )
         .limit(limit)
         .offset(skip)
         .order_by(*sort)
@@ -451,11 +480,14 @@ def _get_overlapping_bookings(
     return list(results.all())
 
 
-def _validate_no_overlap(session: Session, booking_info: NewBookingInfo):
-    """Validates that the booking_info does not overlap with another existing booking
+def _validate_no_overlap(
+    session: Session, device_name: str, booking_info: NewBookingInfo
+):
+    """Validates that the booking_info does not overlap with another of the device's bookings
 
     Args:
         session: the database session for accessing the saved bookings
+        device_name: the device to book
         booking_info: the booking info under examination
 
     Raises:
@@ -464,6 +496,7 @@ def _validate_no_overlap(session: Session, booking_info: NewBookingInfo):
     try:
         overlap_record = _get_overlapping_bookings(
             session,
+            device_name,
             start_utc=booking_info.start_utc,
             end_utc=booking_info.end_utc,
             limit=1,
@@ -477,14 +510,17 @@ def _validate_no_overlap(session: Session, booking_info: NewBookingInfo):
 
 def _validate_max_slots(
     session: Session,
+    device_name: str,
     user_id: str,
     booking_info: NewBookingInfo,
     max_slots_per_day: int,
 ):
-    """Validates that the pre-existing bookings in the day this booking starts, are not above the limit
+    """Validates that the user's bookings of the device in the day this booking starts are
+    not above the limit
 
     Args:
         session: the database session for accessing the saved bookings
+        device_name: the device to book
         user_id: the unique identifier of the user creating the booking
         booking_info: the booking info under examination
         max_slots_per_day: the most bookings a user may hold in a day
@@ -494,7 +530,7 @@ def _validate_max_slots(
     """
     day_start, day_end = get_day_range(booking_info.start_utc)
     user_bookings = _get_overlapping_bookings(
-        session, day_start, day_end, Booking.user_id == user_id
+        session, device_name, day_start, day_end, Booking.user_id == user_id
     )
     if len(user_bookings) >= max_slots_per_day:
         raise MaxBookingsError(

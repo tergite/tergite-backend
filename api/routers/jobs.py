@@ -111,8 +111,10 @@ async def view_job(
     )
 
 
+# plain def, as is remove_job, so FastAPI runs them in a thread: telling MSS of a
+# cancellation blocks, for up to minutes
 @router.post("/jobs/{job_id}/cancel", dependencies=[Depends(check_device_is_online)])
-async def cancel_job(
+def cancel_job(
     device: DeviceResourcesDep,
     job_id: str,
     details: CancellationDetails,
@@ -144,7 +146,7 @@ async def cancel_job(
 
 
 @router.delete("/jobs/{job_id}", dependencies=[Depends(check_device_is_online)])
-async def remove_job(
+def remove_job(
     device: DeviceResourcesDep,
     job_id: str,
     user_id: str = Depends(get_verified_mss_user_id),

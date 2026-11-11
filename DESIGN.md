@@ -188,9 +188,9 @@ several: [docs/deployment.md](docs/deployment.md#serve-several-devices-from-one-
 
 | Table | Holds |
 | --- | --- |
-| `user`, `booking` | users who have booked or submitted, and their bookings |
+| `user`, `booking` | users who have booked or submitted, shared by the devices of the database, and each device's bookings |
 | `job` | each device's jobs and their stages |
-| `recalibration` | recalibrations done, running and due |
+| `recalibration` | recalibrations done, kept for `BCC_RECALIBRATIONS_TTL`, running and due |
 | `device_parameters` | each device's properties and calibration |
 | `switched_off_device` | devices that are switched off |
 | `mss_nonce` | MSS's request ids, against replays |
@@ -199,9 +199,11 @@ several: [docs/deployment.md](docs/deployment.md#serve-several-devices-from-one-
 Alembic migrates it at start. `tests/test_migrations.py` fails if a model changed without a
 revision. On SQLite the database runs in WAL mode, so it wants a local disk.
 
-**Files**, under `<BCC_STORAGE_ROOT>/<device>/`: uploaded and preprocessed job files, the
-executor's data and lock, the workers' wake-up port files, the results (as HDF5) and the job
-supervisor log.
+**Files**, under `<BCC_STORAGE_ROOT>/<device>/`: each job's upload, preprocessed experiments,
+results (as HDF5) and experiment folder in the executor's data, kept until the job is deleted
+or expires; the rest of the executor's data and its lock, the workers' wake-up port files and
+the job supervisor log, rotated as `BCC_JOB_SUPERVISOR_LOG_MAX_BYTES` and
+`BCC_JOB_SUPERVISOR_LOG_BACKUP_COUNT` say.
 
 **Configuration**: each device's env file and the files it names. See
 [docs/configuration.md](docs/configuration.md).

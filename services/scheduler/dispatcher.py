@@ -36,7 +36,7 @@ from sqlmodel.sql.expression import SelectOfScalar
 
 from libs.queues.dtos import Job, JobStatus, Stage
 from utils.datetime import get_utc_now, to_utc
-from utils.exc import PostProcessingError
+from utils.exc import ItemNotFoundError, PostProcessingError
 from utils.sql_db import open_immediate_session
 
 from ..booking import Booking, get_active_booking, get_next_booking
@@ -46,7 +46,12 @@ from .deadlines import WorkerDeadline
 from .dtos import RecalibrationInfo, RecalibrationStatus
 from .resources import DeviceResources
 from .store import JobRow, RecalibrationRow
-from .utils import mark_job_failed, update_job_in_mss, update_job_stage
+from .utils import (
+    delete_job_files,
+    mark_job_failed,
+    update_job_in_mss,
+    update_job_stage,
+)
 from .wakeups import WakeUpListener, WorkerKind, wake_workers
 
 # what a worker may take past the time its step is allowed, MSS's response timeout aside,
@@ -55,6 +60,10 @@ _DEADLINE_MARGIN_SECONDS = 60.0
 # picks, in the session, a waiting job of the device at the stage, or none
 _RowPicker = Callable[[Session, DeviceResources, Stage], Optional[JobRow]]
 _TERMINAL_STATUSES = tuple(status.value for status in JobStatus if status.is_terminal())
+_ENDED_RECALIBRATION_STATUSES = (
+    RecalibrationStatus.FINISHED,
+    RecalibrationStatus.FAILED,
+)
 
 
 class Dispatcher:
@@ -173,6 +182,8 @@ class Dispatcher:
         fail_overdue_jobs(device)
         fail_jobs_queued_too_long(device)
         delete_expired_mss_nonces(device.bookings_db)
+        delete_expired_jobs(device)
+        delete_expired_recalibrations(device)
         if self._should_run_light and run_next_postprocessing(device, self._deadline):
             return True
         if not self._should_run_heavy:
@@ -215,6 +226,9 @@ def enqueue_job(
         device: what the device runs on
         job: the job, at its preprocessing queue's stage
         is_booking_excluded: whether a booker's job is to wait for the time outside bookings
+
+    Raises:
+        ConflictError: job_id {job_id} already exists
     """
     device.jobs_store.insert(job)
     if is_booking_excluded:
@@ -235,7 +249,7 @@ def mark_preprocessed(device: DeviceResources, job: Job) -> None:
         job: the preprocessed job
     """
     now = get_utc_now()
-    booking = get_active_booking(device.bookings_db)
+    booking = get_active_booking(device.bookings_db, device.settings.default_prefix)
     if (
         booking is not None
         and booking.user_id == job.user_id
@@ -260,10 +274,15 @@ def mark_executed(device: DeviceResources, job_id: str, results_file: str) -> Jo
 
     Returns:
         the job, at its postprocessing queue's stage
+
+    Raises:
+        ItemNotFoundError: '{job_id}' not found
     """
     # before the stage, which lets a light worker claim the job and read its results file
     with Session(device.bookings_db) as session:
         row = session.get(JobRow, (device.settings.default_prefix, job_id))
+        if row is None:
+            raise ItemNotFoundError(f"'{job_id}' not found")
         row.executed_at = get_utc_now()
         row.results_file = results_file
         session.add(row)
@@ -307,16 +326,17 @@ def run_next_preprocessing(
         return False
     job = Job.model_validate_json(row.data)
     job_file = device.settings.job_upload_pool / job.job_id
-    preprocessed_job = _run_logged(
-        preprocess,
-        device,
-        job,
-        job_file=job_file,
-        timeout=device.settings.max_preprocessing_time,
-        deadline=deadline,
-    )
-    if preprocessed_job is not None:
-        mark_preprocessed(device, preprocessed_job)
+    with _ignore_deletion(job.job_id):
+        preprocessed_job = _run_logged(
+            preprocess,
+            device,
+            job,
+            job_file=job_file,
+            timeout=device.settings.max_preprocessing_time,
+            deadline=deadline,
+        )
+        if preprocessed_job is not None:
+            mark_preprocessed(device, preprocessed_job)
     return True
 
 
@@ -338,15 +358,16 @@ def run_next_execution(
     if row is None:
         return False
     job = Job.model_validate_json(row.data)
-    results_file = _run_logged(
-        execute,
-        device,
-        job,
-        timeout=device.settings.max_execution_time,
-        deadline=deadline,
-    )
-    if results_file is not None:
-        mark_executed(device, job.job_id, results_file=results_file)
+    with _ignore_deletion(job.job_id):
+        results_file = _run_logged(
+            execute,
+            device,
+            job,
+            timeout=device.settings.max_execution_time,
+            deadline=deadline,
+        )
+        if results_file is not None:
+            mark_executed(device, job.job_id, results_file=results_file)
     return True
 
 
@@ -368,16 +389,19 @@ def run_next_postprocessing(
     if row is None:
         return False
     job = Job.model_validate_json(row.data)
-    try:
-        with _raise_after(
-            device.settings.max_postprocessing_time, device=device, deadline=deadline
-        ):
-            postprocess(device, job, results_file=row.results_file)
-    except PostProcessingError as exp:
-        logging.error(exp.exp)
-        _fail_job(device, exp.job_id, reason="error during post processing")
-    else:
-        mark_postprocessed(device, job.job_id)
+    with _ignore_deletion(job.job_id):
+        try:
+            with _raise_after(
+                device.settings.max_postprocessing_time,
+                device=device,
+                deadline=deadline,
+            ):
+                postprocess(device, job, results_file=row.results_file)
+        except PostProcessingError as exp:
+            logging.error(exp.exp)
+            _fail_job(device, exp.job_id, reason="error during post processing")
+        else:
+            mark_postprocessed(device, job.job_id)
     return True
 
 
@@ -471,7 +495,8 @@ def fail_overdue_jobs(device: DeviceResources) -> None:
             )
         ).all()
     for job_id in overdue_job_ids:
-        _fail_job(device, job_id, reason="timed out")
+        with _ignore_deletion(job_id):
+            _fail_job(device, job_id, reason="timed out")
 
 
 def fail_jobs_queued_too_long(device: DeviceResources) -> None:
@@ -497,9 +522,52 @@ def fail_jobs_queued_too_long(device: DeviceResources) -> None:
             )
         ).all()
     for job_id in waited_job_ids:
-        _fail_job(
-            device, job_id, reason=f"waited longer than {max_wait_seconds} s to execute"
+        with _ignore_deletion(job_id):
+            _fail_job(
+                device,
+                job_id,
+                reason=f"waited longer than {max_wait_seconds} s to execute",
+            )
+
+
+def delete_expired_jobs(device: DeviceResources) -> None:
+    """Deletes the device's jobs that ended over BCC_JOBS_STORE_TTL ago, and their files
+
+    Args:
+        device: what the device runs on
+    """
+    for job_id, experiment_folder in device.jobs_store.delete_expired().items():
+        delete_job_files(device.settings, job_id, experiment_folder=experiment_folder)
+
+
+def delete_expired_recalibrations(device: DeviceResources) -> None:
+    """Deletes the device's recalibrations that ended over BCC_RECALIBRATIONS_TTL ago, but
+    the last that ended, which /recalibration/info shows
+
+    Args:
+        device: what the device runs on
+    """
+    device_name = device.settings.default_prefix
+    expired_at = get_utc_now() - timedelta(seconds=device.settings.recalibrations_ttl)
+    with Session(device.bookings_db) as session:
+        ended = select(RecalibrationRow.id).where(
+            col(RecalibrationRow.device_name) == device_name,
+            col(RecalibrationRow.status).in_(_ENDED_RECALIBRATION_STATUSES),
         )
+        last_id = session.exec(
+            ended.order_by(col(RecalibrationRow.ended_at).desc())
+        ).first()
+        if last_id is None:
+            return
+        session.exec(
+            delete(RecalibrationRow).where(
+                col(RecalibrationRow.device_name) == device_name,
+                col(RecalibrationRow.status).in_(_ENDED_RECALIBRATION_STATUSES),
+                col(RecalibrationRow.ended_at) <= expired_at,
+                col(RecalibrationRow.id) != last_id,
+            )
+        )
+        session.commit()
 
 
 def fail_abandoned_recalibrations(device: DeviceResources) -> None:
@@ -538,11 +606,13 @@ def schedule_recalibration(
         due_at: when the first recalibration is due; None for now
         interval: the seconds between recalibrations; 0 for no repeat
     """
-    stop_recalibration(device)
-    with Session(device.bookings_db) as session:
+    device_name = device.settings.default_prefix
+    # immediate, so that two schedulings at once leave one, not two that each repeat
+    with open_immediate_session(device.bookings_db) as session:
+        _stop_recalibration(session, device_name)
         session.add(
             RecalibrationRow(
-                device_name=device.settings.default_prefix,
+                device_name=device_name,
                 status=RecalibrationStatus.SCHEDULED,
                 due_at=to_utc(due_at) if due_at else get_utc_now(),
                 interval=interval,
@@ -558,21 +628,8 @@ def stop_recalibration(device: DeviceResources) -> None:
     Args:
         device: what the device runs on
     """
-    with Session(device.bookings_db) as session:
-        session.exec(
-            delete(RecalibrationRow).where(
-                col(RecalibrationRow.device_name) == device.settings.default_prefix,
-                col(RecalibrationRow.status) == RecalibrationStatus.SCHEDULED,
-            )
-        )
-        for row in session.exec(
-            select(RecalibrationRow).where(
-                col(RecalibrationRow.device_name) == device.settings.default_prefix,
-                col(RecalibrationRow.status) == RecalibrationStatus.STARTED,
-            )
-        ):
-            row.interval = None
-            session.add(row)
+    with open_immediate_session(device.bookings_db) as session:
+        _stop_recalibration(session, device.settings.default_prefix)
         session.commit()
 
 
@@ -651,13 +708,13 @@ def get_next_change_at(device: DeviceResources) -> Optional[datetime]:
 
     now = get_utc_now()
     times = []
-    booking = get_active_booking(device.bookings_db)
+    booking = get_active_booking(device.bookings_db, device.settings.default_prefix)
     if booking is not None:
         times.append(booking.end_utc)
         times.append(
             _get_booker_active_at(device, booking) + _get_max_idle_time(device)
         )
-    next_booking = get_next_booking(device.bookings_db)
+    next_booking = get_next_booking(device.bookings_db, device.settings.default_prefix)
     if next_booking is not None:
         times.append(next_booking.start_utc)
     later_times = [value for value in times if value > now]
@@ -698,12 +755,12 @@ def _pick_next_execution(
     """
     now = get_utc_now()
     waiting = _get_waiting_query(device, stage).with_for_update(skip_locked=True)
-    next_booking = get_next_booking(device.bookings_db)
+    next_booking = get_next_booking(device.bookings_db, device.settings.default_prefix)
     seconds_to_next = (
         (next_booking.start_utc - now).total_seconds() if next_booking else None
     )
 
-    booking = get_active_booking(device.bookings_db)
+    booking = get_active_booking(device.bookings_db, device.settings.default_prefix)
     if booking is not None:
         seconds_left = (booking.end_utc - now).total_seconds()
         booker_job = session.exec(
@@ -748,10 +805,14 @@ def _get_booker_active_at(device: DeviceResources, booking: Booking) -> datetime
                 ),
             )
         ).all()
-    if any(row.stage == Stage.EXEC_W.name for row in rows):
+    if any(
+        row.stage == Stage.EXEC_W.name and row.status not in _TERMINAL_STATUSES
+        for row in rows
+    ):
         return get_utc_now()
-    executed_times = [_to_aware(row.executed_at) for row in rows if row.executed_at]
-    return max([booking.start_utc, *executed_times])
+    # an execution that failed or was cancelled stays at its stage, ended when last written
+    active_times = [_to_aware(row.executed_at or row.updated_at) for row in rows]
+    return max([booking.start_utc, *active_times])
 
 
 def _get_max_idle_time(device: DeviceResources) -> timedelta:
@@ -762,6 +823,25 @@ def _is_booking_excluded(device: DeviceResources, job_id: str) -> bool:
     with Session(device.bookings_db) as session:
         row = session.get(JobRow, (device.settings.default_prefix, job_id))
         return row is not None and row.is_booking_excluded
+
+
+def _stop_recalibration(session: Session, device_name: str) -> None:
+    """Deletes the device's scheduled recalibrations, and keeps the one under way from
+    scheduling a next, in the session, which the caller commits"""
+    session.exec(
+        delete(RecalibrationRow).where(
+            col(RecalibrationRow.device_name) == device_name,
+            col(RecalibrationRow.status) == RecalibrationStatus.SCHEDULED,
+        )
+    )
+    for row in session.exec(
+        select(RecalibrationRow).where(
+            col(RecalibrationRow.device_name) == device_name,
+            col(RecalibrationRow.status) == RecalibrationStatus.STARTED,
+        )
+    ):
+        row.interval = None
+        session.add(row)
 
 
 def _record_recalibration_end(
@@ -784,9 +864,20 @@ def _fail_job(device: DeviceResources, job_id: str, reason: str) -> None:
         device.jobs_store,
         job_id=job_id,
         reason=reason,
-        job_supervisor_log=device.settings.job_supervisor_log,
+        device_settings=device.settings,
     )
-    update_job_in_mss(device.bookings_db, device.mss_client, payload=job)
+    if job is not None:
+        update_job_in_mss(device.bookings_db, device.mss_client, payload=job)
+
+
+@contextmanager
+def _ignore_deletion(job_id: str) -> Iterator[None]:
+    """Leaves the block quietly once it finds its job deleted, as a user may delete a job at
+    any stage, and a worker that raised would stop bcc start"""
+    try:
+        yield
+    except ItemNotFoundError:
+        logging.info(f"job {job_id} was deleted while a worker had it")
 
 
 def _run_logged(

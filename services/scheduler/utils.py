@@ -15,15 +15,17 @@
 """Utility functions for the scheduler service"""
 
 import logging
+import shutil
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Tuple
+from typing import TYPE_CHECKING, Dict, Optional, Tuple
 
 import numpy as np
 from numpy import typing as npt
 from sqlalchemy import Engine
 
 from libs.device_parameters import BackendConfig, DeviceCalibration
+from libs.quantum_executor.base.job_files import get_expt_metadata_file
 from libs.queues.dtos import (
     ExecutorOptions,
     Job,
@@ -37,7 +39,8 @@ from libs.queues.dtos import (
 )
 from utils.config import DeviceSettings
 from utils.datetime import utc_now_str
-from utils.logging import err_logger
+from utils.exc import JobAlreadyCompleteError
+from utils.logging import SharedRotatingFileHandler, err_logger
 
 from ..external.mss import DeviceEvent, DeviceEventName, MssClient, send_mss_event
 from .store import JobsStore
@@ -119,14 +122,14 @@ def get_executor(executor_options: ExecutorOptions) -> "QuantumExecutor":
     return executor
 
 
-def log_job_error(job_supervisor_log: Path, message: str) -> None:
+def log_job_error(device_settings: DeviceSettings, message: str) -> None:
     """Logs the error to the device's job supervisor log
 
     Args:
-        job_supervisor_log: the device's job supervisor log file
+        device_settings: the settings of the device, which name its log and how it rotates
         message: the error message
     """
-    _get_job_logger(job_supervisor_log).error(message)
+    _get_job_logger(device_settings).error(message)
 
 
 def move_file(file: Path, new_folder: Path, ext: str = "") -> Path:
@@ -146,10 +149,36 @@ def move_file(file: Path, new_folder: Path, ext: str = "") -> Path:
     return file.replace(new_file_path)
 
 
+def delete_job_files(
+    device_settings: DeviceSettings, job_id: str, experiment_folder: Optional[Path]
+) -> None:
+    """Deletes the files the device keeps of the job: its upload, its preprocessed
+    experiments, its results, and its experiments' folder in the executor's data, those
+    that there are
+
+    Args:
+        device_settings: the settings of the device
+        job_id: the unique identifier of the job
+        experiment_folder: the folder of the job's experiments; None if it has none
+    """
+    job_files = (
+        device_settings.job_upload_pool / job_id,
+        get_expt_metadata_file(job_id, folder=device_settings.preprocessed_job_pool),
+        device_settings.log_file_pool / f"{job_id}.hdf5",
+    )
+    for job_file in job_files:
+        job_file.unlink(missing_ok=True)
+    # removed only inside the executor's data, whatever the job's row says
+    if experiment_folder is not None and experiment_folder.resolve().is_relative_to(
+        device_settings.executor_data_dir.resolve()
+    ):
+        shutil.rmtree(experiment_folder, ignore_errors=True)
+
+
 def update_job_stage(jobs_store: JobsStore, job_id: str, stage: Stage) -> Job:
     """Updates the job's stage in the database
 
-    This also updates the timestamps and the status of the job
+    This also updates the timestamps, and the status of a job that has not ended
 
     Args:
         jobs_store: the device's jobs
@@ -165,12 +194,11 @@ def update_job_stage(jobs_store: JobsStore, job_id: str, stage: Stage) -> Job:
     timestamps = _get_next_timestamps(
         job, next_stage=stage, current_time=current_timestamp
     )
-    status = _get_next_status(job, next_stage=stage)
 
     return jobs_store.update(
         job_id,
         {
-            "status": status,
+            "status": _STAGE_STATUS_MAP[stage],
             "stage": stage,
             "timestamps": timestamps,
             "updated_at": current_timestamp,
@@ -179,30 +207,34 @@ def update_job_stage(jobs_store: JobsStore, job_id: str, stage: Stage) -> Job:
 
 
 def mark_job_failed(
-    jobs_store: JobsStore, job_id: str, reason: str, job_supervisor_log: Path
-) -> Job:
-    """Marks the job failed for the reason, and logs it to the job supervisor log
+    jobs_store: JobsStore, job_id: str, reason: str, device_settings: DeviceSettings
+) -> Optional[Job]:
+    """Marks the job failed for the reason, and logs it to the job supervisor log, unless
+    it has already ended
 
     Args:
         jobs_store: the device's jobs
         job_id: the unique identifier of the job
         reason: the failure reason
-        job_supervisor_log: the device's job supervisor log file
+        device_settings: the settings of the device, whose job supervisor log it logs to
 
     Returns:
-        the updated job with its failure status
+        the failed job, or None if it had already ended
     """
-    job = jobs_store.update(
-        job_id,
-        {
-            "status": JobStatus.FAILED,
-            "failure_reason": reason,
-            "updated_at": utc_now_str(),
-        },
-    )
+    try:
+        job = jobs_store.mark_ended(
+            job_id,
+            {
+                "status": JobStatus.FAILED,
+                "failure_reason": reason,
+                "updated_at": utc_now_str(),
+            },
+        )
+    except JobAlreadyCompleteError:
+        return None
 
     log_job_error(
-        job_supervisor_log,
+        device_settings,
         f"Job {job_id} failed at {job.stage.verbose_name} due to {reason}",
     )
 
@@ -214,8 +246,8 @@ def update_job_results(
     job_id: str,
     result: JobResult,
     machine_root_url: str,
-) -> Job:
-    """Updates the results of the job and returns the updated job
+) -> Optional[Job]:
+    """Marks the job successful with its results, unless it has already ended
 
     Args:
         jobs_store: the device's jobs
@@ -224,17 +256,20 @@ def update_job_results(
         machine_root_url: the URL this device's API is reached at
 
     Returns:
-        the updated job
+        the successful job, or None if it had already ended
     """
-    return jobs_store.update(
-        job_id,
-        {
-            "status": JobStatus.SUCCESSFUL,
-            "result": result,
-            "download_url": f"{machine_root_url}/logfiles/{job_id}",
-            "updated_at": utc_now_str(),
-        },
-    )
+    try:
+        return jobs_store.mark_ended(
+            job_id,
+            {
+                "status": JobStatus.SUCCESSFUL,
+                "result": result,
+                "download_url": f"{machine_root_url}/logfiles/{job_id}",
+                "updated_at": utc_now_str(),
+            },
+        )
+    except JobAlreadyCompleteError:
+        return None
 
 
 def update_job_in_mss(db_engine: Engine, mss_client: MssClient, payload: Job) -> None:
@@ -314,22 +349,6 @@ def _init_executor(
     )
 
 
-def _get_next_status(job: Job, next_stage: Stage) -> JobStatus:
-    """Gets the next status given a job and the next stage
-
-    Args:
-        job: the quantum job
-        next_stage: the next stage this job is to go to
-
-    Returns:
-        the next job status for that job
-    """
-    status = job.status
-    if not status.is_terminal():
-        status = _STAGE_STATUS_MAP[next_stage]
-    return status
-
-
 def _get_next_timestamps(job: Job, next_stage: Stage, current_time: str) -> Timestamps:
     """Gets the next timestamps for the given job and the next stage
 
@@ -349,16 +368,21 @@ def _get_next_timestamps(job: Job, next_stage: Stage, current_time: str) -> Time
     return timestamps.model_copy(update=updated_pairs)
 
 
-def _get_job_logger(job_supervisor_log: Path) -> logging.Logger:
-    """Gets the logger that writes to the job supervisor log, which it opens at its first
-    record"""
+def _get_job_logger(device_settings: DeviceSettings) -> logging.Logger:
+    """Gets the logger that writes to the device's job supervisor log, which it opens at its
+    first record, rotating it as the settings first read for that log say"""
+    job_supervisor_log = device_settings.job_supervisor_log
     logger = logging.getLogger(f"bcc.job_supervisor.{job_supervisor_log}")
     if not logger.handlers:
         formatter = logging.Formatter(_JOB_LOG_FORMAT)
         formatter.converter = time.gmtime
         formatter.default_time_format = "%Y-%m-%dT%H:%M:%S"
         formatter.default_msec_format = "%s.%03dZ"
-        handler = logging.FileHandler(job_supervisor_log, delay=True)
+        handler = SharedRotatingFileHandler(
+            job_supervisor_log,
+            max_bytes=device_settings.job_supervisor_log_max_bytes,
+            backup_count=device_settings.job_supervisor_log_backup_count,
+        )
         handler.setFormatter(formatter)
         logger.addHandler(handler)
         logger.setLevel(logging.INFO)

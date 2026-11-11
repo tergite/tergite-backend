@@ -18,6 +18,7 @@
 """Module containing service for scheduling jobs"""
 
 import shutil
+from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Tuple
@@ -66,7 +67,7 @@ from ..devices import get_device_calibration_info
 from . import dispatcher
 from .dtos import JobFile, RecalibrationInfo
 from .resources import DeviceResources
-from .utils import update_job_in_mss
+from .utils import delete_job_files, update_job_in_mss
 from .wakeups import wake_workers
 
 
@@ -87,6 +88,7 @@ def submit_booking(
     """
     booking = create_booking(
         device.bookings_db,
+        device.settings.default_prefix,
         user_id=user_id,
         booking_info=booking_info,
         config=BookingsConfig.from_settings(device.settings),
@@ -126,6 +128,7 @@ def cancel_booking(
     is_admin = is_mss_admin or user.is_admin
     booking = get_booking(
         device.bookings_db,
+        device.settings.default_prefix,
         Booking.id == booking_id,
         or_(Booking.user_id == user_id, is_admin == True),
     )
@@ -143,7 +146,9 @@ def cancel_booking(
             f"the booking of id {booking_id} is already complete"
         )
 
-    delete_bookings(device.bookings_db, Booking.id == booking_id)
+    delete_bookings(
+        device.bookings_db, device.settings.default_prefix, Booking.id == booking_id
+    )
     wake_workers(device, "heavy")
 
 
@@ -208,14 +213,11 @@ def cancel_job(
         ItemNotFoundError: Job {job_id} not found
         JobAlreadyCompleteError: job {job_id} is already {status}
     """
-    job = get_job(device, job_id=job_id, user_id=user_id, is_mss_admin=is_mss_admin)
-    if job.status.is_terminal():
-        raise JobAlreadyCompleteError(f"job {job_id} is already {job.status.value}")
-
+    get_job(device, job_id=job_id, user_id=user_id, is_mss_admin=is_mss_admin)
     if reason is None:
         reason = "Cancelled by a user"
 
-    cancelled_job = device.jobs_store.update(
+    cancelled_job = device.jobs_store.mark_ended(
         job_id,
         {
             "status": JobStatus.CANCELLED,
@@ -250,12 +252,13 @@ def delete_job(
         ItemNotFoundError: Job {job_id} not found
     """
     job = get_job(device, job_id=job_id, user_id=user_id, is_mss_admin=is_mss_admin)
-    if not job.status.is_terminal():
+    with suppress(JobAlreadyCompleteError):
         job = cancel_job(
             device, job_id=job_id, user_id=user_id, is_mss_admin=is_mss_admin
         )
 
-    device.jobs_store.delete(job_id)
+    experiment_folder = device.jobs_store.delete(job_id)
+    delete_job_files(device.settings, job_id, experiment_folder=experiment_folder)
     return job
 
 
@@ -508,22 +511,29 @@ def _cancel_pending_jobs(device: DeviceResources, user_id: str) -> None:
     for job in device.jobs_store.find(user_id=user_id):
         if job.status.is_terminal():
             continue
-        device.jobs_store.update(
-            job.job_id,
-            {
-                "status": JobStatus.CANCELLED,
-                "cancellation_reason": "Cancelled on user deletion",
-                "updated_at": utc_now_str(),
-            },
-        )
+        # it may end after it was found
+        with suppress(JobAlreadyCompleteError):
+            device.jobs_store.mark_ended(
+                job.job_id,
+                {
+                    "status": JobStatus.CANCELLED,
+                    "cancellation_reason": "Cancelled on user deletion",
+                    "updated_at": utc_now_str(),
+                },
+            )
 
 
 def _cancel_incomplete_bookings(device: DeviceResources, user_id: str) -> None:
     """Deletes the user's bookings that have not ended"""
+    device_name = device.settings.default_prefix
     incomplete_bookings = get_many_bookings(
-        device.bookings_db, Booking.end_utc > get_utc_now(), Booking.user_id == user_id
+        device.bookings_db,
+        device_name,
+        Booking.end_utc > get_utc_now(),
+        Booking.user_id == user_id,
     )
     delete_bookings(
         device.bookings_db,
+        device_name,
         Booking.id.in_([booking.id for booking in incomplete_bookings]),
     )

@@ -61,6 +61,10 @@ class DeviceSettings(BaseSettings):
     job_supervisor_log_name: str = Field(
         "job_supervisor.log", validation_alias="BCC_JOB_SUPERVISOR_LOG"
     )
+    # the job supervisor log is rotated past this size, into this many backups; 0 in either
+    # never rotates it
+    job_supervisor_log_max_bytes: int = Field(10 * 1024 * 1024, ge=0)
+    job_supervisor_log_backup_count: int = Field(5, ge=0)
     executor_data_dirname: str = "executor_data"
 
     backend_settings: str = str(_ROOT_PATH / "backend_config.toml")
@@ -83,7 +87,7 @@ class DeviceSettings(BaseSettings):
     mss_public_key_path: Path = _ROOT_PATH / "public-mss-key.pem"
     # time-to-live for the nonce; defaults to 5 minutes
     mss_nonce_ttl: float = 300
-    # how long a job is kept after it last changed; defaults to 2 weeks
+    # how long a job that has ended is kept after it last changed; defaults to 2 weeks
     jobs_store_ttl: float = 3600 * 24 * 14
     private_key_file: Path = _ROOT_PATH / "private-bcc-key.pem"
     private_key_password: Optional[bytes] = None
@@ -113,7 +117,11 @@ class DeviceSettings(BaseSettings):
     # above 0, as a worker with nothing to claim would otherwise never stop looking
     max_worker_wait_time: float = Field(default=5, gt=0)
     default_recalibration_interval: float = 24 * 60 * 60
-    # off, a device starts with its seed's calibration and recalibrates an interval later
+    # how long a recalibration that has ended is kept after it ended, but the device's last;
+    # defaults to 2 weeks
+    recalibrations_ttl: float = 3600 * 24 * 14
+    # off, a device starts with its seed's calibration and recalibrates an interval later,
+    # or when the recalibration scheduled before is due if sooner
     should_recalibrate_at_start: bool = False
     booking_db_url: str = "sqlite:///booking_db.db"
 

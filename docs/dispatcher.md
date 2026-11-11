@@ -96,7 +96,10 @@ Two workers never claim the same row:
 
 - On SQLite, `open_immediate_session` starts the transaction with `BEGIN IMMEDIATE`, which
   takes the write lock.
-- On PostgreSQL, the query uses `SELECT … FOR UPDATE SKIP LOCKED`.
+- On PostgreSQL, the query uses `SELECT … FOR UPDATE SKIP LOCKED`, and
+  `open_immediate_session` takes a transaction-scoped advisory lock, which serializes the
+  other reads-then-writes as SQLite's write lock does: a job's updates, a booking's overlap
+  check and the claim of a kept MSS event.
 
 ## Which job executes next
 
@@ -117,7 +120,8 @@ flowchart TD
 ```
 
 - **Idle** counts from the later of the booking's start and the end of the booker's last
-  execution in it (`executed_at`). The booker is never idle while one of their jobs executes.
+  execution in it (`executed_at`, or, for one that failed or was cancelled, when it ended).
+  The booker is never idle while one of their jobs executes.
 - **Other users' jobs during a booking** run one at a time once the booker is idle. Each must
   end before the *next* booking starts, not before the current one ends. One that is already
   running when the booker submits again runs to completion.
@@ -223,9 +227,18 @@ from a thread, while its deadline holds.
 - **Cancelling** sets the job's status to `cancelled`, which every claim's query excludes. A
   stage already running finishes; an execution's results are then dropped, so the job never
   reaches postprocessing.
-- **Deleting** cancels the job if it has not ended, then deletes its row.
-- **Expiry**: a job's row is deleted `BCC_JOBS_STORE_TTL` seconds after it was last written,
-  when another job is inserted.
+- **Ending is final.** `JobsStore.mark_ended` writes `successful`, `failed` or `cancelled`
+  only to a job that has not ended, checking in the transaction that writes, and
+  `JobsStore.update` keeps an ended job's status. So a cancel, a stage's end and a sweep of
+  overdue jobs cannot overwrite one another, and MSS hears of a job's end once.
+- **Deleting** cancels the job if it has not ended, then deletes its row. A worker that
+  finds the job of its stage deleted drops it and goes on.
+- **Deleting** and **expiry** delete the job's files too: its upload, its preprocessed
+  experiments, its results, and its experiments' folder in the executor's data, which
+  preprocessing records on the row (`experiment_folder`) before it compiles.
+- **Expiry**: an ended job's row is deleted `BCC_JOBS_STORE_TTL` seconds after it was last
+  written, by the next worker pass (`delete_expired_jobs`). A job that has not ended is kept,
+  as it may wait unwritten at a stage whose time limit is 0.
 
 ## Recalibration
 
@@ -235,7 +248,8 @@ A recalibration is a row of the `recalibration` table: `scheduled` with a `due_a
 - **Scheduling** one replaces the device's scheduled rows and stops the running one from
   repeating. The new row is due now unless given a time, and repeats every
   `BCC_DEFAULT_RECALIBRATION_INTERVAL` unless given an interval. The API schedules one at
-  every start.
+  every start, due now or, without `BCC_SHOULD_RECALIBRATE_AT_START`, an interval later,
+  unless the one already scheduled is due sooner; stopping leaves it scheduled.
 - **Running**: a heavy worker starts the earliest due row and inserts the next one an
   interval later, in one transaction. It runs under the executor lock and
   `BCC_MAX_RECALIBRATION_QUEUE_TIME`.
@@ -245,6 +259,9 @@ A recalibration is a row of the `recalibration` table: `scheduled` with a `due_a
 - **Abandoned rows**: a starting heavy worker fails rows left `started` by a worker that
   stopped (`fail_abandoned_recalibrations`), unless another heavy worker holds the executor
   lock.
+- **Expiry**: an ended row is deleted `BCC_RECALIBRATIONS_TTL` seconds after it ended, by the
+  next worker pass (`delete_expired_recalibrations`); the device's last ended row is kept,
+  as `/recalibration/info` shows it.
 
 ## The executor lock
 

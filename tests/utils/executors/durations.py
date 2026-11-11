@@ -15,8 +15,10 @@ estimates it, and running waits out what is left of it"""
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 from pytest_mock import MockerFixture
+from quantify_core.data.types import TUID
 
 from libs.quantum_executor.base import executor as base_executor
 from libs.quantum_executor.base.circuits import CircuitJobParams
@@ -40,9 +42,10 @@ def _preprocess_circuits(
     params: CircuitJobParams,
     job_id: str,
     results_folder: Path,
+    tuid: Optional[TUID] = None,
 ) -> tuple[float, str]:
     _, results_file = base_executor.preprocess_circuits(
-        executor, params, job_id=job_id, results_folder=results_folder
+        executor, params, job_id=job_id, results_folder=results_folder, tuid=tuid
     )
     duration = params.circuits[0].metadata.get("test_duration")
     _test_durations[job_id] = duration

@@ -19,22 +19,27 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 from itertools import zip_longest
+from pathlib import Path
 from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
 import time_machine
+from fastapi.testclient import TestClient
 from pytest_mock import MockerFixture
 
 from api.routers.jobs import JOBS_PAGE_SIZE
 from libs.queues.dtos import Job, JobStatus, Stage, Timestamps
 from services.booking import Booking
-from services.scheduler import WorkerDeadline
+from services.scheduler import DeviceResources, WorkerDeadline
+from services.scheduler import dispatcher as scheduler_dispatcher
+from services.scheduler import service as scheduler_service
 from services.scheduler import tasks as scheduler_tasks
 from services.scheduler.dispatcher import (
     fail_jobs_queued_too_long,
     fail_overdue_jobs,
 )
+from services.scheduler.utils import mark_job_failed
 from tests.utils.api import (
     create_mss_headers,
     get_bearer_headers,
@@ -45,8 +50,10 @@ from tests.utils.bookings import (
 )
 from tests.utils.env import (
     TEST_JWT_TTL,
+    TEST_MAX_IDLE_TIME,
 )
 from tests.utils.jobs import (
+    JobSubmissionMetadata,
     cancel_job_via_mss,
     claim_job_long_ago,
     get_job_submission_metadata,
@@ -60,12 +67,14 @@ from tests.utils.jobs import (
     set_test_duration,
     spy_on_mss_updates,
     submit_jobs,
+    submit_one_job,
     view_job,
 )
 from tests.utils.params import (
     ALL_INVALID_UPLOAD_JOB_PARAMS,
     ALL_UPLOAD_JOB_PARAMS,
     FASTAPI_CLIENTS,
+    QUANTIFY_UPLOAD_JOB_PARAMS,
     SIMPLE_UPLOAD_JOB_PARAMS,
     USERS,
     VIEW_JOB_PARAMS,
@@ -526,6 +535,41 @@ def test_booker_job_longer_than_the_time_left_fails(
         assert (
             job_in_db.failure_reason == "job too long for the time left in the booking"
         )
+
+
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS)
+def test_others_jobs_run_once_a_booker_whose_execution_failed_is_idle(
+    client, worker, job, jobs_folder, mocker, fake_clock
+):
+    """A job failed or cancelled in execution is left at that stage"""
+    with client as client:
+        [booker, other_user] = create_many_users(client, USERS[:2])
+        create_booking(
+            client, user_id=booker["id"], booking={"duration": 60, "starts_in": 0}
+        )
+        [booker_job, other_job] = get_job_submission_metadata(
+            client,
+            jobs=get_raw_jobs(job, durations=[0.2, 0.2]),
+            users=[booker, other_user],
+            mocker=mocker,
+            jobs_folder=jobs_folder,
+        )
+        submit_jobs(client, data=[booker_job])
+        failing_execution = mocker.patch.object(
+            scheduler_tasks, "run_job", side_effect=RuntimeError("device lost")
+        )
+        worker.run(is_burst=True)
+        mocker.stop(failing_execution)
+        submit_jobs(client, data=[other_job])
+
+        fake_clock.shift(TEST_MAX_IDLE_TIME + 1)
+        worker.run(is_burst=True)
+
+        stored_jobs = {job.job_id: job.status for job in get_stored_jobs()}
+        assert stored_jobs == {
+            booker_job["job_id"]: JobStatus.FAILED,
+            other_job["job_id"]: JobStatus.SUCCESSFUL,
+        }
 
 
 @pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
@@ -1487,6 +1531,48 @@ def test_job_cancelled_directly_is_sent_to_mss(
         assert job_updates[-1]["cancellation_reason"] == "just testing"
 
 
+@pytest.mark.parametrize("route", ["cancel", "delete"])
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS[:1])
+def test_api_answers_its_health_check_while_a_cancel_waits_on_mss(
+    client, jobs_folder, worker, job, mocker, route
+):
+    """bcc start kills an API that misses its health checks, and MSS may take minutes"""
+    with client as client:
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        is_sending, is_sent = threading.Event(), threading.Event()
+
+        def wait_on_mss(*args, **kwargs):
+            is_sending.set()
+            is_sent.wait(timeout=10)
+
+        mocker.patch.object(
+            scheduler_service, "update_job_in_mss", side_effect=wait_on_mss
+        )
+        if route == "cancel":
+            cancel = threading.Thread(
+                target=cancel_job_via_mss,
+                args=(client, job_info["user_id"], job_info["job_id"]),
+            )
+        else:
+            cancel = threading.Thread(
+                target=client.delete,
+                args=(f"/jobs/{job_info['job_id']}",),
+                kwargs={"headers": create_mss_headers(user_id=job_info["user_id"])},
+            )
+        cancel.start()
+        is_sending.wait(timeout=5)
+
+        health_check = threading.Thread(target=client.get, args=("/health",))
+        health_check.start()
+        health_check.join(timeout=2)
+        is_answered = not health_check.is_alive()
+        is_sent.set()
+        cancel.join()
+        health_check.join()
+
+        assert is_answered
+
+
 @pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_worker_deadline_covers_the_whole_time_limit_of_its_stage(
     client, jobs_folder, worker, job, mocker
@@ -1667,6 +1753,177 @@ def test_cancelled_job_is_not_executed(
         )
 
 
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS)
+def test_job_cancelled_while_it_postprocesses_stays_cancelled(
+    client, jobs_folder, worker, job, mocker, fake_clock
+):
+    with client as client:
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        read_results = scheduler_tasks.read_job_from_hdf5
+
+        def cancel_then_read_results(*args, **kwargs):
+            cancel_job_via_mss(
+                client, user_id=job_info["user_id"], job_id=job_info["job_id"]
+            )
+            return read_results(*args, **kwargs)
+
+        mocker.patch.object(
+            scheduler_tasks, "read_job_from_hdf5", side_effect=cancel_then_read_results
+        )
+        mss_update_spy = spy_on_mss_updates(mocker)
+
+        worker.run(is_burst=True)
+
+        [stored_job] = get_stored_jobs()
+        sent_statuses = [job.status for job in get_jobs_sent_to_mss(mss_update_spy)]
+        assert stored_job.status == JobStatus.CANCELLED
+        assert JobStatus.SUCCESSFUL not in sent_statuses
+
+
+@pytest.mark.parametrize(
+    "error", [RuntimeError("device lost"), TimeoutError("execution timed out")]
+)
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS)
+def test_job_cancelled_while_it_executes_stays_cancelled_if_the_execution_fails(
+    client, jobs_folder, worker, job, mocker, fake_clock, error
+):
+    with client as client:
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+
+        def cancel_then_fail(*args, **kwargs):
+            cancel_job_via_mss(
+                client, user_id=job_info["user_id"], job_id=job_info["job_id"]
+            )
+            raise error
+
+        mocker.patch.object(scheduler_tasks, "run_job", side_effect=cancel_then_fail)
+
+        worker.run(is_burst=True)
+
+        [stored_job] = get_stored_jobs()
+        assert stored_job.status == JobStatus.CANCELLED
+
+
+@pytest.mark.parametrize("task_name", ["preprocess", "execute", "postprocess"])
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS)
+def test_job_deleted_as_a_stage_ends_leaves_the_worker_running(
+    client, jobs_folder, worker, job, mocker, fake_clock, task_name
+):
+    """A worker that stops on it stops bcc start, and so the whole backend"""
+    with client as client:
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        task = getattr(scheduler_tasks, task_name)
+
+        def run_then_delete(*args, **kwargs):
+            result = task(*args, **kwargs)
+            client.delete(
+                f"/jobs/{job_info['job_id']}",
+                headers=create_mss_headers(user_id=job_info["user_id"]),
+            )
+            return result
+
+        mocker.patch.object(scheduler_tasks, task_name, side_effect=run_then_delete)
+
+        worker.run(is_burst=True)
+
+        assert get_stored_jobs() == []
+
+
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS)
+def test_job_deleted_while_it_postprocesses_leaves_the_worker_running(
+    client, jobs_folder, worker, job, mocker, fake_clock
+):
+    with client as client:
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        read_results = scheduler_tasks.read_job_from_hdf5
+
+        def delete_then_read_results(*args, **kwargs):
+            client.delete(
+                f"/jobs/{job_info['job_id']}",
+                headers=create_mss_headers(user_id=job_info["user_id"]),
+            )
+            return read_results(*args, **kwargs)
+
+        mocker.patch.object(
+            scheduler_tasks, "read_job_from_hdf5", side_effect=delete_then_read_results
+        )
+
+        worker.run(is_burst=True)
+
+        assert get_stored_jobs() == []
+
+
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS)
+def test_job_deleted_before_a_sweep_fails_it_leaves_the_worker_running(
+    client, jobs_folder, worker, job, mocker, fake_clock
+):
+    """The sweep of overdue jobs picks them first and fails them after"""
+    with client as client:
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        worker.run(is_burst=True, max_jobs=1)
+        device = next(iter(worker.device_resources.values()))
+        claim_job_long_ago(device, job_id=job_info["job_id"], stage=Stage.EXEC_W)
+        mark_failed = scheduler_dispatcher.mark_job_failed
+
+        def delete_then_mark_failed(*args, **kwargs):
+            device.jobs_store.delete(job_info["job_id"])
+            return mark_failed(*args, **kwargs)
+
+        mocker.patch.object(
+            scheduler_dispatcher, "mark_job_failed", side_effect=delete_then_mark_failed
+        )
+
+        fail_overdue_jobs(device)
+
+        assert get_stored_jobs() == []
+
+
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS)
+def test_job_timed_out_in_execution_is_failed_once(
+    client, jobs_folder, worker, job, mocker, fake_clock
+):
+    with client as client:
+        submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        mocker.patch.object(
+            scheduler_tasks, "run_job", side_effect=TimeoutError("took too long")
+        )
+        mss_update_spy = spy_on_mss_updates(mocker)
+
+        worker.run(is_burst=True)
+
+        failures_sent = [
+            job.failure_reason
+            for job in get_jobs_sent_to_mss(mss_update_spy)
+            if job.status == JobStatus.FAILED
+        ]
+        assert failures_sent == ["timed out"]
+
+
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS)
+def test_job_that_ended_is_not_failed_by_a_sweep_that_picked_it_before(
+    client, jobs_folder, worker, job, mocker, fake_clock
+):
+    """The sweeps of overdue and long-queued jobs pick them first and fail them after, so
+    one may end in between"""
+    with client as client:
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        worker.run(is_burst=True)
+        device = next(iter(worker.device_resources.values()))
+
+        mark_job_failed(
+            device.jobs_store,
+            job_id=job_info["job_id"],
+            reason="timed out",
+            device_settings=device.settings,
+        )
+
+        [stored_job] = get_stored_jobs()
+        assert (stored_job.status, stored_job.failure_reason) == (
+            JobStatus.SUCCESSFUL,
+            None,
+        )
+
+
 @pytest.mark.parametrize(
     "max_execution_queue_time, expected_status, expected_reason",
     [
@@ -1753,6 +2010,97 @@ def test_job_whose_worker_died_fails_after_its_time_limit(
         assert stored_job.status == expected_status
 
 
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS[:1])
+def test_files_of_a_deleted_job_are_deleted(
+    client, jobs_folder, worker, job, mocker, fake_clock
+):
+    with client as client:
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        worker.run(is_burst=True)
+        device = next(iter(worker.device_resources.values()))
+        job_files = _get_job_files(device, job_info["job_id"])
+        is_each_kept_before = [file.exists() for file in job_files]
+
+        client.delete(
+            f"/jobs/{job_info['job_id']}",
+            headers=create_mss_headers(user_id=job_info["user_id"]),
+        )
+
+        assert is_each_kept_before == [True, True]
+        assert [file.exists() for file in job_files] == [False, False]
+
+
+@pytest.mark.parametrize("should_preprocessing_fail", [False, True])
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS[:1])
+def test_experiment_folder_of_a_deleted_job_is_deleted(
+    client, jobs_folder, worker, job, mocker, fake_clock, should_preprocessing_fail
+):
+    """The executor makes it as preprocessing starts, so a failed job has one too"""
+    with client as client:
+        device = next(iter(worker.device_resources.values()))
+        folders_before = _get_experiment_folders(device)
+        if should_preprocessing_fail:
+            mocker.patch(
+                "libs.quantum_executor.base.executor.get_calibrated_frame_frequencies",
+                side_effect=ValueError("uncompilable circuits"),
+            )
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        worker.run(is_burst=True)
+        job_folders = _get_experiment_folders(device) - folders_before
+
+        client.delete(
+            f"/jobs/{job_info['job_id']}",
+            headers=create_mss_headers(user_id=job_info["user_id"]),
+        )
+
+        assert job_folders != set()
+        assert [folder for folder in job_folders if folder.exists()] == []
+
+
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS[:1])
+def test_files_of_an_expired_job_are_deleted(
+    client, jobs_folder, worker, job, mocker, fake_clock
+):
+    with client as client:
+        device = next(iter(worker.device_resources.values()))
+        folders_before = _get_experiment_folders(device)
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        worker.run(is_burst=True)
+        job_files = _get_job_files(device, job_info["job_id"])
+        job_folders = _get_experiment_folders(device) - folders_before
+
+        fake_clock.shift(device.settings.jobs_store_ttl + 1)
+        _submit_another_job(client, job, job_info, mocker, jobs_folder)
+        worker.run(is_burst=True)
+
+        assert [file.exists() for file in job_files] == [False, False]
+        assert job_folders != set()
+        assert [folder for folder in job_folders if folder.exists()] == []
+
+
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS[:1])
+def test_job_at_a_stage_without_a_time_limit_outlives_the_store_ttl(
+    client, jobs_folder, worker, job, mocker, fake_clock
+):
+    """A time limit of 0 is none, so the job may stay at its stage unwritten"""
+    with client as client:
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        worker.run(is_burst=True, max_jobs=1)
+        [device_name] = worker.device_resources
+        device = worker.device_resources[device_name]
+        claim_job_long_ago(device, job_id=job_info["job_id"], stage=Stage.EXEC_W)
+        worker.device_resources[device_name] = dataclasses.replace(
+            device,
+            settings=device.settings.model_copy(update={"max_execution_time": 0}),
+        )
+
+        fake_clock.shift(device.settings.jobs_store_ttl + 1)
+        _submit_another_job(client, job, job_info, mocker, jobs_folder)
+        worker.run(is_burst=True)
+
+        assert job_info["job_id"] in [job.job_id for job in get_stored_jobs()]
+
+
 @pytest.mark.timeout(60)
 @pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
 def test_waiting_workers_are_woken_for_a_new_job(
@@ -1836,6 +2184,28 @@ def test_cancel_finished_job(client, jobs_folder, worker, job, mocker, fake_cloc
 
         assert response.status_code == 406
         assert get_stored_jobs()[0].status == JobStatus.SUCCESSFUL
+
+
+@pytest.mark.parametrize("client, worker, job", QUANTIFY_UPLOAD_JOB_PARAMS)
+def test_cancel_of_a_job_that_ends_meanwhile_is_refused(
+    client, jobs_folder, worker, job, mocker, fake_clock
+):
+    """A cancel reads the job before it writes it, so the job may end in between"""
+    with client as client:
+        job_info = submit_one_job(client, job, mocker=mocker, jobs_folder=jobs_folder)
+        [job_before_it_ended] = get_stored_jobs()
+        worker.run(is_burst=True)
+        mocker.patch.object(
+            scheduler_service, "get_job", return_value=job_before_it_ended
+        )
+
+        response = cancel_job_via_mss(
+            client, user_id=job_info["user_id"], job_id=job_info["job_id"]
+        )
+
+        [stored_job] = get_stored_jobs()
+        assert response.status_code == 406
+        assert stored_job.status == JobStatus.SUCCESSFUL
 
 
 @pytest.mark.parametrize("client, worker, job", SIMPLE_UPLOAD_JOB_PARAMS)
@@ -2021,3 +2391,36 @@ def _wait_for_job_to_end(max_wait_seconds: float) -> Job:
             break
         time.sleep(0.1)
     return stored_job
+
+
+def _get_job_files(device: DeviceResources, job_id: str) -> list[Path]:
+    """Gets the job's uploaded file and its results file"""
+    return [
+        device.settings.job_upload_pool / job_id,
+        device.settings.log_file_pool / f"{job_id}.hdf5",
+    ]
+
+
+def _get_experiment_folders(device: DeviceResources) -> set[Path]:
+    """Gets the experiment folders in the device's executor data, as quantify names them:
+    <data dir>/<date>/<tuid>"""
+    data_dir = device.settings.executor_data_dir
+    return {folder for folder in data_dir.glob("[0-9]" * 8 + "/*") if folder.is_dir()}
+
+
+def _submit_another_job(
+    client: TestClient,
+    job: dict,
+    job_info: JobSubmissionMetadata,
+    mocker: MockerFixture,
+    jobs_folder: Path,
+) -> None:
+    """Submits a new job like the one of the info, for its user"""
+    [other_job_info] = get_job_submission_metadata(
+        client,
+        jobs=get_raw_jobs(job, durations=[0.2]),
+        users=[{"id": job_info["user_id"]}],
+        mocker=mocker,
+        jobs_folder=jobs_folder,
+    )
+    submit_jobs(client, data=[other_job_info])

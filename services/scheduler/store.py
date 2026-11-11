@@ -14,7 +14,8 @@
 """The jobs of a device, in its SQL database"""
 
 from datetime import datetime, timedelta
-from typing import List, Optional, Self
+from pathlib import Path
+from typing import Dict, List, Optional, Self
 
 from sqlalchemy import Engine
 from sqlmodel import Field, Session, SQLModel, col, delete, select
@@ -22,9 +23,11 @@ from sqlmodel import Field, Session, SQLModel, col, delete, select
 from libs.queues.dtos import Job, JobStatus
 from utils.config import DeviceSettings
 from utils.datetime import get_utc_now, to_utc
-from utils.exc import ItemNotFoundError
+from utils.exc import ConflictError, ItemNotFoundError, JobAlreadyCompleteError
 from utils.sql_db import open_immediate_session
 from utils.strings import uuid_str
+
+_ENDED_STATUSES = tuple(status.value for status in JobStatus if status.is_terminal())
 
 
 class JobRow(SQLModel, table=True):
@@ -44,11 +47,13 @@ class JobRow(SQLModel, table=True):
     estimated_duration: Optional[float] = None
     created_at: Optional[datetime] = Field(default=None, index=True)
     # the dispatcher's: when a worker claimed the job's current stage, when its execution
-    # ended, whether, booked, it waits for the time outside bookings, and its results
+    # ended, whether, booked, it waits for the time outside bookings, its results, and the
+    # folder of its experiments in the executor's data
     claimed_at: Optional[datetime] = None
     executed_at: Optional[datetime] = None
     is_booking_excluded: bool = False
     results_file: Optional[str] = None
+    experiment_folder: Optional[str] = None
 
 
 class RecalibrationRow(SQLModel, table=True):
@@ -67,7 +72,8 @@ class RecalibrationRow(SQLModel, table=True):
 
 
 class JobsStore:
-    """The jobs of one device, which expire `ttl` seconds after they were last written"""
+    """The jobs of one device, which expire `ttl` seconds after they were last written, once
+    they have ended, whose status is then final"""
 
     def __init__(self, db_engine: Engine, device_name: str, ttl: float):
         self._db_engine = db_engine
@@ -104,25 +110,23 @@ class JobsStore:
             return session.get(JobRow, (self._device_name, job_id)) is not None
 
     def insert(self, job: Job) -> Job:
-        """Inserts the job, replacing any of the same id, and deletes the expired ones
+        """Inserts the job, unless the device has one of its id
 
         Args:
             job: the job to insert
 
         Returns:
             the inserted job
+
+        Raises:
+            ConflictError: job_id {job_id} already exists
         """
-        now = get_utc_now()
         with open_immediate_session(self._db_engine) as session:
-            session.exec(
-                delete(JobRow).where(
-                    col(JobRow.device_name) == self._device_name,
-                    col(JobRow.updated_at) < now - self._ttl,
-                )
-            )
+            if session.get(JobRow, (self._device_name, job.job_id)) is not None:
+                raise ConflictError(f"job_id {job.job_id} already exists")
             row = JobRow(device_name=self._device_name, job_id=job.job_id, data="")
-            _write_job(row, job, now=now)
-            session.merge(row)
+            _write_job(row, job, now=get_utc_now())
+            session.add(row)
             session.commit()
         return job
 
@@ -139,13 +143,12 @@ class JobsStore:
             ItemNotFoundError: '{job_id}' not found
         """
         with Session(self._db_engine) as session:
-            row = session.get(JobRow, (self._device_name, job_id))
-            if row is None:
-                raise ItemNotFoundError(f"'{job_id}' not found")
+            row = _get_row(session, self._device_name, job_id)
             return Job.model_validate_json(row.data)
 
     def update(self, job_id: str, updates: dict) -> Job:
-        """Sets the given fields of the job, and returns it
+        """Sets the given fields of the job, but the status of one that has ended, and
+        returns it
 
         Args:
             job_id: the id of the job
@@ -159,30 +162,93 @@ class JobsStore:
         """
         # immediate, so that no other process writes the job between the read and the write
         with open_immediate_session(self._db_engine) as session:
-            row = session.get(JobRow, (self._device_name, job_id))
-            if row is None:
-                raise ItemNotFoundError(f"'{job_id}' not found")
+            row = _get_row(session, self._device_name, job_id)
             job = Job.model_validate_json(row.data)
-            updated_job = Job.model_validate(job.model_dump() | updates)
-            _write_job(row, updated_job, now=get_utc_now())
+            if job.status.is_terminal():
+                updates = {**updates, "status": job.status}
+            return _write_updates(session, row, job, updates)
+
+    def mark_ended(self, job_id: str, updates: dict) -> Job:
+        """Sets the given fields of the job, its ending status among them, unless it has
+        already ended
+
+        Args:
+            job_id: the id of the job
+            updates: the new values of the fields, by name
+
+        Returns:
+            the ended job
+
+        Raises:
+            ItemNotFoundError: '{job_id}' not found
+            JobAlreadyCompleteError: job {job_id} is already {status}
+        """
+        with open_immediate_session(self._db_engine) as session:
+            row = _get_row(session, self._device_name, job_id)
+            job = Job.model_validate_json(row.data)
+            if job.status.is_terminal():
+                raise JobAlreadyCompleteError(
+                    f"job {job_id} is already {job.status.value}"
+                )
+            return _write_updates(session, row, job, updates)
+
+    def set_experiment_folder(self, job_id: str, folder: Path) -> None:
+        """Records the folder of the job's experiments in the executor's data
+
+        Args:
+            job_id: the id of the job
+            folder: the folder
+
+        Raises:
+            ItemNotFoundError: '{job_id}' not found
+        """
+        with Session(self._db_engine) as session:
+            row = _get_row(session, self._device_name, job_id)
+            row.experiment_folder = str(folder)
             session.add(row)
             session.commit()
-        return updated_job
 
-    def delete(self, job_id: str) -> None:
+    def delete(self, job_id: str) -> Optional[Path]:
         """Deletes the job of the given id, if the device has it
 
         Args:
             job_id: the id of the job
+
+        Returns:
+            the folder of the job's experiments, if it was deleted and had one
         """
-        with Session(self._db_engine) as session:
-            session.exec(
-                delete(JobRow).where(
-                    col(JobRow.device_name) == self._device_name,
-                    col(JobRow.job_id) == job_id,
-                )
-            )
+        with open_immediate_session(self._db_engine) as session:
+            row = session.get(JobRow, (self._device_name, job_id))
+            if row is None:
+                return None
+            experiment_folder = row.experiment_folder
+            session.delete(row)
             session.commit()
+        return Path(experiment_folder) if experiment_folder else None
+
+    def delete_expired(self) -> Dict[str, Optional[Path]]:
+        """Deletes the device's jobs that have ended and were last written over `ttl` seconds
+        ago
+
+        Returns:
+            the folders of the deleted jobs' experiments, None for a job without one, by
+            the jobs' ids
+        """
+        expired = (
+            col(JobRow.device_name) == self._device_name,
+            # a job may wait unwritten at a stage without a time limit
+            col(JobRow.status).in_(_ENDED_STATUSES),
+            col(JobRow.updated_at) < get_utc_now() - self._ttl,
+        )
+        with open_immediate_session(self._db_engine) as session:
+            expired_jobs = session.exec(
+                select(JobRow.job_id, JobRow.experiment_folder).where(*expired)
+            ).all()
+            session.exec(delete(JobRow).where(*expired))
+            session.commit()
+        return {
+            job_id: Path(folder) if folder else None for job_id, folder in expired_jobs
+        }
 
     def find(
         self,
@@ -210,6 +276,27 @@ class JobsStore:
         query = query.order_by(col(JobRow.updated_at)).offset(skip).limit(limit)
         with Session(self._db_engine) as session:
             return [Job.model_validate_json(row.data) for row in session.exec(query)]
+
+
+def _get_row(session: Session, device_name: str, job_id: str) -> JobRow:
+    """Gets the device's row of the job
+
+    Raises:
+        ItemNotFoundError: '{job_id}' not found
+    """
+    row = session.get(JobRow, (device_name, job_id))
+    if row is None:
+        raise ItemNotFoundError(f"'{job_id}' not found")
+    return row
+
+
+def _write_updates(session: Session, row: JobRow, job: Job, updates: dict) -> Job:
+    """Writes the job with the updates into its row, commits, and returns it"""
+    updated_job = Job.model_validate(job.model_dump() | updates)
+    _write_job(row, updated_job, now=get_utc_now())
+    session.add(row)
+    session.commit()
+    return updated_job
 
 
 def _write_job(row: JobRow, job: Job, now: datetime) -> None:

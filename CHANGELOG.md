@@ -7,6 +7,38 @@ and this project follows versions of format `{year}.{month}.{patch_number}`.
 
 ## [Unreleased]
 
+## [2026.11.0-rc.14] - 2026-11-10
+
+### Fixed
+
+- Fixed a job's end being overwritten: a job cancelled while it postprocessed ended successful, one cancelled while it
+  executed ended failed if the execution then failed, and a timed-out job reached MSS failed twice with two reasons
+- Fixed deleting a job while a worker had it, as during its postprocessing, stopping that worker and so restarting the
+  whole backend; the worker now drops the deleted job
+- Fixed a booker's job that failed or was cancelled while it executed keeping the booker from ever counting as idle, so
+  that no one else's job ran during that booker's bookings for the two weeks the job was kept
+- Fixed cancelling or deleting a job while MSS was down or slow stalling the whole API, until `bcc start` took it for
+  stuck and restarted the backend
+- Fixed devices that share a database, as the example env file's do, sharing their bookings: one device's booking
+  refused overlapping bookings on the others and reordered their job queues; existing bookings go to the device that
+  migrates the database
+- Fixed the backend on PostgreSQL letting concurrent writes interleave: updates to a job could be lost, two bookings of
+  the same slot could both be taken, and two processes could send MSS the same kept event
+- Fixed a job uploaded twice at once, as to two API workers, being put back to the start of its queue by the second
+  upload; that upload is refused with 409
+- Fixed two recalibrations scheduled at once, as by two requests to `/recalibration/init`, leaving two schedules that
+  each repeated
+- Fixed each restart putting the next recalibration off by a whole `BCC_DEFAULT_RECALIBRATION_INTERVAL`, so that a
+  device restarted more often than that never recalibrated; a restart keeps the one already scheduled if it is due sooner
+- Fixed `BCC_JOBS_STORE_TTL` deleting jobs that had not ended, as one left waiting by a time limit of 0, without
+  telling MSS; only ended jobs expire
+- Fixed a job's uploaded file, preprocessed experiments, results file and experiment folder in the executor's data being
+  kept forever on disk; they are deleted with the job, when it is deleted or expires
+- Fixed the job supervisor log growing without bound; it is rotated past `BCC_JOB_SUPERVISOR_LOG_MAX_BYTES` (10 MiB),
+  keeping `BCC_JOB_SUPERVISOR_LOG_BACKUP_COUNT` (5) backups
+- Fixed every recalibration done being kept in the database forever; one that ended is deleted
+  `BCC_RECALIBRATIONS_TTL` (two weeks) after it ended, but for the device's last
+
 ## [2026.11.0-rc.13] - 2026-11-09
 
 ### Added

@@ -14,7 +14,7 @@
 
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Type
+from typing import Any, Iterable, Iterator, Optional, Type
 
 from alembic import command
 from alembic.config import Config
@@ -25,6 +25,8 @@ from .exc import InvalidRequestError
 
 # beside main.py, in a checkout and in the wheel the packages install
 _MIGRATIONS_DIR = Path(__file__).parents[1] / "migrations"
+# the key of the PostgreSQL advisory lock that immediate sessions take, "bcc_imme" in ASCII
+_IMMEDIATE_SESSION_LOCK_KEY = 0x6263_635F_696D_6D65
 
 
 def get_sql_engine(url: str) -> Engine:
@@ -43,13 +45,17 @@ def get_sql_engine(url: str) -> Engine:
     return engine
 
 
-def migrate_sql_db(url: str) -> None:
+def migrate_sql_db(url: str, device_name: Optional[str] = None) -> None:
     """Migrates the database at the URL to the models' schema, with Alembic
 
     Args:
         url: the URL of the database
+        device_name: the device migrating it, to which the rows from before they were
+            keyed by device go; default: the env file's, read only if there are such rows
     """
-    command.upgrade(get_alembic_config(url), "head")
+    config = get_alembic_config(url)
+    config.attributes["device_name"] = device_name
+    command.upgrade(config, "head")
 
 
 def get_alembic_config(url: str) -> Config:
@@ -71,8 +77,10 @@ def get_alembic_config(url: str) -> Config:
 
 @contextmanager
 def open_immediate_session(db_engine: Engine) -> Iterator[Session]:
-    """Opens a session that, on SQLite, takes the write lock as it begins, so that what it
-    reads cannot change before it writes, even from another process
+    """Opens a session that takes the database's write lock as it begins, so that what it
+    reads cannot change before it writes, even from another process: on SQLite, SQLite's
+    own; on PostgreSQL, one that only these sessions take, held to the end of the
+    transaction
 
     Args:
         db_engine: the engine of the database
@@ -83,6 +91,10 @@ def open_immediate_session(db_engine: Engine) -> Iterator[Session]:
     with Session(db_engine) as session:
         if db_engine.dialect.name == "sqlite":
             session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+        elif db_engine.dialect.name == "postgresql":
+            session.connection().exec_driver_sql(
+                f"SELECT pg_advisory_xact_lock({_IMMEDIATE_SESSION_LOCK_KEY})"
+            )
         yield session
 
 

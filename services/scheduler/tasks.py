@@ -27,7 +27,11 @@ from typing import Iterator, Optional
 from pydantic import ValidationError
 
 from libs.device_parameters import DeviceCalibration
-from libs.quantum_executor.base.executor import preprocess_circuits, run_job
+from libs.quantum_executor.base.executor import (
+    create_experiment_folder,
+    preprocess_circuits,
+    run_job,
+)
 from libs.quantum_executor.base.quantum_job import (
     MeasLvl,
     discriminate_circuit_results,
@@ -140,14 +144,17 @@ def postprocess(device: DeviceResources, job: Job, results_file: str) -> str:
             calibration = get_device_calibration_info(
                 device.bookings_db, backend_name=device.executor_options.backend_name
             )
-        job = update_job_results(
+        successful_job = update_job_results(
             jobs_store,
             job_id=job_id,
             result=_get_job_result(quantum_job, calibration),
             machine_root_url=device.settings.machine_root_url,
         )
-        update_job_in_mss(device.bookings_db, device.mss_client, payload=job)
-        return job.job_id
+        if successful_job is not None:
+            update_job_in_mss(
+                device.bookings_db, device.mss_client, payload=successful_job
+            )
+        return job_id
     except Exception as exp:
         raise PostProcessingError(exp=exp, job_id=job_id)
 
@@ -172,12 +179,14 @@ def recalibrate(device: DeviceResources) -> None:
 
 @contextmanager
 def _fail_on_error(device: DeviceResources, job_id: str) -> Iterator[None]:
-    """Fails the job, and tells MSS, on an error in the block but its cancellation; either
-    way, it re-raises"""
+    """Fails the job, and tells MSS, on an error in the block but its cancellation or its
+    timeout, which the dispatcher fails it for; either way, it re-raises"""
     try:
         yield
     except JobAlreadyCancelled as exp:
         logging.error(f"{exp}")
+        raise
+    except TimeoutError:
         raise
     except (ValidationError, UnsupportedCircuitError) as exp:
         _fail_job(device, job_id=job_id, reason=f"{exp}")
@@ -195,13 +204,18 @@ def _read_job_file(job_file: Path) -> JobFile:
 
 
 def _estimate_duration(device: DeviceResources, job_file: JobFile) -> float:
-    """Compiles the job's circuits on the executor, and gets the seconds they would take"""
+    """Compiles the job's circuits on the executor, in a folder of the executor's data it
+    records for the job, and gets the seconds they would take"""
     with device.executor_lock:
+        tuid, experiment_folder = create_experiment_folder(device.executor)
+        # before compiling, which may fail, so that the folder goes with the job anyway
+        device.jobs_store.set_experiment_folder(job_file.job_id, experiment_folder)
         duration, _ = preprocess_circuits(
             device.executor,
             job_file.params,
             job_id=job_file.job_id,
             results_folder=device.settings.preprocessed_job_pool,
+            tuid=tuid,
         )
     return duration
 
@@ -244,13 +258,13 @@ def _get_memory(
     raise NotImplementedError(f"meas_level {quantum_job.meas_level} is not supported")
 
 
-def _fail_job(device: DeviceResources, job_id: str, reason: str) -> Job:
-    """Marks the job as failed for the given reason, and tells MSS"""
+def _fail_job(device: DeviceResources, job_id: str, reason: str) -> None:
+    """Marks the job as failed for the given reason, and tells MSS, unless it has ended"""
     job = mark_job_failed(
         device.jobs_store,
         job_id=job_id,
         reason=reason,
-        job_supervisor_log=device.settings.job_supervisor_log,
+        device_settings=device.settings,
     )
-    update_job_in_mss(device.bookings_db, device.mss_client, payload=job)
-    return job
+    if job is not None:
+        update_job_in_mss(device.bookings_db, device.mss_client, payload=job)

@@ -15,7 +15,6 @@ from datetime import datetime
 from typing import Optional, Tuple
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import Engine
 
 from services import booking, scheduler
 from services.booking import Booking, BookingsConfig, NewBookingInfo
@@ -25,7 +24,6 @@ from utils.sql_db import convert_http_sort_to_db_sort
 from ..dependencies import (
     DeviceResourcesDep,
     check_device_is_online,
-    get_booking_db,
     get_unverified_mss_is_admin,
     get_verified_mss_user_id,
 )
@@ -84,21 +82,21 @@ async def cancel_booking(
 
 @router.get("/bookings", dependencies=[Depends(get_verified_mss_user_id)])
 async def view_bookings(
+    device: DeviceResourcesDep,
     skip: int = Query(default=0),
     limit: Optional[int] = Query(default=None),
     sort: Tuple[str, ...] = Query(default=()),
     min_start_utc: Optional[datetime] = Query(default=None),
     max_start_utc: Optional[datetime] = Query(default=None),
     user_id: Optional[str] = Query(default=None),
-    db_engine: Engine = Depends(get_booking_db),
 ) -> PaginatedListResponse[Booking]:
-    """Views all available bookings
+    """Views the device's bookings
 
     Args:
+        device: what the device runs on
         skip: number of records to ignore at the top of the returned results; default is 0
         limit: maximum number of records to return; default is None.
         sort: fields to sort by; prepending "-" returns the records in descending order
-        db_engine: the SQL database engine to query
         user_id: the unique identifier of the owner of the given bookings
         min_start_utc: the minimum start time in UTC
         max_start_utc: the maximum start time in UTC
@@ -116,7 +114,12 @@ async def view_bookings(
 
     sort = convert_http_sort_to_db_sort(Booking, http_sort=sort)
     bookings = booking.get_many_bookings(
-        db_engine, *filters, skip=skip, limit=limit, sort=sort
+        device.bookings_db,
+        device.settings.default_prefix,
+        *filters,
+        skip=skip,
+        limit=limit,
+        sort=sort,
     )
     return PaginatedListResponse(skip=skip, limit=limit, data=bookings)
 

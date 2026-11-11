@@ -27,6 +27,7 @@ from libs.quantum_executor.base.circuits import (
     CircuitJobParams,
     QasmCircuit,
 )
+from libs.quantum_executor.base.job_files import get_expt_metadata_file
 from libs.quantum_executor.base.pulse_limits import (
     check_pulse_limits,
     get_calibrated_frame_frequencies,
@@ -152,11 +153,26 @@ class QuantumExecutor(abc.ABC):
         self.close()
 
 
+def create_experiment_folder(executor: QuantumExecutor) -> Tuple[TUID, Path]:
+    """Creates the folder in the executor's data of a new job's experiments, for
+    preprocess_circuits to be given its TUID
+
+    Args:
+        executor: the executor the job is to run on
+
+    Returns:
+        the experiments' TUID, and their folder
+    """
+    tuid = gen_tuid()
+    return tuid, Path(create_exp_folder(tuid=tuid, datadir=executor.data_dir))
+
+
 def preprocess_circuits(
     executor: QuantumExecutor,
     params: CircuitJobParams,
     job_id: str,
     results_folder: Path,
+    tuid: Optional[TUID] = None,
 ) -> Tuple[float, str]:
     """Compiles a gate-level job's circuits on the executor, but does not run them yet
 
@@ -165,6 +181,8 @@ def preprocess_circuits(
         params: the circuits of the job and how to measure them
         job_id: the ID of the job
         results_folder: the folder to store the experiment resulting files
+        tuid: the experiments' TUID, whose folder create_experiment_folder made; default:
+            a new one
 
     Returns:
         tuple of the duration and the path to the pickle file containing the experiments
@@ -179,7 +197,7 @@ def preprocess_circuits(
         params, n_qubits=executor.backend_config.general_config.num_qubits
     )
     expt_metadata = CircuitExptMetadata(
-        native_config=native_config, tuid=gen_tuid(), params=params
+        native_config=native_config, tuid=tuid or gen_tuid(), params=params
     )
     tuid = expt_metadata.tuid
     create_exp_folder(tuid=tuid, name=expt_metadata.tag, datadir=executor.data_dir)
@@ -219,7 +237,7 @@ def preprocess_circuits(
             )
         total_duration = sum(expt.duration for expt in experiments)
 
-        results_file_path = _get_expt_metadata_file(job_id, folder=results_folder)
+        results_file_path = get_expt_metadata_file(job_id, folder=results_folder)
         with open(results_file_path, "wb") as file:
             pickle.dump(expt_metadata.to_dict(), file)
 
@@ -241,7 +259,7 @@ def run_job(executor: QuantumExecutor, job_id: str, inputs_folder: Path) -> str:
     Returns:
         the path to the results obtained after measurement
     """
-    preprocessed_file = _get_expt_metadata_file(job_id, folder=inputs_folder)
+    preprocessed_file = get_expt_metadata_file(job_id, folder=inputs_folder)
     logger: Optional[ExperimentLogger] = None
     try:
         expt_metadata = _load_expt_metadata(preprocessed_file)
@@ -341,12 +359,6 @@ class CircuitExptMetadata:
             params=CircuitJobParams.model_validate(value["params"]),
             native_config=NativeQobjConfig.from_dict(value["native_config"]),
         )
-
-
-def _get_expt_metadata_file(job_id: str, folder: Path) -> Path:
-    """Gets the path of the file in the folder that the job's experiments' metadata is
-    pickled to"""
-    return folder / f"{job_id}-expt-metadata.pickle"
 
 
 def _load_expt_metadata(file: Path) -> CircuitExptMetadata:

@@ -44,7 +44,7 @@ from tests.utils.recalibrations import (
 from tests.utils.users import (
     create_many_users,
 )
-from tests.utils.workers import set_worker_executor
+from tests.utils.workers import set_worker_executor, set_worker_settings
 
 _EXPECTED_RECALIBRATION_SEED_CONTENT = load_fixture(
     "expected_recalibration.seed.toml", fmt="toml"
@@ -367,6 +367,38 @@ def test_failed_recalibration_schedules_the_next(client, worker):
         assert failed.status == "failed"
         assert "no device" in failed.error
         assert upcoming.status == "scheduled"
+
+
+@pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
+@pytest.mark.parametrize(
+    "recalibrations_ttl, expected_kept", [(0, [1, 2]), (3600, [0, 1, 2])]
+)
+def test_ended_recalibrations_expire_after_their_ttl_but_the_last(
+    client, worker, recalibrations_ttl, expected_kept
+):
+    """The last that ended is /recalibration/info's previous, however long ago it ended"""
+    with client as client:
+        user_id = create_many_users(client, raw_users=USERS[:1])[0]["id"]
+        set_worker_executor(worker, Mock())
+        for _ in range(2):
+            response = client.post(
+                "/recalibration/init",
+                headers=create_mss_headers(user_id, is_admin=True),
+            )
+            assert response.status_code == 200
+            worker.run(is_burst=True, max_jobs=1)
+        recalibrations = get_recalibrations()
+
+        set_worker_settings(worker, recalibrations_ttl=recalibrations_ttl)
+        worker.run(is_burst=True)
+
+        kept_ids = [row.id for row in get_recalibrations()]
+        assert [row.status for row in recalibrations] == [
+            "finished",
+            "finished",
+            "scheduled",
+        ]
+        assert kept_ids == [recalibrations[index].id for index in expected_kept]
 
 
 @pytest.mark.parametrize("client, worker", CLIENT_AND_WORKER_TUPLES)
